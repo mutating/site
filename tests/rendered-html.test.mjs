@@ -74,7 +74,7 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(styles, /\.animated-eye-logo/);
   assert.match(styles, /--eye-visible-grayscale:\s*var\(--eye-grayscale\)/);
   assert.match(styles, /\.animated-eye-logo:hover/);
-  assert.match(styles, /transition:\s*filter 420ms/);
+  assert.match(styles, /transition:\s*filter 630ms/);
   assert.match(styles, /\.containment__formula/);
   assert.match(styles, /\.contact__tentacles/);
   assert.match(styles, /\.contact__clip/);
