@@ -558,9 +558,9 @@
               sign(normalizedColorShift) *
               sqrt(abs(normalizedColorShift));
             float colorShift = normalizedColorShift * 0.72;
-            vec3 roseA = vec3(1.000000, 0.000000, 0.430619);
-            vec3 roseB = vec3(1.000000, 0.302718, 0.679619);
-            vec3 albedo = mix(roseA, roseB, 0.57 + colorShift * 0.36);
+            vec3 roseA = vec3(0.776471, 0.282353, 0.470588);
+            vec3 roseB = vec3(0.984314, 0.533333, 0.705882);
+            vec3 albedo = mix(roseA, roseB, 0.50 + colorShift * 0.46);
             albedo *= 0.985 + 0.035 * sin(vWorld.x * 31.0 + vWorld.y * 19.0);
 
             float roughness = mix(0.235, 0.165, vRidge);
@@ -691,10 +691,59 @@
           const vec3 SSS_LIGHT_POSITION = vec3(-0.12, 1.12, 0.42);
           uniform vec3 uSubstrate;
           const vec3 TENTACLE_ROSE =
-            vec3(1.000000, 0.172549, 0.572549);
+            vec3(0.941176, 0.376471, 0.588235);
+          const vec3 MUTA_PINK_DEEP =
+            vec3(0.674510, 0.215686, 0.396078);
+          const vec3 MUTA_PINK_SHADOW =
+            vec3(0.776471, 0.282353, 0.470588);
+          const vec3 MUTA_PINK_MID =
+            vec3(0.882353, 0.313725, 0.525490);
+          const vec3 MUTA_PINK_BODY =
+            vec3(0.968627, 0.447059, 0.643137);
+          const vec3 MUTA_PINK_LIGHT =
+            vec3(0.984314, 0.533333, 0.705882);
+          const vec3 MUTA_PINK_HIGHLIGHT =
+            vec3(0.992157, 0.803922, 0.874510);
 
           float saturate(float x) {
             return clamp(x, 0.0, 1.0);
+          }
+
+          vec3 mutaPinkPalette(float tone) {
+            float t = saturate(tone);
+            if (t < 0.20) {
+              return mix(
+                MUTA_PINK_DEEP,
+                MUTA_PINK_SHADOW,
+                t / 0.20
+              );
+            }
+            if (t < 0.43) {
+              return mix(
+                MUTA_PINK_SHADOW,
+                MUTA_PINK_MID,
+                (t - 0.20) / 0.23
+              );
+            }
+            if (t < 0.68) {
+              return mix(
+                MUTA_PINK_MID,
+                MUTA_PINK_BODY,
+                (t - 0.43) / 0.25
+              );
+            }
+            if (t < 0.86) {
+              return mix(
+                MUTA_PINK_BODY,
+                MUTA_PINK_LIGHT,
+                (t - 0.68) / 0.18
+              );
+            }
+            return mix(
+              MUTA_PINK_LIGHT,
+              MUTA_PINK_HIGHLIGHT,
+              (t - 0.86) / 0.14
+            );
           }
 
           void main() {
@@ -898,6 +947,21 @@
               transmittedPaper,
               SSS_TRANSPARENCY * tentacleMask
             );
+            float paletteTone = saturate(
+              dot(color, vec3(0.2126, 0.7152, 0.0722)) * 0.72 +
+              tipColorGradient * 0.22 -
+              occlusion * 0.18 +
+              sharpGloss * 0.12
+            );
+            vec3 referencePink = mutaPinkPalette(paletteTone);
+            float paletteStrength =
+              smoothstep(0.052, 0.145, height) * 0.90;
+            color = mix(color, referencePink, paletteStrength);
+            color +=
+              MUTA_PINK_HIGHLIGHT *
+              sharpGloss *
+              paletteStrength *
+              0.08;
             float surfaceAlpha = max(
               smoothstep(0.066, 0.105, height),
               neighboringSurface * 0.16
