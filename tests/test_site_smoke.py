@@ -60,3 +60,35 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
         asset = PROJECT_ROOT / relative_path
         assert asset.is_file(), f"{relative_path} must be a file"
         assert asset.stat().st_size > 0, f"{relative_path} must not be empty"
+
+
+def test_ticker_selection_inverts_only_its_own_colors(
+    driver: DriverFactory,
+) -> None:
+    """Verify that ticker selection inverts pink and white only within the strip."""
+
+    page = driver(stored_theme="light")
+    selection_styles = page.locator(".ticker__track").evaluate(
+        """
+        (track) => {
+          const ticker = track.closest(".ticker");
+          const tickerStyle = getComputedStyle(ticker);
+          const tickerSelection = getComputedStyle(track, "::selection");
+          const globalSelection = getComputedStyle(document.body, "::selection");
+
+          return {
+            tickerColor: tickerStyle.color,
+            tickerBackground: tickerStyle.backgroundColor,
+            selectionColor: tickerSelection.color,
+            selectionBackground: tickerSelection.backgroundColor,
+            globalColor: globalSelection.color,
+            globalBackground: globalSelection.backgroundColor,
+          };
+        }
+        """
+    )
+
+    assert selection_styles["selectionColor"] == selection_styles["tickerBackground"]
+    assert selection_styles["selectionBackground"] == selection_styles["tickerColor"]
+    assert selection_styles["globalColor"] == selection_styles["tickerColor"]
+    assert selection_styles["globalBackground"] == selection_styles["tickerBackground"]

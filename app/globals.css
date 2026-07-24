@@ -785,6 +785,11 @@ a.section-index:focus-visible {
   margin-inline: 10px;
 }
 
+.ticker ::selection {
+  background: #fff;
+  color: var(--hot);
+}
+
 .manifesto,
 .pillars,
 .complexity,
