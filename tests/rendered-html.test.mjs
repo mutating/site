@@ -81,6 +81,13 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(tentacles, /PRESS_IMPULSE_MULTIPLIER/);
   assert.match(tentacles, /uSurfaceAspect/);
   assert.match(tentacles, /Math\.round\(\(isCompact \? 209 : 356\) \* surfaceAspect\)/);
+  assert.match(tentacles, /const MOTION_SPEED_MULTIPLIER = \(4 \/ 5\) \* 2 \* 1\.2;/);
+  assert.match(tentacles, /const PRESS_IMPULSE_HOLD_SECONDS = 0\.10 \/ 6\.75;/);
+  assert.match(tentacles, /const PRESS_IMPULSE_DECAY_RATE = 26 \* 6\.75;/);
+  assert.match(tentacles, /const PRESS_IMPULSE_TOTAL_SECONDS = 0\.28 \/ 6\.75;/);
+  assert.match(tentacles, /const velocityDamping = Math\.exp\(-delta \* 10\.2\);/);
+  assert.match(tentacles, /const restResponse = 72\.0 \* delta \* delta;/);
+  assert.match(tentacles, /SPATIAL_GRID_COLUMNS \* SPATIAL_GRID_ROWS/);
 
   const localSource = `${page}\n${styles}\n${layout}\n${tokamak}\n${tentacles}`;
   assert.doesNotMatch(localSource, /\/Users\/|\/var\/folders\//);

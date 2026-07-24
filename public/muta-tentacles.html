@@ -139,9 +139,7 @@
         const HEIGHT_OFFSET_X = 0;
         const HEIGHT_OFFSET_Y = 0;
         const RENDER_SUPERSAMPLE = 2;
-        const SPATIAL_GRID_SIZE = 64;
-        const SPATIAL_CELL_COUNT =
-          SPATIAL_GRID_SIZE * SPATIAL_GRID_SIZE;
+        const SPATIAL_GRID_ROWS = 64;
         const MAX_SPATIAL_SKELETONS = 512;
         const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const floatColor = Boolean(gl.getExtension("EXT_color_buffer_float"));
@@ -154,6 +152,20 @@
             initialCanvasRect.width / Math.max(1, initialCanvasRect.height),
           ),
         );
+        const maximumTextureDimension = gl.getParameter(
+          gl.MAX_TEXTURE_SIZE,
+        );
+        const SPATIAL_GRID_COLUMNS = Math.min(
+          Math.floor(
+            maximumTextureDimension / SPATIAL_GRID_ROWS,
+          ),
+          Math.max(
+            1,
+            Math.round(SPATIAL_GRID_ROWS * surfaceAspect),
+          ),
+        );
+        const SPATIAL_CELL_COUNT =
+          SPATIAL_GRID_COLUMNS * SPATIAL_GRID_ROWS;
         const skeletonCount = Math.min(
           MAX_SKELETONS,
           Math.max(
@@ -163,7 +175,7 @@
         );
         const gridResolution = isCompact ? 512 : 640;
         const gpuRenderLimit = Math.min(
-          gl.getParameter(gl.MAX_TEXTURE_SIZE),
+          maximumTextureDimension,
           gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
         );
         const jointProfiles = Array.from(
@@ -227,7 +239,8 @@
           const int MAX_SKELS = ${MAX_SKELETONS};
           const int RENDER_POINTS = ${RENDER_POINTS};
           const int RENDER_SEGMENTS = ${RENDER_POINTS - 1};
-          const int SPATIAL_GRID_SIZE = ${SPATIAL_GRID_SIZE};
+          const int SPATIAL_GRID_COLUMNS = ${SPATIAL_GRID_COLUMNS};
+          const int SPATIAL_GRID_ROWS = ${SPATIAL_GRID_ROWS};
           const int MAX_SPATIAL_SKELS = ${MAX_SPATIAL_SKELETONS};
           float saturate(float x) {
             return clamp(x, 0.0, 1.0);
@@ -291,15 +304,22 @@
             ivec2 spatialCell = ivec2(
               clamp(
                 floor(
-                  vec2(uv.x / uSurfaceAspect, uv.y) *
-                  float(SPATIAL_GRID_SIZE)
+                  vec2(
+                    uv.x / uSurfaceAspect *
+                      float(SPATIAL_GRID_COLUMNS),
+                    uv.y * float(SPATIAL_GRID_ROWS)
+                  )
                 ),
-                0.0,
-                float(SPATIAL_GRID_SIZE - 1)
+                vec2(0.0),
+                vec2(
+                  float(SPATIAL_GRID_COLUMNS - 1),
+                  float(SPATIAL_GRID_ROWS - 1)
+                )
               )
             );
             int spatialCellIndex =
-              spatialCell.y * SPATIAL_GRID_SIZE + spatialCell.x;
+              spatialCell.y * SPATIAL_GRID_COLUMNS +
+              spatialCell.x;
             int spatialCandidateCount = min(
               int(
                 texelFetch(
@@ -2520,10 +2540,10 @@
                       ) /
                       surfaceAspect
                     ) *
-                      SPATIAL_GRID_SIZE,
+                      SPATIAL_GRID_COLUMNS,
                   ),
                   0,
-                  SPATIAL_GRID_SIZE - 1,
+                  SPATIAL_GRID_COLUMNS - 1,
                 );
                 const segmentMinimumCellY = clamp(
                   Math.floor(
@@ -2531,10 +2551,10 @@
                       Math.min(pointA.y, pointB.y) -
                       segmentPadding
                     ) *
-                      SPATIAL_GRID_SIZE,
+                      SPATIAL_GRID_ROWS,
                   ),
                   0,
-                  SPATIAL_GRID_SIZE - 1,
+                  SPATIAL_GRID_ROWS - 1,
                 );
                 const segmentMaximumCellX = clamp(
                   Math.floor(
@@ -2545,10 +2565,10 @@
                       ) /
                       surfaceAspect
                     ) *
-                      SPATIAL_GRID_SIZE,
+                      SPATIAL_GRID_COLUMNS,
                   ),
                   0,
-                  SPATIAL_GRID_SIZE - 1,
+                  SPATIAL_GRID_COLUMNS - 1,
                 );
                 const segmentMaximumCellY = clamp(
                   Math.floor(
@@ -2556,10 +2576,10 @@
                       Math.max(pointA.y, pointB.y) +
                       segmentPadding
                     ) *
-                      SPATIAL_GRID_SIZE,
+                      SPATIAL_GRID_ROWS,
                   ),
                   0,
-                  SPATIAL_GRID_SIZE - 1,
+                  SPATIAL_GRID_ROWS - 1,
                 );
                 const segmentBit = 1 << renderSegment;
                 for (
@@ -2573,7 +2593,7 @@
                     cellX++
                   ) {
                     const cellIndex =
-                      cellY * SPATIAL_GRID_SIZE + cellX;
+                      cellY * SPATIAL_GRID_COLUMNS + cellX;
                     if (skeletonCellSegmentMasks[cellIndex] === 0) {
                       touchedSkeletonCells[
                         touchedSkeletonCellCount++
