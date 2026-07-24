@@ -121,7 +121,7 @@
 
         const CHAIN_LINKS = 50;
         const RENDER_POINTS = 14;
-        const MAX_SKELETONS = 356;
+        const MAX_SKELETONS = 900;
         const MOTION_SPEED_MULTIPLIER = (4 / 5) * 2 * 1.2;
         const TENTACLE_THICKNESS_MULTIPLIER = 1.5 * 1.3 * 1.3;
         const CURSOR_ATTRACTION_MULTIPLIER = 1 / 6 / 1.1;
@@ -146,7 +146,21 @@
         const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const floatColor = Boolean(gl.getExtension("EXT_color_buffer_float"));
         const isCompact = matchMedia("(max-width: 620px)").matches;
-        const skeletonCount = isCompact ? 209 : 356;
+        const initialCanvasRect = canvas.getBoundingClientRect();
+        const surfaceAspect = Math.min(
+          2.4,
+          Math.max(
+            0.6,
+            initialCanvasRect.width / Math.max(1, initialCanvasRect.height),
+          ),
+        );
+        const skeletonCount = Math.min(
+          MAX_SKELETONS,
+          Math.max(
+            150,
+            Math.round((isCompact ? 209 : 356) * surfaceAspect),
+          ),
+        );
         const gridResolution = isCompact ? 512 : 640;
         const gpuRenderLimit = Math.min(
           gl.getParameter(gl.MAX_TEXTURE_SIZE),
@@ -202,6 +216,7 @@
           uniform int uSkeletonCount;
           uniform int uUseSpatialGrid;
           uniform float uTime;
+          uniform float uSurfaceAspect;
 
           out vec3 vWorld;
           out float vHeight;
@@ -259,7 +274,11 @@
             out float ridgeAmount,
             out float edgeMask
           ) {
-            vec2 uv = clamp(rawUv, 0.0, 1.0);
+            vec2 displayUv = clamp(rawUv, 0.0, 1.0);
+            vec2 uv = vec2(
+              displayUv.x * uSurfaceAspect,
+              displayUv.y
+            );
             edgeMask = organismMask(uv);
             float mask = edgeMask;
             float broad = morphNoise(uv * 0.71 + vec2(0.13, 0.29));
@@ -271,7 +290,10 @@
 
             ivec2 spatialCell = ivec2(
               clamp(
-                floor(uv * float(SPATIAL_GRID_SIZE)),
+                floor(
+                  vec2(uv.x / uSurfaceAspect, uv.y) *
+                  float(SPATIAL_GRID_SIZE)
+                ),
                 0.0,
                 float(SPATIAL_GRID_SIZE - 1)
               )
@@ -410,7 +432,7 @@
             float height =
               evaluateSurface(aUv, variation, ridge, edge);
 
-            vec3 world = vec3(aUv, height);
+            vec3 world = vec3(aUv.x * uSurfaceAspect, aUv.y, height);
             float perspective = 1.0 + height * ${HEIGHT_PERSPECTIVE.toFixed(3)};
             vec2 projected =
               vec2(0.5) +
@@ -419,7 +441,10 @@
               ${PROJECTION_SCALE.toFixed(3)};
             projected +=
               height *
-              vec2(${HEIGHT_OFFSET_X.toFixed(3)}, ${HEIGHT_OFFSET_Y.toFixed(3)});
+              vec2(
+                ${HEIGHT_OFFSET_X.toFixed(3)} / uSurfaceAspect,
+                ${HEIGHT_OFFSET_Y.toFixed(3)}
+              );
 
             vWorld = world;
             vHeight = height;
@@ -634,6 +659,7 @@
           uniform vec2 uPointer;
           uniform float uPointerInside;
           uniform float uTime;
+          uniform float uSurfaceAspect;
           uniform vec2 uViewport;
           uniform float uCornerRadius;
 
@@ -689,7 +715,15 @@
                 0.08;
               float pointerAura =
                 uPointerInside *
-                exp(-length(vUv - uPointer) * 54.0) *
+                exp(
+                  -length(
+                    vec2(
+                      (vUv.x - uPointer.x) * uSurfaceAspect,
+                      vUv.y - uPointer.y
+                    )
+                  ) *
+                  54.0
+                ) *
                 (0.010 + 0.003 * sin(uTime * 4.0));
               vec3 shadowColor = mix(
                 uSubstrate,
@@ -782,7 +816,15 @@
 
             float pointerSheen =
               uPointerInside *
-              exp(-length(vUv - uPointer) * 18.0) *
+              exp(
+                -length(
+                  vec2(
+                    (vUv.x - uPointer.x) * uSurfaceAspect,
+                    vUv.y - uPointer.y
+                  )
+                ) *
+                18.0
+              ) *
               0.035;
             color += vec3(1.0, 0.72, 0.82) * pointerSheen;
 
@@ -875,6 +917,7 @@
           skeletonCount: uniform(surfaceProgram, "uSkeletonCount"),
           useSpatialGrid: uniform(surfaceProgram, "uUseSpatialGrid"),
           time: uniform(surfaceProgram, "uTime"),
+          surfaceAspect: uniform(surfaceProgram, "uSurfaceAspect"),
         };
 
         const scatterUniforms = {
@@ -893,6 +936,7 @@
           pointer: uniform(compositeProgram, "uPointer"),
           pointerInside: uniform(compositeProgram, "uPointerInside"),
           time: uniform(compositeProgram, "uTime"),
+          surfaceAspect: uniform(compositeProgram, "uSurfaceAspect"),
           substrate: uniform(compositeProgram, "uSubstrate"),
           viewport: uniform(compositeProgram, "uViewport"),
           cornerRadius: uniform(compositeProgram, "uCornerRadius"),
@@ -906,6 +950,7 @@
         gl.uniform1i(surfaceUniforms.spatialCounts, 4);
         gl.uniform1i(surfaceUniforms.spatialSegmentMasks, 5);
         gl.uniform1i(surfaceUniforms.skeletonCount, skeletonCount);
+        gl.uniform1f(surfaceUniforms.surfaceAspect, surfaceAspect);
         gl.useProgram(scatterProgram);
         gl.uniform1i(scatterUniforms.source, 0);
         gl.uniform1i(scatterUniforms.geometry, 1);
@@ -913,6 +958,7 @@
         gl.uniform1i(compositeUniforms.sharp, 0);
         gl.uniform1i(compositeUniforms.scatter, 1);
         gl.uniform1i(compositeUniforms.geometry, 2);
+        gl.uniform1f(compositeUniforms.surfaceAspect, surfaceAspect);
         gl.useProgram(null);
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.BLEND);
@@ -1085,25 +1131,48 @@
             y * 22.5 - 5.6,
             detailPeakSeed,
           );
-          const center = 1 - Math.min(1, Math.hypot(x - 0.5, y - 0.5) * 1.12);
+          const center =
+            1 -
+            Math.min(
+              1,
+              Math.hypot(
+                x / surfaceAspect - 0.5,
+                y - 0.5,
+              ) * 1.12,
+            );
           return broad * 0.48 + medium * 0.31 + detail * 0.17 + center * 0.04;
         }
 
         function findNoiseMaxima(count) {
           const candidates = [];
-          const scan = 116;
-          for (let y = 4; y < scan - 4; y++) {
-            for (let x = 4; x < scan - 4; x++) {
-              const u = x / (scan - 1);
-              const v = y / (scan - 1);
-              if (u < 0.038 || u > 0.962 || v < 0.038 || v > 0.962) {
+          const scanY = 116;
+          const scanX = Math.max(
+            70,
+            Math.round(scanY * surfaceAspect),
+          );
+          for (let y = 4; y < scanY - 4; y++) {
+            for (let x = 4; x < scanX - 4; x++) {
+              const u = (x / (scanX - 1)) * surfaceAspect;
+              const v = y / (scanY - 1);
+              if (
+                u < 0.038 ||
+                u > surfaceAspect - 0.038 ||
+                v < 0.038 ||
+                v > 0.962
+              ) {
                 continue;
               }
               const value = peakField(u, v);
               let isLocalPeak = true;
               for (let oy = -1; oy <= 1 && isLocalPeak; oy++) {
                 for (let ox = -1; ox <= 1; ox++) {
-                  if ((ox || oy) && peakField(u + ox / scan, v + oy / scan) > value) {
+                  if (
+                    (ox || oy) &&
+                    peakField(
+                      u + (ox / scanX) * surfaceAspect,
+                      v + oy / scanY,
+                    ) > value
+                  ) {
                     isLocalPeak = false;
                     break;
                   }
@@ -1150,7 +1219,13 @@
             let bestPoint = null;
             let bestScore = -Infinity;
             for (let attempt = 0; attempt < 48; attempt++) {
-              const x = 0.038 + random() * 0.924;
+              const x =
+                0.038 +
+                random() *
+                  Math.max(
+                    0.001,
+                    surfaceAspect - 0.076,
+                  );
               const y = 0.038 + random() * 0.924;
               const nearest = peaks.reduce(
                 (distance, peak) => Math.min(distance, Math.hypot(x - peak.x, y - peak.y)),
@@ -1189,8 +1264,8 @@
           return {
             x:
               0.5 +
-              (point.x - 0.5) * scale +
-              point.z * HEIGHT_OFFSET_X,
+              (point.x / surfaceAspect - 0.5) * scale +
+              point.z * HEIGHT_OFFSET_X / surfaceAspect,
             y:
               0.5 +
               (point.y - 0.5) * scale +
@@ -1203,8 +1278,16 @@
             (1 + height * HEIGHT_PERSPECTIVE) * PROJECTION_SCALE;
           return {
             x:
-              0.5 +
-              (pointer.x - 0.5 - height * HEIGHT_OFFSET_X) / scale,
+              surfaceAspect *
+              (
+                0.5 +
+                (
+                  pointer.x -
+                  0.5 -
+                  height * HEIGHT_OFFSET_X / surfaceAspect
+                ) /
+                  scale
+              ),
             y:
               0.5 +
               (pointer.y - 0.5 - height * HEIGHT_OFFSET_Y) / scale,
@@ -1213,7 +1296,10 @@
 
         const maxima = findNoiseMaxima(skeletonCount);
         const skeletons = maxima.map((peak, index) => {
-          const edgeAngle = Math.atan2(peak.y - 0.5, peak.x - 0.5);
+          const edgeAngle = Math.atan2(
+            peak.y - 0.5,
+            peak.x - surfaceAspect * 0.5,
+          );
           const tangent = edgeAngle + (random() < 0.5 ? -1 : 1) * (0.72 + random() * 0.55);
           const baseAngle = tangent + (random() - 0.5) * 1.25;
           const radius =
@@ -1583,6 +1669,22 @@
           resizeDirty = false;
           const rect = canvas.getBoundingClientRect();
           canvasRect = rect;
+          const currentAspect = Math.min(
+            2.4,
+            Math.max(
+              0.6,
+              rect.width / Math.max(1, rect.height),
+            ),
+          );
+          if (
+            renderTargets &&
+            Math.abs(currentAspect - surfaceAspect) > 0.08 &&
+            canvas.dataset.aspectReloading !== "true"
+          ) {
+            canvas.dataset.aspectReloading = "true";
+            setTimeout(() => location.reload(), 0);
+            return;
+          }
           const nativeRatio = Math.min(
             devicePixelRatio || 1,
             isCompact ? 1.65 : 1.8,
@@ -2071,7 +2173,11 @@
               z: skeleton.baseHeight,
             });
             const rootDistance = length2(
-              pointer.x - projectedRoot.x,
+              (
+                pointer.x -
+                projectedRoot.x
+              ) *
+                surfaceAspect,
               pointer.y - projectedRoot.y,
             );
             if (
@@ -2202,7 +2308,11 @@
             const tip = points[CHAIN_LINKS];
             const projectedTip = projectPointToCanvas(tip);
             const tipDistance = length2(
-              pointer.x - projectedTip.x,
+              (
+                pointer.x -
+                projectedTip.x
+              ) *
+                surfaceAspect,
               pointer.y - projectedTip.y,
             );
             const normalizedDistance = clamp(
@@ -2298,7 +2408,11 @@
               const finalProjectedTip =
                 projectPointToCanvas(finalTip);
               const cursorDistance = length2(
-                pointer.x - finalProjectedTip.x,
+                (
+                  pointer.x -
+                  finalProjectedTip.x
+                ) *
+                  surfaceAspect,
                 pointer.y - finalProjectedTip.y,
               );
               if (skeleton.grabbed) {
@@ -2400,8 +2514,11 @@
                 const segmentMinimumCellX = clamp(
                   Math.floor(
                     (
-                      Math.min(pointA.x, pointB.x) -
-                      segmentPadding
+                      (
+                        Math.min(pointA.x, pointB.x) -
+                        segmentPadding
+                      ) /
+                      surfaceAspect
                     ) *
                       SPATIAL_GRID_SIZE,
                   ),
@@ -2422,8 +2539,11 @@
                 const segmentMaximumCellX = clamp(
                   Math.floor(
                     (
-                      Math.max(pointA.x, pointB.x) +
-                      segmentPadding
+                      (
+                        Math.max(pointA.x, pointB.x) +
+                        segmentPadding
+                      ) /
+                      surfaceAspect
                     ) *
                       SPATIAL_GRID_SIZE,
                   ),

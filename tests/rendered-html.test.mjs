@@ -79,6 +79,8 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(page, /function TentacleContactBackground/);
   assert.match(tentacles, /muta-tentacles-theme/);
   assert.match(tentacles, /PRESS_IMPULSE_MULTIPLIER/);
+  assert.match(tentacles, /uSurfaceAspect/);
+  assert.match(tentacles, /Math\.round\(\(isCompact \? 209 : 356\) \* surfaceAspect\)/);
 
   const localSource = `${page}\n${styles}\n${layout}\n${tokamak}\n${tentacles}`;
   assert.doesNotMatch(localSource, /\/Users\/|\/var\/folders\//);
