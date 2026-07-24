@@ -986,9 +986,31 @@
                 7.0
               ) *
               smoothstep(0.082, 0.190, height);
+            float highlightBody =
+              smoothstep(0.078, 0.165, height) *
+              (1.0 - occlusion * 0.58) *
+              paletteStrength;
+            vec3 pearlDirection =
+              normalize(vec3(-0.42, -0.58, 0.70));
+            float pearlFacing =
+              max(dot(normal, pearlDirection), 0.0);
+            float broadPearl =
+              pow(pearlFacing, 2.35) *
+              highlightBody;
+            float glossyRibbon =
+              pow(pearlFacing, 9.5) *
+              highlightBody;
+            vec3 pinDirection =
+              normalize(vec3(-0.66, -0.26, 0.71));
+            float pinHighlight =
+              pow(
+                max(dot(normal, pinDirection), 0.0),
+                34.0
+              ) *
+              highlightBody;
             float contourShadow = saturate(
-              innerContour * 0.30 +
-              occlusion * paletteStrength * 0.08
+              innerContour * 0.38 +
+              occlusion * paletteStrength * 0.10
             );
             color = mix(
               color,
@@ -996,20 +1018,31 @@
               contourShadow
             );
             float illustratedHighlight = saturate(
-              outerContour * 0.62 +
-              edgeRim * 0.24 +
-              paintedSheen * 0.18
+              outerContour * 0.78 +
+              edgeRim * 0.31 +
+              paintedSheen * 0.26
             );
             color = mix(
               color,
               MUTA_PINK_HIGHLIGHT,
               illustratedHighlight
             );
+            color = mix(
+              color,
+              MUTA_PINK_LIGHT,
+              broadPearl * 0.34
+            );
+            color = mix(
+              color,
+              vec3(1.0, 0.815686, 0.894118),
+              glossyRibbon * 0.58
+            );
             color +=
               vec3(1.0, 0.956863, 0.984314) *
-              sharpGloss *
-              paletteStrength *
-              0.16;
+              (
+                sharpGloss * paletteStrength * 0.24 +
+                pinHighlight * 0.38
+              );
             float surfaceAlpha = max(
               smoothstep(0.064, 0.092, height),
               neighboringSurface * 0.08
