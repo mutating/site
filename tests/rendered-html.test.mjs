@@ -74,9 +74,12 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(styles, /\.animated-eye-logo/);
   assert.match(styles, /\.containment__formula/);
   assert.match(styles, /\.contact__tentacles/);
+  assert.match(styles, /\.contact__clip/);
+  assert.match(styles, /clip-path:\s*inset\(0 round 32px\)/);
   assert.match(layout, /The Mutating Company — AI systems that doubt/);
   assert.match(tokamak, /tokamak-state/);
   assert.match(page, /function TentacleContactBackground/);
+  assert.match(page, /className="contact__clip"/);
   assert.match(tentacles, /muta-tentacles-theme/);
   assert.match(tentacles, /PRESS_IMPULSE_MULTIPLIER/);
   assert.match(tentacles, /uSurfaceAspect/);

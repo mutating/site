@@ -1122,14 +1122,16 @@ export default function Home() {
       </section>
 
       <section className="contact section-shell" id="contact">
-        <TentacleContactBackground />
-        <div className="contact__copy">
-          <a className="section-index" href="#contact">CONTACT / NO SMALL TALK REQUIRED</a>
-          <h2>Building serious agent infrastructure?</h2>
-          <p>We should compare doubts.</p>
-          <a className="button button--dark" href="mailto:contact@mutating.tech">
-            Start a conversation <span aria-hidden="true">↗</span>
-          </a>
+        <div className="contact__clip">
+          <TentacleContactBackground />
+          <div className="contact__copy">
+            <a className="section-index" href="#contact">CONTACT / NO SMALL TALK REQUIRED</a>
+            <h2>Building serious agent infrastructure?</h2>
+            <p>We should compare doubts.</p>
+            <a className="button button--dark" href="mailto:contact@mutating.tech">
+              Start a conversation <span aria-hidden="true">↗</span>
+            </a>
+          </div>
         </div>
       </section>
 

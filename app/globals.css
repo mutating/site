@@ -1808,13 +1808,20 @@ a.section-index:focus-visible {
   border-radius: 32px;
   background: var(--bg);
   color: #fff;
+}
+
+.contact__clip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  clip-path: inset(0 round 32px);
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
   display: flex;
   align-items: center;
   isolation: isolate;
   contain: paint;
-  clip-path: inset(0 round 32px);
   transform: translateZ(0);
-  overflow: hidden;
 }
 
 .contact::before {
@@ -1822,6 +1829,7 @@ a.section-index:focus-visible {
   position: absolute;
   inset: 0;
   z-index: 3;
+  border-radius: inherit;
   pointer-events: none;
   background:
     radial-gradient(circle at 100% 100%, transparent 31px, var(--bg) 32px) top left / 32px 32px no-repeat,
