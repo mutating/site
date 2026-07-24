@@ -138,3 +138,23 @@ def test_system_theme_still_works_when_storage_is_unavailable(
     page.emulate_media(color_scheme="dark")
 
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+
+
+@pytest.mark.parametrize(
+    ("theme", "expected_color"),
+    [
+        ("light", "rgb(22, 13, 19)"),
+        ("dark", "rgb(255, 247, 251)"),
+    ],
+)
+def test_contact_copy_uses_theme_text_color(
+    driver: DriverFactory,
+    theme: str,
+    expected_color: str,
+) -> None:
+    """Verify that contact copy is dark in light mode and light in dark mode."""
+
+    page = driver(stored_theme=theme)
+    contact_heading = page.locator("#contact h2")
+
+    expect(contact_heading).to_have_css("color", expected_color)

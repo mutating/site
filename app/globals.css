@@ -1821,7 +1821,7 @@ a.section-index:focus-visible {
   margin-top: 90px;
   border-radius: 32px;
   background: var(--bg);
-  color: #fff;
+  color: var(--ink);
 }
 
 .contact__clip {
@@ -1872,7 +1872,7 @@ a.section-index:focus-visible {
   width: min(100%, 940px);
   padding: clamp(44px, 6vw, 92px);
   pointer-events: none;
-  text-shadow: 0 2px 18px rgba(10, 6, 9, 0.42);
+  text-shadow: 0 2px 18px color-mix(in srgb, var(--bg) 42%, transparent);
 }
 
 .contact__copy .section-index,
@@ -1908,7 +1908,7 @@ a.section-index:focus-visible {
 }
 
 .contact .section-index {
-  color: rgba(255, 255, 255, 0.74);
+  color: color-mix(in srgb, var(--ink) 74%, transparent);
 }
 
 .contact h2 {
