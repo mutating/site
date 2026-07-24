@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 
 type Theme = "light" | "dark";
+const THEME_TOGGLE_BLINK_EVENT = "tmc-theme-toggle-blink";
 
 function CurrentYear() {
   return <>{new Date().getFullYear()}</>;
@@ -333,6 +334,11 @@ function AnimatedEyeLogo() {
       transitionLid(0, reduceMotion ? 120 : 220, "auto");
     };
 
+    const blinkForThemeToggle = () => {
+      if (isHeldClosed || reloadWhenClosed || document.hidden) return;
+      transitionLid(0, reduceMotion ? 120 : 220, "auto");
+    };
+
     const closeWhileHeld = (event: PointerEvent | KeyboardEvent) => {
       if ("button" in event && event.button !== 0) return;
       event.preventDefault();
@@ -458,6 +464,7 @@ function AnimatedEyeLogo() {
     window.addEventListener("pointerup", openAfterRelease, { passive: true });
     window.addEventListener("pointercancel", openAfterRelease, { passive: true });
     window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener(THEME_TOGGLE_BLINK_EVENT, blinkForThemeToggle);
     document.addEventListener("pointerout", handlePointerOut);
     eye.addEventListener("pointerdown", handleEyePointerDown);
     eye.addEventListener("click", handleEyeClick);
@@ -479,6 +486,7 @@ function AnimatedEyeLogo() {
       window.removeEventListener("pointerup", openAfterRelease);
       window.removeEventListener("pointercancel", openAfterRelease);
       window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener(THEME_TOGGLE_BLINK_EVENT, blinkForThemeToggle);
       document.removeEventListener("pointerout", handlePointerOut);
       eye.removeEventListener("pointerdown", handleEyePointerDown);
       eye.removeEventListener("click", handleEyeClick);
@@ -546,6 +554,7 @@ function ThemeToggle() {
     const nextTheme: Theme = currentTheme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = nextTheme;
     window.localStorage.setItem("tmc-theme", nextTheme);
+    window.dispatchEvent(new Event(THEME_TOGGLE_BLINK_EVENT));
   };
 
   return (

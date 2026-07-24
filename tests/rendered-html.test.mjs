@@ -70,6 +70,9 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(page, /function AnimatedEyeLogo/);
   assert.match(page, /window\.location\.reload\(\)/);
   assert.match(page, /window\.setInterval\(blink, 30000\)/);
+  assert.match(page, /const THEME_TOGGLE_BLINK_EVENT = "tmc-theme-toggle-blink"/);
+  assert.match(page, /window\.dispatchEvent\(new Event\(THEME_TOGGLE_BLINK_EVENT\)\)/);
+  assert.match(page, /window\.addEventListener\(THEME_TOGGLE_BLINK_EVENT, blinkForThemeToggle\)/);
   assert.match(page, /src="\/tokamak-reactor\.html\?v=viewport-sync-2"/);
   assert.match(page, /href="https:\/\/en\.wikipedia\.org\/wiki\/Tokamak"/);
   assert.match(styles, /\.animated-eye-logo/);
