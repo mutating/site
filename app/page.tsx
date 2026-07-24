@@ -561,6 +561,7 @@ function ThemeToggle() {
 
     darkMedia.addEventListener("change", syncSystemTheme);
     lightMedia.addEventListener("change", syncSystemTheme);
+    document.documentElement.dataset.themeReady = "true";
 
     return () => {
       darkMedia.removeEventListener("change", syncSystemTheme);
