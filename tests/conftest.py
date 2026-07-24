@@ -127,6 +127,7 @@ def driver(
         system_theme_available: bool = True,
         viewport: tuple[int, int] | None = None,
         load_interactive_visuals: bool = True,
+        animation_frame_interval_ms: float | None = None,
     ) -> Page:
         storage_state = {"cookies": [], "origins": []}
 
@@ -195,6 +196,29 @@ def driver(
         if not load_interactive_visuals:
             context.route("**/muta-tentacles.html*", lambda route: route.abort())
             context.route("**/tokamak-reactor.html*", lambda route: route.abort())
+
+        if animation_frame_interval_ms is not None:
+            frame_interval = float(animation_frame_interval_ms)
+            assert frame_interval > 0
+            context.add_init_script(
+                f"""
+                (() => {{
+                  const frameInterval = {frame_interval!r};
+                  const nativeRequestAnimationFrame =
+                    window.requestAnimationFrame.bind(window);
+                  let virtualTimestamp = null;
+
+                  window.requestAnimationFrame = (callback) =>
+                    nativeRequestAnimationFrame((timestamp) => {{
+                      virtualTimestamp =
+                        virtualTimestamp === null
+                          ? timestamp
+                          : virtualTimestamp + frameInterval;
+                      callback(virtualTimestamp);
+                    }});
+                }})();
+                """
+            )
 
         contexts.append(context)
         page = context.new_page()

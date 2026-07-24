@@ -132,6 +132,8 @@
         const PRESS_IMPULSE_HOLD_SECONDS = 0.10 / 6.75;
         const PRESS_IMPULSE_DECAY_RATE = 26 * 6.75;
         const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+        const MAX_PHYSICS_STEP_SECONDS = 0.033;
+        const MAX_PHYSICS_CATCH_UP_SECONDS = 0.1;
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
         const MAX_CURSOR_GRABBERS = 6;
         const PROJECTION_SCALE = 1.0;
@@ -3053,11 +3055,39 @@
             return;
           }
           skipRedundantAnimationFrame = false;
-          const delta = Math.min(0.033, Math.max(0.001, now - lastTime));
+          const elapsed = Math.min(
+            MAX_PHYSICS_CATCH_UP_SECONDS,
+            Math.max(0.001, now - lastTime),
+          );
           lastTime = now;
-          smoothedTime += delta * (prefersReducedMotion ? 0.22 : 1);
+          const physicsSubsteps = Math.max(
+            1,
+            Math.ceil(elapsed / MAX_PHYSICS_STEP_SECONDS),
+          );
+          const delta = elapsed / physicsSubsteps;
+          canvas.dataset.physicsSubsteps =
+            String(physicsSubsteps);
+          canvas.dataset.physicsElapsedMs =
+            (elapsed * 1000).toFixed(1);
+          const motionDelta =
+            delta * (prefersReducedMotion ? 0.22 : 1);
           const physicsStartedAt = performance.now();
-          updateSkeletons(smoothedTime, delta, now);
+          for (
+            let substep = 0;
+            substep < physicsSubsteps;
+            substep++
+          ) {
+            smoothedTime += motionDelta;
+            const substepWallTime =
+              now -
+              elapsed +
+              delta * (substep + 1);
+            updateSkeletons(
+              smoothedTime,
+              delta,
+              substepWallTime,
+            );
+          }
           lastPhysicsDuration =
             performance.now() - physicsStartedAt;
           const renderStartedAt = performance.now();
