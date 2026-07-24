@@ -139,12 +139,36 @@ def test_primary_layout_does_not_move_after_repeated_theme_switches(
         assert abs(page.evaluate("window.scrollY") - initial_scroll) <= 0.5
 
 
-def test_page_and_tentacle_background_switch_theme_together(
+def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
     driver: DriverFactory,
 ) -> None:
-    """Verify that the page and tentacle surface never show opposing theme colors."""
+    """Reproduce the rapid-toggle defect recorded around the tentacle block.
 
-    page = driver(stored_theme="light", viewport=(1024, 768))
+    The defect appeared when the page background was still interpolating between
+    themes while the real WebGL tentacle iframe had already switched its
+    substrate color. Repeated clicks made the two surfaces show opposing colors
+    for several frames, creating the illusion that the rounded contact block had
+    shifted even though its DOM rectangle was unchanged.
+
+    This regression test keeps the real iframe loaded, scrolls to the affected
+    block, and invokes the actual React-controlled theme button nine times
+    back-to-back—well below the former 260-millisecond transition. Immediately
+    after every click, before a CSS transition could settle, it verifies that the
+    page and contact substrate expose the same computed background color.
+
+    The test also guards the scroll position and every primary section rectangle,
+    because a genuine layout jump must not be hidden by fixing only the color
+    mismatch. Nine switches deliberately leave the page in the opposite theme,
+    allowing the final assertion against the real tentacle iframe to prove that
+    the cross-document theme message was applied too. Reintroducing the removed
+    body background transition makes this test fail on its first color check and
+    therefore recreates the specific recorded defect.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(390, 844),
+    )
     page.evaluate(
         """
         () => scrollTo({
@@ -154,18 +178,81 @@ def test_page_and_tentacle_background_switch_theme_together(
         """
     )
     iframe_root = page.frame_locator(".contact__tentacles").locator("html")
-
-    expect(iframe_root).to_have_attribute("data-theme", "light")
-    _click_theme_toggle(page, "dark")
-    expect(iframe_root).to_have_attribute("data-theme", "dark")
-
-    colors = page.evaluate(
-        """
-        () => ({
-          page: getComputedStyle(document.body).backgroundColor,
-          contact: getComputedStyle(document.querySelector("#contact")).backgroundColor,
-        })
-        """
+    expect(iframe_root).to_have_attribute(
+        "data-theme",
+        "light",
+        timeout=30_000,
     )
 
-    assert colors["page"] == colors["contact"]
+    expect(
+        page.get_by_role(
+            "button",
+            name="Toggle color theme",
+            exact=True,
+        )
+    ).to_be_visible()
+
+    initial_scroll = page.evaluate("window.scrollY")
+    initial_layout = _read_layout(page)
+
+    samples = page.evaluate(
+        """
+        (selectors) => {
+          const toggle = document.querySelector(
+            'button[aria-label="Toggle color theme"]',
+          );
+          const readLayout = () => Object.fromEntries(
+            selectors.map((selector) => {
+              const rect = document.querySelector(selector).getBoundingClientRect();
+              return [
+                selector,
+                {
+                  x: rect.x,
+                  y: rect.y + window.scrollY,
+                  width: rect.width,
+                  height: rect.height,
+                },
+              ];
+            }),
+          );
+          const samples = [];
+
+          for (let clickIndex = 0; clickIndex < 9; clickIndex += 1) {
+            toggle.click();
+            const contact = document.querySelector("#contact");
+            samples.push({
+              changedAt: performance.now(),
+              expectedTheme: document.documentElement.dataset.theme,
+              pageBackground:
+                getComputedStyle(document.body).backgroundColor,
+              contactBackground:
+                getComputedStyle(contact).backgroundColor,
+              scrollY: window.scrollY,
+              layout: readLayout(),
+            });
+          }
+
+          return samples;
+        }
+        """,
+        LAYOUT_SELECTORS,
+    )
+
+    expect(iframe_root).to_have_attribute(
+        "data-theme",
+        "dark",
+        timeout=30_000,
+    )
+
+    intervals = [
+        current["changedAt"] - previous["changedAt"]
+        for previous, current in zip(samples, samples[1:])
+    ]
+    assert all(interval < 260 for interval in intervals), intervals
+
+    for switch_index, sample in enumerate(samples):
+        expected_theme = "dark" if switch_index % 2 == 0 else "light"
+        assert sample["expectedTheme"] == expected_theme
+        assert sample["pageBackground"] == sample["contactBackground"]
+        assert abs(sample["scrollY"] - initial_scroll) <= 0.5
+        _assert_layout_matches(initial_layout, sample["layout"])
