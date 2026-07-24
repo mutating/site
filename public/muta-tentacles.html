@@ -887,7 +887,7 @@
             occlusion = saturate(occlusion * 3.20);
             float valley = saturate((1.0 - normal.z) * 0.46 + occlusion);
             float scatterMix =
-              0.24 + valley * 0.11 + sssLightEnergy * 0.10;
+              0.14 + valley * 0.08 + sssLightEnergy * 0.06;
             vec3 color = mix(sharp, scatter, scatterMix);
             color *= 1.0 - occlusion * 0.18;
 
@@ -962,9 +962,57 @@
               sharpGloss *
               paletteStrength *
               0.08;
+            float outerContour =
+              smoothstep(0.063, 0.073, height) *
+              (1.0 - smoothstep(0.092, 0.112, height)) *
+              paletteStrength;
+            float innerContour =
+              smoothstep(0.092, 0.112, height) *
+              (1.0 - smoothstep(0.135, 0.165, height)) *
+              paletteStrength;
+            float edgeRim =
+              pow(1.0 - saturate(normal.z), 1.55) *
+              smoothstep(0.067, 0.155, height) *
+              (1.0 - occlusion * 0.35);
+            float paintedSheen =
+              pow(
+                max(
+                  dot(
+                    normal,
+                    normalize(vec3(-0.31, -0.56, 0.82))
+                  ),
+                  0.0
+                ),
+                7.0
+              ) *
+              smoothstep(0.082, 0.190, height);
+            float contourShadow = saturate(
+              innerContour * 0.30 +
+              occlusion * paletteStrength * 0.08
+            );
+            color = mix(
+              color,
+              MUTA_PINK_DEEP,
+              contourShadow
+            );
+            float illustratedHighlight = saturate(
+              outerContour * 0.62 +
+              edgeRim * 0.24 +
+              paintedSheen * 0.18
+            );
+            color = mix(
+              color,
+              MUTA_PINK_HIGHLIGHT,
+              illustratedHighlight
+            );
+            color +=
+              vec3(1.0, 0.956863, 0.984314) *
+              sharpGloss *
+              paletteStrength *
+              0.16;
             float surfaceAlpha = max(
-              smoothstep(0.066, 0.105, height),
-              neighboringSurface * 0.16
+              smoothstep(0.064, 0.092, height),
+              neighboringSurface * 0.08
             );
             surfaceAlpha = saturate(surfaceAlpha);
             outColor =
