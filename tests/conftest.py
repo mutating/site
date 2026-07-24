@@ -125,6 +125,8 @@ def driver(
         stored_theme: str | None = None,
         storage_available: bool = True,
         system_theme_available: bool = True,
+        viewport: tuple[int, int] | None = None,
+        load_interactive_visuals: bool = True,
     ) -> Page:
         storage_state = {"cookies": [], "origins": []}
 
@@ -141,6 +143,11 @@ def driver(
         context = browser.new_context(
             color_scheme=color_scheme,
             storage_state=storage_state,
+            viewport=(
+                {"width": viewport[0], "height": viewport[1]}
+                if viewport is not None
+                else None
+            ),
         )
 
         if not storage_available:
@@ -184,6 +191,10 @@ def driver(
                 })();
                 """
             )
+
+        if not load_interactive_visuals:
+            context.route("**/muta-tentacles.html*", lambda route: route.abort())
+            context.route("**/tokamak-reactor.html*", lambda route: route.abort())
 
         contexts.append(context)
         page = context.new_page()

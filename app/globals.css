@@ -85,7 +85,6 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-geist-sans), Arial, sans-serif;
-  transition: background-color 260ms ease, color 260ms ease;
   overflow-x: clip;
 }
 
