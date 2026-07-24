@@ -72,6 +72,9 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(page, /window\.setInterval\(blink, 30000\)/);
   assert.match(page, /src="\/tokamak-reactor\.html\?v=viewport-sync-2"/);
   assert.match(styles, /\.animated-eye-logo/);
+  assert.match(styles, /--eye-visible-grayscale:\s*var\(--eye-grayscale\)/);
+  assert.match(styles, /\.animated-eye-logo:hover/);
+  assert.match(styles, /transition:\s*filter 420ms/);
   assert.match(styles, /\.containment__formula/);
   assert.match(styles, /\.contact__tentacles/);
   assert.match(styles, /\.contact__clip/);

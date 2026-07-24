@@ -171,6 +171,7 @@ img {
 
 .animated-eye-logo {
   --eye-grayscale: 0;
+  --eye-visible-grayscale: var(--eye-grayscale);
   position: relative;
   width: 100%;
   aspect-ratio: 2048 / 1901;
@@ -179,11 +180,17 @@ img {
   cursor: pointer;
   filter:
     drop-shadow(0 3px 5px rgba(65, 31, 0, 0.2))
-    grayscale(var(--eye-grayscale));
+    grayscale(var(--eye-visible-grayscale));
+  transition: filter 420ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: filter;
 }
 
+.animated-eye-logo:hover {
+  --eye-visible-grayscale: 0;
+}
+
 .animated-eye-logo:focus-visible {
+  --eye-visible-grayscale: 0;
   outline: 2px solid var(--hot);
   outline-offset: 3px;
   border-radius: 50%;
