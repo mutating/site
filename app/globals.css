@@ -1870,6 +1870,15 @@ a.section-index:focus-visible {
   background: #0b0709;
   color: #fff;
   text-shadow: none;
+  isolation: isolate;
+  contain: paint;
+  backface-visibility: hidden;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+
+.contact .button--dark:hover {
+  transform: translate3d(0, -3px, 0) rotate(-0.6deg);
 }
 
 @media (prefers-color-scheme: dark) {

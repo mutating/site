@@ -76,6 +76,8 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(styles, /\.contact__tentacles/);
   assert.match(styles, /\.contact__clip/);
   assert.match(styles, /:root\[data-theme="dark"\] \.contact \.button--dark/);
+  assert.match(styles, /\.contact \.button--dark:hover/);
+  assert.match(styles, /transform:\s*translate3d\(0, -3px, 0\) rotate\(-0\.6deg\)/);
   assert.match(styles, /clip-path:\s*inset\(0 round 32px\)/);
   assert.match(layout, /The Mutating Company — AI systems that doubt/);
   assert.match(tokamak, /tokamak-state/);
