@@ -13,7 +13,7 @@
       :root {
         color-scheme: light;
         --site-background: #fffafb;
-        background: var(--site-background);
+        background: transparent;
       }
 
       :root[data-theme="dark"] {
@@ -32,7 +32,7 @@
         margin: 0;
         border-radius: 32px;
         overflow: hidden;
-        background: var(--site-background);
+        background: transparent;
       }
 
       body,
@@ -50,7 +50,7 @@
         inset: 0;
         border-radius: 32px;
         overflow: hidden;
-        background: var(--site-background);
+        background: transparent;
         isolation: isolate;
         touch-action: none;
         -webkit-tap-highlight-color: transparent;
@@ -100,13 +100,13 @@
 
         const canvas = document.querySelector("#muta");
         const gl = canvas.getContext("webgl2", {
-          alpha: false,
+          alpha: true,
           antialias: false,
           depth: false,
           desynchronized: true,
           powerPreference: "high-performance",
           preserveDrawingBuffer: false,
-          premultipliedAlpha: false,
+          premultipliedAlpha: true,
         });
 
         if (!gl) {
@@ -134,7 +134,7 @@
         const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
         const MAX_CURSOR_GRABBERS = 6;
-        const PROJECTION_SCALE = 0.905;
+        const PROJECTION_SCALE = 1.0;
         const HEIGHT_PERSPECTIVE = 0;
         const HEIGHT_OFFSET_X = 0;
         const HEIGHT_OFFSET_Y = 0;
@@ -706,7 +706,7 @@
               min(max(cornerPosition.x, cornerPosition.y), 0.0) -
               uCornerRadius;
             if (cornerDistance > 0.0) {
-              outColor = vec4(uSubstrate, 1.0);
+              outColor = vec4(0.0);
               return;
             }
 

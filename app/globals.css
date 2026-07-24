@@ -1829,7 +1829,6 @@ a.section-index:focus-visible {
   position: absolute;
   inset: 0;
   z-index: 3;
-  border-radius: inherit;
   pointer-events: none;
   background:
     radial-gradient(circle at 100% 100%, transparent 31px, var(--bg) 32px) top left / 32px 32px no-repeat,
@@ -1850,7 +1849,7 @@ a.section-index:focus-visible {
   -webkit-mask-image: -webkit-radial-gradient(white, black);
   transform: translateZ(0);
   display: block;
-  background: var(--bg);
+  background: transparent;
 }
 
 .contact__copy {
