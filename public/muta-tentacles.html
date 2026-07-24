@@ -682,6 +682,7 @@
           uniform float uSurfaceAspect;
           uniform vec2 uViewport;
           uniform float uCornerRadius;
+          uniform float uUseTransparentSubstrate;
 
           in vec2 vUv;
           out vec4 outColor;
@@ -714,7 +715,58 @@
             float height = geometry.a;
 
             if (height < 0.0015) {
-              outColor = vec4(0.0);
+              if (uUseTransparentSubstrate > 0.5) {
+                outColor = vec4(0.0);
+                return;
+              }
+
+              float groundShadow = 0.0;
+              groundShadow +=
+                step(
+                  0.002,
+                  texture(uGeometry, vUv - vec2(5.0, 7.0) * uTexel).a
+                ) *
+                0.32;
+              groundShadow +=
+                step(
+                  0.002,
+                  texture(uGeometry, vUv - vec2(10.0, 13.0) * uTexel).a
+                ) *
+                0.18;
+              groundShadow +=
+                step(
+                  0.002,
+                  texture(uGeometry, vUv - vec2(16.0, 20.0) * uTexel).a
+                ) *
+                0.08;
+              float pointerAura =
+                uPointerInside *
+                exp(
+                  -length(
+                    vec2(
+                      (vUv.x - uPointer.x) * uSurfaceAspect,
+                      vUv.y - uPointer.y
+                    )
+                  ) *
+                  54.0
+                ) *
+                (0.010 + 0.003 * sin(uTime * 4.0));
+              vec3 shadowColor = mix(
+                uSubstrate,
+                vec3(0.025, 0.010, 0.018),
+                0.76
+              );
+              vec3 paper = mix(
+                uSubstrate,
+                shadowColor,
+                saturate(groundShadow * 0.78)
+              );
+              paper = mix(
+                paper,
+                TENTACLE_ROSE,
+                pointerAura * 0.34
+              );
+              outColor = vec4(paper, 1.0);
               return;
             }
 
@@ -851,7 +903,10 @@
               neighboringSurface * 0.16
             );
             surfaceAlpha = saturate(surfaceAlpha);
-            outColor = vec4(color * surfaceAlpha, surfaceAlpha);
+            outColor =
+              uUseTransparentSubstrate > 0.5
+                ? vec4(color * surfaceAlpha, surfaceAlpha)
+                : vec4(color, 1.0);
           }
         `;
 
@@ -924,6 +979,10 @@
           substrate: uniform(compositeProgram, "uSubstrate"),
           viewport: uniform(compositeProgram, "uViewport"),
           cornerRadius: uniform(compositeProgram, "uCornerRadius"),
+          useTransparentSubstrate: uniform(
+            compositeProgram,
+            "uUseTransparentSubstrate",
+          ),
         };
 
         gl.useProgram(surfaceProgram);
@@ -2787,6 +2846,10 @@
                 pixelWidth / Math.max(1, canvasRect.width),
                 pixelHeight / Math.max(1, canvasRect.height),
               ),
+          );
+          gl.uniform1f(
+            compositeUniforms.useTransparentSubstrate,
+            activeTheme === "light" ? 1 : 0,
           );
           gl.drawArrays(gl.TRIANGLES, 0, 3);
         }

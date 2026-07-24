@@ -83,12 +83,13 @@ test("keeps every site-critical asset in the local project", async () => {
   assert.match(tokamak, /tokamak-state/);
   assert.match(page, /function TentacleContactBackground/);
   assert.match(page, /className="contact__clip"/);
-  assert.match(page, /muta-tentacles\.html\?v=contact-surface-6/);
+  assert.match(page, /muta-tentacles\.html\?v=contact-surface-7/);
   assert.match(tentacles, /muta-tentacles-theme/);
   assert.match(tentacles, /alpha:\s*true/);
   assert.match(tentacles, /premultipliedAlpha:\s*true/);
   assert.match(tentacles, /outColor = vec4\(0\.0\)/);
-  assert.match(tentacles, /outColor = vec4\(color \* surfaceAlpha, surfaceAlpha\)/);
+  assert.match(tentacles, /vec4\(color \* surfaceAlpha, surfaceAlpha\)/);
+  assert.match(tentacles, /activeTheme === "light" \? 1 : 0/);
   assert.match(tentacles, /const PROJECTION_SCALE = 1\.0;/);
   assert.match(tentacles, /PRESS_IMPULSE_MULTIPLIER/);
   assert.match(tentacles, /uSurfaceAspect/);
