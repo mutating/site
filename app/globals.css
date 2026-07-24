@@ -103,6 +103,13 @@ a {
   text-decoration: none;
 }
 
+.inline-text-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.14em;
+}
+
 button,
 summary {
   font: inherit;

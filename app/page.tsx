@@ -994,7 +994,16 @@ export default function Home() {
             Agents are innately nondeterministic. That is part of their power—and exactly why they need a field around them.
           </p>
           <p>
-            Deterministic verification stabilizes that energy like magnetic confinement in a tokamak: containing it, shaping it, and turning raw force into useful work without pretending the plasma has become predictable.
+            Deterministic verification stabilizes that energy like magnetic confinement in a{" "}
+            <a
+              className="inline-text-link"
+              href="https://en.wikipedia.org/wiki/Tokamak"
+              target="_blank"
+              rel="noreferrer"
+            >
+              tokamak
+            </a>
+            : containing it, shaping it, and turning raw force into useful work without pretending the plasma has become predictable.
           </p>
           <div className="containment__formula containment__formula--desktop">
             <span>agent variance</span>
