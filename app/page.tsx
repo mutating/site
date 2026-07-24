@@ -538,15 +538,34 @@ const pillars = [
 
 function ThemeToggle() {
   useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const darkMedia = window.matchMedia("(prefers-color-scheme: dark)");
+    const lightMedia = window.matchMedia("(prefers-color-scheme: light)");
 
-    const syncSystemTheme = (event: MediaQueryListEvent) => {
-      if (window.localStorage.getItem("tmc-theme")) return;
-      document.documentElement.dataset.theme = event.matches ? "dark" : "light";
+    const syncSystemTheme = () => {
+      let storedTheme: string | null = null;
+
+      try {
+        storedTheme = window.localStorage.getItem("tmc-theme");
+      } catch {
+        // Keep following the system theme when browser storage is unavailable.
+      }
+
+      if (storedTheme === "dark" || storedTheme === "light") return;
+
+      document.documentElement.dataset.theme = darkMedia.matches
+        ? "dark"
+        : lightMedia.matches
+          ? "light"
+          : "dark";
     };
 
-    media.addEventListener("change", syncSystemTheme);
-    return () => media.removeEventListener("change", syncSystemTheme);
+    darkMedia.addEventListener("change", syncSystemTheme);
+    lightMedia.addEventListener("change", syncSystemTheme);
+
+    return () => {
+      darkMedia.removeEventListener("change", syncSystemTheme);
+      lightMedia.removeEventListener("change", syncSystemTheme);
+    };
   }, []);
 
   const toggleTheme = () => {

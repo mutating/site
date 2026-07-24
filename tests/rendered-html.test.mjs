@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 const projectRoot = new URL("../", import.meta.url);
 
@@ -120,4 +121,44 @@ test("keeps every site-critical asset in the local project", async () => {
 
   const localSource = `${page}\n${styles}\n${layout}\n${tokamak}\n${tentacles}`;
   assert.doesNotMatch(localSource, /\/Users\/|\/var\/folders\//);
+});
+
+test("chooses and persists the requested theme precedence", async () => {
+  const layout = await readFile(new URL("app/layout.tsx", projectRoot), "utf8");
+  const scriptMatch = layout.match(/const themeBootstrap = `([\s\S]*?)`;/);
+  assert.ok(scriptMatch, "theme bootstrap script must exist");
+
+  const resolveTheme = ({
+    stored = null,
+    dark = false,
+    light = false,
+    storageThrows = false,
+  } = {}) => {
+    const document = { documentElement: { dataset: {} } };
+    const localStorage = {
+      getItem() {
+        if (storageThrows) throw new Error("Storage unavailable");
+        return stored;
+      },
+    };
+    const matchMedia = (query) => ({
+      matches: query.includes(": dark") ? dark : light,
+    });
+
+    runInNewContext(scriptMatch[1], {
+      document,
+      localStorage,
+      matchMedia,
+    });
+
+    return document.documentElement.dataset.theme;
+  };
+
+  assert.equal(resolveTheme({ dark: true }), "dark");
+  assert.equal(resolveTheme({ light: true }), "light");
+  assert.equal(resolveTheme(), "dark");
+  assert.equal(resolveTheme({ stored: "dark", light: true }), "dark");
+  assert.equal(resolveTheme({ stored: "light", dark: true }), "light");
+  assert.equal(resolveTheme({ stored: "invalid", dark: true }), "dark");
+  assert.equal(resolveTheme({ storageThrows: true, light: true }), "light");
 });

@@ -55,11 +55,24 @@ export async function generateMetadata(): Promise<Metadata> {
 
 const themeBootstrap = `
   (function () {
+    var theme = 'dark';
+
+    if (typeof matchMedia === 'function') {
+      if (matchMedia('(prefers-color-scheme: dark)').matches) {
+        theme = 'dark';
+      } else if (matchMedia('(prefers-color-scheme: light)').matches) {
+        theme = 'light';
+      }
+    }
+
     try {
       var stored = localStorage.getItem('tmc-theme');
-      var theme = stored || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-      document.documentElement.dataset.theme = theme;
+      if (stored === 'dark' || stored === 'light') {
+        theme = stored;
+      }
     } catch (_) {}
+
+    document.documentElement.dataset.theme = theme;
   })();
 `;
 
