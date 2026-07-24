@@ -139,6 +139,50 @@ def test_primary_layout_does_not_move_after_repeated_theme_switches(
         assert abs(page.evaluate("window.scrollY") - initial_scroll) <= 0.5
 
 
+def test_footer_row_is_vertically_centered_below_its_divider(
+    driver: DriverFactory,
+) -> None:
+    """Keep the desktop footer labels centered in the space below the rule.
+
+    The footer previously used 26 pixels of padding above its single row and
+    50 pixels below it. Although all three label groups shared a baseline, the
+    whole row therefore sat 12 pixels above the vertical center of the area
+    beneath the divider. This test measures the rendered row and the usable
+    footer box and guards their centers with subpixel tolerance.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1440, 900),
+        load_interactive_visuals=False,
+    )
+    geometry = page.locator(".site-footer").evaluate(
+        """
+        (footer) => {
+          const footerRect = footer.getBoundingClientRect();
+          const borderTop = parseFloat(
+            getComputedStyle(footer).borderTopWidth,
+          );
+          const itemRects = Array.from(footer.children, (item) =>
+            item.getBoundingClientRect(),
+          );
+          const rowTop = Math.min(...itemRects.map((rect) => rect.top));
+          const rowBottom = Math.max(...itemRects.map((rect) => rect.bottom));
+
+          return {
+            availableCenter:
+              (footerRect.top + borderTop + footerRect.bottom) / 2,
+            rowCenter: (rowTop + rowBottom) / 2,
+          };
+        }
+        """
+    )
+
+    assert abs(
+        geometry["availableCenter"] - geometry["rowCenter"]
+    ) <= 0.5
+
+
 def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
     driver: DriverFactory,
 ) -> None:

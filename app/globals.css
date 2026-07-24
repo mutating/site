@@ -1928,7 +1928,7 @@ a.section-index:focus-visible {
 
 .site-footer {
   margin-top: 140px;
-  padding-block: 26px 50px;
+  padding-block: 38px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: clamp(28px, 4vw, 72px);
