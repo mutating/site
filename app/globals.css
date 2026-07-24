@@ -1866,6 +1866,24 @@ a.section-index:focus-visible {
   pointer-events: auto;
 }
 
+.contact .button--dark {
+  background: #0b0709;
+  color: #fff;
+  text-shadow: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .contact .button--dark {
+    background: #fff;
+    color: #0b0709;
+  }
+}
+
+:root[data-theme="dark"] .contact .button--dark {
+  background: #fff;
+  color: #0b0709;
+}
+
 .contact .section-index {
   color: rgba(255, 255, 255, 0.74);
 }
