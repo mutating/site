@@ -126,6 +126,8 @@
         const requestedRenderSupersample = Number(
           runtimeSearch.get("render-supersample"),
         );
+        const useManualAnimationFrame =
+          runtimeSearch.get("manual-animation-frame") === "1";
         const CHAIN_LINKS = 50;
         const RENDER_POINTS = 14;
         const MAX_SKELETONS =
@@ -146,6 +148,8 @@
         const PRESS_IMPULSE_HOLD_SECONDS = 0.10 / 6.75;
         const PRESS_IMPULSE_DECAY_RATE = 26 * 6.75;
         const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+        canvas.dataset.pressImpulseTotalMs =
+          (PRESS_IMPULSE_TOTAL_SECONDS * 1000).toFixed(1);
         const MAX_PHYSICS_STEP_SECONDS = 0.033;
         const MAX_PHYSICS_CATCH_UP_SECONDS = 0.1;
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
@@ -2095,6 +2099,7 @@
             }
             pointer.impulseStartedAt = performance.now() * 0.001;
             pointer.impulsePending = true;
+            canvas.dataset.animationImpulseSubstepsSincePress = "0";
             pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
@@ -3088,7 +3093,7 @@
             now - lastTime < 0.008
           ) {
             skipRedundantAnimationFrame = false;
-            requestAnimationFrame(frame);
+            scheduleFrame();
             return;
           }
           skipRedundantAnimationFrame = false;
@@ -3115,15 +3120,19 @@
             substep++
           ) {
             smoothedTime += motionDelta;
-            const substepWallTime =
-              now -
-              elapsed +
-              delta * (substep + 1);
             updateSkeletons(
               smoothedTime,
               delta,
-              substepWallTime,
+              now,
             );
+            if (canvas.dataset.pointerInteractionPhase === "impulse") {
+              const submittedImpulseSubsteps = Number.parseInt(
+                canvas.dataset.animationImpulseSubstepsSincePress || "0",
+                10,
+              );
+              canvas.dataset.animationImpulseSubstepsSincePress =
+                String(submittedImpulseSubsteps + 1);
+            }
           }
           lastPhysicsDuration =
             performance.now() - physicsStartedAt;
@@ -3181,12 +3190,29 @@
             diagnosticStart = now;
             diagnosticFrames = 0;
           }
-          requestAnimationFrame(frame);
+          scheduleFrame();
+        }
+
+        function scheduleFrame() {
+          if (!useManualAnimationFrame) {
+            requestAnimationFrame(frame);
+          }
         }
 
         updateSkeletons(smoothedTime, 1 / 60, smoothedTime);
         resize();
-        requestAnimationFrame(frame);
+        if (useManualAnimationFrame) {
+          window.__mutaTentaclesDebugFrameAfter = (
+            elapsedMilliseconds,
+          ) => {
+            frame(
+              (lastTime + elapsedMilliseconds * 0.001) *
+                1000,
+            );
+          };
+        } else {
+          scheduleFrame();
+        }
       })();
     </script>
   </body>

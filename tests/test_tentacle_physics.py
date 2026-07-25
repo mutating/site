@@ -58,6 +58,96 @@ def test_slow_rendered_frames_are_split_into_short_physics_steps(
         ("right", "-1", "1.000"),
     ],
 )
+def test_expired_click_impulse_is_not_replayed_during_slow_frame_catch_up(
+    driver: DriverFactory,
+    base_url: str,
+    button: str,
+    direction: str,
+    held_multiplier: str,
+) -> None:
+    """Keep the original click impulse limited to its 41.5 ms wall-clock window.
+
+    The source ``muta-tentacles.html`` gives a press one immediate strong
+    attraction/repulsion impulse and lets its envelope expire after
+    ``0.28 / 6.75`` seconds (about 41.5 ms). The adapted rectangular surface
+    also splits a delayed rendered frame into short physics substeps. A prior
+    implementation evaluated those substeps at synthetic timestamps in the
+    past, replaying an already expired high-force impulse during catch-up and
+    making a click feel much longer than in the source file.
+
+    This regression test advances one animation frame by exactly 100 ms, then
+    verifies two independent contracts for both left- and right-button presses:
+    the configured envelope still equals the source's 41.5 ms, and no animated
+    catch-up substep re-enters the impulse phase after that real-time window.
+    The immediate input frame is intentionally excluded because it is the one
+    strong impulse the original interaction is supposed to submit.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(240, 180),
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+
+    expect(canvas).to_be_visible(timeout=30_000)
+    expect(canvas).to_have_attribute(
+        "data-press-impulse-total-ms",
+        "41.5",
+    )
+
+    page.mouse.move(120, 90)
+    page.mouse.down(button=button)
+
+    expect(canvas).to_have_attribute(
+        "data-immediate-impulse-frame",
+        "enabled",
+        timeout=1_000,
+    )
+    page.evaluate(
+        """
+        () => {
+          const canvas = document.querySelector("#muta");
+          canvas.dataset.animationImpulseSubstepsSincePress = "0";
+          window.__mutaTentaclesDebugFrameAfter(100);
+        }
+        """
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-phase",
+        "held",
+        timeout=1_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-animation-impulse-substeps-since-press",
+        "0",
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-force-multiplier",
+        held_multiplier,
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-direction",
+        direction,
+    )
+
+    page.mouse.up(button=button)
+
+
+@pytest.mark.parametrize(
+    ("button", "direction", "held_multiplier"),
+    [
+        ("left", "1", "2.000"),
+        ("right", "-1", "1.000"),
+    ],
+)
 def test_mouse_impulse_transitions_to_the_correct_held_force(
     driver: DriverFactory,
     base_url: str,
