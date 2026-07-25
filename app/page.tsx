@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 type Theme = "light" | "dark";
 const THEME_TOGGLE_BLINK_EVENT = "tmc-theme-toggle-blink";
@@ -90,11 +90,10 @@ function Ticker() {
 }
 
 function InitialAnchorScroll() {
-  useEffect(() => {
-    if (!window.location.hash) return;
-
+  useLayoutEffect(() => {
     let cancelled = false;
-    let frameRequest = 0;
+    let firstFrameRequest = 0;
+    let secondFrameRequest = 0;
 
     const scrollToCurrentHash = () => {
       if (cancelled || !window.location.hash) return;
@@ -114,23 +113,62 @@ function InitialAnchorScroll() {
       const root = document.documentElement;
       const previousScrollBehavior = root.style.scrollBehavior;
       root.style.scrollBehavior = "auto";
-      target.scrollIntoView({ block: "start" });
+      if (target.id === "top") {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      } else {
+        target.scrollIntoView({ block: "start" });
+      }
       root.style.scrollBehavior = previousScrollBehavior;
     };
 
-    frameRequest = window.requestAnimationFrame(() => {
-      frameRequest = window.requestAnimationFrame(scrollToCurrentHash);
-    });
+    const alignCurrentHash = () => {
+      if (cancelled) return;
 
-    window.addEventListener("load", scrollToCurrentHash);
-    window.addEventListener("hashchange", scrollToCurrentHash);
-    document.fonts?.ready.then(scrollToCurrentHash);
+      scrollToCurrentHash();
+      if (firstFrameRequest) {
+        window.cancelAnimationFrame(firstFrameRequest);
+      }
+      if (secondFrameRequest) {
+        window.cancelAnimationFrame(secondFrameRequest);
+      }
+
+      firstFrameRequest = window.requestAnimationFrame(() => {
+        scrollToCurrentHash();
+        secondFrameRequest =
+          window.requestAnimationFrame(scrollToCurrentHash);
+      });
+    };
+
+    const pendingImages = Array.from(document.images).filter(
+      (image) => !image.complete,
+    );
+
+    for (const image of pendingImages) {
+      image.addEventListener("load", alignCurrentHash, { once: true });
+      image.addEventListener("error", alignCurrentHash, { once: true });
+    }
+
+    alignCurrentHash();
+    window.addEventListener("load", alignCurrentHash);
+    window.addEventListener("pageshow", alignCurrentHash);
+    window.addEventListener("hashchange", alignCurrentHash);
+    document.fonts?.ready.then(alignCurrentHash);
 
     return () => {
       cancelled = true;
-      if (frameRequest) window.cancelAnimationFrame(frameRequest);
-      window.removeEventListener("load", scrollToCurrentHash);
-      window.removeEventListener("hashchange", scrollToCurrentHash);
+      if (firstFrameRequest) {
+        window.cancelAnimationFrame(firstFrameRequest);
+      }
+      if (secondFrameRequest) {
+        window.cancelAnimationFrame(secondFrameRequest);
+      }
+      for (const image of pendingImages) {
+        image.removeEventListener("load", alignCurrentHash);
+        image.removeEventListener("error", alignCurrentHash);
+      }
+      window.removeEventListener("load", alignCurrentHash);
+      window.removeEventListener("pageshow", alignCurrentHash);
+      window.removeEventListener("hashchange", alignCurrentHash);
     };
   }, []);
 

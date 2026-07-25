@@ -526,7 +526,8 @@ a.section-index:focus-visible {
   margin-inline: auto;
 }
 
-.section-shell[id] {
+.section-shell[id],
+.dispatch-card[id] {
   scroll-margin-top: 112px;
 }
 

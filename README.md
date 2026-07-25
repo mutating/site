@@ -101,6 +101,8 @@ npm run lint
 - `public/tokamak-reactor.html` — self-contained interactive tokamak model.
 - `public/og.png` — social sharing image.
 - `tests/conftest.py` — local server, Chromium, and shared `driver` fixtures.
+- `tests/test_anchor_navigation.py` — fragment targets, clicks, reloads, browser
+  history, and anchor-label interaction states.
 - `tests/test_theme.py` — system, fallback, and persisted theme behavior.
 - `tests/test_site_smoke.py` — rendered-page and local-asset smoke checks.
 - `requirements_dev.txt` — Python dependencies needed by the test suite.

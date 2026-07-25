@@ -76,6 +76,54 @@ const themeBootstrap = `
   })();
 `;
 
+const anchorBootstrap = `
+  (function () {
+    if (!window.location.hash) return;
+
+    function findHashTarget() {
+      var encodedId = window.location.hash.slice(1);
+      var id = encodedId;
+
+      try {
+        id = decodeURIComponent(encodedId);
+      } catch (_) {}
+
+      return document.getElementById(id);
+    }
+
+    function scrollToHash() {
+      var target = findHashTarget();
+      if (!target) return;
+
+      var root = document.documentElement;
+      var previousScrollBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
+      if (target.id === 'top') {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      } else {
+        target.scrollIntoView({ block: 'start' });
+      }
+      root.style.scrollBehavior = previousScrollBehavior;
+    }
+
+    function alignHashTarget() {
+      scrollToHash();
+      window.requestAnimationFrame(scrollToHash);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', alignHashTarget, {
+        once: true,
+      });
+    } else {
+      alignHashTarget();
+    }
+
+    window.addEventListener('load', alignHashTarget, { once: true });
+    window.addEventListener('pageshow', alignHashTarget);
+  })();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -86,6 +134,7 @@ export default function RootLayout({
       <head>
         <meta name="theme-color" content="#ff3e9d" />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <script dangerouslySetInnerHTML={{ __html: anchorBootstrap }} />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
