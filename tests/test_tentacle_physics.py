@@ -11,17 +11,21 @@ from playwright.sync_api import Page, expect
 DriverFactory = Callable[..., Page]
 
 
-def test_slow_rendered_frames_are_split_into_short_physics_steps(
+def test_slow_rendered_frame_matches_the_original_single_step_clock(
     driver: DriverFactory,
 ) -> None:
-    """Keep a click impulse's real-world duration stable when rendering slows.
+    """Preserve the source HTML's single capped physics step on slow frames.
 
     The contact surface can fall below 30 frames per second at wide resolutions.
-    Previously, a 100 ms rendered frame was truncated to 33 ms of simulated time,
-    so only one third of the expected recovery happened and the click impulse
-    appeared to linger. This test supplies 100 ms animation-frame timestamps and
-    verifies that the real iframe consumes the full interval as four physics
-    substeps, each no longer than the original 33 ms stability limit.
+    The original ``muta-tentacles.html`` intentionally advances physics only
+    once per rendered frame and caps that step at 33 ms. The adapted surface
+    previously split a 100 ms frame into four updates. That repeatedly applied
+    the post-impulse held force before the next image appeared and made the
+    initial click response look substantially longer than in the source file.
+
+    This test supplies 100 ms animation-frame timestamps and verifies that the
+    embedded production surface performs exactly one 33 ms physics update,
+    fixing both the number of force applications and their simulated duration.
     """
 
     page = driver(
@@ -41,14 +45,14 @@ def test_slow_rendered_frames_are_split_into_short_physics_steps(
 
     expect(canvas).to_have_attribute(
         "data-physics-substeps",
-        "4",
+        "1",
         timeout=30_000,
     )
     elapsed_milliseconds = float(
         canvas.get_attribute("data-physics-elapsed-ms") or "0"
     )
 
-    assert 99.9 <= elapsed_milliseconds <= 100.0
+    assert elapsed_milliseconds == 33.0
 
 
 @pytest.mark.parametrize(
@@ -58,7 +62,7 @@ def test_slow_rendered_frames_are_split_into_short_physics_steps(
         ("right", "-1", "1.000"),
     ],
 )
-def test_expired_click_impulse_is_not_replayed_during_slow_frame_catch_up(
+def test_expired_click_impulse_is_not_replayed_on_a_later_frame(
     driver: DriverFactory,
     base_url: str,
     button: str,
@@ -70,15 +74,15 @@ def test_expired_click_impulse_is_not_replayed_during_slow_frame_catch_up(
     The source ``muta-tentacles.html`` gives a press one immediate strong
     attraction/repulsion impulse and lets its envelope expire after
     ``0.28 / 6.75`` seconds (about 41.5 ms). The adapted rectangular surface
-    also splits a delayed rendered frame into short physics substeps. A prior
-    implementation evaluated those substeps at synthetic timestamps in the
-    past, replaying an already expired high-force impulse during catch-up and
-    making a click feel much longer than in the source file.
+    used to split a delayed rendered frame into several physics updates. That
+    could apply an expired high-force phase or the following held force multiple
+    times before the next image appeared, making the first click response look
+    much longer than in the source file.
 
     This regression test advances one animation frame by exactly 100 ms, then
     verifies two independent contracts for both left- and right-button presses:
     the configured envelope still equals the source's 41.5 ms, and no animated
-    catch-up substep re-enters the impulse phase after that real-time window.
+    later rendered frame re-enters the impulse phase after that real-time window.
     The immediate input frame is intentionally excluded because it is the one
     strong impulse the original interaction is supposed to submit.
     """
@@ -115,7 +119,7 @@ def test_expired_click_impulse_is_not_replayed_during_slow_frame_catch_up(
         """
         () => {
           const canvas = document.querySelector("#muta");
-          canvas.dataset.animationImpulseSubstepsSincePress = "0";
+          canvas.dataset.animationImpulseFramesSincePress = "0";
           window.__mutaTentaclesDebugFrameAfter(100);
         }
         """
@@ -126,7 +130,7 @@ def test_expired_click_impulse_is_not_replayed_during_slow_frame_catch_up(
         timeout=1_000,
     )
     expect(canvas).to_have_attribute(
-        "data-animation-impulse-substeps-since-press",
+        "data-animation-impulse-frames-since-press",
         "0",
     )
     expect(canvas).to_have_attribute(
