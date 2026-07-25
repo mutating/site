@@ -143,6 +143,7 @@
         const CURSOR_ATTRACTION_MULTIPLIER = 1 / 6 / 1.1;
         const LEFT_HELD_FORCE_MULTIPLIER = 2;
         const RIGHT_HELD_FORCE_MULTIPLIER = 1;
+        const RIGHT_PRESS_FORCE_MULTIPLIER = 2;
         const PRESS_IMPULSE_MULTIPLIER = 20 / 1.5;
         const PRESS_IMPULSE_RADIUS_MULTIPLIER = 1.5;
         const PRESS_IMPULSE_HOLD_SECONDS = 0.10 / 6.75;
@@ -2043,6 +2044,10 @@
           const heldMultiplier = heldPointerMultiplier(
             pointer.pressDirection,
           );
+          const pressForceMultiplier =
+            pointer.pressDirection < 0
+              ? RIGHT_PRESS_FORCE_MULTIPLIER
+              : 1;
           const impulseAge = Math.max(
             0,
             time - pointer.impulseStartedAt,
@@ -2062,9 +2067,12 @@
           }
           return {
             forceMultiplier:
-              heldMultiplier +
-              (PRESS_IMPULSE_MULTIPLIER - heldMultiplier) *
-                impulseEnvelope,
+              (
+                heldMultiplier +
+                (PRESS_IMPULSE_MULTIPLIER - heldMultiplier) *
+                  impulseEnvelope
+              ) *
+              pressForceMultiplier,
             radiusMultiplier:
               1 +
               (PRESS_IMPULSE_RADIUS_MULTIPLIER - 1) *

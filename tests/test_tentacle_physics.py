@@ -59,7 +59,7 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     ("button", "direction", "held_multiplier"),
     [
         ("left", "1", "2.000"),
-        ("right", "-1", "1.000"),
+        ("right", "-1", "2.000"),
     ],
 )
 def test_expired_click_impulse_is_not_replayed_on_a_later_frame(
@@ -146,10 +146,10 @@ def test_expired_click_impulse_is_not_replayed_on_a_later_frame(
 
 
 @pytest.mark.parametrize(
-    ("button", "direction", "held_multiplier"),
+    ("button", "direction", "impulse_multiplier", "held_multiplier"),
     [
-        ("left", "1", "2.000"),
-        ("right", "-1", "1.000"),
+        ("left", "1", "13.333", "2.000"),
+        ("right", "-1", "26.667", "2.000"),
     ],
 )
 def test_mouse_impulse_transitions_to_the_correct_held_force(
@@ -157,16 +157,17 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     base_url: str,
     button: str,
     direction: str,
+    impulse_multiplier: str,
     held_multiplier: str,
 ) -> None:
-    """Preserve the original two-stage interaction for both mouse buttons.
+    """Keep both mouse interactions two-stage and double right-button force.
 
-    Every press must first submit the original strong, wide impulse. After that
-    short envelope expires while the button remains down, the left button must
-    settle into attraction at exactly double strength, whereas the right button
-    must settle into repulsion at normal strength. Releasing either button must
-    return directly to ordinary hover attraction, without the extra post-release
-    recovery phase that previously distorted the timing.
+    Every press must first submit a short, wide impulse and then settle into its
+    held mode. The left button retains the original 13.333× impulse and 2× held
+    attraction. The requested right-button behavior is exactly twice its former
+    strength at both stages: a 26.667× repulsion impulse followed by 2× held
+    repulsion. Releasing either button must return directly to ordinary hover
+    attraction, without changing the shared timing or interaction radius.
 
     Rendering density is reduced only for headless test speed; the production
     pointer and physics paths under test are unchanged.
@@ -191,7 +192,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
 
     expect(canvas).to_have_attribute(
         "data-last-impulse-peak-force-multiplier",
-        "13.333",
+        impulse_multiplier,
         timeout=1_000,
     )
     expect(canvas).to_have_attribute(
