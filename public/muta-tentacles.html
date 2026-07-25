@@ -146,9 +146,6 @@
         const PRESS_IMPULSE_HOLD_SECONDS = 0.10 / 6.75;
         const PRESS_IMPULSE_DECAY_RATE = 26 * 6.75;
         const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
-        const PRESS_IMPULSE_RECOVERY_SECONDS = 0.16;
-        const PRESS_IMPULSE_RECOVERY_DAMPING = 34;
-        const PRESS_IMPULSE_RECOVERY_RESPONSE = 24;
         const MAX_PHYSICS_STEP_SECONDS = 0.033;
         const MAX_PHYSICS_CATCH_UP_SECONDS = 0.1;
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
@@ -1952,11 +1949,8 @@
           pressDirection: 0,
           impulseStartedAt: -Infinity,
           impulsePending: false,
-          impulseReleasedAt: -Infinity,
-          impulseRecoveryActive: false,
           energy: 0,
         };
-        let impulseRecoveryTimers = [];
         const diagnostics = {
           activeTips: 0,
           maximumAttraction: 0,
@@ -2036,33 +2030,12 @@
             : LEFT_HELD_FORCE_MULTIPLIER;
         }
 
-        function startImpulseRecovery() {
-          for (const timer of impulseRecoveryTimers) {
-            clearTimeout(timer);
-          }
-          impulseRecoveryTimers = [];
-          pointer.impulseReleasedAt = performance.now() * 0.001;
-          pointer.impulseRecoveryActive = true;
-          canvas.dataset.impulseRecoveryActive = "true";
-          canvas.dataset.lastImpulseRecoveryMs = "";
-          runImmediateRecoveryFrame();
-          impulseRecoveryTimers.push(
-            setTimeout(
-              runImmediateRecoveryFrame,
-              PRESS_IMPULSE_RECOVERY_SECONDS * 500,
-            ),
-            setTimeout(
-              runImmediateRecoveryFrame,
-              PRESS_IMPULSE_RECOVERY_SECONDS * 1000 + 16,
-            ),
-          );
-        }
-
         function currentPointerInteraction(time) {
           if (!pointer.pressed) {
             return {
               forceMultiplier: 1,
               radiusMultiplier: 1,
+              phase: "hover",
             };
           }
           const heldMultiplier = heldPointerMultiplier(
@@ -2094,6 +2067,7 @@
               1 +
               (PRESS_IMPULSE_RADIUS_MULTIPLIER - 1) *
                 impulseEnvelope,
+            phase: impulseEnvelope > 0 ? "impulse" : "held",
           };
         }
 
@@ -2121,12 +2095,6 @@
             }
             pointer.impulseStartedAt = performance.now() * 0.001;
             pointer.impulsePending = true;
-            pointer.impulseRecoveryActive = false;
-            for (const timer of impulseRecoveryTimers) {
-              clearTimeout(timer);
-            }
-            impulseRecoveryTimers = [];
-            canvas.dataset.impulseRecoveryActive = "false";
             pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
@@ -2136,39 +2104,23 @@
           { passive: false },
         );
         canvas.addEventListener("pointerup", (event) => {
-          const wasPressed = pointer.pressed;
           updatePointerPress(event.buttons);
           if (!pointer.pressed) {
             canvas.releasePointerCapture?.(event.pointerId);
-            if (wasPressed) {
-              startImpulseRecovery();
-            }
           }
         });
         canvas.addEventListener("pointercancel", () => {
-          const wasPressed = pointer.pressed;
           pointer.pressed = false;
           pointer.pressDirection = 0;
-          if (wasPressed) {
-            startImpulseRecovery();
-          }
         });
         canvas.addEventListener("lostpointercapture", () => {
-          const wasPressed = pointer.pressed;
           pointer.pressed = false;
           pointer.pressDirection = 0;
-          if (wasPressed) {
-            startImpulseRecovery();
-          }
         });
         canvas.addEventListener("blur", () => {
-          const wasPressed = pointer.pressed;
           pointer.inside = false;
           pointer.pressed = false;
           pointer.pressDirection = 0;
-          if (wasPressed) {
-            startImpulseRecovery();
-          }
         });
         canvas.addEventListener("contextmenu", (event) => {
           event.preventDefault();
@@ -2406,31 +2358,20 @@
           pointer.energy += (targetEnergy - pointer.energy) * (1 - Math.exp(-delta * 6));
           const pointerInteraction =
             currentPointerInteraction(wallTime);
-          const recoveryAge = Math.max(
-            0,
-            wallTime - pointer.impulseReleasedAt,
-          );
-          const recoveryEnvelope =
-            pointer.impulseRecoveryActive
-              ? clamp(
-                  1 -
-                    recoveryAge /
-                      PRESS_IMPULSE_RECOVERY_SECONDS,
-                  0,
-                  1,
-                )
-              : 0;
-          if (
-            pointer.impulseRecoveryActive &&
-            recoveryEnvelope <= 0
-          ) {
-            pointer.impulseRecoveryActive = false;
-            canvas.dataset.impulseRecoveryActive = "false";
-            canvas.dataset.lastImpulseRecoveryMs =
-              (recoveryAge * 1000).toFixed(1);
+          canvas.dataset.pointerInteractionPhase =
+            pointerInteraction.phase;
+          canvas.dataset.pointerInteractionForceMultiplier =
+            pointerInteraction.forceMultiplier.toFixed(3);
+          canvas.dataset.pointerInteractionRadiusMultiplier =
+            pointerInteraction.radiusMultiplier.toFixed(3);
+          canvas.dataset.pointerInteractionDirection =
+            String(pointer.pressed ? pointer.pressDirection : 0);
+          if (pointerInteraction.phase === "impulse") {
+            canvas.dataset.lastImpulsePeakForceMultiplier =
+              pointerInteraction.forceMultiplier.toFixed(3);
+            canvas.dataset.lastImpulseDirection =
+              String(pointer.pressDirection);
           }
-          canvas.dataset.impulseRecoveryEnvelope =
-            recoveryEnvelope.toFixed(3);
           const collectDiagnostics =
             debugTargets || wallTime - diagnosticStart >= 1;
           if (collectDiagnostics) {
@@ -2506,26 +2447,8 @@
           spatialCountPixels.fill(0);
           spatialGridValid = true;
           maximumSpatialCellLoad = 0;
-          const velocityDamping = Math.exp(
-            -delta *
-              (
-                10.2 +
-                PRESS_IMPULSE_RECOVERY_DAMPING *
-                  recoveryEnvelope
-              ),
-          );
-          const restResponse = Math.min(
-            0.72,
-            72.0 * delta * delta +
-              (
-                1 -
-                Math.exp(
-                  -delta *
-                    PRESS_IMPULSE_RECOVERY_RESPONSE *
-                      recoveryEnvelope,
-                )
-              ),
-          );
+          const velocityDamping = Math.exp(-delta * 10.2);
+          const restResponse = 72.0 * delta * delta;
           const verticalMotionTime = time * 0.31;
 
           for (const skeleton of skeletons) {
@@ -3154,56 +3077,6 @@
               inputStartedAt * 1000
             ).toFixed(1);
           canvas.dataset.immediateImpulseFrame = "enabled";
-          skipRedundantAnimationFrame = true;
-          immediateFrameInProgress = false;
-        }
-
-        function runImmediateRecoveryFrame() {
-          if (
-            immediateFrameInProgress ||
-            !pointer.impulseRecoveryActive
-          ) {
-            return;
-          }
-          immediateFrameInProgress = true;
-          const now = performance.now() * 0.001;
-          const elapsed = Math.min(
-            MAX_PHYSICS_CATCH_UP_SECONDS,
-            Math.max(0.001, now - lastTime),
-          );
-          lastTime = now;
-          const physicsSubsteps = Math.max(
-            1,
-            Math.ceil(elapsed / MAX_PHYSICS_STEP_SECONDS),
-          );
-          const delta = elapsed / physicsSubsteps;
-          const motionDelta =
-            delta * (prefersReducedMotion ? 0.22 : 1);
-          const physicsStartedAt = performance.now();
-          for (
-            let substep = 0;
-            substep < physicsSubsteps;
-            substep++
-          ) {
-            smoothedTime += motionDelta;
-            const substepWallTime =
-              now -
-              elapsed +
-              delta * (substep + 1);
-            updateSkeletons(
-              smoothedTime,
-              delta,
-              substepWallTime,
-            );
-          }
-          lastPhysicsDuration =
-            performance.now() - physicsStartedAt;
-          const renderStartedAt = performance.now();
-          render(smoothedTime);
-          gl.flush();
-          lastRenderSubmissionDuration =
-            performance.now() - renderStartedAt;
-          canvas.dataset.immediateRecoveryFrame = "enabled";
           skipRedundantAnimationFrame = true;
           immediateFrameInProgress = false;
         }

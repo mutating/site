@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import pytest
 from playwright.sync_api import Page, expect
 
 
@@ -50,32 +51,36 @@ def test_slow_rendered_frames_are_split_into_short_physics_steps(
     assert 99.9 <= elapsed_milliseconds <= 100.0
 
 
-def test_click_impulse_recovery_has_a_strict_short_tail(
+@pytest.mark.parametrize(
+    ("button", "direction", "held_multiplier"),
+    [
+        ("left", "1", "2.000"),
+        ("right", "-1", "1.000"),
+    ],
+)
+def test_mouse_impulse_transitions_to_the_correct_held_force(
     driver: DriverFactory,
     base_url: str,
+    button: str,
+    direction: str,
+    held_multiplier: str,
 ) -> None:
-    """Prevent the tentacle click impulse from appearing to linger.
+    """Preserve the original two-stage interaction for both mouse buttons.
 
-    The force envelope itself is very short, but it can leave the simulated
-    chains displaced after the mouse button is released. The defect reported
-    on the contact surface was that this residual deformation kept settling
-    under the normal, slow ambient physics, so the click looked active for far
-    longer than its configured impulse. The surface now exposes the bounded
-    post-release recovery phase used to remove that visual tail. This test
-    performs a real click inside the production WebGL surface and verifies that
-    recovery completes within 300 ms, including headless-renderer overhead.
-    Animation frames are deliberately stopped as soon as the pointer goes down:
-    without the independent recovery timer, the clicked frame would remain
-    visible forever and the completion attribute would never be written.
-    The test lowers rendering density and limits generated tentacles so
-    Chromium's headless software renderer cannot hide JavaScript timing behind
-    multi-second GPU stalls; the click and recovery paths remain unchanged.
+    Every press must first submit the original strong, wide impulse. After that
+    short envelope expires while the button remains down, the left button must
+    settle into attraction at exactly double strength, whereas the right button
+    must settle into repulsion at normal strength. Releasing either button must
+    return directly to ordinary hover attraction, without the extra post-release
+    recovery phase that previously distorted the timing.
+
+    Rendering density is reduced only for headless test speed; the production
+    pointer and physics paths under test are unchanged.
     """
 
     page = driver(
         stored_theme="dark",
         viewport=(240, 180),
-        pause_animation_frames_on_pointerdown=True,
     )
     page.goto(
         (
@@ -87,18 +92,49 @@ def test_click_impulse_recovery_has_a_strict_short_tail(
     canvas = page.locator("#muta")
 
     expect(canvas).to_be_visible(timeout=30_000)
-    canvas.click(
-        position={"x": 190, "y": 130},
-        force=True,
-    )
+    page.mouse.move(120, 90)
+    page.mouse.down(button=button)
+
     expect(canvas).to_have_attribute(
-        "data-impulse-recovery-active",
-        "false",
+        "data-last-impulse-peak-force-multiplier",
+        "13.333",
         timeout=1_000,
     )
-
-    recovery_milliseconds = float(
-        canvas.get_attribute("data-last-impulse-recovery-ms") or "inf"
+    expect(canvas).to_have_attribute(
+        "data-last-impulse-direction",
+        direction,
+        timeout=1_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-phase",
+        "held",
+        timeout=1_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-force-multiplier",
+        held_multiplier,
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-radius-multiplier",
+        "1.000",
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-direction",
+        direction,
     )
 
-    assert 160 <= recovery_milliseconds <= 300
+    page.mouse.up(button=button)
+
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-phase",
+        "hover",
+        timeout=1_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-force-multiplier",
+        "1.000",
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-direction",
+        "0",
+    )

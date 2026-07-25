@@ -128,7 +128,6 @@ def driver(
         viewport: tuple[int, int] | None = None,
         load_interactive_visuals: bool = True,
         animation_frame_interval_ms: float | None = None,
-        pause_animation_frames_on_pointerdown: bool = False,
     ) -> Page:
         storage_state = {"cookies": [], "origins": []}
 
@@ -218,32 +217,6 @@ def driver(
                       callback(virtualTimestamp);
                     }});
                 }})();
-                """
-            )
-
-        if pause_animation_frames_on_pointerdown:
-            context.add_init_script(
-                """
-                (() => {
-                  const nativeRequestAnimationFrame =
-                    window.requestAnimationFrame.bind(window);
-                  let animationFramesPaused = false;
-
-                  addEventListener(
-                    "pointerdown",
-                    () => {
-                      animationFramesPaused = true;
-                    },
-                    {capture: true},
-                  );
-
-                  window.requestAnimationFrame = (callback) =>
-                    nativeRequestAnimationFrame((timestamp) => {
-                      if (!animationFramesPaused) {
-                        callback(timestamp);
-                      }
-                    });
-                })();
                 """
             )
 
