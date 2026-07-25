@@ -149,7 +149,7 @@ def test_expired_click_impulse_is_not_replayed_on_a_later_frame(
     ("button", "direction", "impulse_multiplier", "held_multiplier"),
     [
         ("left", "1", "13.333", "2.000"),
-        ("right", "-1", "26.667", "2.000"),
+        ("right", "-1", "13.333", "2.000"),
     ],
 )
 def test_mouse_impulse_transitions_to_the_correct_held_force(
@@ -160,14 +160,13 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     impulse_multiplier: str,
     held_multiplier: str,
 ) -> None:
-    """Keep both mouse interactions two-stage and double right-button force.
+    """Keep the original impulse and double only held right-button repulsion.
 
     Every press must first submit a short, wide impulse and then settle into its
-    held mode. The left button retains the original 13.333× impulse and 2× held
-    attraction. The requested right-button behavior is exactly twice its former
-    strength at both stages: a 26.667× repulsion impulse followed by 2× held
-    repulsion. Releasing either button must return directly to ordinary hover
-    attraction, without changing the shared timing or interaction radius.
+    held mode. Both buttons retain the original 13.333× impulse. The left button
+    continues with 2× attraction, while only the right button's held repulsion
+    is strengthened from 1× to 2×. Releasing either button must return directly
+    to ordinary hover attraction, without changing the shared timing or radius.
 
     Rendering density is reduced only for headless test speed; the production
     pointer and physics paths under test are unchanged.
