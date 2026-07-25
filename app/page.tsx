@@ -910,7 +910,7 @@ function TokamakVisual() {
       <iframe
         ref={frameRef}
         className="tokamak-model__frame"
-        src="/tokamak-reactor.html?v=viewport-sync-2"
+        src="/tokamak-reactor.html?v=light-occlusion-1"
         title="Scroll-linked three-dimensional tokamak reactor"
         tabIndex={-1}
         aria-label="A three-dimensional tokamak reactor whose angle follows its position in the viewport"
