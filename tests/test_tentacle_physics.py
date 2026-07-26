@@ -242,8 +242,11 @@ def test_full_density_surface_never_queues_a_deadline_render(
     any unexpected frame can only come from an input/deadline callback. After
     one real press, the initially submitted frame id and measured input latency
     must remain unchanged for 120 ms—almost three complete impulse windows.
-    Release must then be processed normally. This is the workload and race the
-    lightweight tests previously failed to represent.
+    It then advances the first non-redundant physics frame by nine milliseconds and
+    verifies that the peak was not applied a second time. Release must then be
+    processed normally. This full-density assertion is the part the earlier
+    lightweight tests lacked: it catches the long visible deformation even
+    when the nominal force timer and low-density state tests look correct.
     """
 
     page = driver(stored_theme="dark", viewport=viewport)
@@ -299,6 +302,25 @@ def test_full_density_surface_never_queues_a_deadline_render(
         """
     )
     assert after_deadline == submitted
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+    after_next_frame = canvas.evaluate(
+        """
+        element => ({
+          phase: element.dataset.renderedInteractionPhase,
+          force: element.dataset.pointerInteractionForceMultiplier,
+          applications: element.dataset.impulsePhysicsApplications,
+          animationImpulseFrames:
+            element.dataset.animationImpulseFramesSincePress,
+        })
+        """
+    )
+    assert after_next_frame == {
+        "phase": "held",
+        "force": "2.000",
+        "applications": "1",
+        "animationImpulseFrames": "0",
+    }
 
     page.mouse.up(button="left")
     released_phase = canvas.get_attribute(
@@ -358,29 +380,29 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
         ("right", "-1", "2.000"),
     ],
 )
-def test_expired_click_impulse_is_not_replayed_on_a_later_frame(
+def test_click_impulse_is_applied_to_exactly_one_physics_frame(
     driver: DriverFactory,
     base_url: str,
     button: str,
     direction: str,
     held_multiplier: str,
 ) -> None:
-    """Keep the original click impulse limited to its 41.5 ms wall-clock window.
+    """Prevent the short click peak from leaking into a second physics frame.
 
-    The source ``muta-tentacles.html`` gives a press one immediate strong
-    attraction/repulsion impulse and lets its envelope expire after
-    ``0.28 / 6.75`` seconds (about 41.5 ms). The adapted rectangular surface
-    used to split a delayed rendered frame into several physics updates. That
-    could apply an expired high-force phase or the following held force multiple
-    times before the next image appeared, making the first click response look
-    much longer than in the source file.
+    The source interaction describes a roughly 41.5 ms force envelope, but the
+    rectangular production surface contains substantially more tentacles than
+    the original square. Reapplying its 13.333× peak on both the synchronous
+    input render and the following animation frame injects the strong force
+    twice; the resulting deformation survives much longer than the nominal
+    clock and is the user-visible defect reported repeatedly.
 
-    This regression test advances one animation frame by exactly 100 ms, then
-    verifies two independent contracts for both left- and right-button presses:
-    the configured envelope still equals the source's 41.5 ms, and no animated
-    later rendered frame re-enters the impulse phase after that real-time window.
-    The immediate input frame is intentionally excluded because it is the one
-    strong impulse the original interaction is supposed to submit.
+    This regression freezes normal animation, presses either mouse button, and
+    verifies that the immediate input render is the sole peak-force physics
+    application. It then advances the first non-redundant frame by only nine
+    milliseconds—well inside the old envelope, where the bug definitely
+    reproduced—and demands ordinary held force with the cumulative
+    impulse-application counter still equal to one. A duration-only or 100 ms
+    sample would miss this exact double-kick.
     """
 
     page = driver(
@@ -411,12 +433,16 @@ def test_expired_click_impulse_is_not_replayed_on_a_later_frame(
         "enabled",
         timeout=1_000,
     )
+    expect(canvas).to_have_attribute(
+        "data-impulse-physics-applications",
+        "1",
+    )
     page.evaluate(
         """
         () => {
           const canvas = document.querySelector("#muta");
           canvas.dataset.animationImpulseFramesSincePress = "0";
-          window.__mutaTentaclesDebugFrameAfter(100);
+          window.__mutaTentaclesDebugFrameAfter(9);
         }
         """
     )
@@ -428,6 +454,10 @@ def test_expired_click_impulse_is_not_replayed_on_a_later_frame(
     expect(canvas).to_have_attribute(
         "data-animation-impulse-frames-since-press",
         "0",
+    )
+    expect(canvas).to_have_attribute(
+        "data-impulse-physics-applications",
+        "1",
     )
     expect(canvas).to_have_attribute(
         "data-pointer-interaction-force-multiplier",
@@ -743,6 +773,41 @@ def _assert_no_deadline_render(page: Page, canvas: Page) -> None:
     page.mouse.up(button="left")
 
 
+def _assert_single_peak_application(page: Page, canvas: Page) -> None:
+    """Assert that only the synchronous input frame receives peak force."""
+
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(
+        box["x"] + box["width"] * 0.77,
+        box["y"] + box["height"] * 0.66,
+    )
+    page.mouse.down(button="left")
+    assert canvas.get_attribute(
+        "data-impulse-physics-applications"
+    ) == "1"
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+    state = canvas.evaluate(
+        """
+        element => ({
+          phase: element.dataset.renderedInteractionPhase,
+          force: element.dataset.pointerInteractionForceMultiplier,
+          applications: element.dataset.impulsePhysicsApplications,
+          animationImpulseFrames:
+            element.dataset.animationImpulseFramesSincePress,
+        })
+        """
+    )
+    assert state == {
+        "phase": "held",
+        "force": "2.000",
+        "applications": "1",
+        "animationImpulseFrames": "0",
+    }
+    page.mouse.up(button="left")
+
+
 def test_impulse_uses_the_exact_original_41_5_ms_envelope(
     driver: DriverFactory,
     base_url: str,
@@ -837,6 +902,17 @@ def test_missing_pointerup_still_ends_and_redraws_the_impulse(
 
 TIMING_MUTATIONS = [
     pytest.param(
+        """            impulsePending
+              ? 0
+              : PRESS_IMPULSE_TOTAL_SECONDS,""",
+        """            Math.max(
+              0,
+              time - pointer.impulseStartedAt,
+            ),""",
+        "single-application",
+        id="reapply-peak-on-next-animation-frame",
+    ),
+    pytest.param(
         "const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;",
         "const PRESS_IMPULSE_TOTAL_SECONDS = 0.28;",
         "envelope",
@@ -871,16 +947,6 @@ TIMING_MUTATIONS = [
         "const LEFT_HELD_FORCE_MULTIPLIER = 4;",
         "envelope",
         id="raise-held-attraction",
-    ),
-    pytest.param(
-        "            runImmediateInteractionFrame();",
-        """            runImmediateInteractionFrame();
-            setTimeout(
-              () => runImmediateInteractionFrame(true),
-              PRESS_IMPULSE_TOTAL_SECONDS * 1000,
-            );""",
-        "deadline-render",
-        id="queue-blocking-deadline-render",
     ),
     pytest.param(
         "const RELEASE_RECOVERY_SECONDS = 0.18;",
@@ -931,13 +997,13 @@ def test_timing_regressions_are_detected_by_eleven_independent_mutations(
     after earlier state-only tests missed the visible defect. This mutation
     test implements eleven of those attacks one at a time against the real HTML:
 
-    1. extend the total impulse window;
-    2. slow exponential decay;
-    3. extend the full-strength hold;
-    4. raise peak force;
-    5. widen the strong radius;
-    6. strengthen the post-impulse held attraction;
-    7. queue a blocking WebGL render at the impulse deadline;
+    1. reapply the peak on the next animation frame;
+    2. extend the total impulse window;
+    3. slow exponential decay;
+    4. extend the full-strength hold;
+    5. raise peak force;
+    6. widen the strong radius;
+    7. strengthen the post-impulse held attraction;
     8. make release recovery effectively never finish;
     9. slow geometric recovery so the star remains visible;
     10. lose the ``buttons == 0`` fallback when ``pointerup`` disappears;
@@ -974,7 +1040,9 @@ def test_timing_regressions_are_detected_by_eleven_independent_mutations(
     )
 
     with pytest.raises(AssertionError):
-        if contract == "envelope":
+        if contract == "single-application":
+            _assert_single_peak_application(page, canvas)
+        elif contract == "envelope":
             _assert_exact_impulse_envelope(page)
         elif contract == "deadline-render":
             _assert_no_deadline_render(page, canvas)

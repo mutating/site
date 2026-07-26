@@ -2153,7 +2153,9 @@
           return pointerInteractionAtAge(
             pointer.pressed,
             pointer.pressDirection,
-            Math.max(0, time - pointer.impulseStartedAt),
+            impulsePending
+              ? 0
+              : PRESS_IMPULSE_TOTAL_SECONDS,
             impulsePending,
             !pointer.pressed &&
               time < pointer.releaseRecoveryUntil,
