@@ -1951,8 +1951,10 @@
           pressDirection: 0,
           impulseStartedAt: -Infinity,
           impulsePending: false,
+          pressSequence: 0,
           energy: 0,
         };
+        let impulseDeadlineTimer = 0;
         const diagnostics = {
           activeTips: 0,
           maximumAttraction: 0,
@@ -2073,6 +2075,69 @@
           };
         }
 
+        function cancelImpulseDeadline() {
+          if (!impulseDeadlineTimer) {
+            return;
+          }
+          clearTimeout(impulseDeadlineTimer);
+          impulseDeadlineTimer = 0;
+        }
+
+        function scheduleImpulseDeadline(pressSequence) {
+          cancelImpulseDeadline();
+
+          const settleAtImpulseDeadline = () => {
+            if (
+              pressSequence !== pointer.pressSequence ||
+              !pointer.pressed
+            ) {
+              impulseDeadlineTimer = 0;
+              return;
+            }
+
+            const now = performance.now() * 0.001;
+            const remaining =
+              pointer.impulseStartedAt +
+              PRESS_IMPULSE_TOTAL_SECONDS -
+              now;
+            if (remaining > 0.001) {
+              impulseDeadlineTimer = setTimeout(
+                settleAtImpulseDeadline,
+                remaining * 1000,
+              );
+              return;
+            }
+
+            impulseDeadlineTimer = 0;
+            if (
+              canvas.dataset.pointerInteractionPhase ===
+              "impulse"
+            ) {
+              runImmediateInteractionFrame(true);
+            }
+            canvas.dataset.lastImpulseSettledAfterMs =
+              (
+                (performance.now() * 0.001 -
+                  pointer.impulseStartedAt) *
+                1000
+              ).toFixed(1);
+          };
+
+          impulseDeadlineTimer = setTimeout(
+            settleAtImpulseDeadline,
+            PRESS_IMPULSE_TOTAL_SECONDS * 1000,
+          );
+        }
+
+        function settleReleasedPointer() {
+          cancelImpulseDeadline();
+          if (
+            canvas.dataset.pointerInteractionPhase !== "hover"
+          ) {
+            runImmediateInteractionFrame(true);
+          }
+        }
+
         canvas.addEventListener("pointerenter", (event) => {
           pointer.inside = true;
           updatePointer(event);
@@ -2097,11 +2162,14 @@
             }
             pointer.impulseStartedAt = performance.now() * 0.001;
             pointer.impulsePending = true;
+            pointer.pressSequence += 1;
             canvas.dataset.animationImpulseFramesSincePress = "0";
+            delete canvas.dataset.lastImpulseSettledAfterMs;
             pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
             updatePointer(event);
+            scheduleImpulseDeadline(pointer.pressSequence);
             runImmediateInteractionFrame();
           },
           { passive: false },
@@ -2109,21 +2177,25 @@
         canvas.addEventListener("pointerup", (event) => {
           updatePointerPress(event.buttons);
           if (!pointer.pressed) {
+            settleReleasedPointer();
             canvas.releasePointerCapture?.(event.pointerId);
           }
         });
         canvas.addEventListener("pointercancel", () => {
           pointer.pressed = false;
           pointer.pressDirection = 0;
+          settleReleasedPointer();
         });
         canvas.addEventListener("lostpointercapture", () => {
           pointer.pressed = false;
           pointer.pressDirection = 0;
+          settleReleasedPointer();
         });
         canvas.addEventListener("blur", () => {
           pointer.inside = false;
           pointer.pressed = false;
           pointer.pressDirection = 0;
+          settleReleasedPointer();
         });
         canvas.addEventListener("contextmenu", (event) => {
           event.preventDefault();
@@ -3050,8 +3122,11 @@
         let lastPhysicsDuration = 0;
         let lastRenderSubmissionDuration = 0;
 
-        function runImmediateInteractionFrame() {
-          if (immediateFrameInProgress || !pointer.impulsePending) {
+        function runImmediateInteractionFrame(force = false) {
+          if (
+            immediateFrameInProgress ||
+            (!force && !pointer.impulsePending)
+          ) {
             return;
           }
           immediateFrameInProgress = true;

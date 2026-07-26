@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 
 import pytest
@@ -9,6 +10,196 @@ from playwright.sync_api import Page, expect
 
 
 DriverFactory = Callable[..., Page]
+
+
+@pytest.mark.parametrize(
+    "target_viewport",
+    [
+        (1024, 650),
+        (755, 620),
+        (390, 610),
+    ],
+)
+def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
+    driver: DriverFactory,
+    base_url: str,
+    target_viewport: tuple[int, int],
+) -> None:
+    """Catch the intermittent long attraction pulse seen after narrowing.
+
+    The reported defect does not appear on every click because it requires a
+    resize-related pause between animation frames. The WebGL surface submits a
+    strong impulse immediately on ``pointerdown``; if Chromium then postpones
+    its next ``requestAnimationFrame`` while recalculating the newly narrow
+    layout, that strong image used to remain visible long after the mouse button
+    had already been released. The force clock itself could already be expired,
+    so tests that inspected only a later normal frame missed the visible bug.
+
+    This regression opens the exact production iframe document at the contact
+    block's desktop dimensions, then narrows that already-loaded surface to the
+    parametrized desktop, tablet, or phone dimensions and waits for its
+    aspect-aware reload to finish. It deliberately pauses only animation-frame
+    delivery—the browser condition that makes the race deterministic—while
+    preserving real pointer events and wall-clock timers. Three actual left
+    clicks must each show the source-strength impulse on press and return to
+    hover immediately on release without waiting for another animation frame.
+    Repeating the click cycle is intentional: it guards the formerly
+    intermittent second-or-later click as well as the first click after a
+    resize.
+
+    The test reduces only tentacle count and supersampling so all three viewport
+    cases finish quickly in headless Chromium; it uses the unchanged production
+    event handlers, force envelope, resize reload, and render clock.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1440, 650),
+        controllable_animation_frames=True,
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=64&render-supersample=0.5"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    initial_time_origin = canvas.evaluate(
+        "element => element.ownerDocument.defaultView.performance.timeOrigin"
+    )
+
+    page.set_viewport_size(
+        {
+            "width": target_viewport[0],
+            "height": target_viewport[1],
+        }
+    )
+    page.wait_for_function(
+        "origin => performance.timeOrigin !== origin",
+        arg=initial_time_origin,
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-fps",
+        re.compile(r"^[1-9][0-9]*$"),
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-press-impulse-total-ms",
+        "41.5",
+    )
+
+    pointer_x = target_viewport[0] * 0.84
+    pointer_y = target_viewport[1] * 0.72
+    page.mouse.move(pointer_x, pointer_y)
+
+    for _ in range(3):
+        canvas.evaluate(
+            """
+            element => {
+              element.ownerDocument.defaultView
+                .__mutaTestSetAnimationFramesPaused(true);
+            }
+            """
+        )
+        page.wait_for_timeout(35)
+        page.mouse.down(button="left")
+        expect(canvas).to_have_attribute(
+            "data-pointer-interaction-phase",
+            "impulse",
+            timeout=1_000,
+        )
+        page.mouse.up(button="left")
+        expect(canvas).to_have_attribute(
+            "data-pointer-interaction-phase",
+            "hover",
+            timeout=150,
+        )
+        canvas.evaluate(
+            """
+            element => {
+              element.ownerDocument.defaultView
+                .__mutaTestSetAnimationFramesPaused(false);
+            }
+            """
+        )
+        expect(canvas).to_have_attribute(
+            "data-pointer-interaction-phase",
+            "hover",
+            timeout=1_000,
+        )
+
+
+def test_held_press_settles_at_the_source_deadline_without_a_new_frame(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """End the strong phase on its 41.5 ms wall-clock deadline.
+
+    A click and a held press share the same initial source impulse. After
+    ``0.28 / 6.75`` seconds, a still-held left button must switch from the
+    13.333× impulse to ordinary 2× held attraction. During a resize Chromium can
+    postpone the next animation frame, so relying on that frame makes the last
+    strong image linger and creates the same apparently overlong pulse as a
+    released click.
+
+    The test pauses animation frames after the lightweight production surface
+    has loaded, presses and keeps the real left mouse button down, and verifies
+    that the wall-clock deadline itself submits the held state. It also checks
+    the measured transition time with generous headless-rendering tolerance,
+    proving that the fallback is tied to the original 41.5 ms envelope rather
+    than to an arbitrary long timeout.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(240, 180),
+        controllable_animation_frames=True,
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=64&render-supersample=0.5"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    canvas.evaluate(
+        """
+        element => {
+          element.ownerDocument.defaultView
+            .__mutaTestSetAnimationFramesPaused(true);
+        }
+        """
+    )
+    page.wait_for_timeout(35)
+    page.mouse.move(120, 90)
+    page.mouse.down(button="left")
+
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-phase",
+        "impulse",
+        timeout=1_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-phase",
+        "held",
+        timeout=250,
+    )
+    settled_after_milliseconds = float(
+        canvas.get_attribute("data-last-impulse-settled-after-ms")
+        or "0"
+    )
+    assert 41 <= settled_after_milliseconds <= 200
+    page.mouse.up(button="left")
+    expect(canvas).to_have_attribute(
+        "data-pointer-interaction-phase",
+        "hover",
+        timeout=150,
+    )
 
 
 def test_slow_rendered_frame_matches_the_original_single_step_clock(

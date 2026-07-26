@@ -128,6 +128,7 @@ def driver(
         viewport: tuple[int, int] | None = None,
         load_interactive_visuals: bool = True,
         animation_frame_interval_ms: float | None = None,
+        controllable_animation_frames: bool = False,
     ) -> Page:
         storage_state = {"cookies": [], "origins": []}
 
@@ -217,6 +218,40 @@ def driver(
                       callback(virtualTimestamp);
                     }});
                 }})();
+                """
+            )
+
+        if controllable_animation_frames:
+            context.add_init_script(
+                """
+                (() => {
+                  const nativeRequestAnimationFrame =
+                    window.requestAnimationFrame.bind(window);
+                  let animationFramesPaused = false;
+                  let queuedCallbacks = [];
+
+                  window.__mutaTestSetAnimationFramesPaused = (paused) => {
+                    animationFramesPaused = Boolean(paused);
+                    if (animationFramesPaused || queuedCallbacks.length === 0) {
+                      return;
+                    }
+
+                    const callbacks = queuedCallbacks;
+                    queuedCallbacks = [];
+                    for (const callback of callbacks) {
+                      nativeRequestAnimationFrame(callback);
+                    }
+                  };
+
+                  window.requestAnimationFrame = (callback) =>
+                    nativeRequestAnimationFrame((timestamp) => {
+                      if (animationFramesPaused) {
+                        queuedCallbacks.push(callback);
+                        return;
+                      }
+                      callback(timestamp);
+                    });
+                })();
                 """
             )
 
