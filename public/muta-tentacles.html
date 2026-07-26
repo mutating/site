@@ -148,8 +148,13 @@
         const PRESS_IMPULSE_HOLD_SECONDS = 0.10 / 6.75;
         const PRESS_IMPULSE_DECAY_RATE = 26 * 6.75;
         const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+        const RELEASE_RECOVERY_SECONDS = 0.18;
+        const RELEASE_RECOVERY_RATE = 34;
+        const RELEASE_RECOVERY_DAMPING = 42;
         canvas.dataset.pressImpulseTotalMs =
           (PRESS_IMPULSE_TOTAL_SECONDS * 1000).toFixed(1);
+        canvas.dataset.releaseRecoveryTotalMs =
+          (RELEASE_RECOVERY_SECONDS * 1000).toFixed(0);
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
         const MAX_CURSOR_GRABBERS = 6;
         const PROJECTION_SCALE = 1.0;
@@ -168,7 +173,10 @@
         const MAX_SPATIAL_SKELETONS = 512;
         const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const floatColor = Boolean(gl.getExtension("EXT_color_buffer_float"));
-        const isCompact = matchMedia("(max-width: 620px)").matches;
+        const compactMedia = matchMedia("(max-width: 620px)");
+        const isCompact = compactMedia.matches;
+        canvas.dataset.runtimeCompact =
+          isCompact ? "true" : "false";
         const initialCanvasRect = canvas.getBoundingClientRect();
         const surfaceAspect = Math.min(
           2.4,
@@ -1229,7 +1237,16 @@
           return (value ^ (value >>> 16)) >>> 0;
         }
 
+        const requestedGenerationSeed = Number(
+          runtimeSearch.get("generation-seed"),
+        );
         const sessionSeed = (() => {
+          if (
+            Number.isInteger(requestedGenerationSeed) &&
+            requestedGenerationSeed >= 0
+          ) {
+            return requestedGenerationSeed >>> 0;
+          }
           const seedBuffer = new Uint32Array(1);
           if (globalThis.crypto?.getRandomValues) {
             globalThis.crypto.getRandomValues(seedBuffer);
@@ -1891,7 +1908,10 @@
           );
           if (
             renderTargets &&
-            Math.abs(currentAspect - surfaceAspect) > 0.08 &&
+            (
+              Math.abs(currentAspect - surfaceAspect) > 0.08 ||
+              compactMedia.matches !== isCompact
+            ) &&
             canvas.dataset.aspectReloading !== "true"
           ) {
             canvas.dataset.aspectReloading = "true";
@@ -1952,12 +1972,21 @@
           impulseStartedAt: -Infinity,
           impulsePending: false,
           pressSequence: 0,
+          releaseRecoveryUntil: -Infinity,
           energy: 0,
         };
         let impulseDeadlineTimer = 0;
+        let releaseRecoveryTimer = 0;
+        let releaseRecoverySequence = 0;
+        let renderedInteractionPhase = "hover";
+        let renderedFrameId = 0;
+        let impulsePhysicsApplications = 0;
+        const interactionDiagnostics =
+          runtimeSearch.get("interaction-diagnostics") === "1";
         const diagnostics = {
           activeTips: 0,
           maximumAttraction: 0,
+          maximumRestDisplacement: 0,
           minimumTipClearance: 1,
           minimumCursorDistance: 1,
           closestTipX: 0.5,
@@ -2017,7 +2046,46 @@
             event.clientY <= rect.bottom;
         }
 
+        function startReleaseRecovery() {
+          if (releaseRecoveryTimer) {
+            clearTimeout(releaseRecoveryTimer);
+          }
+          const recoverySequence = ++releaseRecoverySequence;
+          pointer.releaseRecoveryUntil =
+            performance.now() * 0.001 + RELEASE_RECOVERY_SECONDS;
+          pointer.energy = 0;
+          releaseRecoveryTimer = setTimeout(() => {
+            releaseRecoveryTimer = 0;
+            if (
+              pointer.pressed ||
+              recoverySequence !== releaseRecoverySequence
+            ) {
+              return;
+            }
+            runImmediateInteractionFrame(true);
+          }, RELEASE_RECOVERY_SECONDS * 1000);
+        }
+
+        function releasePointerInteraction() {
+          const wasPressed =
+            pointer.pressed ||
+            pointer.pressDirection !== 0 ||
+            pointer.impulsePending;
+          pointer.pressed = false;
+          pointer.pressDirection = 0;
+          pointer.impulsePending = false;
+
+          if (!wasPressed) {
+            return false;
+          }
+
+          startReleaseRecovery();
+          settleReleasedPointer();
+          return true;
+        }
+
         function updatePointerPress(buttons) {
+          const wasPressed = pointer.pressed;
           const rightPressed = (buttons & 2) !== 0;
           const leftPressed = (buttons & 1) !== 0;
           pointer.pressDirection = rightPressed
@@ -2026,6 +2094,13 @@
               ? 1
               : 0;
           pointer.pressed = pointer.pressDirection !== 0;
+          if (wasPressed && !pointer.pressed) {
+            pointer.impulsePending = false;
+            startReleaseRecovery();
+            settleReleasedPointer();
+            return true;
+          }
+          return false;
         }
 
         function heldPointerMultiplier(direction) {
@@ -2034,24 +2109,23 @@
             : LEFT_HELD_FORCE_MULTIPLIER;
         }
 
-        function currentPointerInteraction(time) {
-          if (!pointer.pressed) {
+        function pointerInteractionAtAge(
+          pressed,
+          direction,
+          impulseAge,
+          impulsePending,
+          recovering,
+        ) {
+          if (!pressed) {
             return {
-              forceMultiplier: 1,
+              forceMultiplier: recovering ? 0 : 1,
               radiusMultiplier: 1,
-              phase: "hover",
+              phase: recovering ? "recovering" : "hover",
             };
           }
-          const heldMultiplier = heldPointerMultiplier(
-            pointer.pressDirection,
-          );
-          const impulseAge = Math.max(
-            0,
-            time - pointer.impulseStartedAt,
-          );
+          const heldMultiplier = heldPointerMultiplier(direction);
           let impulseEnvelope = 0;
-          if (pointer.impulsePending) {
-            pointer.impulsePending = false;
+          if (impulsePending) {
             impulseEnvelope = 1;
           } else if (impulseAge < PRESS_IMPULSE_TOTAL_SECONDS) {
             const decayAge = Math.max(
@@ -2075,6 +2149,34 @@
           };
         }
 
+        function currentPointerInteraction(time) {
+          const impulsePending = pointer.impulsePending;
+          pointer.impulsePending = false;
+          return pointerInteractionAtAge(
+            pointer.pressed,
+            pointer.pressDirection,
+            Math.max(0, time - pointer.impulseStartedAt),
+            impulsePending,
+            !pointer.pressed &&
+              time < pointer.releaseRecoveryUntil,
+          );
+        }
+
+        if (interactionDiagnostics) {
+          window.__mutaTentaclesDebugInteractionAt = (
+            ageMilliseconds,
+            direction = 1,
+            impulsePending = false,
+          ) =>
+            pointerInteractionAtAge(
+              true,
+              direction < 0 ? -1 : 1,
+              Math.max(0, ageMilliseconds) * 0.001,
+              Boolean(impulsePending),
+              false,
+            );
+        }
+
         function cancelImpulseDeadline() {
           if (!impulseDeadlineTimer) {
             return;
@@ -2087,11 +2189,13 @@
           cancelImpulseDeadline();
 
           const settleAtImpulseDeadline = () => {
-            if (
-              pressSequence !== pointer.pressSequence ||
-              !pointer.pressed
-            ) {
+            if (pressSequence !== pointer.pressSequence) {
               impulseDeadlineTimer = 0;
+              return;
+            }
+            if (!pointer.pressed) {
+              impulseDeadlineTimer = 0;
+              settleReleasedPointer();
               return;
             }
 
@@ -2131,11 +2235,7 @@
 
         function settleReleasedPointer() {
           cancelImpulseDeadline();
-          if (
-            canvas.dataset.pointerInteractionPhase !== "hover"
-          ) {
-            runImmediateInteractionFrame(true);
-          }
+          runImmediateInteractionFrame(true, 0.033);
         }
 
         canvas.addEventListener("pointerenter", (event) => {
@@ -2163,6 +2263,12 @@
             pointer.impulseStartedAt = performance.now() * 0.001;
             pointer.impulsePending = true;
             pointer.pressSequence += 1;
+            releaseRecoverySequence += 1;
+            if (releaseRecoveryTimer) {
+              clearTimeout(releaseRecoveryTimer);
+              releaseRecoveryTimer = 0;
+            }
+            pointer.releaseRecoveryUntil = -Infinity;
             canvas.dataset.animationImpulseFramesSincePress = "0";
             delete canvas.dataset.lastImpulseSettledAfterMs;
             pointer.energy = 1;
@@ -2175,30 +2281,59 @@
           { passive: false },
         );
         canvas.addEventListener("pointerup", (event) => {
-          updatePointerPress(event.buttons);
+          const released = updatePointerPress(event.buttons);
           if (!pointer.pressed) {
-            settleReleasedPointer();
+            if (!released) {
+              releasePointerInteraction();
+            }
             canvas.releasePointerCapture?.(event.pointerId);
           }
         });
         canvas.addEventListener("pointercancel", () => {
-          pointer.pressed = false;
-          pointer.pressDirection = 0;
-          settleReleasedPointer();
+          releasePointerInteraction();
         });
         canvas.addEventListener("lostpointercapture", () => {
-          pointer.pressed = false;
-          pointer.pressDirection = 0;
-          settleReleasedPointer();
+          releasePointerInteraction();
         });
         canvas.addEventListener("blur", () => {
           pointer.inside = false;
-          pointer.pressed = false;
-          pointer.pressDirection = 0;
-          settleReleasedPointer();
+          releasePointerInteraction();
         });
         canvas.addEventListener("contextmenu", (event) => {
           event.preventDefault();
+        });
+
+        const releaseFromOutsideCanvas = (event) => {
+          if (
+            (event?.type === "pointerup" ||
+              event?.type === "pointercancel") &&
+            event.target === canvas
+          ) {
+            return;
+          }
+          pointer.inside = false;
+          releasePointerInteraction();
+        };
+        addEventListener("pointerup", releaseFromOutsideCanvas, {
+          passive: true,
+        });
+        addEventListener("pointercancel", releaseFromOutsideCanvas, {
+          passive: true,
+        });
+        addEventListener("blur", releaseFromOutsideCanvas);
+        addEventListener("pagehide", releaseFromOutsideCanvas);
+        addEventListener("resize", releaseFromOutsideCanvas, {
+          passive: true,
+        });
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            releaseFromOutsideCanvas();
+          }
+        });
+        addEventListener("message", (event) => {
+          if (event.data?.type === "muta-tentacles-release") {
+            releaseFromOutsideCanvas();
+          }
         });
 
         const pointerSolverOrigin = new Float64Array(
@@ -2433,6 +2568,7 @@
           pointer.energy += (targetEnergy - pointer.energy) * (1 - Math.exp(-delta * 6));
           const pointerInteraction =
             currentPointerInteraction(wallTime);
+          renderedInteractionPhase = pointerInteraction.phase;
           canvas.dataset.pointerInteractionPhase =
             pointerInteraction.phase;
           canvas.dataset.pointerInteractionForceMultiplier =
@@ -2441,17 +2577,25 @@
             pointerInteraction.radiusMultiplier.toFixed(3);
           canvas.dataset.pointerInteractionDirection =
             String(pointer.pressed ? pointer.pressDirection : 0);
+          canvas.dataset.pointerPressed =
+            pointer.pressed ? "true" : "false";
           if (pointerInteraction.phase === "impulse") {
+            impulsePhysicsApplications += 1;
+            canvas.dataset.impulsePhysicsApplications =
+              String(impulsePhysicsApplications);
             canvas.dataset.lastImpulsePeakForceMultiplier =
               pointerInteraction.forceMultiplier.toFixed(3);
             canvas.dataset.lastImpulseDirection =
               String(pointer.pressDirection);
           }
           const collectDiagnostics =
-            debugTargets || wallTime - diagnosticStart >= 1;
+            interactionDiagnostics ||
+            debugTargets ||
+            wallTime - diagnosticStart >= 1;
           if (collectDiagnostics) {
             diagnostics.activeTips = 0;
             diagnostics.maximumAttraction = 0;
+            diagnostics.maximumRestDisplacement = 0;
             diagnostics.minimumTipClearance = 1;
             diagnostics.minimumCursorDistance = 1;
             diagnostics.closestTipX = pointer.x;
@@ -2522,8 +2666,19 @@
           spatialCountPixels.fill(0);
           spatialGridValid = true;
           maximumSpatialCellLoad = 0;
-          const velocityDamping = Math.exp(-delta * 10.2);
-          const restResponse = 72.0 * delta * delta;
+          const releaseRecoveryActive =
+            pointerInteraction.phase === "recovering";
+          const velocityDamping = Math.exp(
+            -delta *
+              (
+                releaseRecoveryActive
+                  ? RELEASE_RECOVERY_DAMPING
+                  : 10.2
+              ),
+          );
+          const restResponse = releaseRecoveryActive
+            ? 1 - Math.exp(-delta * RELEASE_RECOVERY_RATE)
+            : 72.0 * delta * delta;
           const verticalMotionTime = time * 0.31;
 
           for (const skeleton of skeletons) {
@@ -2707,6 +2862,15 @@
             if (collectDiagnostics) {
               const forceMagnitude = Math.abs(pointerForce);
               const finalTip = points[CHAIN_LINKS];
+              diagnostics.maximumRestDisplacement = Math.max(
+                diagnostics.maximumRestDisplacement,
+                length3(
+                  (finalTip.x - restX) /
+                    Math.max(0.001, surfaceAspect),
+                  finalTip.y - restY,
+                  finalTip.z - restZ,
+                ),
+              );
               const finalProjectedTip =
                 projectPointToCanvas(finalTip);
               const cursorDistance = length2(
@@ -3122,7 +3286,22 @@
         let lastPhysicsDuration = 0;
         let lastRenderSubmissionDuration = 0;
 
-        function runImmediateInteractionFrame(force = false) {
+        function recordRenderedInteraction() {
+          renderedFrameId += 1;
+          canvas.dataset.renderedFrameId =
+            String(renderedFrameId);
+          canvas.dataset.renderedInteractionPhase =
+            renderedInteractionPhase;
+          canvas.dataset.renderedPointerPressed =
+            pointer.pressed ? "true" : "false";
+          canvas.dataset.renderedMaximumRestDisplacement =
+            diagnostics.maximumRestDisplacement.toFixed(5);
+        }
+
+        function runImmediateInteractionFrame(
+          force = false,
+          minimumDelta = 0,
+        ) {
           if (
             immediateFrameInProgress ||
             (!force && !pointer.impulsePending)
@@ -3135,7 +3314,7 @@
           const elapsed = Math.max(0.001, now - lastTime);
           const delta = Math.min(
             0.033,
-            Math.max(1 / 90, elapsed),
+            Math.max(minimumDelta, 1 / 90, elapsed),
           );
           lastTime = now;
           smoothedTime +=
@@ -3147,6 +3326,7 @@
           const renderStartedAt = performance.now();
           render(smoothedTime);
           gl.flush();
+          recordRenderedInteraction();
           lastRenderSubmissionDuration =
             performance.now() - renderStartedAt;
           canvas.dataset.inputToImpulseSubmissionMs =
@@ -3195,6 +3375,7 @@
             performance.now() - physicsStartedAt;
           const renderStartedAt = performance.now();
           render(smoothedTime);
+          recordRenderedInteraction();
           lastRenderSubmissionDuration =
             performance.now() - renderStartedAt;
           diagnosticFrames += 1;

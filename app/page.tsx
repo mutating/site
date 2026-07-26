@@ -958,6 +958,19 @@ function TentacleContactBackground() {
       );
     };
 
+    const releaseTentacles = () => {
+      frame.contentWindow?.postMessage(
+        { type: "muta-tentacles-release" },
+        window.location.origin,
+      );
+    };
+
+    const releaseTentaclesWhenHidden = () => {
+      if (document.hidden) {
+        releaseTentacles();
+      }
+    };
+
     const handleMessage = (event: MessageEvent) => {
       if (
         event.source === frame.contentWindow &&
@@ -974,12 +987,30 @@ function TentacleContactBackground() {
     });
     frame.addEventListener("load", sendTheme);
     window.addEventListener("message", handleMessage);
+    window.addEventListener("pointerup", releaseTentacles, { passive: true });
+    window.addEventListener("pointercancel", releaseTentacles, {
+      passive: true,
+    });
+    window.addEventListener("blur", releaseTentacles);
+    window.addEventListener("pagehide", releaseTentacles);
+    document.addEventListener(
+      "visibilitychange",
+      releaseTentaclesWhenHidden,
+    );
     sendTheme();
 
     return () => {
       themeObserver.disconnect();
       frame.removeEventListener("load", sendTheme);
       window.removeEventListener("message", handleMessage);
+      window.removeEventListener("pointerup", releaseTentacles);
+      window.removeEventListener("pointercancel", releaseTentacles);
+      window.removeEventListener("blur", releaseTentacles);
+      window.removeEventListener("pagehide", releaseTentacles);
+      document.removeEventListener(
+        "visibilitychange",
+        releaseTentaclesWhenHidden,
+      );
     };
   }, []);
 
@@ -987,7 +1018,7 @@ function TentacleContactBackground() {
     <iframe
       ref={frameRef}
       className="contact__tentacles"
-      src="/muta-tentacles.html?v=contact-surface-17"
+      src="/muta-tentacles.html?v=dbcee279e0c7"
       title="Interactive field of cursor-responsive Muta tentacles"
       loading="lazy"
       tabIndex={-1}

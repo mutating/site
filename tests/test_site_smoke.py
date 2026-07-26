@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -60,6 +61,31 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
         asset = PROJECT_ROOT / relative_path
         assert asset.is_file(), f"{relative_path} must be a file"
         assert asset.stat().st_size > 0, f"{relative_path} must not be empty"
+
+
+def test_tentacle_iframe_revision_matches_its_current_file_contents() -> None:
+    """Prevent production from silently serving obsolete tentacle physics.
+
+    The contact iframe is a static HTML asset and browsers/CDNs may retain a
+    previously deployed response under an unchanged URL. That was a blind spot
+    in the former tests: they navigated directly to the working-tree HTML and
+    always exercised the newest code, while the real page could keep loading an
+    older cached interaction whose impulse never ended.
+
+    The page's ``v`` query must therefore equal the first twelve hexadecimal
+    characters of the current file's SHA-256 digest. Any future physics edit
+    changes the digest and makes this test fail until the iframe URL is bumped,
+    guaranteeing that a deployed page requests the exact implementation covered
+    by the test suite rather than a stale cached copy.
+    """
+
+    surface = PROJECT_ROOT / "public" / "muta-tentacles.html"
+    page_source = (PROJECT_ROOT / "app" / "page.tsx").read_text(
+        encoding="utf-8"
+    )
+    revision = hashlib.sha256(surface.read_bytes()).hexdigest()[:12]
+
+    assert f'/muta-tentacles.html?v={revision}"' in page_source
 
 
 def test_ticker_selection_inverts_only_its_own_colors(
