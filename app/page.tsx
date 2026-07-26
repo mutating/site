@@ -543,13 +543,7 @@ function AnimatedEyeLogo() {
       aria-label="Muta eye. It follows the pointer, blinks, and refreshes the page when pressed."
     >
       <span className="animated-eye-logo__clip" ref={eyeClipRef}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className="animated-eye-logo__surface"
-          src="/muta-eye-surface.webp"
-          alt=""
-          draggable={false}
-        />
+        <span className="animated-eye-logo__surface" aria-hidden="true" />
         <span className="animated-eye-logo__pupil" ref={pupilRef} aria-hidden="true" />
       </span>
     </span>
