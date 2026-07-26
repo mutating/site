@@ -53,6 +53,30 @@ def test_light_tokamak_uses_invisible_depth_occluders(
     assert diagnostics["depthOccluders"] > 0
 
 
+def test_tokamak_bloom_radius_does_not_reveal_frame_edges(
+    driver: DriverFactory,
+) -> None:
+    """Keep the plasma glow tight enough that the iframe boundary stays hidden.
+
+    The former 0.35 bloom radius spread a faint pink wash across almost the
+    entire embedded renderer in some light-theme sizes and camera angles. Once
+    that wash reached the rectangular canvas edge, the otherwise transparent
+    iframe became visible against the page. This test guards the reduced 0.18
+    radius exposed by the live renderer, while leaving bloom strength and the
+    bright plasma-ring core independent.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1440, 900),
+        load_interactive_visuals=True,
+    )
+    canvas = _reactor_canvas(page)
+
+    expect(canvas).to_have_attribute("data-bloom-radius", ".18")
+    assert float(canvas.get_attribute("data-bloom-radius") or "1") < 0.2
+
+
 def test_theme_switches_do_not_add_wireframe_geometry(
     driver: DriverFactory,
 ) -> None:
