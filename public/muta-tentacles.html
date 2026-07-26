@@ -1971,11 +1971,9 @@
           pressDirection: 0,
           impulseStartedAt: -Infinity,
           impulsePending: false,
-          pressSequence: 0,
           releaseRecoveryUntil: -Infinity,
           energy: 0,
         };
-        let impulseDeadlineTimer = 0;
         let releaseRecoveryTimer = 0;
         let releaseRecoverySequence = 0;
         let renderedInteractionPhase = "hover";
@@ -2177,64 +2175,7 @@
             );
         }
 
-        function cancelImpulseDeadline() {
-          if (!impulseDeadlineTimer) {
-            return;
-          }
-          clearTimeout(impulseDeadlineTimer);
-          impulseDeadlineTimer = 0;
-        }
-
-        function scheduleImpulseDeadline(pressSequence) {
-          cancelImpulseDeadline();
-
-          const settleAtImpulseDeadline = () => {
-            if (pressSequence !== pointer.pressSequence) {
-              impulseDeadlineTimer = 0;
-              return;
-            }
-            if (!pointer.pressed) {
-              impulseDeadlineTimer = 0;
-              settleReleasedPointer();
-              return;
-            }
-
-            const now = performance.now() * 0.001;
-            const remaining =
-              pointer.impulseStartedAt +
-              PRESS_IMPULSE_TOTAL_SECONDS -
-              now;
-            if (remaining > 0.001) {
-              impulseDeadlineTimer = setTimeout(
-                settleAtImpulseDeadline,
-                remaining * 1000,
-              );
-              return;
-            }
-
-            impulseDeadlineTimer = 0;
-            if (
-              canvas.dataset.pointerInteractionPhase ===
-              "impulse"
-            ) {
-              runImmediateInteractionFrame(true);
-            }
-            canvas.dataset.lastImpulseSettledAfterMs =
-              (
-                (performance.now() * 0.001 -
-                  pointer.impulseStartedAt) *
-                1000
-              ).toFixed(1);
-          };
-
-          impulseDeadlineTimer = setTimeout(
-            settleAtImpulseDeadline,
-            PRESS_IMPULSE_TOTAL_SECONDS * 1000,
-          );
-        }
-
         function settleReleasedPointer() {
-          cancelImpulseDeadline();
           runImmediateInteractionFrame(true, 0.033);
         }
 
@@ -2262,7 +2203,6 @@
             }
             pointer.impulseStartedAt = performance.now() * 0.001;
             pointer.impulsePending = true;
-            pointer.pressSequence += 1;
             releaseRecoverySequence += 1;
             if (releaseRecoveryTimer) {
               clearTimeout(releaseRecoveryTimer);
@@ -2270,12 +2210,10 @@
             }
             pointer.releaseRecoveryUntil = -Infinity;
             canvas.dataset.animationImpulseFramesSincePress = "0";
-            delete canvas.dataset.lastImpulseSettledAfterMs;
             pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
             updatePointer(event);
-            scheduleImpulseDeadline(pointer.pressSequence);
             runImmediateInteractionFrame();
           },
           { passive: false },
@@ -3309,6 +3247,7 @@
             return;
           }
           immediateFrameInProgress = true;
+          const submitsInitialImpulse = pointer.impulsePending;
           const inputStartedAt = pointer.impulseStartedAt;
           const now = performance.now() * 0.001;
           const elapsed = Math.max(0.001, now - lastTime);
@@ -3329,12 +3268,14 @@
           recordRenderedInteraction();
           lastRenderSubmissionDuration =
             performance.now() - renderStartedAt;
-          canvas.dataset.inputToImpulseSubmissionMs =
-            (
-              performance.now() -
-              inputStartedAt * 1000
-            ).toFixed(1);
-          canvas.dataset.immediateImpulseFrame = "enabled";
+          if (submitsInitialImpulse) {
+            canvas.dataset.inputToImpulseSubmissionMs =
+              (
+                performance.now() -
+                inputStartedAt * 1000
+              ).toFixed(1);
+            canvas.dataset.immediateImpulseFrame = "enabled";
+          }
           skipRedundantAnimationFrame = true;
           immediateFrameInProgress = false;
         }

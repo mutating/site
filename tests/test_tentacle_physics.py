@@ -151,50 +151,41 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
         )
 
 
-def test_held_press_settles_at_the_source_deadline_without_a_new_frame(
+def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """End the strong phase on its 41.5 ms wall-clock deadline.
+    """Keep the 41.5 ms deadline from blocking a queued mouse release.
 
     A click and a held press share the same initial source impulse. After
-    ``0.28 / 6.75`` seconds, a still-held left button must switch from the
-    13.333× impulse to ordinary 2× held attraction. During a resize Chromium can
-    postpone the next animation frame, so relying on that frame makes the last
-    strong image linger and creates the same apparently overlong pulse as a
-    released click.
+    ``0.28 / 6.75`` seconds the next normal animation frame must use ordinary
+    2× held attraction. A previous attempted fix scheduled a timer that rendered
+    that transition synchronously. On the full rectangular WebGL scene the
+    second render could occupy the main thread before a queued ``pointerup`` was
+    handled, extending a quick click by hundreds of milliseconds or seconds.
 
-    The test pauses animation frames after the lightweight production surface
-    has loaded, presses and keeps the real left mouse button down, and verifies
-    that the wall-clock deadline itself submits the held state. It also checks
-    the measured transition time with generous headless-rendering tolerance,
-    proving that the fallback is tied to the original 41.5 ms envelope rather
-    than to an arbitrary long timeout.
+    This test deliberately disables regular animation frames, records the
+    immediate impulse frame id, and waits beyond the complete source envelope.
+    No hidden timer may submit another frame. It then advances one explicit
+    50 ms frame and verifies that the wall-clock force equation naturally
+    resolves to held mode. This preserves the original physics while proving
+    that the deadline itself can never insert blocking work ahead of release.
     """
 
     page = driver(
         stored_theme="dark",
         viewport=(240, 180),
-        controllable_animation_frames=True,
     )
     page.goto(
         (
             f"{base_url}/muta-tentacles.html"
             "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
         ),
         wait_until="domcontentloaded",
     )
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
-    canvas.evaluate(
-        """
-        element => {
-          element.ownerDocument.defaultView
-            .__mutaTestSetAnimationFramesPaused(true);
-        }
-        """
-    )
-    page.wait_for_timeout(35)
     page.mouse.move(120, 90)
     page.mouse.down(button="left")
 
@@ -203,34 +194,117 @@ def test_held_press_settles_at_the_source_deadline_without_a_new_frame(
         "impulse",
         timeout=1_000,
     )
+    impulse_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
+    page.wait_for_timeout(100)
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == impulse_frame
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(50)")
     expect(canvas).to_have_attribute(
         "data-pointer-interaction-phase",
         "held",
-        timeout=250,
+        timeout=1_000,
     )
-    settled_after_milliseconds = float(
-        canvas.get_attribute("data-last-impulse-settled-after-ms")
-        or "0"
-    )
-    assert 41 <= settled_after_milliseconds <= 200
     page.mouse.up(button="left")
     released_phase = canvas.get_attribute(
         "data-rendered-interaction-phase"
     )
     assert released_phase in {"recovering", "hover"}
-    canvas.evaluate(
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (390, 610),
+        (1024, 650),
+    ],
+)
+def test_full_density_surface_never_queues_a_deadline_render(
+    driver: DriverFactory,
+    base_url: str,
+    viewport: tuple[int, int],
+) -> None:
+    """Exercise the deadline race with the complete production workload.
+
+    The earlier suite reduced the surface to 64 tentacles and half-resolution
+    rendering, so the erroneous timer-triggered WebGL frame completed quickly
+    and rarely delayed ``pointerup`` enough to resemble the reported defect.
+    The live rectangle instead generates its normal aspect-dependent density
+    (hundreds of 50-link chains) at full supersampling. Under that load an extra
+    synchronous render at 41.5 ms could occupy the main thread for long enough
+    that the initial attraction appeared not to end.
+
+    At phone and desktop sizes this regression uses the unmodified production
+    density and rendering resolution. Normal animation is manually clocked so
+    any unexpected frame can only come from an input/deadline callback. After
+    one real press, the initially submitted frame id and measured input latency
+    must remain unchanged for 120 ms—almost three complete impulse windows.
+    Release must then be processed normally. This is the workload and race the
+    lightweight tests previously failed to represent.
+    """
+
+    page = driver(stored_theme="dark", viewport=viewport)
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?manual-animation-frame=1&generation-seed=12345"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.evaluate(
         """
-        element => {
-          element.ownerDocument.defaultView
-            .__mutaTestSetAnimationFramesPaused(false);
+        () => {
+          for (let frame = 0; frame < 3; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(16);
+          }
         }
         """
     )
-    expect(canvas).to_have_attribute(
-        "data-rendered-interaction-phase",
-        "hover",
-        timeout=1_000,
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
     )
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(
+        box["x"] + box["width"] * 0.77,
+        box["y"] + box["height"] * 0.66,
+    )
+    page.mouse.down(button="left")
+    submitted = canvas.evaluate(
+        """
+        element => ({
+          frame: Number(element.dataset.renderedFrameId),
+          latency: element.dataset.inputToImpulseSubmissionMs,
+          applications: element.dataset.impulsePhysicsApplications,
+        })
+        """
+    )
+    assert submitted["frame"] == baseline_frame + 1
+    assert submitted["latency"] is not None
+    assert submitted["applications"] == "1"
+
+    page.wait_for_timeout(120)
+    after_deadline = canvas.evaluate(
+        """
+        element => ({
+          frame: Number(element.dataset.renderedFrameId),
+          latency: element.dataset.inputToImpulseSubmissionMs,
+          applications: element.dataset.impulsePhysicsApplications,
+        })
+        """
+    )
+    assert after_deadline == submitted
+
+    page.mouse.up(button="left")
+    released_phase = canvas.get_attribute(
+        "data-rendered-interaction-phase"
+    )
+    assert released_phase in {"recovering", "hover"}
 
 
 def test_slow_rendered_frame_matches_the_original_single_step_clock(
@@ -645,6 +719,30 @@ def _assert_release_redraw(
     assert settled["force"] == 1
 
 
+def _assert_no_deadline_render(page: Page, canvas: Page) -> None:
+    """Assert elapsed impulse time never schedules synchronous rendering."""
+
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(
+        box["x"] + box["width"] * 0.77,
+        box["y"] + box["height"] * 0.66,
+    )
+    page.mouse.down(button="left")
+    submitted_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
+    assert submitted_frame == baseline_frame + 1
+    page.wait_for_timeout(120)
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == submitted_frame
+    page.mouse.up(button="left")
+
+
 def test_impulse_uses_the_exact_original_41_5_ms_envelope(
     driver: DriverFactory,
     base_url: str,
@@ -775,6 +873,16 @@ TIMING_MUTATIONS = [
         id="raise-held-attraction",
     ),
     pytest.param(
+        "            runImmediateInteractionFrame();",
+        """            runImmediateInteractionFrame();
+            setTimeout(
+              () => runImmediateInteractionFrame(true),
+              PRESS_IMPULSE_TOTAL_SECONDS * 1000,
+            );""",
+        "deadline-render",
+        id="queue-blocking-deadline-render",
+    ),
+    pytest.param(
         "const RELEASE_RECOVERY_SECONDS = 0.18;",
         "const RELEASE_RECOVERY_SECONDS = 5;",
         "release",
@@ -810,18 +918,18 @@ TIMING_MUTATIONS = [
     ("original", "replacement", "contract"),
     TIMING_MUTATIONS,
 )
-def test_timing_regressions_are_detected_by_ten_independent_mutations(
+def test_timing_regressions_are_detected_by_eleven_independent_mutations(
     driver: DriverFactory,
     base_url: str,
     original: str,
     replacement: str,
     contract: str,
 ) -> None:
-    """Prove the timing tests fail for ten plausible silent regressions.
+    """Prove the timing tests fail for eleven plausible silent regressions.
 
     Three independent audits were asked to invent ways to break the interaction
     after earlier state-only tests missed the visible defect. This mutation
-    test implements ten of those attacks one at a time against the real HTML:
+    test implements eleven of those attacks one at a time against the real HTML:
 
     1. extend the total impulse window;
     2. slow exponential decay;
@@ -829,10 +937,11 @@ def test_timing_regressions_are_detected_by_ten_independent_mutations(
     4. raise peak force;
     5. widen the strong radius;
     6. strengthen the post-impulse held attraction;
-    7. make release recovery effectively never finish;
-    8. slow geometric recovery so the star remains visible;
-    9. lose the ``buttons == 0`` fallback when ``pointerup`` disappears;
-    10. lose the blur cleanup used during focus/iframe lifecycle changes.
+    7. queue a blocking WebGL render at the impulse deadline;
+    8. make release recovery effectively never finish;
+    9. slow geometric recovery so the star remains visible;
+    10. lose the ``buttons == 0`` fallback when ``pointerup`` disappears;
+    11. lose the blur cleanup used during focus/iframe lifecycle changes.
 
     A temporary route serves each mutated document in an isolated browser
     context. The appropriate production behavior contract must raise an
@@ -867,6 +976,8 @@ def test_timing_regressions_are_detected_by_ten_independent_mutations(
     with pytest.raises(AssertionError):
         if contract == "envelope":
             _assert_exact_impulse_envelope(page)
+        elif contract == "deadline-render":
+            _assert_no_deadline_render(page, canvas)
         elif contract == "release":
             _assert_release_redraw(
                 page,
