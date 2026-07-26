@@ -207,14 +207,18 @@ def driver(
                   const frameInterval = {frame_interval!r};
                   const nativeRequestAnimationFrame =
                     window.requestAnimationFrame.bind(window);
-                  let virtualTimestamp = null;
+                  let virtualTimestamp = 0;
+                  let previousNativeTimestamp = null;
 
                   window.requestAnimationFrame = (callback) =>
                     nativeRequestAnimationFrame((timestamp) => {{
-                      virtualTimestamp =
-                        virtualTimestamp === null
-                          ? timestamp
-                          : virtualTimestamp + frameInterval;
+                      if (
+                        previousNativeTimestamp === null ||
+                        timestamp !== previousNativeTimestamp
+                      ) {{
+                        previousNativeTimestamp = timestamp;
+                        virtualTimestamp += frameInterval;
+                      }}
                       callback(virtualTimestamp);
                     }});
                 }})();

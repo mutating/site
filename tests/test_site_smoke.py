@@ -202,3 +202,67 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
           ).backgroundColor === "rgb(255, 255, 255)"
         """
     )
+
+
+def test_header_eye_gaze_speed_is_stable_when_animation_frames_are_delayed(
+    driver: DriverFactory,
+) -> None:
+    """Verify the pupil does not become sluggish when rendering loses frames.
+
+    The original gaze spring applied fixed acceleration and damping once per
+    animation callback. Its apparent speed therefore depended on refresh rate:
+    if compositing the eye, scrolling, resizing, or other page visuals reduced
+    the callback rate from 60 Hz to 30 Hz, the pupil covered much less distance
+    during the same elapsed time and felt noticeably heavy. This regression
+    test drives two identical pages with synthetic 60 Hz and 30 Hz animation
+    timestamps, moves the pointer to the same target, and samples each pupil
+    after approximately 150 milliseconds. Both must reach nearly the same
+    horizontal position, proving that gaze physics follows elapsed time rather
+    than the number of delivered frames.
+    """
+
+    cases = (
+        (1000 / 60, 9),
+        (1000 / 30, 5),
+    )
+    sampled_positions: list[float] = []
+
+    for frame_interval, frame_count in cases:
+        page = driver(
+            stored_theme="dark",
+            viewport=(1280, 720),
+            animation_frame_interval_ms=frame_interval,
+            load_interactive_visuals=False,
+        )
+        sampled_position = page.evaluate(
+            """
+            async ({ frameCount }) => {
+              const eye = document.querySelector(".animated-eye-logo");
+              const pupil = document.querySelector(".animated-eye-logo__pupil");
+              const eyeRect = eye.getBoundingClientRect();
+
+              window.dispatchEvent(
+                new PointerEvent("pointermove", {
+                  bubbles: true,
+                  clientX: innerWidth - 1,
+                  clientY: eyeRect.top + eyeRect.height / 2,
+                }),
+              );
+
+              for (let frame = 0; frame < frameCount; frame += 1) {
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+              }
+
+              return Number.parseFloat(
+                getComputedStyle(pupil).getPropertyValue("--gaze-x"),
+              );
+            }
+            """,
+            {"frameCount": frame_count},
+        )
+        sampled_positions.append(sampled_position)
+
+    sixty_hz_position, thirty_hz_position = sampled_positions
+    assert sixty_hz_position > 5
+    assert thirty_hz_position > 5
+    assert abs(sixty_hz_position - thirty_hz_position) <= 1

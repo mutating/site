@@ -222,6 +222,7 @@ function AnimatedEyeLogo() {
     let animationFrame = 0;
     let blinkInterval = 0;
     let scrollFrame = 0;
+    let previousGazeFrameAt = 0;
 
     const renderScrollTone = () => {
       scrollFrame = 0;
@@ -448,13 +449,34 @@ function AnimatedEyeLogo() {
       }
     };
 
+    const advanceGaze = (elapsedFrames: number) => {
+      let remainingFrames = Math.min(4, Math.max(0, elapsedFrames));
+
+      while (remainingFrames > 0.0001) {
+        const frameStep = Math.min(1, remainingFrames);
+        const damping = 0.79 ** frameStep;
+
+        gaze.vx =
+          (gaze.vx + (gaze.targetX - gaze.x) * 0.068 * frameStep) *
+          damping;
+        gaze.vy =
+          (gaze.vy + (gaze.targetY - gaze.y) * 0.068 * frameStep) *
+          damping;
+        gaze.x += gaze.vx * frameStep;
+        gaze.y += gaze.vy * frameStep;
+        constrain();
+
+        remainingFrames -= frameStep;
+      }
+    };
+
     const animate = (now: number) => {
       if (!reduceMotion) {
-        gaze.vx = (gaze.vx + (gaze.targetX - gaze.x) * 0.068) * 0.79;
-        gaze.vy = (gaze.vy + (gaze.targetY - gaze.y) * 0.068) * 0.79;
-        gaze.x += gaze.vx;
-        gaze.y += gaze.vy;
-        constrain();
+        const elapsedFrames = previousGazeFrameAt
+          ? (now - previousGazeFrameAt) / (1000 / 60)
+          : 1;
+        previousGazeFrameAt = now;
+        advanceGaze(elapsedFrames);
         render();
       }
 
