@@ -226,8 +226,14 @@ function AnimatedEyeLogo() {
     const renderScrollTone = () => {
       scrollFrame = 0;
       const scrollRange = Math.max(1, window.innerHeight);
-      const grayscale = Math.max(0, Math.min(1, window.scrollY / scrollRange));
-      eye.style.setProperty("--eye-grayscale", grayscale.toFixed(4));
+      const whiteness = Math.max(0, Math.min(1, window.scrollY / scrollRange));
+      const green = Math.round(210 + 45 * whiteness);
+      const blue = Math.round(10 + 245 * whiteness);
+      eye.style.setProperty("--eye-scroll-color", `rgb(255 ${green} ${blue})`);
+      eye.style.setProperty(
+        "--eye-scroll-outline-opacity",
+        whiteness.toFixed(4),
+      );
     };
 
     const handleScroll = () => {
@@ -543,6 +549,7 @@ function AnimatedEyeLogo() {
       aria-label="Muta eye. It follows the pointer, blinks, and refreshes the page when pressed."
     >
       <span className="animated-eye-logo__clip" ref={eyeClipRef}>
+        <span className="animated-eye-logo__outline" aria-hidden="true" />
         <span className="animated-eye-logo__surface" aria-hidden="true" />
         <span className="animated-eye-logo__pupil" ref={pupilRef} aria-hidden="true" />
       </span>
