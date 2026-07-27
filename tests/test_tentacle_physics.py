@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Locator, Page, expect
 
 
 DriverFactory = Callable[..., Page]
@@ -638,36 +638,15 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
     )
 
 
-def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
+def _open_contact_with_active_tentacle_runtime(
     driver: DriverFactory,
-) -> None:
-    """Connect real page scrolling to the iframe's lightweight render mode.
-
-    The renderer-side optimization is useful only if the host page brackets an
-    actual scroll burst correctly. This integration regression positions the
-    contact section in view, dispatches the same top-level ``scroll`` event that
-    Chromium emits during movement, and requires the iframe to enter
-    suppression immediately.
-    It then emits a wheel event directly over the iframe—the path used when the
-    pointer sits on the tentacles—and requires the same transition before the
-    parent document has a chance to deliver its own scroll event. Both paths
-    must return to ordinary rendering when Chromium emits ``scrollend`` (with
-    a conservative 320 ms quiet timer retained as a fallback), without a
-    click, resize, theme toggle, or reload.
-
-    Reverting only the parent listener leaves the iframe permanently ``active``
-    and fails the first assertion. Forgetting or repeatedly postponing the
-    scroll-end handoff leaves it ``suppressed`` and fails the final assertion.
-    Resuming after the former 120 ms timeout fails the intermediate assertion:
-    a slightly delayed trackpad event would otherwise allow one full expensive
-    frame between two parts of the same momentum-scroll burst. The test
-    therefore protects the exact user-visible path that previously made the
-    bottom of the page scroll in steps.
-    """
+    viewport: tuple[int, int],
+) -> tuple[Page, Locator]:
+    """Open the contact block and return its active, real WebGL canvas."""
 
     page = driver(
         stored_theme="dark",
-        viewport=(1280, 720),
+        viewport=viewport,
         load_interactive_visuals=True,
     )
     page.evaluate(
@@ -687,10 +666,52 @@ def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
         "true",
         timeout=30_000,
     )
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scrollend'))"
+    )
     expect(canvas).to_have_attribute(
         "data-scroll-rendering",
         "active",
         timeout=30_000,
+    )
+    page.clock.install()
+    page.clock.pause_at(int(page.evaluate("() => Date.now()")) + 1)
+    return page, canvas
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1280, 720),
+        (390, 610),
+    ],
+)
+def test_contact_scroll_quiet_period_has_exact_deterministic_boundaries(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep heavy tentacle work paused for the complete scroll quiet period.
+
+    The bottom-of-page hitch was caused by the full-density WebGL simulation
+    resuming between two events from one momentum-scroll gesture. The host now
+    treats 320 ms without another scroll event as a fallback end boundary while
+    native ``scrollend`` remains the preferred signal. This regression opens
+    the real contact iframe at both desktop and phone widths, freezes browser
+    time, dispatches the same top-level event as a physical page movement, and
+    proves that suppression is immediate, still active at exactly 319 ms, and
+    released at exactly 320 ms.
+
+    No wall-clock sleep participates in the assertions: Playwright advances the
+    page's production ``setTimeout`` deterministically. Restoring the former
+    120 ms delay, rounding the boundary down, failing to start suppression, or
+    leaving the renderer paused forever therefore fails identically on a fast
+    workstation and a slow CI worker. The two viewport cases protect the
+    responsive layout where the intermittent regression was most noticeable.
+    """
+
+    page, canvas = _open_contact_with_active_tentacle_runtime(
+        driver,
+        viewport,
     )
     baseline_suppressions = int(
         canvas.get_attribute("data-scroll-suppression-count") or "0"
@@ -710,19 +731,105 @@ def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
         """,
         arg=[".contact__tentacles", baseline_suppressions],
     )
-    page.wait_for_timeout(180)
-    expect(canvas).to_have_attribute(
-        "data-scroll-rendering",
-        "suppressed",
+    page.clock.fast_forward(319)
+    assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
+    page.clock.fast_forward(1)
+    assert canvas.get_attribute("data-scroll-rendering") == "active"
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1280, 720),
+        (390, 610),
+    ],
+)
+def test_each_scroll_event_restarts_the_complete_quiet_period(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Prevent a stale timer from waking WebGL during momentum scrolling.
+
+    A trackpad or touch gesture emits a burst of scroll events rather than one
+    continuous event. The fallback deadline must be measured from the newest
+    event in that burst. If the host forgets to cancel the earlier timer, the
+    tentacle renderer wakes 320 ms after the first event, performs an expensive
+    frame while the page is still moving, and recreates the intermittent
+    stutter even though the simple single-event boundary test still passes.
+
+    This scenario freezes time on the real desktop and mobile layouts, begins a
+    scroll, advances 240 ms, then emits a second scroll event. It requires the
+    iframe to remain suppressed through 319 ms measured from that second event
+    and to resume only on its following millisecond. Because no real waiting or
+    measured FPS is involved, the test isolates timer replacement itself and
+    fails reliably if ``clearTimeout`` is removed, the old handle survives, or
+    the replacement deadline is calculated from the start of the gesture.
+    """
+
+    page, canvas = _open_contact_with_active_tentacle_runtime(
+        driver,
+        viewport,
     )
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scroll'))"
+    )
+    assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
+
+    page.clock.fast_forward(240)
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scroll'))"
+    )
+    page.clock.fast_forward(80)
+    assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
+    page.clock.fast_forward(239)
+    assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
+    page.clock.fast_forward(1)
+    assert canvas.get_attribute("data-scroll-rendering") == "active"
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1280, 720),
+        (390, 610),
+    ],
+)
+def test_scrollend_and_iframe_wheel_share_the_scroll_lifecycle(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Cover both native completion and wheel input over the WebGL iframe.
+
+    When the cursor is outside the contact iframe, the parent receives normal
+    page ``scroll`` and ``scrollend`` events. When the cursor is over the
+    iframe, its own document sees the wheel first and must notify the parent by
+    ``postMessage``. A regression in either half can leave the high-cost
+    simulation running during the gesture or paused after it. This test first
+    proves that native ``scrollend`` resumes rendering immediately without
+    advancing the 320 ms fallback clock. It then dispatches a wheel event on the
+    real child canvas and requires the same immediate suppression, the same
+    319 ms protected interval, and the same fallback release at 320 ms.
+
+    Desktop and narrow layouts are both exercised because iframe geometry and
+    event routing change responsively. The test observes explicit runtime state
+    rather than frame duration: CPU speed, GPU availability, CI load, and
+    display refresh rate cannot make it flaky. Removing the child forwarding
+    listener, changing the message contract, ignoring ``scrollend``, or giving
+    wheel input a shorter quiet period each breaks a distinct assertion.
+    """
+
+    page, canvas = _open_contact_with_active_tentacle_runtime(
+        driver,
+        viewport,
+    )
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scroll'))"
+    )
+    assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
     page.evaluate(
         "() => window.dispatchEvent(new Event('scrollend'))"
     )
-    expect(canvas).to_have_attribute(
-        "data-scroll-rendering",
-        "active",
-        timeout=1_000,
-    )
+    assert canvas.get_attribute("data-scroll-rendering") == "active"
 
     wheel_baseline = int(
         canvas.get_attribute("data-scroll-suppression-count") or "0"
@@ -739,15 +846,10 @@ def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
     assert int(
         canvas.get_attribute("data-scroll-suppression-count") or "0"
     ) > wheel_baseline
-    page.wait_for_timeout(50)
-    page.evaluate(
-        "() => window.dispatchEvent(new Event('scrollend'))"
-    )
-    expect(canvas).to_have_attribute(
-        "data-scroll-rendering",
-        "active",
-        timeout=1_000,
-    )
+    page.clock.fast_forward(319)
+    assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
+    page.clock.fast_forward(1)
+    assert canvas.get_attribute("data-scroll-rendering") == "active"
 
 
 @pytest.mark.parametrize(

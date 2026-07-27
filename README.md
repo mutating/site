@@ -93,6 +93,9 @@ npm run tokamak:optimize
   `color_scheme`, saved theme, storage availability, or system-theme
   availability explicitly.
 - Prefer Playwright locators and `expect(...)` assertions over fixed sleeps.
+  For behavior with an intentional time boundary, install and pause
+  Playwright's page clock, advance it to the exact boundary, and assert state
+  on both sides; test correctness must not depend on workstation or CI speed.
 - Keep each test independent. The fixture creates a fresh browser context and
   closes it after the test.
 - Add any new Python test dependency to `requirements_dev.txt` and install it
@@ -118,6 +121,8 @@ npm run tokamak:optimize
 - `tests/test_site_smoke.py` — rendered-page and local-asset smoke checks.
 - `tests/test_tokamak_rendering.py` — visual references, render-idling,
   draw-call batching, theme occlusion, and antialiasing-pipeline checks.
+- `tests/test_tentacle_physics.py` — physics, pointer interactions, renderer
+  invariants, and deterministic scroll-suppression lifecycle coverage.
 - `tests/visual_baselines/` — intended light/dark tokamak references, including
   the oblique plasma angle, used to reject visual regressions.
 - `requirements_dev.txt` — Python dependencies needed by the test suite.
