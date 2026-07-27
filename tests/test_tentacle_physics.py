@@ -373,6 +373,225 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     assert elapsed_milliseconds == 33.0
 
 
+def test_scroll_mode_preserves_full_resolution_while_physics_advances(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Free the compositor during scroll without degrading the organism.
+
+    The contact surface renders a supersampled 2400-pixel-wide WebGL frame on a
+    typical desktop viewport. Continuing its surface, scatter, and composite
+    passes while Chromium also composites a page scroll made the final section
+    visibly hitch. Lowering resolution, deleting tentacles, weakening shaders,
+    or pausing interaction would hide the cost by changing the approved visual
+    or behavior, so the production contract instead holds the last complete
+    texture only for the brief active-scroll interval.
+
+    This test activates that exact iframe runtime mode and records the canvas
+    backing dimensions, rendered frame id, and independent physics frame id.
+    During the interval, the backing dimensions must remain unchanged and no
+    new GPU presentation may replace the full-quality cached frame, while the
+    physics counter must continue advancing. Once scrolling ends, rendering
+    must resume immediately at the same dimensions. A regression to continuous
+    WebGL submission makes the rendered id advance; a crude pause freezes the
+    physics id; a dynamic-resolution workaround changes the canvas dimensions.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?manual-animation-frame=1&generation-seed=12345"
+        )
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    canvas.evaluate(
+        """
+        element => element.ownerDocument.defaultView.postMessage({
+          type: "muta-tentacles-runtime",
+          visible: true,
+          scrollActive: false,
+        }, "*")
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "active")
+    page.evaluate(
+        "() => window.__mutaTentaclesDebugFrameAfter(34)"
+    )
+
+    baseline = canvas.evaluate(
+        """
+        element => ({
+          width: element.width,
+          height: element.height,
+          rendered: Number(element.dataset.renderedFrameId),
+          physics: Number(element.dataset.physicsFrameId),
+        })
+        """
+    )
+    canvas.evaluate(
+        """
+        element => element.ownerDocument.defaultView.postMessage({
+          type: "muta-tentacles-runtime",
+          visible: true,
+          scrollActive: true,
+        }, "*")
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
+    page.evaluate(
+        """
+        () => {
+          window.__mutaTentaclesDebugFrameAfter(34);
+          window.__mutaTentaclesDebugFrameAfter(34);
+        }
+        """
+    )
+    during_scroll = canvas.evaluate(
+        """
+        element => ({
+          width: element.width,
+          height: element.height,
+          rendered: Number(element.dataset.renderedFrameId),
+          physics: Number(element.dataset.physicsFrameId),
+        })
+        """
+    )
+
+    assert during_scroll["width"] == baseline["width"]
+    assert during_scroll["height"] == baseline["height"]
+    assert during_scroll["rendered"] == baseline["rendered"]
+    assert during_scroll["physics"] > baseline["physics"]
+
+    canvas.evaluate(
+        """
+        element => element.ownerDocument.defaultView.postMessage({
+          type: "muta-tentacles-runtime",
+          visible: true,
+          scrollActive: false,
+        }, "*")
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "active")
+    page.evaluate(
+        "() => window.__mutaTentaclesDebugFrameAfter(34)"
+    )
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) > during_scroll["rendered"]
+    resumed = canvas.evaluate(
+        "element => ({width: element.width, height: element.height})"
+    )
+    assert resumed == {
+        "width": baseline["width"],
+        "height": baseline["height"],
+    }
+
+
+def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
+    driver: DriverFactory,
+) -> None:
+    """Connect real page scrolling to the iframe's lightweight render mode.
+
+    The renderer-side optimization is useful only if the host page brackets an
+    actual scroll burst correctly. This integration regression positions the
+    contact section in view, dispatches the same top-level ``scroll`` event that
+    Chromium emits during movement, and requires the iframe to enter
+    suppression immediately.
+    It then emits a wheel event directly over the iframe—the path used when the
+    pointer sits on the tentacles—and requires the same transition before the
+    parent document has a chance to deliver its own scroll event. Both paths
+    must return to ordinary rendering when Chromium emits ``scrollend`` (with
+    the 120 ms quiet timer retained as a fallback), without a click, resize,
+    theme toggle, or reload.
+
+    Reverting only the parent listener leaves the iframe permanently ``active``
+    and fails the first assertion. Forgetting or repeatedly postponing the
+    scroll-end handoff leaves it ``suppressed`` and fails the second. The test
+    therefore protects the exact user-visible path that previously made the
+    bottom of the page scroll in steps.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+    )
+    page.evaluate(
+        """
+        () => {
+          document.documentElement.style.scrollBehavior = "auto";
+          window.scrollTo({
+            top: document.querySelector("#contact").offsetTop - 90,
+            behavior: "auto",
+          });
+        }
+        """
+    )
+    canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    expect(canvas).to_have_attribute(
+        "data-scroll-rendering",
+        "active",
+        timeout=30_000,
+    )
+    baseline_suppressions = int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    )
+
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scroll'))"
+    )
+    page.wait_for_function(
+        """
+        ([frameSelector, baseline]) => {
+          const frame = document.querySelector(frameSelector);
+          const canvas = frame?.contentWindow?.document.querySelector("#muta");
+          return Number(canvas?.dataset.scrollSuppressionCount || 0) >
+            baseline;
+        }
+        """,
+        arg=[".contact__tentacles", baseline_suppressions],
+    )
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scrollend'))"
+    )
+    expect(canvas).to_have_attribute(
+        "data-scroll-rendering",
+        "active",
+        timeout=1_000,
+    )
+
+    wheel_baseline = int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    )
+    canvas.evaluate(
+        """
+        element => element.dispatchEvent(new WheelEvent("wheel", {
+          bubbles: true,
+          deltaY: 120,
+        }))
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
+    assert int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    ) > wheel_baseline
+    page.wait_for_timeout(50)
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scrollend'))"
+    )
+    expect(canvas).to_have_attribute(
+        "data-scroll-rendering",
+        "active",
+        timeout=1_000,
+    )
+
+
 @pytest.mark.parametrize(
     ("button", "direction", "held_multiplier"),
     [

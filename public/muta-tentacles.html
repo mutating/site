@@ -1186,6 +1186,9 @@
         };
         let activeTheme = "light";
         let substrateColor = themeColors.light;
+        let runtimeVisible = true;
+        let scrollRenderingSuppressed = false;
+        let scrollSuppressionCount = 0;
 
         function applyTheme(theme) {
           activeTheme = theme === "dark" ? "dark" : "light";
@@ -1201,6 +1204,27 @@
           }
         }
 
+        function applyRuntimeState(nextState) {
+          const wasScrollRenderingSuppressed =
+            scrollRenderingSuppressed;
+          runtimeVisible = nextState.visible !== false;
+          scrollRenderingSuppressed =
+            runtimeVisible && nextState.scrollActive === true;
+          if (
+            scrollRenderingSuppressed &&
+            !wasScrollRenderingSuppressed
+          ) {
+            scrollSuppressionCount += 1;
+            canvas.dataset.scrollSuppressionCount =
+              String(scrollSuppressionCount);
+          }
+          canvas.dataset.runtimeVisible =
+            runtimeVisible ? "true" : "false";
+          canvas.dataset.scrollRendering =
+            scrollRenderingSuppressed ? "suppressed" : "active";
+        }
+        window.__mutaTentaclesSetRuntimeState = applyRuntimeState;
+
         applyTheme(readParentTheme());
         addEventListener("message", (event) => {
           if (
@@ -1209,7 +1233,38 @@
           ) {
             applyTheme(event.data.theme);
           }
+          if (event.data?.type === "muta-tentacles-runtime") {
+            applyRuntimeState(event.data);
+          }
         });
+        let localWheelIdleTimer = 0;
+        addEventListener(
+          "wheel",
+          () => {
+            if (!runtimeVisible) return;
+            applyRuntimeState({
+              visible: true,
+              scrollActive: true,
+            });
+            if (localWheelIdleTimer) {
+              clearTimeout(localWheelIdleTimer);
+            }
+            localWheelIdleTimer = setTimeout(() => {
+              localWheelIdleTimer = 0;
+              applyRuntimeState({
+                visible: runtimeVisible,
+                scrollActive: false,
+              });
+            }, 160);
+            if (window.parent !== window) {
+              window.parent.postMessage(
+                { type: "muta-tentacles-scroll-input" },
+                "*",
+              );
+            }
+          },
+          { passive: true },
+        );
         if (window.parent !== window) {
           window.parent.postMessage({ type: "muta-tentacles-ready" }, "*");
         }
@@ -3174,6 +3229,7 @@
         let skipRedundantAnimationFrame = false;
         let lastPhysicsDuration = 0;
         let lastRenderSubmissionDuration = 0;
+        let physicsFrameId = 0;
 
         function recordRenderedInteraction() {
           renderedFrameId += 1;
@@ -3233,6 +3289,14 @@
 
         function frame(nowMilliseconds) {
           const now = nowMilliseconds * 0.001;
+          if (!runtimeVisible) {
+            lastTime = now;
+            diagnosticStart = now;
+            canvas.dataset.runtimePaused = "true";
+            scheduleFrame();
+            return;
+          }
+          canvas.dataset.runtimePaused = "false";
           if (
             skipRedundantAnimationFrame &&
             now - lastTime < 0.008
@@ -3242,6 +3306,14 @@
             return;
           }
           skipRedundantAnimationFrame = false;
+          if (
+            scrollRenderingSuppressed &&
+            !pointer.pressed &&
+            now - lastTime < 1 / 30
+          ) {
+            scheduleFrame();
+            return;
+          }
           const delta = Math.min(
             0.033,
             Math.max(0.001, now - lastTime),
@@ -3255,6 +3327,8 @@
           const physicsStartedAt = performance.now();
           smoothedTime += motionDelta;
           updateSkeletons(smoothedTime, delta, now);
+          physicsFrameId += 1;
+          canvas.dataset.physicsFrameId = String(physicsFrameId);
           if (canvas.dataset.pointerInteractionPhase === "impulse") {
             const submittedImpulseFrames = Number.parseInt(
               canvas.dataset.animationImpulseFramesSincePress || "0",
@@ -3265,12 +3339,14 @@
           }
           lastPhysicsDuration =
             performance.now() - physicsStartedAt;
-          const renderStartedAt = performance.now();
-          render(smoothedTime);
-          recordRenderedInteraction();
-          lastRenderSubmissionDuration =
-            performance.now() - renderStartedAt;
-          diagnosticFrames += 1;
+          if (!scrollRenderingSuppressed || pointer.pressed) {
+            const renderStartedAt = performance.now();
+            render(smoothedTime);
+            recordRenderedInteraction();
+            lastRenderSubmissionDuration =
+              performance.now() - renderStartedAt;
+            diagnosticFrames += 1;
+          }
           if (now - diagnosticStart >= 1) {
             diagnostics.fps = diagnosticFrames / (now - diagnosticStart);
             canvas.dataset.fps = diagnostics.fps.toFixed(0);

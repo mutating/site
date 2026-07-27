@@ -976,12 +976,41 @@ function TentacleContactBackground() {
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
+    let contactIsNearViewport = false;
+    let scrollIsActive = false;
+    let scrollIdleTimer = 0;
 
     const sendTheme = () => {
       const theme: Theme =
         document.documentElement.dataset.theme === "dark" ? "dark" : "light";
       frame.contentWindow?.postMessage(
         { type: "muta-tentacles-theme", theme },
+        window.location.origin,
+      );
+    };
+
+    const sendRuntimeState = () => {
+      const state = {
+        visible: contactIsNearViewport && !document.hidden,
+        scrollActive: scrollIsActive,
+      };
+      const runtimeWindow = frame.contentWindow as
+        | (Window & {
+            __mutaTentaclesSetRuntimeState?: (
+              nextState: typeof state,
+            ) => void;
+          })
+        | null;
+      try {
+        if (runtimeWindow?.__mutaTentaclesSetRuntimeState) {
+          runtimeWindow.__mutaTentaclesSetRuntimeState(state);
+          return;
+        }
+      } catch {
+        // Fall through to postMessage if the frame is not same-origin.
+      }
+      runtimeWindow?.postMessage(
+        { type: "muta-tentacles-runtime", ...state },
         window.location.origin,
       );
     };
@@ -993,10 +1022,30 @@ function TentacleContactBackground() {
       );
     };
 
-    const releaseTentaclesWhenHidden = () => {
+    const handleVisibilityChange = () => {
       if (document.hidden) {
         releaseTentacles();
       }
+      sendRuntimeState();
+    };
+
+    const finishScroll = () => {
+      scrollIdleTimer = 0;
+      if (!scrollIsActive) return;
+      scrollIsActive = false;
+      sendRuntimeState();
+    };
+
+    const handleScroll = () => {
+      if (!contactIsNearViewport) return;
+      if (!scrollIsActive) {
+        scrollIsActive = true;
+        sendRuntimeState();
+      }
+      if (scrollIdleTimer) {
+        window.clearTimeout(scrollIdleTimer);
+      }
+      scrollIdleTimer = window.setTimeout(finishScroll, 120);
     };
 
     const handleMessage = (event: MessageEvent) => {
@@ -1005,16 +1054,37 @@ function TentacleContactBackground() {
         event.data?.type === "muta-tentacles-ready"
       ) {
         sendTheme();
+        sendRuntimeState();
+      } else if (
+        event.source === frame.contentWindow &&
+        event.data?.type === "muta-tentacles-scroll-input"
+      ) {
+        handleScroll();
       }
     };
 
     const themeObserver = new MutationObserver(sendTheme);
+    const visibilityObserver = new IntersectionObserver(
+      ([entry]) => {
+        contactIsNearViewport = entry.isIntersecting;
+        if (!contactIsNearViewport && scrollIdleTimer) {
+          window.clearTimeout(scrollIdleTimer);
+          scrollIdleTimer = 0;
+          scrollIsActive = false;
+        }
+        sendRuntimeState();
+      },
+      { rootMargin: "200px 0px" },
+    );
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
     });
+    visibilityObserver.observe(frame);
     frame.addEventListener("load", sendTheme);
     window.addEventListener("message", handleMessage);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("scrollend", finishScroll, { passive: true });
     window.addEventListener("pointerup", releaseTentacles, { passive: true });
     window.addEventListener("pointercancel", releaseTentacles, {
       passive: true,
@@ -1023,21 +1093,28 @@ function TentacleContactBackground() {
     window.addEventListener("pagehide", releaseTentacles);
     document.addEventListener(
       "visibilitychange",
-      releaseTentaclesWhenHidden,
+      handleVisibilityChange,
     );
     sendTheme();
+    sendRuntimeState();
 
     return () => {
+      if (scrollIdleTimer) {
+        window.clearTimeout(scrollIdleTimer);
+      }
       themeObserver.disconnect();
+      visibilityObserver.disconnect();
       frame.removeEventListener("load", sendTheme);
       window.removeEventListener("message", handleMessage);
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("scrollend", finishScroll);
       window.removeEventListener("pointerup", releaseTentacles);
       window.removeEventListener("pointercancel", releaseTentacles);
       window.removeEventListener("blur", releaseTentacles);
       window.removeEventListener("pagehide", releaseTentacles);
       document.removeEventListener(
         "visibilitychange",
-        releaseTentaclesWhenHidden,
+        handleVisibilityChange,
       );
     };
   }, []);
@@ -1046,7 +1123,7 @@ function TentacleContactBackground() {
     <iframe
       ref={frameRef}
       className="contact__tentacles"
-      src="/muta-tentacles.html?v=b1ebdd2860f8"
+      src="/muta-tentacles.html?v=0fe020956a2d"
       title="Interactive field of cursor-responsive Muta tentacles"
       loading="lazy"
       tabIndex={-1}
