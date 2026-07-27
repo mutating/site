@@ -464,3 +464,104 @@ def test_header_eye_gaze_speed_is_stable_when_animation_frames_are_delayed(
     assert sixty_hz_position > 5
     assert thirty_hz_position > 5
     assert abs(sixty_hz_position - thirty_hz_position) <= 1
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1280, 720),
+        (390, 844),
+    ],
+)
+def test_header_eye_tracks_pointer_inside_tentacle_iframe(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep the header eye following the cursor over the tentacle surface.
+
+    The contact artwork is an interactive iframe. Pointer events dispatched
+    inside an iframe belong to its own window and never bubble into the parent
+    document, while the header eye normally listens for ``pointermove`` on the
+    parent window. Without an explicit coordinate bridge, the pupil therefore
+    froze at its last target for the entire time the cursor crossed the
+    tentacles—the exact defect this test is intended to prevent.
+
+    The regression loads the real embedded tentacle document at both desktop
+    and narrow responsive widths, scrolls that iframe into view, and dispatches
+    two pointer moves on its actual canvas: first at one quarter of its width,
+    then near its right edge. The child must relay normalized coordinates, the
+    parent must translate them back into viewport coordinates, and the existing
+    eye spring must consequently move the pupil rightward after both messages.
+    Reverting either the child ``postMessage`` call, the parent's source-checked
+    translation, or the eye's relayed-event listener makes the pupil remain
+    stationary and causes this test to fail.
+
+    The assertions compare direction and relative movement rather than exact
+    frame timings, so GPU speed, display refresh rate, and WebGL rendering cost
+    cannot change the expected result.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=viewport,
+    )
+    frame = page.locator(".contact__tentacles")
+    canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    pupil = page.locator(".animated-eye-logo__pupil")
+
+    frame.scroll_into_view_if_needed()
+    expect(canvas).to_be_visible()
+
+    def move_tentacle_pointer(normalized_x: float) -> None:
+        canvas.evaluate(
+            """
+            (element, x) => {
+              const rect = element.getBoundingClientRect();
+              element.dispatchEvent(
+                new PointerEvent("pointermove", {
+                  bubbles: true,
+                  pointerId: 71,
+                  pointerType: "mouse",
+                  isPrimary: true,
+                  buttons: 0,
+                  clientX: rect.left + rect.width * x,
+                  clientY: rect.top + rect.height * 0.5,
+                }),
+              );
+            }
+            """,
+            normalized_x,
+        )
+
+    move_tentacle_pointer(0.25)
+    page.wait_for_function(
+        """
+        () =>
+          Number.parseFloat(
+            getComputedStyle(
+              document.querySelector(".animated-eye-logo__pupil"),
+            ).getPropertyValue("--gaze-x"),
+          ) > 0.5
+        """
+    )
+    first_position = pupil.evaluate(
+        """
+        (element) =>
+          Number.parseFloat(
+            getComputedStyle(element).getPropertyValue("--gaze-x"),
+          )
+        """
+    )
+
+    move_tentacle_pointer(0.9)
+    page.wait_for_function(
+        """
+        (previousPosition) =>
+          Number.parseFloat(
+            getComputedStyle(
+              document.querySelector(".animated-eye-logo__pupil"),
+            ).getPropertyValue("--gaze-x"),
+          ) > previousPosition + 0.5
+        """,
+        arg=first_position,
+    )

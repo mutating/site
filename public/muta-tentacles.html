@@ -2250,6 +2250,16 @@
             event.clientX <= rect.right &&
             event.clientY >= rect.top &&
             event.clientY <= rect.bottom;
+          if (window.parent !== window) {
+            window.parent.postMessage(
+              {
+                type: "muta-tentacles-pointer-move",
+                x: pointer.targetX,
+                y: pointer.targetY,
+              },
+              "*",
+            );
+          }
         }
 
         function releasePointerInteraction() {

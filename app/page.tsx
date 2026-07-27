@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 
 type Theme = "light" | "dark";
 const THEME_TOGGLE_BLINK_EVENT = "tmc-theme-toggle-blink";
+const TENTACLE_POINTER_RELAY_EVENT = "tmc-tentacle-pointer-move";
 
 function CurrentYear() {
   return <>{new Date().getFullYear()}</>;
@@ -345,6 +346,15 @@ function AnimatedEyeLogo() {
     };
 
     const handlePointerMove = (event: PointerEvent) => aimAt(event.clientX, event.clientY);
+    const handleRelayedPointerMove = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ clientX?: unknown; clientY?: unknown }>
+      ).detail;
+      const clientX = Number(detail?.clientX);
+      const clientY = Number(detail?.clientY);
+      if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+      aimAt(clientX, clientY);
+    };
     const centerGaze = () => {
       gaze.targetX = 0;
       gaze.targetY = 0;
@@ -527,6 +537,10 @@ function AnimatedEyeLogo() {
     window.addEventListener("resize", handleViewportResize, { passive: true });
     window.addEventListener("pointermove", handlePointerMove, { passive: true });
     window.addEventListener("pointerdown", handlePointerMove, { passive: true });
+    window.addEventListener(
+      TENTACLE_POINTER_RELAY_EVENT,
+      handleRelayedPointerMove,
+    );
     window.addEventListener("pointerup", openAfterRelease, { passive: true });
     window.addEventListener("pointercancel", openAfterRelease, { passive: true });
     window.addEventListener("blur", handleWindowBlur);
@@ -549,6 +563,10 @@ function AnimatedEyeLogo() {
       window.removeEventListener("resize", handleViewportResize);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerdown", handlePointerMove);
+      window.removeEventListener(
+        TENTACLE_POINTER_RELAY_EVENT,
+        handleRelayedPointerMove,
+      );
       window.removeEventListener("pointerup", openAfterRelease);
       window.removeEventListener("pointercancel", openAfterRelease);
       window.removeEventListener("blur", handleWindowBlur);
@@ -1133,6 +1151,31 @@ function TentacleContactBackground() {
         event.data?.type === "muta-tentacles-scroll-input"
       ) {
         handleForwardedScrollInput(event.data.deltaY);
+      } else if (
+        event.source === frame.contentWindow &&
+        event.data?.type === "muta-tentacles-pointer-move"
+      ) {
+        const normalizedX = Number(event.data.x);
+        const normalizedY = Number(event.data.y);
+        if (
+          !Number.isFinite(normalizedX) ||
+          !Number.isFinite(normalizedY)
+        ) {
+          return;
+        }
+        const rect = frame.getBoundingClientRect();
+        window.dispatchEvent(
+          new CustomEvent(TENTACLE_POINTER_RELAY_EVENT, {
+            detail: {
+              clientX:
+                rect.left +
+                Math.max(0, Math.min(1, normalizedX)) * rect.width,
+              clientY:
+                rect.top +
+                Math.max(0, Math.min(1, normalizedY)) * rect.height,
+            },
+          }),
+        );
       }
     };
 
@@ -1193,7 +1236,7 @@ function TentacleContactBackground() {
     <iframe
       ref={frameRef}
       className="contact__tentacles"
-      src="/muta-tentacles.html?v=6a51c8e4c6fb&embedded=1"
+      src="/muta-tentacles.html?v=e8a6f8306498&embedded=1"
       title="Interactive field of cursor-responsive Muta tentacles"
       loading="eager"
       tabIndex={-1}
