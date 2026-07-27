@@ -209,7 +209,10 @@ def test_scroll_state_reaches_tokamak_without_a_second_host_animation_frame(
     synchronously. Reinstating the former host-side frame queue leaves the
     rotation unchanged and makes this test fail. The iframe is still allowed to
     coalesce the costly render into its next frame, so this test protects smooth
-    input tracking without requiring redundant GPU work.
+    input tracking without requiring redundant GPU work. The test explicitly
+    requests instant scrolling and dispatches the host event in the same task;
+    its result therefore cannot depend on CSS smooth-scroll progress, a display
+    frame, or an arbitrary wall-clock sleep.
     """
 
     page = driver(
@@ -235,12 +238,12 @@ def test_scroll_state_reaches_tokamak_without_a_second_host_animation_frame(
                 document.documentElement.scrollHeight - window.innerHeight;
               const target =
                 before <= maximum - 120 ? before + 120 : before - 120;
-              window.scrollTo(0, target);
+              window.scrollTo({top: target, behavior: "instant"});
+              window.dispatchEvent(new Event("scroll"));
               return {before, target};
             }
             """
         )
-        page.wait_for_timeout(50)
 
         assert page.evaluate("window.scrollY") != scroll_positions["before"]
         assert model.get_attribute("data-rotation-x") != initial_rotation

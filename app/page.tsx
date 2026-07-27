@@ -995,6 +995,7 @@ function TentacleContactBackground() {
         visible: contactIsNearViewport && !document.hidden,
         scrollActive: scrollIsActive,
       };
+      frame.dataset.scrollActive = String(scrollIsActive);
       const runtimeWindow = frame.contentWindow as
         | (Window & {
             __mutaTentaclesSetRuntimeState?: (
@@ -1030,11 +1031,40 @@ function TentacleContactBackground() {
       sendRuntimeState();
     };
 
-    const finishScroll = () => {
+    const clearScrollIdleTimer = () => {
+      if (!scrollIdleTimer) return;
+      window.clearTimeout(scrollIdleTimer);
       scrollIdleTimer = 0;
+    };
+
+    const finishScroll = () => {
+      clearScrollIdleTimer();
       if (!scrollIsActive) return;
       scrollIsActive = false;
       sendRuntimeState();
+    };
+
+    const cancelBoundaryScroll = () => {
+      clearScrollIdleTimer();
+      scrollIsActive = false;
+      // The child can enter suppression before this cross-frame wheel intent
+      // arrives, so always synchronize the final boundary state.
+      sendRuntimeState();
+    };
+
+    const canPageScrollInDirection = (deltaY: number) => {
+      if (!Number.isFinite(deltaY) || deltaY === 0) return false;
+      const root =
+        document.scrollingElement ?? document.documentElement;
+      const maximumScrollTop = Math.max(
+        0,
+        root.scrollHeight - root.clientHeight,
+      );
+      const boundaryTolerance = 1;
+      if (deltaY > 0) {
+        return root.scrollTop < maximumScrollTop - boundaryTolerance;
+      }
+      return root.scrollTop > boundaryTolerance;
     };
 
     const handleScroll = () => {
@@ -1052,6 +1082,18 @@ function TentacleContactBackground() {
       );
     };
 
+    const handleForwardedScrollInput = (deltaY: unknown) => {
+      const numericDeltaY = Number(deltaY);
+      if (!Number.isFinite(numericDeltaY) || numericDeltaY === 0) {
+        return;
+      }
+      if (!canPageScrollInDirection(numericDeltaY)) {
+        cancelBoundaryScroll();
+        return;
+      }
+      handleScroll();
+    };
+
     const handleMessage = (event: MessageEvent) => {
       if (
         event.source === frame.contentWindow &&
@@ -1063,7 +1105,7 @@ function TentacleContactBackground() {
         event.source === frame.contentWindow &&
         event.data?.type === "muta-tentacles-scroll-input"
       ) {
-        handleScroll();
+        handleForwardedScrollInput(event.data.deltaY);
       }
     };
 
@@ -1071,9 +1113,8 @@ function TentacleContactBackground() {
     const visibilityObserver = new IntersectionObserver(
       ([entry]) => {
         contactIsNearViewport = entry.isIntersecting;
-        if (!contactIsNearViewport && scrollIdleTimer) {
-          window.clearTimeout(scrollIdleTimer);
-          scrollIdleTimer = 0;
+        if (!contactIsNearViewport) {
+          clearScrollIdleTimer();
           scrollIsActive = false;
         }
         sendRuntimeState();
@@ -1103,9 +1144,7 @@ function TentacleContactBackground() {
     sendRuntimeState();
 
     return () => {
-      if (scrollIdleTimer) {
-        window.clearTimeout(scrollIdleTimer);
-      }
+      clearScrollIdleTimer();
       themeObserver.disconnect();
       visibilityObserver.disconnect();
       frame.removeEventListener("load", sendTheme);
@@ -1127,7 +1166,7 @@ function TentacleContactBackground() {
     <iframe
       ref={frameRef}
       className="contact__tentacles"
-      src="/muta-tentacles.html?v=ba600cb796ce&embedded=1"
+      src="/muta-tentacles.html?v=6a51c8e4c6fb&embedded=1"
       title="Interactive field of cursor-responsive Muta tentacles"
       loading="eager"
       tabIndex={-1}

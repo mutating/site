@@ -1336,27 +1336,73 @@
           }
         });
         let localWheelIdleTimer = 0;
+
+        function canHostScrollInDirection(deltaY) {
+          if (!Number.isFinite(deltaY) || deltaY === 0) {
+            return false;
+          }
+          const hostWindow =
+            window.parent === window ? window : window.parent;
+          try {
+            const hostDocument = hostWindow.document;
+            const root =
+              hostDocument.scrollingElement ||
+              hostDocument.documentElement;
+            const maximumScrollTop = Math.max(
+              0,
+              root.scrollHeight - root.clientHeight,
+            );
+            const boundaryTolerance = 1;
+            if (deltaY > 0) {
+              return (
+                root.scrollTop <
+                maximumScrollTop - boundaryTolerance
+              );
+            }
+            return root.scrollTop > boundaryTolerance;
+          } catch {
+            // A cross-origin host makes the final boundary decision.
+            return true;
+          }
+        }
+
+        function clearLocalWheelIdleTimer() {
+          if (!localWheelIdleTimer) return;
+          clearTimeout(localWheelIdleTimer);
+          localWheelIdleTimer = 0;
+        }
+
         addEventListener(
           "wheel",
-          () => {
+          (event) => {
             if (!runtimeVisible) return;
-            applyRuntimeState({
-              visible: true,
-              scrollActive: true,
-            });
-            if (localWheelIdleTimer) {
-              clearTimeout(localWheelIdleTimer);
-            }
-            localWheelIdleTimer = setTimeout(() => {
-              localWheelIdleTimer = 0;
+            const deltaY = Number(event.deltaY);
+            const canScroll = canHostScrollInDirection(deltaY);
+            clearLocalWheelIdleTimer();
+            if (canScroll) {
               applyRuntimeState({
-                visible: runtimeVisible,
+                visible: true,
+                scrollActive: true,
+              });
+              localWheelIdleTimer = setTimeout(() => {
+                localWheelIdleTimer = 0;
+                applyRuntimeState({
+                  visible: runtimeVisible,
+                  scrollActive: false,
+                });
+              }, SCROLL_IDLE_FALLBACK_MS);
+            } else {
+              applyRuntimeState({
+                visible: true,
                 scrollActive: false,
               });
-            }, SCROLL_IDLE_FALLBACK_MS);
+            }
             if (window.parent !== window) {
               window.parent.postMessage(
-                { type: "muta-tentacles-scroll-input" },
+                {
+                  type: "muta-tentacles-scroll-input",
+                  deltaY,
+                },
                 "*",
               );
             }

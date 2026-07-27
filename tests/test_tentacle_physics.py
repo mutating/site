@@ -679,6 +679,37 @@ def _open_contact_with_active_tentacle_runtime(
     return page, canvas
 
 
+def _settle_page_at_bottom(page: Page, canvas: Locator) -> Locator:
+    """Move to the lower boundary and settle the real scroll lifecycle."""
+
+    frame = page.locator(".contact__tentacles")
+    page.evaluate(
+        """
+        () => {
+          const root = document.scrollingElement;
+          window.scrollTo({top: root.scrollHeight, behavior: "instant"});
+        }
+        """
+    )
+    assert page.evaluate(
+        """
+        () => {
+          const root = document.scrollingElement;
+          return Math.abs(
+            root.scrollHeight - root.clientHeight - root.scrollTop
+          ) <= 1;
+        }
+        """
+    )
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scrollend'))"
+    )
+    expect(frame).to_have_attribute("data-scroll-active", "false")
+    expect(canvas).to_have_attribute("data-runtime-visible", "true")
+    expect(canvas).to_have_attribute("data-scroll-rendering", "active")
+    return frame
+
+
 @pytest.mark.parametrize(
     "viewport",
     [
@@ -849,6 +880,137 @@ def test_scrollend_and_iframe_wheel_share_the_scroll_lifecycle(
     page.clock.fast_forward(319)
     assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
     page.clock.fast_forward(1)
+    assert canvas.get_attribute("data-scroll-rendering") == "active"
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1280, 720),
+        (390, 610),
+    ],
+)
+def test_outward_momentum_at_page_bottom_never_pauses_tentacles(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep the contact animation alive after the page reaches its lower edge.
+
+    A trackpad continues emitting positive wheel deltas for a while after the
+    document has already reached its maximum scroll position. Those events
+    arrive inside the contact iframe even though they cannot move the parent
+    page. Treating every one as active scrolling repeatedly restarted the
+    320 ms render-suppression timer, so a long momentum tail froze the
+    tentacles for roughly two seconds at the exact moment the user arrived at
+    the bottom.
+
+    This regression loads the real WebGL surface on desktop and phone layouts,
+    moves the document to its exact lower boundary, and sends sixteen outward
+    wheel events over 2.4 seconds of deterministic browser time. No event may
+    increment the suppression counter or pause rendering. It then sends one
+    negative delta, which can genuinely move the page upward, and requires the
+    normal compositor-friendly suppression to start. The final assertion is
+    essential: the boundary fix must remove only the false freeze and preserve
+    the existing smooth-scroll optimization whenever movement is possible.
+
+    Playwright's frozen clock replaces all real waiting, so display refresh
+    rate, WebGL speed, CPU load, and CI scheduling cannot hide or fabricate the
+    defect.
+    """
+
+    page, canvas = _open_contact_with_active_tentacle_runtime(
+        driver,
+        viewport,
+    )
+    _settle_page_at_bottom(page, canvas)
+    baseline_suppressions = int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    )
+
+    for _ in range(16):
+        canvas.evaluate(
+            """
+            element => element.dispatchEvent(new WheelEvent("wheel", {
+              bubbles: true,
+              deltaY: 120,
+            }))
+            """
+        )
+        page.clock.fast_forward(150)
+        assert canvas.get_attribute("data-scroll-rendering") == "active"
+
+    assert int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    ) == baseline_suppressions
+
+    canvas.evaluate(
+        """
+        element => element.dispatchEvent(new WheelEvent("wheel", {
+          bubbles: true,
+          deltaY: -120,
+        }))
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
+    assert int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    ) == baseline_suppressions + 1
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1280, 720),
+        (390, 610),
+    ],
+)
+def test_bottom_boundary_input_cancels_an_inflight_scroll_pause(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """End an existing render pause as soon as scrolling becomes impossible.
+
+    The last real scroll event can put the iframe into suppression immediately
+    before the document reaches its lower limit. If the following momentum
+    wheel event is merely ignored, the already-running parent and child timers
+    still hold the final tentacle texture for another 320 ms. Worse, a stale
+    parent state can reapply that pause after the child has locally resumed.
+    The visible result is a shorter version of the same bottom-of-page freeze.
+
+    At both responsive widths this test starts from the exact page bottom,
+    deliberately places the real parent/iframe protocol into active-scroll
+    mode, and then emits an outward wheel delta that cannot change scrollTop.
+    The parent state and child renderer must both become active immediately.
+    Advancing the fake clock through the discarded deadline must not produce a
+    late state reversal. This catches incomplete fixes that filter only new
+    pauses, clear only one of the two timers, or update the iframe without
+    synchronizing the host lifecycle.
+    """
+
+    page, canvas = _open_contact_with_active_tentacle_runtime(
+        driver,
+        viewport,
+    )
+    frame = _settle_page_at_bottom(page, canvas)
+    page.evaluate(
+        "() => window.dispatchEvent(new Event('scroll'))"
+    )
+    expect(frame).to_have_attribute("data-scroll-active", "true")
+    expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
+
+    canvas.evaluate(
+        """
+        element => element.dispatchEvent(new WheelEvent("wheel", {
+          bubbles: true,
+          deltaY: 120,
+        }))
+        """
+    )
+    expect(frame).to_have_attribute("data-scroll-active", "false")
+    expect(canvas).to_have_attribute("data-scroll-rendering", "active")
+
+    page.clock.fast_forward(320)
+    assert frame.get_attribute("data-scroll-active") == "false"
     assert canvas.get_attribute("data-scroll-rendering") == "active"
 
 
