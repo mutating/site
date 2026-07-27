@@ -861,11 +861,17 @@ function TokamakVisual() {
 
     const edgeOnRotation = -Math.atan2(9.42, 16.5);
     let frameRequest = 0;
+    let modelIsNearViewport = false;
 
     const updateRotation = () => {
       frameRequest = 0;
 
       const rect = shell.getBoundingClientRect();
+      const visible =
+        modelIsNearViewport &&
+        !document.hidden &&
+        rect.bottom >= -200 &&
+        rect.top <= window.innerHeight + 200;
       const distanceFromEntryToCenter = (window.innerHeight + rect.height) / 2;
       const scrollProgress = Math.min(
         2,
@@ -883,7 +889,7 @@ function TokamakVisual() {
       shell.dataset.rotationX = rotationX.toFixed(3);
       shell.dataset.modelScale = modelScale.toFixed(3);
       frame.contentWindow?.postMessage(
-        { type: "tokamak-state", rotationX, modelScale, theme },
+        { type: "tokamak-state", rotationX, modelScale, theme, visible },
         window.location.origin,
       );
     };
@@ -906,12 +912,21 @@ function TokamakVisual() {
 
     const resizeObserver = new ResizeObserver(scheduleRotationUpdate);
     const themeObserver = new MutationObserver(scheduleRotationUpdate);
+    const visibilityObserver = new IntersectionObserver(
+      ([entry]) => {
+        modelIsNearViewport = entry.isIntersecting;
+        scheduleRotationUpdate();
+      },
+      { rootMargin: "200px 0px" },
+    );
     resizeObserver.observe(shell);
+    visibilityObserver.observe(shell);
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
     });
     frame.addEventListener("load", scheduleRotationUpdate);
+    document.addEventListener("visibilitychange", scheduleRotationUpdate);
     window.addEventListener("message", handleModelMessage);
     window.addEventListener("scroll", scheduleRotationUpdate, { passive: true });
     window.addEventListener("resize", scheduleRotationUpdate);
@@ -920,8 +935,13 @@ function TokamakVisual() {
     return () => {
       if (frameRequest) window.cancelAnimationFrame(frameRequest);
       resizeObserver.disconnect();
+      visibilityObserver.disconnect();
       themeObserver.disconnect();
       frame.removeEventListener("load", scheduleRotationUpdate);
+      document.removeEventListener(
+        "visibilitychange",
+        scheduleRotationUpdate,
+      );
       window.removeEventListener("message", handleModelMessage);
       window.removeEventListener("scroll", scheduleRotationUpdate);
       window.removeEventListener("resize", scheduleRotationUpdate);
@@ -933,7 +953,7 @@ function TokamakVisual() {
       <iframe
         ref={frameRef}
         className="tokamak-model__frame"
-        src="/tokamak-reactor.html?v=bloom-radius-1"
+        src="/tokamak-reactor.html?v=performance-2"
         title="Scroll-linked three-dimensional tokamak reactor"
         tabIndex={-1}
         aria-label="A three-dimensional tokamak reactor whose angle follows its position in the viewport"

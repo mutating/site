@@ -1,0 +1,243 @@
+import fs from "node:fs";
+
+const filePath = new URL("../public/tokamak-reactor.html", import.meta.url);
+let html = fs.readFileSync(filePath, "utf8");
+
+const revision = "demand-batched-v1";
+
+if (html.includes(`data-performance-revision="${revision}"`)) {
+  process.exit(0);
+}
+
+function replaceOnce(label, previousValue, nextValue) {
+  const matches = html.split(previousValue).length - 1;
+
+  if (matches !== 1) {
+    throw new Error(`${label}: expected one source match, found ${matches}`);
+  }
+
+  html = html.replace(previousValue, nextValue);
+}
+
+replaceOnce(
+  "renderer default-framebuffer antialiasing",
+  'let s=new Kd({antialias:!0,alpha:!0,powerPreference:"high-performance"});',
+  'let s=new Kd({antialias:!1,alpha:!0,powerPreference:"high-performance"});',
+);
+
+replaceOnce(
+  "shared tokamak materials",
+  'function hp(e,t=Av,n=!1){return new Lc({color:t,emissive:new Bt(3213590),emissiveIntensity:.38,metalness:.72,roughness:.3,transparent:!0,opacity:e,side:oi,depthWrite:n})}function cu(e,t=Ev){return new Lo({color:t,transparent:!0,opacity:Math.min(1,e*fL),depthWrite:!1})}',
+  'let bM=new Map,wM=new Map;function hp(e,t=Av,n=!1){let i=`${e}|${t}|${n}`,s=bM.get(i);return s||(s=new Lc({color:t,emissive:new Bt(3213590),emissiveIntensity:.38,metalness:.72,roughness:.3,transparent:!0,opacity:e,side:oi,depthWrite:n,forceSinglePass:!0}),bM.set(i,s)),s}function cu(e,t=Ev){let n=`${e}|${t}`,i=wM.get(n);return i||(i=new Lo({color:t,transparent:!0,opacity:Math.min(1,e*fL),depthWrite:!1}),wM.set(n,i)),i}',
+);
+
+replaceOnce(
+  "static line batching",
+  'function SL(){let e=new Ln;return gL(e),vL(e),yL(e),e}',
+  `function BL(e){
+  e.updateMatrixWorld(!0);
+  let t=[],n=new Map;
+  e.traverse(i=>{
+    if(!(i instanceof Qi)||Array.isArray(i.material))return;
+    let s=i.geometry?.getAttribute("position");
+    if(!s)return;
+    t.push(i);
+    let a=\`\${i.renderOrder}|\${i.material.uuid}\`,r=n.get(a);
+    r?r.push(i):n.set(a,[i])
+  });
+  for(let i of n.values()){
+    if(i.length<2)continue;
+    let s=0;
+    for(let l of i){
+      let c=l.geometry.getAttribute("position"),h=l.geometry.index;
+      s+=h?h.count:c.count
+    }
+    let a=new Float32Array(s*3),r=0,o=new R;
+    for(let l of i){
+      let c=l.geometry.getAttribute("position"),h=l.geometry.index,p=h?h.count:c.count;
+      for(let u=0;u<p;u++){
+        let d=h?h.getX(u):u;
+        o.fromBufferAttribute(c,d).applyMatrix4(l.matrixWorld);
+        a[r++]=o.x,a[r++]=o.y,a[r++]=o.z
+      }
+    }
+    let l=new ze;
+    l.setAttribute("position",new re(a,3)),l.computeBoundingSphere();
+    let c=new Qi(l,i[0].material);
+    c.renderOrder=i[0].renderOrder,e.add(c);
+    for(let h of i)h.parent?.remove(h),h.geometry.dispose()
+  }
+  return{source:t.length,batched:[...n.values()].reduce((i,s)=>i+(s.length>1?1:s.length),0)}
+}function SL(){let e=new Ln;gL(e),vL(e),yL(e);let t=BL(e);return e.userData.sourceWireObjects=t.source,e.userData.batchedWireObjects=t.batched,e}`,
+);
+
+replaceOnce(
+  "bloom output buffer swapping",
+  'this.clearColor=new Bt(0,0,0),this.needsSwap=!1,this.renderTargetsHorizontal=[]',
+  'this.clearColor=new Bt(0,0,0),this.needsSwap=!0,this.renderTargetsHorizontal=[]',
+);
+
+replaceOnce(
+  "bloom base texture uniform",
+  'uniforms:{blurTexture1:{value:null},blurTexture2:{value:null},blurTexture3:{value:null},blurTexture4:{value:null},blurTexture5:{value:null},bloomStrength:{value:1}',
+  'uniforms:{baseTexture:{value:null},blurTexture1:{value:null},blurTexture2:{value:null},blurTexture3:{value:null},blurTexture4:{value:null},blurTexture5:{value:null},bloomStrength:{value:1}',
+);
+
+replaceOnce(
+  "bloom base texture declaration",
+  `				uniform sampler2D blurTexture1;
+				uniform sampler2D blurTexture2;`,
+  `				uniform sampler2D baseTexture;
+				uniform sampler2D blurTexture1;
+				uniform sampler2D blurTexture2;`,
+);
+
+replaceOnce(
+  "fused bloom composition",
+  `					float bloomAlpha = max( bloom.r, max( bloom.g, bloom.b ) );
+					gl_FragColor = vec4( bloom, bloomAlpha );`,
+  `					float bloomAlpha = max( bloom.r, max( bloom.g, bloom.b ) );
+					gl_FragColor = texture2D( baseTexture, vUv ) + vec4( bloom, bloomAlpha );`,
+);
+
+replaceOnce(
+  "single-pass bloom output",
+  'this._fsQuad.material=this.compositeMaterial,this.compositeMaterial.uniforms.bloomStrength.value=this.strength,this.compositeMaterial.uniforms.bloomRadius.value=this.radius,this.compositeMaterial.uniforms.bloomTintColors.value=this.bloomTintColors,t.setRenderTarget(this.renderTargetsHorizontal[0]),t.clear(),this._fsQuad.render(t),this._fsQuad.material=this.blendMaterial,this.copyUniforms.tDiffuse.value=this.renderTargetsHorizontal[0].texture,a&&t.state.buffers.stencil.setTest(!0),this.renderToScreen?(t.setRenderTarget(null),this._fsQuad.render(t)):(t.setRenderTarget(i),this._fsQuad.render(t)),t.setClearColor(this._oldClearColor,this._oldClearAlpha),t.autoClear=r',
+  'this._fsQuad.material=this.compositeMaterial,this.compositeMaterial.uniforms.baseTexture.value=i.texture,this.compositeMaterial.uniforms.bloomStrength.value=this.strength,this.compositeMaterial.uniforms.bloomRadius.value=this.radius,this.compositeMaterial.uniforms.bloomTintColors.value=this.bloomTintColors,a&&t.state.buffers.stencil.setTest(!0),t.setRenderTarget(this.renderToScreen?null:n),t.clear(),this._fsQuad.render(t),t.setClearColor(this._oldClearColor,this._oldClearAlpha),t.autoClear=r',
+);
+
+replaceOnce(
+  "paired bilinear gaussian sampling",
+  `					for ( int i = 1; i < KERNEL_RADIUS; i ++ ) {
+
+						float x = float( i );
+						float w = gaussianCoefficients[i];
+						vec2 uvOffset = direction * invSize * x;
+						vec3 sample1 = texture2D( colorTexture, vUv + uvOffset ).rgb;
+						vec3 sample2 = texture2D( colorTexture, vUv - uvOffset ).rgb;
+						diffuseSum += ( sample1 + sample2 ) * w;
+
+					}`,
+  `					for ( int i = 1; i < KERNEL_RADIUS - 1; i += 2 ) {
+
+						float w1 = gaussianCoefficients[i];
+						float w2 = gaussianCoefficients[i + 1];
+						float w = w1 + w2;
+						float x = ( float( i ) * w1 + float( i + 1 ) * w2 ) / w;
+						vec2 uvOffset = direction * invSize * x;
+						vec3 sample1 = texture2D( colorTexture, vUv + uvOffset ).rgb;
+						vec3 sample2 = texture2D( colorTexture, vUv - uvOffset ).rgb;
+						diffuseSum += ( sample1 + sample2 ) * w;
+
+					}
+
+					float finalX = float( KERNEL_RADIUS - 1 );
+					float finalW = gaussianCoefficients[KERNEL_RADIUS - 1];
+					vec2 finalOffset = direction * invSize * finalX;
+					vec3 finalSample1 = texture2D( colorTexture, vUv + finalOffset ).rgb;
+					vec3 finalSample2 = texture2D( colorTexture, vUv - finalOffset ).rgb;
+					diffuseSum += ( finalSample1 + finalSample2 ) * finalW;`,
+);
+
+replaceOnce(
+  "tokamak runtime",
+  `let H="",P=new WeakMap,C=T=>{let A=T.data;if(A&&A.type==="tokamak-state"){Number.isFinite(A.rotationX)&&(o.rotation.x=A.rotationX),Number.isFinite(A.modelScale)&&o.scale.setScalar(A.modelScale);let S=A.theme==="light"?"light":"dark",k=0,I=0;S!==H&&(H=S,n.background=null,M.uniforms.lightMode.value=H==="light"?1:0,o.traverse(w=>{if(w instanceof Qi&&(k+=1),w instanceof We){let D=w.material;if(!D)return;if(D.blending===ba){w.visible=!0;return}P.has(D)||P.set(D,{visible:w.visible,colorWrite:D.colorWrite,depthWrite:D.depthWrite,depthTest:D.depthTest,transparent:D.transparent}),w.visible=!0,H==="light"?(D.colorWrite=!1,D.depthWrite=!0,D.depthTest=!0,D.transparent=!1,I+=1):Object.assign(D,P.get(D)),D.needsUpdate=!0}}),s.domElement.dataset.reactorTheme=H,s.domElement.dataset.wireObjects=String(k),s.domElement.dataset.lightDepthOccluders=String(I)),window.parent!==window&&window.parent.postMessage({type:"tokamak-state-applied",theme:H,wireObjects:k,depthOccluders:I},"*")}};window.addEventListener("message",C),window.parent!==window&&window.parent.postMessage({type:"tokamak-ready"},"*");
+let l=o.getObjectByName("energy-ring-front"),c=o.getObjectByName("energy-ring-back"),h=new tp(i,s.domElement);h.target.copy(Tv),h.enabled=!1,h.enableDamping=!0,h.dampingFactor=.055,h.rotateSpeed=.62,h.zoomSpeed=.72,h.minDistance=7.1,h.maxDistance=22,h.screenSpacePanning=!1,h.update();let p=new Be(1,1,{type:Ke,samples:Math.min(4,s.capabilities.maxSamples)});p.texture.name="ReactorComposer.MSAA";let u=new ip(s,p);u.addPass(new ap(n,i));let d=new Zo(new Q(t.clientWidth,t.clientHeight),1.15,.18,1.05);s.domElement.dataset.bloomRadius=".18",u.addPass(d);let v=new op;u.addPass(v);let M=new sp;u.addPass(M);let m=()=>{i.position.copy(D1),h.target.copy(Tv),h.update()},f=T=>{T.key.toLowerCase()==="r"&&m()};window.addEventListener("keydown",f),s.domElement.addEventListener("dblclick",m);let g=()=>{let T=t.clientWidth,A=t.clientHeight;i.aspect=T/A,i.updateProjectionMatrix(),s.setSize(T,A),u.setSize(T,A)},_=new ResizeObserver(g);_.observe(t),g();let x=0,E=()=>{x=requestAnimationFrame(E),h.update();let T=Math.atan2(i.position.x,i.position.z);l&&(l.rotation.y=T),c&&(c.rotation.y=T),u.render()};return E(),()=>{cancelAnimationFrame(x),_.disconnect(),window.removeEventListener("message",C),window.removeEventListener("keydown",f),s.domElement.removeEventListener("dblclick",m),h.dispose(),d.dispose(),v.dispose(),M.dispose(),u.dispose(),s.dispose(),t.removeChild(s.domElement),n.traverse(T=>{if(T instanceof We||T instanceof Qi){T.geometry?.dispose();let A=T.material;Array.isArray(A)?A.forEach(S=>S.dispose()):A?.dispose()}})}},[]),(0,L1.jsx)("div",{ref:e,className:"reactor-scene"})}`,
+  `let H="",P=new WeakMap,O=new Ji({color:0,side:oi,colorWrite:!1,depthWrite:!0,depthTest:!0,toneMapped:!1}),V=window.parent===window,E=()=>{},C=T=>{
+  let A=T.data;
+  if(!A||A.type!=="tokamak-state")return;
+  let S=!1;
+  Number.isFinite(A.rotationX)&&o.rotation.x!==A.rotationX&&(o.rotation.x=A.rotationX,S=!0);
+  Number.isFinite(A.modelScale)&&o.scale.x!==A.modelScale&&(o.scale.setScalar(A.modelScale),S=!0);
+  typeof A.visible==="boolean"&&V!==A.visible&&(V=A.visible,S=!0);
+  let k=A.theme==="light"?"light":"dark",I=0,D=0;
+  if(k!==H){
+    H=k,n.background=null,M.uniforms.lightMode.value=H==="light"?1:0;
+    o.traverse(w=>{
+      w instanceof Qi&&(I+=1);
+      if(!(w instanceof We))return;
+      let F=w.material;
+      if(F?.blending===ba){w.visible=!0;return}
+      P.has(w)||P.set(w,F),w.visible=!0;
+      H==="light"?(w.material=O,D+=1):P.has(w)&&(w.material=P.get(w))
+    });
+    S=!0
+  }else{
+    o.traverse(w=>{w instanceof Qi&&(I+=1),H==="light"&&w instanceof We&&w.material===O&&(D+=1)})
+  }
+  s.domElement.dataset.reactorTheme=H,s.domElement.dataset.wireObjects=String(I),s.domElement.dataset.sourceWireObjects=String(o.userData.sourceWireObjects||I),s.domElement.dataset.lightDepthOccluders=String(D),s.domElement.dataset.renderVisible=String(V);
+  S&&E();
+  window.parent!==window&&window.parent.postMessage({type:"tokamak-state-applied",theme:H,wireObjects:I,depthOccluders:D},"*")
+};window.addEventListener("message",C);
+let l=o.getObjectByName("energy-ring-front"),c=o.getObjectByName("energy-ring-back"),h=new tp(i,s.domElement);
+h.target.copy(Tv),h.enabled=!1,h.update();
+let T=Math.atan2(i.position.x,i.position.z);l&&(l.rotation.y=T),c&&(c.rotation.y=T);
+let p=new Be(1,1,{type:Ke,samples:Math.min(4,s.capabilities.maxSamples)});
+p.texture.name="ReactorScene.MSAA";
+let A=new Be(1,1,{type:Ke,depthBuffer:!1}),S=A.clone();
+A.texture.name="ReactorPost.A",S.texture.name="ReactorPost.B";
+let k=new ap(n,i),d=new Zo(new Q(t.clientWidth,t.clientHeight),1.15,.18,1.05),v=new op,M=new sp;
+M.renderToScreen=!0,s.info.autoReset=!1;
+let jG=s.getContext(),qG=jG.getExtension("EXT_disjoint_timer_query_webgl2"),pG=!1,zG=!1;
+s.domElement.dataset.gpuTimer=qG?"supported":"unavailable";
+let yG=w=>{
+  if(zG){jG.deleteQuery(w),pG=!1;return}
+  if(jG.getQueryParameter(w,jG.QUERY_RESULT_AVAILABLE)){
+    let F=jG.getParameter(qG.GPU_DISJOINT_EXT);
+    F||(s.domElement.dataset.gpuFrameMs=(jG.getQueryParameter(w,jG.QUERY_RESULT)/1e6).toFixed(3)),jG.deleteQuery(w),pG=!1
+  }else setTimeout(()=>yG(w),16)
+};
+let u={
+  setSize(w,F){
+    let N=s.getPixelRatio(),L=Math.max(1,Math.round(w*N)),B=Math.max(1,Math.round(F*N));
+    p.setSize(L,B),A.setSize(L,B),S.setSize(L,B),k.setSize(L,B),d.setSize(L,B),v.setSize(L,B),M.setSize(L,B)
+  },
+  render(){
+    let w=null;
+    qG&&!pG&&(w=jG.createQuery(),w&&(pG=!0,jG.beginQuery(qG.TIME_ELAPSED_EXT,w)));
+    s.info.reset(),k.renderToScreen=!1,k.render(s,A,p,0,!1),d.renderToScreen=!1,d.render(s,A,p,0,!1),v.renderToScreen=!1,v.render(s,S,A,0,!1),M.renderToScreen=!0,M.render(s,A,S,0,!1);
+    w&&(jG.endQuery(qG.TIME_ELAPSED_EXT),yG(w))
+  },
+  dispose(){p.dispose(),A.dispose(),S.dispose(),k.dispose(),d.dispose(),v.dispose(),M.dispose()}
+};
+s.domElement.dataset.bloomRadius=".18";
+s.domElement.dataset.performanceRevision="${revision}";
+s.domElement.dataset.renderMode="demand";
+s.domElement.dataset.canvasMsaa="0";
+s.domElement.dataset.sceneMsaa=String(p.samples);
+s.domElement.dataset.postprocessSamples="0";
+s.domElement.dataset.postprocessStages="16";
+s.domElement.dataset.bloomSampling="paired-bilinear";
+s.domElement.dataset.transparentPassMode="single";
+let m=()=>{i.position.copy(D1),h.target.copy(Tv),h.update(),E()},f=w=>{w.key.toLowerCase()==="r"&&m()};
+window.addEventListener("keydown",f),s.domElement.addEventListener("dblclick",m);
+let x=0,G=0,q=!0,K=!1,R=()=>{
+  x=0;
+  if(!V||document.hidden||!q)return;
+  q=!1;
+  let w=performance.now();
+  u.render(),G+=1;
+  s.domElement.dataset.renderFrames=String(G),s.domElement.dataset.renderCalls=String(s.info.render.calls),s.domElement.dataset.renderTriangles=String(s.info.render.triangles),s.domElement.dataset.renderLines=String(s.info.render.lines),s.domElement.dataset.lastFrameMs=(performance.now()-w).toFixed(3),s.domElement.dataset.renderPaused="false"
+};
+E=()=>{
+  q=!0;
+  if(!K){s.domElement.dataset.shaderCompilation="pending";return}
+  if(!V||document.hidden){
+    x&&(cancelAnimationFrame(x),x=0),s.domElement.dataset.renderPaused="true";
+    return
+  }
+  x||(x=requestAnimationFrame(R))
+};
+let g=()=>{
+  let w=t.clientWidth,F=t.clientHeight;
+  if(!w||!F)return;
+  i.aspect=w/F,i.updateProjectionMatrix(),s.setSize(w,F),u.setSize(w,F),E()
+},_=new ResizeObserver(g),W=()=>E();
+_.observe(t),document.addEventListener("visibilitychange",W),g();
+window.__tokamakDiagnostics=()=>({frames:G,calls:s.info.render.calls,triangles:s.info.render.triangles,lines:s.info.render.lines,visible:V,paused:s.domElement.dataset.renderPaused==="true",sceneSamples:p.samples,postSamples:0});
+window.parent!==window&&window.parent.postMessage({type:"tokamak-ready"},"*");
+s.compileAsync(n,i).catch(()=>{}).then(()=>{K=!0,s.domElement.dataset.shaderCompilation="complete",E()});
+return()=>{zG=!0,x&&cancelAnimationFrame(x),_.disconnect(),document.removeEventListener("visibilitychange",W),window.removeEventListener("message",C),window.removeEventListener("keydown",f),s.domElement.removeEventListener("dblclick",m),h.dispose(),u.dispose(),O.dispose(),new Set(P.values()).forEach(w=>w?.dispose()),s.dispose(),t.removeChild(s.domElement),n.traverse(w=>{if(w instanceof We||w instanceof Qi){w.geometry?.dispose();let F=w.material;Array.isArray(F)?F.forEach(N=>N.dispose()):F?.dispose()}})}},[]),(0,L1.jsx)("div",{ref:e,className:"reactor-scene"})}`,
+);
+
+fs.writeFileSync(filePath, html);

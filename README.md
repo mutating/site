@@ -74,6 +74,14 @@ npm run build
 npm run lint
 ```
 
+The tokamak renderer carries its optimization revision inside the standalone
+HTML asset. If that asset is replaced with an unoptimized upstream export,
+reapply the deterministic performance transform before building:
+
+```bash
+npm run tokamak:optimize
+```
+
 ## Writing tests
 
 - Put tests in `tests/` and name files `test_*.py`.
@@ -99,12 +107,19 @@ npm run lint
 - `public/muta-v2-transparent.png` — Muta artwork used in the hero section.
 - `public/muta-tentacles.html` — self-contained interactive WebGL tentacle surface used behind the contact call-to-action.
 - `public/tokamak-reactor.html` — self-contained interactive tokamak model.
+- `scripts/optimize-tokamak-performance.mjs` — idempotent transform that
+  reapplies demand rendering, batching, MSAA routing, and bloom optimizations
+  to an upstream tokamak export.
 - `public/og.png` — social sharing image.
 - `tests/conftest.py` — local server, Chromium, and shared `driver` fixtures.
 - `tests/test_anchor_navigation.py` — fragment targets, clicks, reloads, browser
   history, and anchor-label interaction states.
 - `tests/test_theme.py` — system, fallback, and persisted theme behavior.
 - `tests/test_site_smoke.py` — rendered-page and local-asset smoke checks.
+- `tests/test_tokamak_rendering.py` — visual references, render-idling,
+  draw-call batching, theme occlusion, and antialiasing-pipeline checks.
+- `tests/visual_baselines/` — preoptimization light/dark tokamak references
+  used to reject visual regressions.
 - `requirements_dev.txt` — Python dependencies needed by the test suite.
 - `.openai/hosting.json` — Sites project binding.
 
