@@ -900,6 +900,14 @@ function TokamakVisual() {
       }
     };
 
+    const handleScroll = () => {
+      if (frameRequest) {
+        window.cancelAnimationFrame(frameRequest);
+        frameRequest = 0;
+      }
+      updateRotation();
+    };
+
     const handleModelMessage = (event: MessageEvent) => {
       if (event.source !== frame.contentWindow) return;
 
@@ -928,7 +936,7 @@ function TokamakVisual() {
     frame.addEventListener("load", scheduleRotationUpdate);
     document.addEventListener("visibilitychange", scheduleRotationUpdate);
     window.addEventListener("message", handleModelMessage);
-    window.addEventListener("scroll", scheduleRotationUpdate, { passive: true });
+    window.addEventListener("scroll", handleScroll, { passive: true });
     window.addEventListener("resize", scheduleRotationUpdate);
     scheduleRotationUpdate();
 
@@ -943,7 +951,7 @@ function TokamakVisual() {
         scheduleRotationUpdate,
       );
       window.removeEventListener("message", handleModelMessage);
-      window.removeEventListener("scroll", scheduleRotationUpdate);
+      window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("resize", scheduleRotationUpdate);
     };
   }, []);
@@ -953,7 +961,7 @@ function TokamakVisual() {
       <iframe
         ref={frameRef}
         className="tokamak-model__frame"
-        src="/tokamak-reactor.html?v=performance-5"
+        src="/tokamak-reactor.html?v=performance-6"
         title="Scroll-linked three-dimensional tokamak reactor"
         tabIndex={-1}
         aria-label="A three-dimensional tokamak reactor whose angle follows its position in the viewport"

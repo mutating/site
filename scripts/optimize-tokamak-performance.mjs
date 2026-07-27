@@ -3,8 +3,8 @@ import fs from "node:fs";
 const filePath = new URL("../public/tokamak-reactor.html", import.meta.url);
 let html = fs.readFileSync(filePath, "utf8");
 
-const revision = "demand-batched-v4";
-const previousRevision = "demand-batched-v3";
+const revision = "demand-batched-v5";
+const previousRevision = "demand-batched-v4";
 
 if (html.includes(`dataset.performanceRevision="${revision}"`)) {
   process.exit(0);
@@ -31,7 +31,7 @@ const standardPlasmaVisibility =
 const themeAwarePlasmaVisibility =
   'if(w.userData.plasmaTheme&&w.userData.plasmaTheme!=="both"){w.visible=w.userData.plasmaTheme===H;return}if(F?.blending===ba){w.visible=!0;return}';
 
-if (html.includes(`dataset.performanceRevision="${previousRevision}"`)) {
+if (html.includes('dataset.performanceRevision="demand-batched-v3"')) {
   replaceOnce(
     "compact light plasma glow",
     wideLightPlasmaRing,
@@ -50,14 +50,52 @@ if (html.includes(`dataset.performanceRevision="${previousRevision}"`)) {
     'H=k,n.background=null,d.radius=H==="light"?.04:.18,d.strength=H==="light"?.28:1.15,s.domElement.dataset.bloomRadius=String(d.radius),s.domElement.dataset.bloomStrength=String(d.strength),M.uniforms.lightMode.value=H==="light"?1:0;',
   );
   replaceOnce(
-    "performance revision",
+    "legacy performance revision",
+    'dataset.performanceRevision="demand-batched-v3"',
     `dataset.performanceRevision="${previousRevision}"`,
-    `dataset.performanceRevision="${revision}"`,
   );
   replaceOnce(
     "plasma halo diagnostics",
     's.domElement.dataset.plasmaHalo="theme-aware-light-v1";',
     's.domElement.dataset.plasmaHalo="theme-aware-light-v2";',
+  );
+}
+
+if (html.includes(`dataset.performanceRevision="${previousRevision}"`)) {
+  replaceOnce(
+    "remove production GPU timer setup",
+    `let jG=s.getContext(),qG=jG.getExtension("EXT_disjoint_timer_query_webgl2"),pG=!1,zG=!1;
+s.domElement.dataset.gpuTimer=qG?"supported":"unavailable";
+let yG=w=>{
+  if(zG){jG.deleteQuery(w),pG=!1;return}
+  if(jG.getQueryParameter(w,jG.QUERY_RESULT_AVAILABLE)){
+    let F=jG.getParameter(qG.GPU_DISJOINT_EXT);
+    F||(s.domElement.dataset.gpuFrameMs=(jG.getQueryParameter(w,jG.QUERY_RESULT)/1e6).toFixed(3)),jG.deleteQuery(w),pG=!1
+  }else setTimeout(()=>yG(w),16)
+};`,
+    's.domElement.dataset.gpuTimer="disabled";',
+  );
+  replaceOnce(
+    "remove per-frame GPU timer query",
+    `render(){
+    let w=null;
+    qG&&!pG&&(w=jG.createQuery(),w&&(pG=!0,jG.beginQuery(qG.TIME_ELAPSED_EXT,w)));
+    s.info.reset(),k.renderToScreen=!1,k.render(s,A,p,0,!1),d.renderToScreen=!1,d.render(s,A,p,0,!1),v.renderToScreen=!1,v.render(s,S,A,0,!1),M.renderToScreen=!0,M.render(s,A,S,0,!1);
+    w&&(jG.endQuery(qG.TIME_ELAPSED_EXT),yG(w))
+  },`,
+    `render(){
+    s.info.reset(),k.renderToScreen=!1,k.render(s,A,p,0,!1),d.renderToScreen=!1,d.render(s,A,p,0,!1),v.renderToScreen=!1,v.render(s,S,A,0,!1),M.renderToScreen=!0,M.render(s,A,S,0,!1)
+  },`,
+  );
+  replaceOnce(
+    "remove GPU timer cleanup",
+    "return()=>{zG=!0,x&&cancelAnimationFrame(x),",
+    "return()=>{x&&cancelAnimationFrame(x),",
+  );
+  replaceOnce(
+    "performance revision",
+    `dataset.performanceRevision="${previousRevision}"`,
+    `dataset.performanceRevision="${revision}"`,
   );
   fs.writeFileSync(filePath, html);
   process.exit(0);
@@ -228,25 +266,14 @@ let A=new Be(1,1,{type:Ke,depthBuffer:!1}),S=A.clone();
 A.texture.name="ReactorPost.A",S.texture.name="ReactorPost.B";
 let k=new ap(n,i),d=new Zo(new Q(t.clientWidth,t.clientHeight),1.15,.18,1.05),v=new op,M=new sp;
 M.renderToScreen=!0,s.info.autoReset=!1;
-let jG=s.getContext(),qG=jG.getExtension("EXT_disjoint_timer_query_webgl2"),pG=!1,zG=!1;
-s.domElement.dataset.gpuTimer=qG?"supported":"unavailable";
-let yG=w=>{
-  if(zG){jG.deleteQuery(w),pG=!1;return}
-  if(jG.getQueryParameter(w,jG.QUERY_RESULT_AVAILABLE)){
-    let F=jG.getParameter(qG.GPU_DISJOINT_EXT);
-    F||(s.domElement.dataset.gpuFrameMs=(jG.getQueryParameter(w,jG.QUERY_RESULT)/1e6).toFixed(3)),jG.deleteQuery(w),pG=!1
-  }else setTimeout(()=>yG(w),16)
-};
+s.domElement.dataset.gpuTimer="disabled";
 let u={
   setSize(w,F){
     let N=s.getPixelRatio(),L=Math.max(1,Math.round(w*N)),B=Math.max(1,Math.round(F*N));
     p.setSize(L,B),A.setSize(L,B),S.setSize(L,B),k.setSize(L,B),d.setSize(L,B),v.setSize(L,B),M.setSize(L,B)
   },
   render(){
-    let w=null;
-    qG&&!pG&&(w=jG.createQuery(),w&&(pG=!0,jG.beginQuery(qG.TIME_ELAPSED_EXT,w)));
-    s.info.reset(),k.renderToScreen=!1,k.render(s,A,p,0,!1),d.renderToScreen=!1,d.render(s,A,p,0,!1),v.renderToScreen=!1,v.render(s,S,A,0,!1),M.renderToScreen=!0,M.render(s,A,S,0,!1);
-    w&&(jG.endQuery(qG.TIME_ELAPSED_EXT),yG(w))
+    s.info.reset(),k.renderToScreen=!1,k.render(s,A,p,0,!1),d.renderToScreen=!1,d.render(s,A,p,0,!1),v.renderToScreen=!1,v.render(s,S,A,0,!1),M.renderToScreen=!0,M.render(s,A,S,0,!1)
   },
   dispose(){p.dispose(),A.dispose(),S.dispose(),k.dispose(),d.dispose(),v.dispose(),M.dispose()}
 };
@@ -288,7 +315,7 @@ _.observe(t),document.addEventListener("visibilitychange",W),g();
 window.__tokamakDiagnostics=()=>({frames:G,calls:s.info.render.calls,triangles:s.info.render.triangles,lines:s.info.render.lines,visible:V,paused:s.domElement.dataset.renderPaused==="true",sceneSamples:p.samples,postSamples:0});
 window.parent!==window&&window.parent.postMessage({type:"tokamak-ready"},"*");
 s.compileAsync(n,i).catch(()=>{}).then(()=>{K=!0,s.domElement.dataset.shaderCompilation="complete",E()});
-return()=>{zG=!0,x&&cancelAnimationFrame(x),_.disconnect(),document.removeEventListener("visibilitychange",W),window.removeEventListener("message",C),window.removeEventListener("keydown",f),s.domElement.removeEventListener("dblclick",m),h.dispose(),u.dispose(),O.dispose(),new Set(P.values()).forEach(w=>w?.dispose()),s.dispose(),t.removeChild(s.domElement),n.traverse(w=>{if(w instanceof We||w instanceof Qi){w.geometry?.dispose();let F=w.material;Array.isArray(F)?F.forEach(N=>N.dispose()):F?.dispose()}})}},[]),(0,L1.jsx)("div",{ref:e,className:"reactor-scene"})}`,
+return()=>{x&&cancelAnimationFrame(x),_.disconnect(),document.removeEventListener("visibilitychange",W),window.removeEventListener("message",C),window.removeEventListener("keydown",f),s.domElement.removeEventListener("dblclick",m),h.dispose(),u.dispose(),O.dispose(),new Set(P.values()).forEach(w=>w?.dispose()),s.dispose(),t.removeChild(s.domElement),n.traverse(w=>{if(w instanceof We||w instanceof Qi){w.geometry?.dispose();let F=w.material;Array.isArray(F)?F.forEach(N=>N.dispose()):F?.dispose()}})}},[]),(0,L1.jsx)("div",{ref:e,className:"reactor-scene"})}`,
 );
 
 replaceOnce(

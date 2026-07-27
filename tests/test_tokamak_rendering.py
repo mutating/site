@@ -188,6 +188,66 @@ def test_tokamak_stops_rendering_when_the_scene_is_idle(
     assert int(canvas.get_attribute("data-render-frames") or "0") > settled_frames
 
 
+def test_scroll_state_reaches_tokamak_without_a_second_host_animation_frame(
+    driver: DriverFactory,
+) -> None:
+    """Keep the scroll-linked reactor angle on the browser's current frame.
+
+    The first FPS optimization accidentally introduced two serial animation
+    frame boundaries between a physical scroll and the visible reactor update:
+    the page's scroll listener deferred its geometry calculation to a host
+    ``requestAnimationFrame``, then the iframe correctly deferred the expensive
+    WebGL draw to its own ``requestAnimationFrame``. Under sustained scrolling,
+    especially while the browser was busy rasterizing the large section, that
+    extra host frame made the model angle advance in conspicuous steps and the
+    whole area felt as though scrolling itself were stuttering.
+
+    This regression pauses animation-frame callbacks after the fully loaded
+    reactor has settled and then performs a real programmatic scroll. The host
+    element's diagnostic rotation must change even while frames remain paused:
+    scroll delivery itself must calculate and send the newest state
+    synchronously. Reinstating the former host-side frame queue leaves the
+    rotation unchanged and makes this test fail. The iframe is still allowed to
+    coalesce the costly render into its next frame, so this test protects smooth
+    input tracking without requiring redundant GPU work.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+        controllable_animation_frames=True,
+    )
+    model = page.locator(".tokamak-model")
+    model.scroll_into_view_if_needed()
+    canvas = _reactor_canvas(page)
+    expect(canvas).to_have_attribute("data-render-visible", "true")
+    initial_rotation = model.get_attribute("data-rotation-x")
+    assert initial_rotation is not None
+
+    page.evaluate("window.__mutaTestSetAnimationFramesPaused(true)")
+    try:
+        scroll_positions = page.evaluate(
+            """
+            () => {
+              const before = window.scrollY;
+              const maximum =
+                document.documentElement.scrollHeight - window.innerHeight;
+              const target =
+                before <= maximum - 120 ? before + 120 : before - 120;
+              window.scrollTo(0, target);
+              return {before, target};
+            }
+            """
+        )
+        page.wait_for_timeout(50)
+
+        assert page.evaluate("window.scrollY") != scroll_positions["before"]
+        assert model.get_attribute("data-rotation-x") != initial_rotation
+    finally:
+        page.evaluate("window.__mutaTestSetAnimationFramesPaused(false)")
+
+
 def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     driver: DriverFactory,
 ) -> None:
@@ -210,7 +270,7 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     )
     canvas = _show_reactor(page)
 
-    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v4")
+    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v5")
     expect(canvas).to_have_attribute("data-canvas-msaa", "0")
     expect(canvas).to_have_attribute("data-scene-msaa", "4")
     expect(canvas).to_have_attribute("data-postprocess-samples", "0")
@@ -222,9 +282,47 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     )
     expect(canvas).to_have_attribute("data-transparent-pass-mode", "single")
     expect(canvas).to_have_attribute("data-shader-compilation", "complete")
+    expect(canvas).to_have_attribute("data-gpu-timer", "disabled")
+    assert canvas.get_attribute("data-gpu-frame-ms") is None
+
+
+def test_tokamak_does_not_poll_gpu_timer_queries_during_normal_scrolling(
+    driver: DriverFactory,
+) -> None:
+    """Keep benchmark-only GPU synchronization out of production scrolling.
+
+    The optimization benchmark originally left
+    ``EXT_disjoint_timer_query_webgl2`` enabled in the shipped reactor. Every
+    state-driven render created a GPU query and polled its completion every
+    16 milliseconds. On the affected machine those reads competed with
+    compositor work and sometimes forced driver synchronization precisely while
+    the user was scrolling through the reactor, turning an otherwise cheap
+    demand-rendered update into a visibly jerky section.
+
+    The production canvas must explicitly report that this diagnostic is
+    disabled and must never publish a GPU-frame result, even after several
+    scroll-linked renders. Restoring the old query creation/polling loop changes
+    ``data-gpu-timer`` to ``supported`` or ``unavailable`` and, on supported
+    hardware, creates ``data-gpu-frame-ms``; either regression fails here.
+    CPU-side frame diagnostics remain available and are verified separately.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+    )
+    canvas = _show_reactor(page)
+
+    for offset in (80, -35, 110, -60):
+        page.mouse.wheel(0, offset)
+        page.wait_for_timeout(50)
+
+    expect(canvas).to_have_attribute("data-gpu-timer", "disabled")
+    assert canvas.get_attribute("data-gpu-frame-ms") is None
     expect(canvas).to_have_attribute(
-        "data-gpu-timer",
-        re.compile(r"supported|unavailable"),
+        "data-last-frame-ms",
+        re.compile(r"^\d+\.\d{3}$"),
     )
 
 
