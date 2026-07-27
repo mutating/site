@@ -109,7 +109,7 @@ npm run tokamak:optimize
 - `public/tokamak-reactor.html` — self-contained interactive tokamak model.
 - `scripts/optimize-tokamak-performance.mjs` — idempotent transform that
   reapplies demand rendering, batching, MSAA routing, bloom optimizations, and
-  the view-feathered plasma halo to an upstream tokamak export.
+  the theme-aware plasma glow to an upstream tokamak export.
 - `public/og.png` — social sharing image.
 - `tests/conftest.py` — local server, Chromium, and shared `driver` fixtures.
 - `tests/test_anchor_navigation.py` — fragment targets, clicks, reloads, browser

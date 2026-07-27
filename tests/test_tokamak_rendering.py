@@ -204,13 +204,16 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     )
     canvas = _show_reactor(page)
 
-    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v2")
+    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v3")
     expect(canvas).to_have_attribute("data-canvas-msaa", "0")
     expect(canvas).to_have_attribute("data-scene-msaa", "4")
     expect(canvas).to_have_attribute("data-postprocess-samples", "0")
     expect(canvas).to_have_attribute("data-postprocess-stages", "16")
     expect(canvas).to_have_attribute("data-bloom-sampling", "paired-bilinear")
-    expect(canvas).to_have_attribute("data-plasma-halo", "view-feathered")
+    expect(canvas).to_have_attribute(
+        "data-plasma-halo",
+        "theme-aware-light-v1",
+    )
     expect(canvas).to_have_attribute("data-transparent-pass-mode", "single")
     expect(canvas).to_have_attribute("data-shader-compilation", "complete")
     expect(canvas).to_have_attribute(
@@ -353,28 +356,27 @@ def test_tokamak_matches_intended_visual_reference(
         assert extreme_delta_fraction < 0.003
 
 
-def test_plasma_halo_remains_diffuse_at_an_oblique_scroll_angle(
+def test_light_plasma_glow_remains_luminous_at_an_oblique_scroll_angle(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """Prevent the plasma glow from collapsing into a hard outlined tube.
+    """Keep a believable luminous plasma profile on the light background.
 
     The reactor rotates around its horizontal axis as its section passes through
-    the viewport. At the approximately -0.52-radian side-on transition, the old
-    plasma effect exposed the silhouettes of two uniformly transparent torus
-    meshes. Their constant opacity produced two crisp pink borders around the
-    bright ring instead of a continuous bloom-like falloff. A front-facing
-    screenshot did not reveal the defect, which is why the general visual test
-    could pass while users still saw an outline during scrolling.
+    the viewport. At the approximately -0.52-radian side-on transition, a
+    theme-agnostic additive halo becomes a flat translucent stripe on the light
+    page: white has no remaining brightness range for ordinary additive bloom.
+    The light-theme material therefore needs a white-hot narrow source, a
+    saturated inner corona, and a wider low-opacity pink falloff. The dark theme
+    deliberately retains its former material and must not inherit this profile.
 
     This test reproduces that exact light-theme angle in the standalone renderer
     and compares the central plasma band with a checked-in reference containing
-    the view-dependent feathered halo. The comparison is deliberately limited
-    to the band around the plasma: ordinary wireframe differences cannot mask a
-    returned contour. Restoring the former pair of constant-opacity toruses
-    changes roughly sixteen percent of this crop by more than eight RGB levels,
-    far beyond the small cross-GPU tolerance below, so that regression must make
-    the test fail.
+    all three luminance zones. The comparison is deliberately limited to the
+    band around the plasma, so ordinary wireframe differences cannot mask a
+    returned contour or a washed-out pink slab. Reverting to either the old
+    constant-opacity toruses or the intermediate single pink halo changes this
+    crop far beyond the small cross-GPU tolerance below and must fail the test.
     """
 
     page = driver(
@@ -397,7 +399,10 @@ def test_plasma_halo_remains_diffuse_at_an_oblique_scroll_angle(
         """
     )
     expect(canvas).to_have_attribute("data-reactor-theme", "light")
-    expect(canvas).to_have_attribute("data-plasma-halo", "view-feathered")
+    expect(canvas).to_have_attribute(
+        "data-plasma-halo",
+        "theme-aware-light-v1",
+    )
     page.wait_for_timeout(100)
 
     actual = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
