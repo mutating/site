@@ -108,8 +108,8 @@ npm run tokamak:optimize
 - `public/muta-tentacles.html` — self-contained interactive WebGL tentacle surface used behind the contact call-to-action.
 - `public/tokamak-reactor.html` — self-contained interactive tokamak model.
 - `scripts/optimize-tokamak-performance.mjs` — idempotent transform that
-  reapplies demand rendering, batching, MSAA routing, and bloom optimizations
-  to an upstream tokamak export.
+  reapplies demand rendering, batching, MSAA routing, bloom optimizations, and
+  the view-feathered plasma halo to an upstream tokamak export.
 - `public/og.png` — social sharing image.
 - `tests/conftest.py` — local server, Chromium, and shared `driver` fixtures.
 - `tests/test_anchor_navigation.py` — fragment targets, clicks, reloads, browser
@@ -118,8 +118,8 @@ npm run tokamak:optimize
 - `tests/test_site_smoke.py` — rendered-page and local-asset smoke checks.
 - `tests/test_tokamak_rendering.py` — visual references, render-idling,
   draw-call batching, theme occlusion, and antialiasing-pipeline checks.
-- `tests/visual_baselines/` — preoptimization light/dark tokamak references
-  used to reject visual regressions.
+- `tests/visual_baselines/` — intended light/dark tokamak references, including
+  the oblique plasma angle, used to reject visual regressions.
 - `requirements_dev.txt` — Python dependencies needed by the test suite.
 - `.openai/hosting.json` — Sites project binding.
 

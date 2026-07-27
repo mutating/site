@@ -3,9 +3,10 @@ import fs from "node:fs";
 const filePath = new URL("../public/tokamak-reactor.html", import.meta.url);
 let html = fs.readFileSync(filePath, "utf8");
 
-const revision = "demand-batched-v1";
+const revision = "demand-batched-v2";
+const previousRevision = "demand-batched-v1";
 
-if (html.includes(`data-performance-revision="${revision}"`)) {
+if (html.includes(`dataset.performanceRevision="${revision}"`)) {
   process.exit(0);
 }
 
@@ -19,10 +20,41 @@ function replaceOnce(label, previousValue, nextValue) {
   html = html.replace(previousValue, nextValue);
 }
 
+const originalPlasmaRing =
+  'function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l]of[[.22,.085,16722024],[.125,.15,16723051],[.052,1,hL]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,new Ji({color:l,toneMapped:r!==.052,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r===.052?9:8:r===.052?3.5:3,c.add(u)}}';
+const featheredPlasmaRing =
+  'function pM(e,t){return new Ue({uniforms:{uColor:{value:new Bt(t)},uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform vec3 uColor;uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float feather=pow(smoothstep(0.0,1.0,facing),4.0);gl_FragColor=vec4(uColor,uOpacity*feather);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l]of[[.36,.18,16722024],[.052,1,hL]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,r===.052?new Ji({color:l,toneMapped:!1,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}):pM(o,l));u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r===.052?9:8:r===.052?3.5:3,c.add(u)}}';
+
+if (html.includes(`dataset.performanceRevision="${previousRevision}"`)) {
+  replaceOnce(
+    "view-feathered plasma halo",
+    originalPlasmaRing,
+    featheredPlasmaRing,
+  );
+  replaceOnce(
+    "performance revision",
+    `dataset.performanceRevision="${previousRevision}"`,
+    `dataset.performanceRevision="${revision}"`,
+  );
+  replaceOnce(
+    "plasma halo diagnostics",
+    's.domElement.dataset.bloomSampling="paired-bilinear";',
+    's.domElement.dataset.bloomSampling="paired-bilinear";\ns.domElement.dataset.plasmaHalo="view-feathered";',
+  );
+  fs.writeFileSync(filePath, html);
+  process.exit(0);
+}
+
 replaceOnce(
   "renderer default-framebuffer antialiasing",
   'let s=new Kd({antialias:!0,alpha:!0,powerPreference:"high-performance"});',
   'let s=new Kd({antialias:!1,alpha:!0,powerPreference:"high-performance"});',
+);
+
+replaceOnce(
+  "view-feathered plasma halo",
+  originalPlasmaRing,
+  featheredPlasmaRing,
 );
 
 replaceOnce(
@@ -208,6 +240,7 @@ s.domElement.dataset.sceneMsaa=String(p.samples);
 s.domElement.dataset.postprocessSamples="0";
 s.domElement.dataset.postprocessStages="16";
 s.domElement.dataset.bloomSampling="paired-bilinear";
+s.domElement.dataset.plasmaHalo="view-feathered";
 s.domElement.dataset.transparentPassMode="single";
 let m=()=>{i.position.copy(D1),h.target.copy(Tv),h.update(),E()},f=w=>{w.key.toLowerCase()==="r"&&m()};
 window.addEventListener("keydown",f),s.domElement.addEventListener("dblclick",m);

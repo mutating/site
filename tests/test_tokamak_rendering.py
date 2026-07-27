@@ -204,12 +204,13 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     )
     canvas = _show_reactor(page)
 
-    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v1")
+    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v2")
     expect(canvas).to_have_attribute("data-canvas-msaa", "0")
     expect(canvas).to_have_attribute("data-scene-msaa", "4")
     expect(canvas).to_have_attribute("data-postprocess-samples", "0")
     expect(canvas).to_have_attribute("data-postprocess-stages", "16")
     expect(canvas).to_have_attribute("data-bloom-sampling", "paired-bilinear")
+    expect(canvas).to_have_attribute("data-plasma-halo", "view-feathered")
     expect(canvas).to_have_attribute("data-transparent-pass-mode", "single")
     expect(canvas).to_have_attribute("data-shader-compilation", "complete")
     expect(canvas).to_have_attribute(
@@ -288,7 +289,7 @@ def test_tokamak_pauses_when_it_leaves_the_viewport(
     assert int(canvas.get_attribute("data-render-frames") or "0") == paused_frames
 
 
-def test_tokamak_matches_preoptimization_visual_reference(
+def test_tokamak_matches_intended_visual_reference(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
@@ -297,14 +298,13 @@ def test_tokamak_matches_preoptimization_visual_reference(
     Performance changes in this renderer touch batching, transparent face
     submission, MSAA target routing, and bloom sampling. Each one can improve
     frame time while silently changing line density, occlusion, glow, or color.
-    The checked-in references were captured from the last preoptimization
-    renderer at the same viewport, device scale, model angle, and both themes.
-    This test renders the optimized standalone scene and compares every RGB
-    pixel. It permits tiny interpolation and floating-point differences that
-    are invisible at normal scale, but rejects broad or high-amplitude changes;
-    a missing wire group, altered bloom, black light-theme surface, reduced
-    resolution, or different camera framing exceeds these limits by orders of
-    magnitude.
+    The checked-in references capture the approved renderer at the same
+    viewport, device scale, model angle, and both themes. This test renders the
+    standalone scene and compares every RGB pixel. It permits tiny interpolation
+    and floating-point differences that are invisible at normal scale, but
+    rejects broad or high-amplitude changes; a missing wire group, altered
+    bloom, black light-theme surface, reduced resolution, or different camera
+    framing exceeds these limits by orders of magnitude.
     """
 
     page = driver(
@@ -351,3 +351,74 @@ def test_tokamak_matches_preoptimization_visual_reference(
         assert max(channel_means) < 0.6
         assert high_delta_fraction < 0.012
         assert extreme_delta_fraction < 0.003
+
+
+def test_plasma_halo_remains_diffuse_at_an_oblique_scroll_angle(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Prevent the plasma glow from collapsing into a hard outlined tube.
+
+    The reactor rotates around its horizontal axis as its section passes through
+    the viewport. At the approximately -0.52-radian side-on transition, the old
+    plasma effect exposed the silhouettes of two uniformly transparent torus
+    meshes. Their constant opacity produced two crisp pink borders around the
+    bright ring instead of a continuous bloom-like falloff. A front-facing
+    screenshot did not reveal the defect, which is why the general visual test
+    could pass while users still saw an outline during scrolling.
+
+    This test reproduces that exact light-theme angle in the standalone renderer
+    and compares the central plasma band with a checked-in reference containing
+    the view-dependent feathered halo. The comparison is deliberately limited
+    to the band around the plasma: ordinary wireframe differences cannot mask a
+    returned contour. Restoring the former pair of constant-opacity toruses
+    changes roughly sixteen percent of this crop by more than eight RGB levels,
+    far beyond the small cross-GPU tolerance below, so that regression must make
+    the test fail.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(480, 420),
+        load_interactive_visuals=True,
+    )
+    page.goto(f"{base_url}/tokamak-reactor.html")
+    canvas = page.locator("canvas")
+    expect(canvas).to_be_visible()
+    page.evaluate(
+        """
+        () => window.postMessage({
+          type: "tokamak-state",
+          theme: "light",
+          rotationX: -0.52,
+          modelScale: 1,
+          visible: true,
+        }, "*")
+        """
+    )
+    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+    expect(canvas).to_have_attribute("data-plasma-halo", "view-feathered")
+    page.wait_for_timeout(100)
+
+    actual = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+    expected = Image.open(
+        Path(__file__).with_name("visual_baselines")
+        / "tokamak-light-oblique.png"
+    ).convert("RGB")
+    plasma_crop = (90, 135, 390, 245)
+    difference = ImageChops.difference(
+        expected.crop(plasma_crop),
+        actual.crop(plasma_crop),
+    )
+    pixels = list(difference.getdata())
+    total_pixels = len(pixels)
+    high_delta_fraction = (
+        sum(max(pixel) > 8 for pixel in pixels) / total_pixels
+    )
+    extreme_delta_fraction = (
+        sum(max(pixel) > 24 for pixel in pixels) / total_pixels
+    )
+
+    assert max(ImageStat.Stat(difference).mean) < 1.0
+    assert high_delta_fraction < 0.02
+    assert extreme_delta_fraction < 0.005
