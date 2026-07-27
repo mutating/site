@@ -6,6 +6,7 @@ import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import Page, expect
 
 
@@ -121,6 +122,174 @@ def test_ticker_selection_inverts_only_its_own_colors(
     assert selection_styles["selectionBackground"] == selection_styles["tickerColor"]
     assert selection_styles["globalColor"] == selection_styles["tickerColor"]
     assert selection_styles["globalBackground"] == selection_styles["tickerBackground"]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
+    driver: DriverFactory,
+    theme: str,
+) -> None:
+    """Verify the supplied TMC wordmark animates without disturbing the eye.
+
+    The new header artwork is intentionally a CSS-driven folding wordmark:
+    its resting state shows only the anchors ``T``, ``M``, and ``C``; hovering
+    reveals ``he``, ``utating``, and ``ompany`` over 350 ms while the supplied
+    spectrum animation crosses the revealed letters. The complete expanded
+    width is reserved before interaction so opening and closing the text must
+    not move the existing eye, navigation, or header shell.
+
+    This regression exercises both site themes because the source prototype
+    used hard-coded black lettering while the integrated logo must inherit the
+    site's light or dark foreground. It records the exact document-space
+    rectangles of the eye, wordmark stage, navigation, and header before hover,
+    waits for every reveal segment to reach its expanded state, and requires
+    all four rectangles to remain unchanged. It also verifies that the
+    gradient pseudo-element is running the original unfold animation and that
+    moving the pointer away folds every segment back to zero width.
+
+    The eye assertions are deliberate: replacing the textual half of the logo
+    must never resize, reposition, recolor, or replace the independently
+    animated gaze-and-blink component that the user explicitly asked to keep.
+    """
+
+    page = driver(
+        stored_theme=theme,
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+    )
+    header = page.locator(".site-header")
+    eye = page.locator(".animated-eye-logo")
+    stage = page.locator(".brand__wordmark-stage")
+    wordmark = page.locator(".brand__wordmark")
+    navigation = page.locator(".main-nav")
+    reveals = page.locator(".brand__word-reveal")
+
+    expect(
+        page.locator('.brand[href="#top"]')
+    ).to_have_attribute(
+        "aria-label",
+        "The Mutating Company home",
+    )
+    assert wordmark.text_content().replace("\n", "").replace(" ", "") == (
+        "TheMutatingCompany"
+    )
+    assert reveals.count() == 3
+
+    initial = page.evaluate(
+        """
+        () => {
+          const readRect = (selector) => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return [rect.x, rect.y, rect.width, rect.height];
+          };
+          const revealElements = [
+            ...document.querySelectorAll(".brand__word-reveal"),
+          ];
+          const wordmark = document.querySelector(".brand__wordmark");
+          return {
+            header: readRect(".site-header"),
+            eye: readRect(".animated-eye-logo"),
+            stage: readRect(".brand__wordmark-stage"),
+            navigation: readRect(".main-nav"),
+            revealWidths: revealElements.map(
+              (element) => element.getBoundingClientRect().width,
+            ),
+            anchorColor: getComputedStyle(
+              document.querySelector(".brand__word-anchor"),
+            ).color,
+            wordmarkColor: getComputedStyle(wordmark).color,
+          };
+        }
+        """
+    )
+    assert all(width <= 0.01 for width in initial["revealWidths"])
+    assert initial["anchorColor"] == initial["wordmarkColor"]
+
+    wordmark.hover()
+    page.wait_for_function(
+        """
+        () => [...document.querySelectorAll(".brand__word-reveal")].every(
+          (element) =>
+            element.getBoundingClientRect().width > 1 &&
+            getComputedStyle(element).opacity === "1",
+        )
+        """
+    )
+    expanded = page.evaluate(
+        """
+        () => {
+          const readRect = (selector) => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return [rect.x, rect.y, rect.width, rect.height];
+          };
+          const firstReveal = document.querySelector(".brand__word-reveal");
+          return {
+            header: readRect(".site-header"),
+            eye: readRect(".animated-eye-logo"),
+            stage: readRect(".brand__wordmark-stage"),
+            navigation: readRect(".main-nav"),
+            animationName: getComputedStyle(
+              firstReveal,
+              "::after",
+            ).animationName,
+          };
+        }
+        """
+    )
+    assert expanded["animationName"] == "brand-spectrum-unfold"
+    for selector in ("header", "eye", "stage", "navigation"):
+        for before, after in zip(initial[selector], expanded[selector]):
+            assert abs(before - after) <= 0.5
+
+    page.mouse.move(
+        page.viewport_size["width"] - 1,
+        page.viewport_size["height"] - 1,
+    )
+    page.wait_for_function(
+        """
+        () => [...document.querySelectorAll(".brand__word-reveal")].every(
+          (element) => element.getBoundingClientRect().width <= 0.01,
+        )
+        """
+    )
+
+
+def test_animated_wordmark_keeps_the_existing_narrow_header_contract(
+    driver: DriverFactory,
+) -> None:
+    """Keep the eye-only brand treatment at the smallest site breakpoint.
+
+    The previous textual logo intentionally disappeared below 580 px so the
+    theme control and mobile menu could coexist with the eye without wrapping
+    or widening the sticky header. Replacing that text with an expandable logo
+    must preserve the same responsive contract: the complete animated stage is
+    hidden, the original eye remains visible at its existing compact geometry,
+    and the brand link still exposes the full company name to assistive
+    technology.
+
+    This catches regressions where the collapsed ``TMC`` looks small enough but
+    its reserved expansion width still pushes controls off-screen on a phone.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    stage = page.locator(".brand__wordmark-stage")
+    eye = page.locator(".animated-eye-logo")
+    brand = page.locator('.brand[href="#top"]')
+
+    expect(stage).to_be_hidden()
+    expect(eye).to_be_visible()
+    expect(brand).to_have_attribute(
+        "aria-label",
+        "The Mutating Company home",
+    )
+    eye_box = eye.bounding_box()
+    assert eye_box is not None
+    assert abs(eye_box["width"] - 42) <= 0.5
+    assert abs(eye_box["height"] - 39) <= 0.5
 
 
 def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(

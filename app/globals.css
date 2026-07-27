@@ -262,18 +262,137 @@ img {
   box-shadow: none;
 }
 
-.brand__text {
-  font-size: 12px;
-  font-weight: 760;
-  line-height: 0.98;
-  letter-spacing: -0.03em;
-  text-transform: uppercase;
+.brand__wordmark-stage {
+  width: 10.82em;
+  font-size: 14px;
+  line-height: 1.2;
+  font-family: "Helvetica Neue", Arial, sans-serif;
 }
 
-.site-header .brand__text {
-  font-size: 14px;
-  line-height: 1;
+.brand__wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--ink);
+  font-weight: 700;
   white-space: nowrap;
+  cursor: default;
+}
+
+.brand__word-part {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--ink);
+  margin-right: 0;
+  transition: margin-right 350ms linear;
+}
+
+.brand__word-anchor {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  color: var(--ink);
+}
+
+.brand__word-reveal {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  inline-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 500;
+  opacity: 0;
+  white-space: nowrap;
+  interpolate-size: allow-keywords;
+  transition:
+    inline-size 350ms linear,
+    opacity 350ms linear;
+}
+
+.brand__word-reveal::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: max-content;
+  color: transparent;
+  background: linear-gradient(
+    98deg,
+    #f00078 0%,
+    #ff65bd 30%,
+    #ff2d95 48%,
+    #a855f7 62%,
+    #34c8e8 72%,
+    #ffd166 80%,
+    #ff4fa3 100%
+  );
+  background-size: 230% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  pointer-events: none;
+  animation: brand-spectrum-fold 350ms linear both;
+}
+
+.brand__wordmark:hover .brand__word-reveal {
+  inline-size: max-content;
+  opacity: 1;
+}
+
+.brand__wordmark:hover .brand__word-part--t,
+.brand__wordmark:hover .brand__word-part--m {
+  margin-right: 0.25em;
+}
+
+.brand__wordmark:hover .brand__word-reveal::after {
+  animation-name: brand-spectrum-unfold;
+}
+
+@keyframes brand-spectrum-unfold {
+  0% {
+    opacity: 0;
+    background-position: 100% 0;
+  }
+
+  17% {
+    opacity: 0.42;
+  }
+
+  48% {
+    opacity: 0.58;
+  }
+
+  82% {
+    opacity: 0.36;
+  }
+
+  100% {
+    opacity: 0;
+    background-position: 0 0;
+  }
+}
+
+@keyframes brand-spectrum-fold {
+  0% {
+    opacity: 0;
+    background-position: 0 0;
+  }
+
+  20% {
+    opacity: 0.38;
+  }
+
+  52% {
+    opacity: 0.56;
+  }
+
+  84% {
+    opacity: 0.38;
+  }
+
+  100% {
+    opacity: 0;
+    background-position: 100% 0;
+  }
 }
 
 .main-nav {
@@ -2196,7 +2315,7 @@ a.section-index:focus-visible {
     margin-right: 0;
   }
 
-  .brand__text {
+  .brand__wordmark-stage {
     display: none;
   }
 
@@ -2467,5 +2586,10 @@ a.section-index:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .brand__word-reveal::after {
+    display: none;
+    animation: none !important;
   }
 }

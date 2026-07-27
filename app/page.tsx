@@ -658,6 +658,33 @@ function ThemeToggle() {
   );
 }
 
+function AnimatedWordmark() {
+  return (
+    <span className="brand__wordmark-stage" aria-hidden="true">
+      <span className="brand__wordmark">
+        <span className="brand__word-part brand__word-part--t">
+          <span className="brand__word-anchor">T</span>
+          <span className="brand__word-reveal" data-text="he">
+            he
+          </span>
+        </span>
+        <span className="brand__word-part brand__word-part--m">
+          <span className="brand__word-anchor">M</span>
+          <span className="brand__word-reveal" data-text="utating">
+            utating
+          </span>
+        </span>
+        <span className="brand__word-part">
+          <span className="brand__word-anchor">C</span>
+          <span className="brand__word-reveal" data-text="ompany">
+            ompany
+          </span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
 function Header() {
   const mobileMenuRef = useRef<HTMLDetailsElement>(null);
   const closeMobileMenu = () => mobileMenuRef.current?.removeAttribute("open");
@@ -668,7 +695,7 @@ function Header() {
         <span className="brand__mark brand__mark--eye">
           <AnimatedEyeLogo />
         </span>
-        <span className="brand__text">The Mutating Company</span>
+        <AnimatedWordmark />
       </a>
 
       <nav className="main-nav" aria-label="Main navigation">
