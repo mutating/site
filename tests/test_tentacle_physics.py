@@ -901,6 +901,209 @@ def test_missing_pointerup_still_ends_and_redraws_the_impulse(
     _assert_release_continuity(page, canvas, release=release)
 
 
+def _restore_legacy_release_recovery(source: str) -> str:
+    """Return a temporary copy containing the removed reverse-release logic."""
+
+    replacements = [
+        (
+            """        const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+        canvas.dataset.pressImpulseTotalMs =""",
+            """        const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+        const RELEASE_RECOVERY_SECONDS = 0.18;
+        const RELEASE_RECOVERY_RATE = 34;
+        const RELEASE_RECOVERY_DAMPING = 42;
+        canvas.dataset.pressImpulseTotalMs =""",
+        ),
+        (
+            """          impulsePending: false,
+          energy: 0,
+        };
+        let renderedInteractionPhase = "hover";""",
+            """          impulsePending: false,
+          releaseRecoveryUntil: -Infinity,
+          energy: 0,
+        };
+        let releaseRecoveryTimer = 0;
+        let releaseRecoverySequence = 0;
+        let renderedInteractionPhase = "hover";""",
+        ),
+        (
+            """        function releasePointerInteraction() {""",
+            """        function startReleaseRecovery() {
+          if (releaseRecoveryTimer) {
+            clearTimeout(releaseRecoveryTimer);
+          }
+          const recoverySequence = ++releaseRecoverySequence;
+          pointer.releaseRecoveryUntil =
+            performance.now() * 0.001 + RELEASE_RECOVERY_SECONDS;
+          pointer.energy = 0;
+          releaseRecoveryTimer = setTimeout(() => {
+            releaseRecoveryTimer = 0;
+            if (
+              pointer.pressed ||
+              recoverySequence !== releaseRecoverySequence
+            ) {
+              return;
+            }
+            runImmediateInteractionFrame(true);
+          }, RELEASE_RECOVERY_SECONDS * 1000);
+        }
+
+        function releasePointerInteraction() {""",
+        ),
+        (
+            """          settleReleasedPointer();
+          return true;
+        }
+
+        function updatePointerPress(buttons) {""",
+            """          startReleaseRecovery();
+          settleReleasedPointer();
+          return true;
+        }
+
+        function updatePointerPress(buttons) {""",
+        ),
+        (
+            """          if (wasPressed && !pointer.pressed) {
+            pointer.impulsePending = false;
+            settleReleasedPointer();""",
+            """          if (wasPressed && !pointer.pressed) {
+            pointer.impulsePending = false;
+            startReleaseRecovery();
+            settleReleasedPointer();""",
+        ),
+        (
+            """          impulseAge,
+          impulsePending,
+        ) {
+          if (!pressed) {
+            return {
+              forceMultiplier: 1,
+              radiusMultiplier: 1,
+              phase: "hover",
+            };""",
+            """          impulseAge,
+          impulsePending,
+          recovering,
+        ) {
+          if (!pressed) {
+            return {
+              forceMultiplier: recovering ? 0 : 1,
+              radiusMultiplier: 1,
+              phase: recovering ? "recovering" : "hover",
+            };""",
+        ),
+        (
+            """            impulsePending,
+          );
+        }
+
+        if (interactionDiagnostics) {""",
+            """            impulsePending,
+            !pointer.pressed &&
+              time < pointer.releaseRecoveryUntil,
+          );
+        }
+
+        if (interactionDiagnostics) {""",
+        ),
+        (
+            """              Boolean(impulsePending),
+            );
+        }
+
+        function settleReleasedPointer() {
+          runImmediateInteractionFrame(true);""",
+            """              Boolean(impulsePending),
+              false,
+            );
+        }
+
+        function settleReleasedPointer() {
+          runImmediateInteractionFrame(true, 0.033);""",
+        ),
+        (
+            """          const velocityDamping = Math.exp(-delta * 10.2);
+          const restResponse = 72.0 * delta * delta;""",
+            """          const releaseRecoveryActive =
+            pointerInteraction.phase === "recovering";
+          const velocityDamping = Math.exp(
+            -delta *
+              (
+                releaseRecoveryActive
+                  ? RELEASE_RECOVERY_DAMPING
+                  : 10.2
+              ),
+          );
+          const restResponse = releaseRecoveryActive
+            ? 1 - Math.exp(-delta * RELEASE_RECOVERY_RATE)
+            : 72.0 * delta * delta;""",
+        ),
+    ]
+
+    legacy_source = source
+    for current, legacy in replacements:
+        assert legacy_source.count(current) == 1
+        legacy_source = legacy_source.replace(current, legacy, 1)
+    return legacy_source
+
+
+def test_old_release_recovery_fails_the_reverse_impulse_guard(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Prove the regression test rejects the exact former release algorithm.
+
+    The reverse kick was created by a now-removed 180 ms ``recovering`` phase.
+    On release that implementation zeroed the cursor force, forced an immediate
+    33 ms simulation step, increased velocity damping from 10.2 to 42, and
+    replaced the normal quadratic rest response with a much stronger
+    exponential response of rate 34. Together those operations snapped the
+    tentacle geometry back toward rest in the frame produced by ``pointerup``;
+    visually this appeared as a second impulse in the opposite direction.
+
+    This is deliberately a mutation test, not another assertion over the
+    current source. It serves a temporary browser document in which the exact
+    former recovery constants, timer, force phase, forced 33 ms step, damping,
+    and rest response have all been restored. The production continuity
+    contract must raise on that document because the released frame is no
+    longer ordinary hover and its rendered displacement jumps backward. The
+    temporary mutation never touches the working tree. If somebody restores
+    the old algorithm in production, the direct phone/tablet/desktop test above
+    will fail; if somebody weakens that direct test until the old algorithm can
+    slip through, this meta-test will fail because the expected rejection will
+    no longer occur.
+    """
+
+    source = (
+        PROJECT_ROOT / "public" / "muta-tentacles.html"
+    ).read_text(encoding="utf-8")
+    legacy_source = _restore_legacy_release_recovery(source)
+
+    page = driver(stored_theme="dark", viewport=(755, 620))
+    page.context.route(
+        "**/muta-tentacles-legacy-release.html*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="text/html",
+            body=legacy_source,
+        ),
+    )
+    canvas = _open_diagnostic_surface(
+        page,
+        base_url,
+        path="muta-tentacles-legacy-release.html",
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_release_continuity(
+            page,
+            canvas,
+            release="pointerup",
+        )
+
+
 TIMING_MUTATIONS = [
     pytest.param(
         """            impulsePending
