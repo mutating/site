@@ -3,13 +3,10 @@ import fs from "node:fs";
 const filePath = new URL("../public/tokamak-reactor.html", import.meta.url);
 let html = fs.readFileSync(filePath, "utf8");
 
-const revision = "demand-batched-v3";
-const previousRevision = "demand-batched-v2";
+const revision = "demand-batched-v4";
+const previousRevision = "demand-batched-v3";
 
-if (
-  html.includes(`dataset.performanceRevision="${revision}"`) &&
-  !html.includes("function qM(e)")
-) {
+if (html.includes(`dataset.performanceRevision="${revision}"`)) {
   process.exit(0);
 }
 
@@ -25,43 +22,32 @@ function replaceOnce(label, previousValue, nextValue) {
 
 const originalPlasmaRing =
   'function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l]of[[.22,.085,16722024],[.125,.15,16723051],[.052,1,hL]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,new Ji({color:l,toneMapped:r!==.052,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r===.052?9:8:r===.052?3.5:3,c.add(u)}}';
-const featheredPlasmaRing =
-  'function pM(e,t){return new Ue({uniforms:{uColor:{value:new Bt(t)},uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform vec3 uColor;uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float feather=pow(smoothstep(0.0,1.0,facing),4.0);gl_FragColor=vec4(uColor,uOpacity*feather);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l]of[[.36,.18,16722024],[.052,1,hL]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,r===.052?new Ji({color:l,toneMapped:!1,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}):pM(o,l));u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r===.052?9:8:r===.052?3.5:3,c.add(u)}}';
-const themeAwarePlasmaRing =
+const wideLightPlasmaRing =
   'function pM(e,t){return new Ue({uniforms:{uColor:{value:new Bt(t)},uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform vec3 uColor;uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float feather=pow(smoothstep(0.0,1.0,facing),4.0);gl_FragColor=vec4(uColor,uOpacity*feather);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function plasmaLightMaterial(e){return new Ue({uniforms:{uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float outer=pow(smoothstep(0.0,1.0,facing),1.5);float inner=pow(smoothstep(0.0,1.0,facing),8.0);vec3 outerColor=vec3(1.0,0.025,0.28);vec3 innerColor=vec3(1.0,0.62,0.82);vec3 glowColor=mix(outerColor,innerColor,inner);float alpha=uOpacity*(0.32*outer+0.68*inner);gl_FragColor=vec4(glowColor,alpha);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l,z]of[[.36,.18,16722024,"dark"],[.48,.14,16722024,"light"],[.052,1,hL,"both"],[.018,1,16777215,"light"]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,r===.36?pM(o,l):r===.48?plasmaLightMaterial(o):new Ji({color:r===.018?new Bt(l).multiplyScalar(2.8):l,toneMapped:!1,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.userData.plasmaTheme=z,u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r<=.052?9:8:r<=.052?3.5:3,c.add(u)}}';
+const themeAwarePlasmaRing =
+  'function pM(e,t){return new Ue({uniforms:{uColor:{value:new Bt(t)},uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform vec3 uColor;uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float feather=pow(smoothstep(0.0,1.0,facing),4.0);gl_FragColor=vec4(uColor,uOpacity*feather);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function plasmaLightMaterial(e){return new Ue({uniforms:{uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float outer=pow(smoothstep(0.0,1.0,facing),1.8);float inner=pow(smoothstep(0.0,1.0,facing),8.0);vec3 outerColor=vec3(1.0,0.025,0.28);vec3 innerColor=vec3(1.0,0.42,0.66);vec3 glowColor=mix(outerColor,innerColor,inner);float alpha=uOpacity*(0.35*outer+0.65*inner);gl_FragColor=vec4(glowColor,alpha);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.userData.plasmaTheme="dark",a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l,z,k]of[[.36,.18,16722024,"dark","halo"],[.052,1,hL,"dark","core"],[.18,.08,16722024,"light","halo"],[.052,1,16715872,"light","core"],[.018,1,16777215,"light","hot"]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,k==="halo"?(z==="dark"?pM(o,l):plasmaLightMaterial(o)):new Ji({color:l,toneMapped:!1,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.userData.plasmaTheme=z,u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r<=.052?9:8:r<=.052?3.5:3,c.add(u)}}';
 const standardPlasmaVisibility =
   'if(F?.blending===ba){w.visible=!0;return}';
 const themeAwarePlasmaVisibility =
   'if(w.userData.plasmaTheme&&w.userData.plasmaTheme!=="both"){w.visible=w.userData.plasmaTheme===H;return}if(F?.blending===ba){w.visible=!0;return}';
 
-if (
-  html.includes(`dataset.performanceRevision="${revision}"`) &&
-  html.includes("function qM(e)")
-) {
-  replaceOnce(
-    "nonconflicting light plasma material name",
-    "function qM(e)",
-    "function plasmaLightMaterial(e)",
-  );
-  replaceOnce(
-    "nonconflicting light plasma material call",
-    "r===.48?qM(o)",
-    "r===.48?plasmaLightMaterial(o)",
-  );
-  fs.writeFileSync(filePath, html);
-  process.exit(0);
-}
-
 if (html.includes(`dataset.performanceRevision="${previousRevision}"`)) {
   replaceOnce(
-    "theme-aware light plasma glow",
-    featheredPlasmaRing,
+    "compact light plasma glow",
+    wideLightPlasmaRing,
     themeAwarePlasmaRing,
   );
+  if (!html.includes(themeAwarePlasmaVisibility)) {
+    replaceOnce(
+      "theme-aware plasma visibility",
+      standardPlasmaVisibility,
+      themeAwarePlasmaVisibility,
+    );
+  }
   replaceOnce(
-    "theme-aware plasma visibility",
-    standardPlasmaVisibility,
-    themeAwarePlasmaVisibility,
+    "compact light-theme bloom",
+    'H=k,n.background=null,M.uniforms.lightMode.value=H==="light"?1:0;',
+    'H=k,n.background=null,d.radius=H==="light"?.04:.18,d.strength=H==="light"?.28:1.15,s.domElement.dataset.bloomRadius=String(d.radius),s.domElement.dataset.bloomStrength=String(d.strength),M.uniforms.lightMode.value=H==="light"?1:0;',
   );
   replaceOnce(
     "performance revision",
@@ -70,8 +56,8 @@ if (html.includes(`dataset.performanceRevision="${previousRevision}"`)) {
   );
   replaceOnce(
     "plasma halo diagnostics",
-    's.domElement.dataset.plasmaHalo="view-feathered";',
     's.domElement.dataset.plasmaHalo="theme-aware-light-v1";',
+    's.domElement.dataset.plasmaHalo="theme-aware-light-v2";',
   );
   fs.writeFileSync(filePath, html);
   process.exit(0);
@@ -216,7 +202,7 @@ let l=o.getObjectByName("energy-ring-front"),c=o.getObjectByName("energy-ring-ba
   typeof A.visible==="boolean"&&V!==A.visible&&(V=A.visible,S=!0);
   let k=A.theme==="light"?"light":"dark",I=0,D=0;
   if(k!==H){
-    H=k,n.background=null,M.uniforms.lightMode.value=H==="light"?1:0;
+    H=k,n.background=null,d.radius=H==="light"?.04:.18,d.strength=H==="light"?.28:1.15,s.domElement.dataset.bloomRadius=String(d.radius),s.domElement.dataset.bloomStrength=String(d.strength),M.uniforms.lightMode.value=H==="light"?1:0;
     o.traverse(w=>{
       w instanceof Qi&&(I+=1);
       if(!(w instanceof We))return;
@@ -272,7 +258,7 @@ s.domElement.dataset.sceneMsaa=String(p.samples);
 s.domElement.dataset.postprocessSamples="0";
 s.domElement.dataset.postprocessStages="16";
 s.domElement.dataset.bloomSampling="paired-bilinear";
-s.domElement.dataset.plasmaHalo="theme-aware-light-v1";
+s.domElement.dataset.plasmaHalo="theme-aware-light-v2";
 s.domElement.dataset.transparentPassMode="single";
 let m=()=>{i.position.copy(D1),h.target.copy(Tv),h.update(),E()},f=w=>{w.key.toLowerCase()==="r"&&m()};
 window.addEventListener("keydown",f),s.domElement.addEventListener("dblclick",m);

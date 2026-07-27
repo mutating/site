@@ -72,12 +72,13 @@ def test_tokamak_bloom_radius_does_not_reveal_frame_edges(
 ) -> None:
     """Keep the plasma glow tight enough that the iframe boundary stays hidden.
 
-    The former 0.35 bloom radius spread a faint pink wash across almost the
-    entire embedded renderer in some light-theme sizes and camera angles. Once
-    that wash reached the rectangular canvas edge, the otherwise transparent
-    iframe became visible against the page. This test guards the reduced 0.18
-    radius exposed by the live renderer, while leaving bloom strength and the
-    bright plasma-ring core independent.
+    The former shared bloom profile spread a faint pink wash across the
+    light-theme reactor in some sizes and camera angles. Besides reaching the
+    rectangular canvas edge, that wash looked like translucent shading over the
+    vessel instead of light emitted by the plasma. The light renderer therefore
+    uses a compact 0.04 radius and reduced 0.28 strength, while the dark theme
+    retains its established 0.18/1.15 profile. This test fixes the light values
+    exposed by the live renderer so the broad overlay cannot silently return.
     """
 
     page = driver(
@@ -87,8 +88,9 @@ def test_tokamak_bloom_radius_does_not_reveal_frame_edges(
     )
     canvas = _reactor_canvas(page)
 
-    expect(canvas).to_have_attribute("data-bloom-radius", ".18")
-    assert float(canvas.get_attribute("data-bloom-radius") or "1") < 0.2
+    expect(canvas).to_have_attribute("data-bloom-radius", "0.04")
+    expect(canvas).to_have_attribute("data-bloom-strength", "0.28")
+    assert float(canvas.get_attribute("data-bloom-radius") or "1") < 0.1
 
 
 def test_theme_switches_do_not_add_wireframe_geometry(
@@ -141,8 +143,12 @@ def test_theme_switches_do_not_add_wireframe_geometry(
 
         if expected_theme == "light":
             assert depth_occluders > 0
+            expect(canvas).to_have_attribute("data-bloom-radius", "0.04")
+            expect(canvas).to_have_attribute("data-bloom-strength", "0.28")
         else:
             assert depth_occluders == 0
+            expect(canvas).to_have_attribute("data-bloom-radius", "0.18")
+            expect(canvas).to_have_attribute("data-bloom-strength", "1.15")
 
 
 def test_tokamak_stops_rendering_when_the_scene_is_idle(
@@ -204,7 +210,7 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     )
     canvas = _show_reactor(page)
 
-    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v3")
+    expect(canvas).to_have_attribute("data-performance-revision", "demand-batched-v4")
     expect(canvas).to_have_attribute("data-canvas-msaa", "0")
     expect(canvas).to_have_attribute("data-scene-msaa", "4")
     expect(canvas).to_have_attribute("data-postprocess-samples", "0")
@@ -212,7 +218,7 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     expect(canvas).to_have_attribute("data-bloom-sampling", "paired-bilinear")
     expect(canvas).to_have_attribute(
         "data-plasma-halo",
-        "theme-aware-light-v1",
+        "theme-aware-light-v2",
     )
     expect(canvas).to_have_attribute("data-transparent-pass-mode", "single")
     expect(canvas).to_have_attribute("data-shader-compilation", "complete")
@@ -356,27 +362,31 @@ def test_tokamak_matches_intended_visual_reference(
         assert extreme_delta_fraction < 0.003
 
 
-def test_light_plasma_glow_remains_luminous_at_an_oblique_scroll_angle(
+def test_light_plasma_glow_stays_local_at_an_oblique_scroll_angle(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """Keep a believable luminous plasma profile on the light background.
+    """Keep light-theme plasma luminous without shading the reactor body.
 
     The reactor rotates around its horizontal axis as its section passes through
-    the viewport. At the approximately -0.52-radian side-on transition, a
-    theme-agnostic additive halo becomes a flat translucent stripe on the light
-    page: white has no remaining brightness range for ordinary additive bloom.
-    The light-theme material therefore needs a white-hot narrow source, a
-    saturated inner corona, and a wider low-opacity pink falloff. The dark theme
-    deliberately retains its former material and must not inherit this profile.
+    the viewport. At the approximately -0.52-radian side-on transition, the
+    earlier light-theme treatment sent an overbright white core through the
+    fullscreen bloom chain. Its wide pink-white wash covered the vessel around
+    the plasma and looked like translucent shading rather than emitted light.
+    The corrected light profile feeds a dedicated compact bloom setting and
+    builds the glow from a narrow white center, saturated pink core, and tightly
+    feathered rim. Its radius and strength are intentionally much lower than the
+    dark-theme bloom. The broad flat energy disk is dark-theme-only, and the
+    dark renderer deliberately keeps its established material unchanged.
 
     This test reproduces that exact light-theme angle in the standalone renderer
-    and compares the central plasma band with a checked-in reference containing
-    all three luminance zones. The comparison is deliberately limited to the
-    band around the plasma, so ordinary wireframe differences cannot mask a
-    returned contour or a washed-out pink slab. Reverting to either the old
-    constant-opacity toruses or the intermediate single pink halo changes this
-    crop far beyond the small cross-GPU tolerance below and must fail the test.
+    and compares the plasma plus the surrounding vessel with a checked-in
+    reference. The crop is intentionally taller than the luminous ring: this
+    makes the test fail if a future shader or bloom change again paints a broad
+    translucent band over the wireframe, even when the ring itself still looks
+    bright. Reverting to the rejected wide bloom, the old constant-opacity
+    toruses, or the contour-like single halo changes this crop far beyond the
+    small cross-GPU tolerance below and must fail the test.
     """
 
     page = driver(
@@ -401,7 +411,7 @@ def test_light_plasma_glow_remains_luminous_at_an_oblique_scroll_angle(
     expect(canvas).to_have_attribute("data-reactor-theme", "light")
     expect(canvas).to_have_attribute(
         "data-plasma-halo",
-        "theme-aware-light-v1",
+        "theme-aware-light-v2",
     )
     page.wait_for_timeout(100)
 
@@ -410,7 +420,7 @@ def test_light_plasma_glow_remains_luminous_at_an_oblique_scroll_angle(
         Path(__file__).with_name("visual_baselines")
         / "tokamak-light-oblique.png"
     ).convert("RGB")
-    plasma_crop = (90, 135, 390, 245)
+    plasma_crop = (70, 105, 410, 280)
     difference = ImageChops.difference(
         expected.crop(plasma_crop),
         actual.crop(plasma_crop),
