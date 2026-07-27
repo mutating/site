@@ -1123,7 +1123,7 @@ function TentacleContactBackground() {
     <iframe
       ref={frameRef}
       className="contact__tentacles"
-      src="/muta-tentacles.html?v=0fe020956a2d"
+      src="/muta-tentacles.html?v=e44d1b709538"
       title="Interactive field of cursor-responsive Muta tentacles"
       loading="lazy"
       tabIndex={-1}

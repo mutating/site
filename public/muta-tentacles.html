@@ -126,6 +126,9 @@
         const requestedRenderSupersample = Number(
           runtimeSearch.get("render-supersample"),
         );
+        const requestedSpatialCapacity = Number(
+          runtimeSearch.get("max-spatial-candidates"),
+        );
         const useManualAnimationFrame =
           runtimeSearch.get("manual-animation-frame") === "1";
         const CHAIN_LINKS = 50;
@@ -165,7 +168,17 @@
               )
             : 2;
         const SPATIAL_GRID_ROWS = 64;
-        const MAX_SPATIAL_SKELETONS = 512;
+        // The production surface currently peaks at roughly 21 candidates per
+        // cell. Keep a generous fast-path margin, then fall back to the full
+        // skeleton scan if an unusual deformation ever exceeds it.
+        const MAX_SPATIAL_SKELETONS =
+          Number.isFinite(requestedSpatialCapacity) &&
+          requestedSpatialCapacity > 0
+            ? Math.min(
+                64,
+                Math.max(1, Math.floor(requestedSpatialCapacity)),
+              )
+            : 64;
         const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const floatColor = Boolean(gl.getExtension("EXT_color_buffer_float"));
         const compactMedia = matchMedia("(max-width: 620px)");
@@ -201,7 +214,23 @@
             Math.round((isCompact ? 209 : 356) * surfaceAspect),
           ),
         );
-        const gridResolution = isCompact ? 512 : 640;
+        const maximumGridResolution = isCompact ? 512 : 640;
+        // Surface noise is defined in aspect-correct world coordinates. A
+        // square mesh therefore oversamples the short axis of a rectangle
+        // without revealing extra detail. Match vertex spacing on both axes
+        // and keep the exact former resolution on the long axis.
+        const gridColumns = Math.max(
+          2,
+          Math.round(
+            maximumGridResolution * Math.min(1, surfaceAspect),
+          ),
+        );
+        const gridRows = Math.max(
+          2,
+          Math.round(
+            maximumGridResolution / Math.max(1, surfaceAspect),
+          ),
+        );
         const gpuRenderLimit = Math.min(
           maximumTextureDimension,
           gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
@@ -217,9 +246,17 @@
               noisePhaseA: s * 5.3,
               noisePhaseB: s * 9.1,
               noisePhaseC: s * 14.7,
+              noisePhaseASine: Math.sin(s * 5.3),
+              noisePhaseACosine: Math.cos(s * 5.3),
+              noisePhaseBSine: Math.sin(-s * 9.1),
+              noisePhaseBCosine: Math.cos(-s * 9.1),
+              noisePhaseCSine: Math.sin(s * 14.7),
+              noisePhaseCCosine: Math.cos(s * 14.7),
               noiseWeight: 0.28 + s * 0.72,
               horizontalTaper: 1 - s * 0.08,
               verticalPhase: s * 3.2,
+              verticalPhaseSine: Math.sin(s * 3.2),
+              verticalPhaseCosine: Math.cos(s * 3.2),
             };
           },
         );
@@ -245,7 +282,7 @@
           precision highp float;
           precision highp int;
 
-          in vec2 aUv;
+          layout(location = 0) in vec2 aUv;
 
           uniform sampler2D uNoise;
           uniform sampler2D uSkeletons;
@@ -367,7 +404,7 @@
               if (candidate >= candidateCount) {
                 break;
               }
-              int i =
+              int skeletonIndex =
                 uUseSpatialGrid != 0
                   ? int(
                       texelFetch(
@@ -387,7 +424,11 @@
                   : uint((1 << RENDER_SEGMENTS) - 1);
 
               vec4 skeletonBounds =
-                texelFetch(uSkeletonBounds, ivec2(0, i), 0);
+                texelFetch(
+                  uSkeletonBounds,
+                  ivec2(0, skeletonIndex),
+                  0
+                );
               vec2 boundDelta = uv - skeletonBounds.xy;
               if (
                 dot(boundDelta, boundDelta) >
@@ -404,11 +445,27 @@
                   continue;
                 }
                 vec4 previousPoint =
-                  texelFetch(uSkeletons, ivec2(joint - 1, i), 0);
-                vec4 currentPoint = texelFetch(uSkeletons, ivec2(joint, i), 0);
-                vec2 metric = segmentMetric(uv, previousPoint.xy, currentPoint.xy);
-                float radius = mix(previousPoint.w, currentPoint.w, metric.y);
-                float centerHeight = mix(previousPoint.z, currentPoint.z, metric.y);
+                  texelFetch(
+                    uSkeletons,
+                    ivec2(joint - 1, skeletonIndex),
+                    0
+                  );
+                vec4 currentPoint =
+                  texelFetch(
+                    uSkeletons,
+                    ivec2(joint, skeletonIndex),
+                    0
+                  );
+                vec2 metric =
+                  segmentMetric(
+                    uv,
+                    previousPoint.xy,
+                    currentPoint.xy
+                  );
+                float radius =
+                  mix(previousPoint.w, currentPoint.w, metric.y);
+                float centerHeight =
+                  mix(previousPoint.z, currentPoint.z, metric.y);
                 strand = max(
                   strand,
                   capsuleTop(metric.x, radius, centerHeight)
@@ -424,7 +481,7 @@
                 vec4 tipPoint =
                   texelFetch(
                     uSkeletons,
-                    ivec2(RENDER_POINTS - 1, i),
+                    ivec2(RENDER_POINTS - 1, skeletonIndex),
                     0
                   );
                 float tipDistance = length(uv - tipPoint.xy);
@@ -439,7 +496,11 @@
               }
               if ((segmentMask & uint(1)) != uint(0)) {
                 vec4 rootPoint =
-                  texelFetch(uSkeletons, ivec2(0, i), 0);
+                  texelFetch(
+                    uSkeletons,
+                    ivec2(0, skeletonIndex),
+                    0
+                  );
                 float rootDistance = length(uv - rootPoint.xy);
                 strand = max(
                   strand,
@@ -452,15 +513,16 @@
               }
               strand *= mask;
 
-              float softness = mix(0.019, 0.032, saturate(strand * 4.2));
+              float softness =
+                mix(0.019, 0.032, saturate(strand * 4.2));
               height = smoothMaximum(height, strand, softness);
 
               float strength = strand / max(height, 0.001);
               if (strength > strongest) {
                 strongest = strength;
                 float indexVariation =
-                  sin(float(i) * 12.9898 + 4.137) * 0.5 +
-                  sin(float(i) * 3.711) * 0.24;
+                  sin(float(skeletonIndex) * 12.9898 + 4.137) * 0.5 +
+                  sin(float(skeletonIndex) * 3.711) * 0.24;
                 variation = indexVariation;
               }
             }
@@ -1108,7 +1170,18 @@
           return program;
         }
 
-        const surfaceProgram = createProgram(surfaceVertex, surfaceFragment);
+        const fastSurfaceVertex = surfaceVertex.replace(
+          `const int MAX_SKELS = ${MAX_SKELETONS};`,
+          `const int MAX_SKELS = ${MAX_SPATIAL_SKELETONS};`,
+        );
+        const surfaceProgram = createProgram(
+          fastSurfaceVertex,
+          surfaceFragment,
+        );
+        const fallbackSurfaceProgram = createProgram(
+          surfaceVertex,
+          surfaceFragment,
+        );
         const scatterProgram = createProgram(postVertex, scatterFragment);
         const compositeProgram = createProgram(postVertex, compositeFragment);
 
@@ -1116,21 +1189,28 @@
           return gl.getUniformLocation(program, name);
         }
 
-        const surfaceUniforms = {
-          noise: uniform(surfaceProgram, "uNoise"),
-          skeletons: uniform(surfaceProgram, "uSkeletons"),
-          skeletonBounds: uniform(surfaceProgram, "uSkeletonBounds"),
-          spatialIndices: uniform(surfaceProgram, "uSpatialIndices"),
-          spatialSegmentMasks: uniform(
-            surfaceProgram,
-            "uSpatialSegmentMasks",
-          ),
-          spatialCounts: uniform(surfaceProgram, "uSpatialCounts"),
-          skeletonCount: uniform(surfaceProgram, "uSkeletonCount"),
-          useSpatialGrid: uniform(surfaceProgram, "uUseSpatialGrid"),
-          time: uniform(surfaceProgram, "uTime"),
-          surfaceAspect: uniform(surfaceProgram, "uSurfaceAspect"),
-        };
+        function makeSurfaceUniforms(program) {
+          return {
+            noise: uniform(program, "uNoise"),
+            skeletons: uniform(program, "uSkeletons"),
+            skeletonBounds: uniform(program, "uSkeletonBounds"),
+            spatialIndices: uniform(program, "uSpatialIndices"),
+            spatialSegmentMasks: uniform(
+              program,
+              "uSpatialSegmentMasks",
+            ),
+            spatialCounts: uniform(program, "uSpatialCounts"),
+            skeletonCount: uniform(program, "uSkeletonCount"),
+            useSpatialGrid: uniform(program, "uUseSpatialGrid"),
+            time: uniform(program, "uTime"),
+            surfaceAspect: uniform(program, "uSurfaceAspect"),
+          };
+        }
+
+        const surfaceUniforms =
+          makeSurfaceUniforms(surfaceProgram);
+        const fallbackSurfaceUniforms =
+          makeSurfaceUniforms(fallbackSurfaceProgram);
 
         const scatterUniforms = {
           source: uniform(scatterProgram, "uSource"),
@@ -1158,15 +1238,22 @@
           ),
         };
 
-        gl.useProgram(surfaceProgram);
-        gl.uniform1i(surfaceUniforms.noise, 0);
-        gl.uniform1i(surfaceUniforms.skeletons, 1);
-        gl.uniform1i(surfaceUniforms.skeletonBounds, 2);
-        gl.uniform1i(surfaceUniforms.spatialIndices, 3);
-        gl.uniform1i(surfaceUniforms.spatialCounts, 4);
-        gl.uniform1i(surfaceUniforms.spatialSegmentMasks, 5);
-        gl.uniform1i(surfaceUniforms.skeletonCount, skeletonCount);
-        gl.uniform1f(surfaceUniforms.surfaceAspect, surfaceAspect);
+        function configureSurfaceProgram(program, uniforms) {
+          gl.useProgram(program);
+          gl.uniform1i(uniforms.noise, 0);
+          gl.uniform1i(uniforms.skeletons, 1);
+          gl.uniform1i(uniforms.skeletonBounds, 2);
+          gl.uniform1i(uniforms.spatialIndices, 3);
+          gl.uniform1i(uniforms.spatialCounts, 4);
+          gl.uniform1i(uniforms.spatialSegmentMasks, 5);
+          gl.uniform1i(uniforms.skeletonCount, skeletonCount);
+          gl.uniform1f(uniforms.surfaceAspect, surfaceAspect);
+        }
+        configureSurfaceProgram(surfaceProgram, surfaceUniforms);
+        configureSurfaceProgram(
+          fallbackSurfaceProgram,
+          fallbackSurfaceUniforms,
+        );
         gl.useProgram(scatterProgram);
         gl.uniform1i(scatterUniforms.source, 0);
         gl.uniform1i(scatterUniforms.geometry, 1);
@@ -1702,13 +1789,20 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texImage2D(
+        gl.texStorage2D(
           gl.TEXTURE_2D,
-          0,
+          1,
           gl.RGBA32F,
           RENDER_POINTS,
           MAX_SKELETONS,
+        );
+        gl.texSubImage2D(
+          gl.TEXTURE_2D,
           0,
+          0,
+          0,
+          RENDER_POINTS,
+          MAX_SKELETONS,
           gl.RGBA,
           gl.FLOAT,
           skeletonPixels,
@@ -1720,13 +1814,20 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texImage2D(
+        gl.texStorage2D(
           gl.TEXTURE_2D,
-          0,
+          1,
           gl.RGBA32F,
           1,
           MAX_SKELETONS,
+        );
+        gl.texSubImage2D(
+          gl.TEXTURE_2D,
           0,
+          0,
+          0,
+          1,
+          MAX_SKELETONS,
           gl.RGBA,
           gl.FLOAT,
           skeletonBoundsPixels,
@@ -1755,13 +1856,20 @@
             gl.TEXTURE_WRAP_T,
             gl.CLAMP_TO_EDGE,
           );
-          gl.texImage2D(
+          gl.texStorage2D(
             gl.TEXTURE_2D,
-            0,
+            1,
             gl.R16UI,
             width,
             height,
+          );
+          gl.texSubImage2D(
+            gl.TEXTURE_2D,
             0,
+            0,
+            0,
+            width,
+            height,
             gl.RED_INTEGER,
             gl.UNSIGNED_SHORT,
             pixels,
@@ -1787,24 +1895,24 @@
         let spatialGridValid = true;
         let maximumSpatialCellLoad = 0;
 
-        function buildGrid(resolution) {
-          const vertices = new Float32Array(resolution * resolution * 2);
+        function buildGrid(columns, rows) {
+          const vertices = new Float32Array(columns * rows * 2);
           let vertexOffset = 0;
-          for (let y = 0; y < resolution; y++) {
-            for (let x = 0; x < resolution; x++) {
-              vertices[vertexOffset++] = x / (resolution - 1);
-              vertices[vertexOffset++] = y / (resolution - 1);
+          for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < columns; x++) {
+              vertices[vertexOffset++] = x / (columns - 1);
+              vertices[vertexOffset++] = y / (rows - 1);
             }
           }
 
-          const triangleCount = (resolution - 1) * (resolution - 1) * 2;
+          const triangleCount = (columns - 1) * (rows - 1) * 2;
           const indices = new Uint32Array(triangleCount * 3);
           let indexOffset = 0;
-          for (let y = 0; y < resolution - 1; y++) {
-            for (let x = 0; x < resolution - 1; x++) {
-              const a = y * resolution + x;
+          for (let y = 0; y < rows - 1; y++) {
+            for (let x = 0; x < columns - 1; x++) {
+              const a = y * columns + x;
               const b = a + 1;
-              const c = a + resolution;
+              const c = a + columns;
               const d = c + 1;
               indices[indexOffset++] = a;
               indices[indexOffset++] = c;
@@ -1817,14 +1925,14 @@
           return { vertices, indices };
         }
 
-        const grid = buildGrid(gridResolution);
+        const grid = buildGrid(gridColumns, gridRows);
         const surfaceVao = gl.createVertexArray();
         gl.bindVertexArray(surfaceVao);
 
         const vertexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, grid.vertices, gl.STATIC_DRAW);
-        const uvLocation = gl.getAttribLocation(surfaceProgram, "aUv");
+        const uvLocation = 0;
         gl.enableVertexAttribArray(uvLocation);
         gl.vertexAttribPointer(uvLocation, 2, gl.FLOAT, false, 0, 0);
 
@@ -1842,16 +1950,12 @@
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.texImage2D(
+          gl.texStorage2D(
             gl.TEXTURE_2D,
-            0,
+            1,
             internalFormat,
             width,
             height,
-            0,
-            format,
-            type,
-            null,
           );
           return texture;
         }
@@ -2358,7 +2462,13 @@
           }
         }
 
-        function solveChainTowardPointer(skeleton, attraction, delta) {
+        function solveChainTowardPointer(
+          skeleton,
+          attraction,
+          delta,
+          pointerWorldX,
+          pointerWorldY,
+        ) {
           const forceMagnitude = Math.abs(attraction);
           if (forceMagnitude <= 0) {
             return;
@@ -2371,9 +2481,8 @@
           const rootX = skeleton.root.x;
           const rootY = skeleton.root.y;
           const rootZ = skeleton.baseHeight;
-          const pointerTarget = unprojectPointerAtHeight(tip.z);
-          const pointerDeltaX = pointerTarget.x - tip.x;
-          const pointerDeltaY = pointerTarget.y - tip.y;
+          const pointerDeltaX = pointerWorldX - tip.x;
+          const pointerDeltaY = pointerWorldY - tip.y;
           const pointerDistance = length2(
             pointerDeltaX,
             pointerDeltaY,
@@ -2511,6 +2620,11 @@
           );
         }
 
+        const grabberSkeletons = new Array(MAX_CURSOR_GRABBERS);
+        const grabberDistances = new Float64Array(
+          MAX_CURSOR_GRABBERS,
+        );
+
         function updateSkeletons(time, delta, wallTime) {
           if (debugPointerOverride) {
             pointer.targetX = clamp(debugPointerX, 0, 1);
@@ -2523,6 +2637,8 @@
           pointer.energy += (targetEnergy - pointer.energy) * (1 - Math.exp(-delta * 6));
           const pointerInteraction =
             currentPointerInteraction(wallTime);
+          const pointerWorldX = pointer.x * surfaceAspect;
+          const pointerWorldY = pointer.y;
           renderedInteractionPhase = pointerInteraction.phase;
           canvas.dataset.pointerInteractionPhase =
             pointerInteraction.phase;
@@ -2562,51 +2678,48 @@
             diagnostics.maximumGrabberError = 0;
           }
 
-          const grabberCandidates = [];
+          let grabberCount = 0;
           for (const skeleton of skeletons) {
             skeleton.grabbed = false;
             if (pointer.energy <= 0.01) {
               continue;
             }
-            const projectedRoot = projectPointToCanvas({
-              x: skeleton.root.x,
-              y: skeleton.root.y,
-              z: skeleton.baseHeight,
-            });
             const rootDistance = length2(
-              (
-                pointer.x -
-                projectedRoot.x
-              ) *
-                surfaceAspect,
-              pointer.y - projectedRoot.y,
+              pointerWorldX - skeleton.root.x,
+              pointerWorldY - skeleton.root.y,
             );
             if (
               pointer.pressDirection >= 0 &&
               rootDistance <= skeleton.maximumGrabDistance
             ) {
-              let insertionIndex = grabberCandidates.length;
+              let insertionIndex = grabberCount;
               while (
                 insertionIndex > 0 &&
-                grabberCandidates[insertionIndex - 1].rootDistance >
-                  rootDistance
+                grabberDistances[insertionIndex - 1] > rootDistance
               ) {
                 insertionIndex--;
               }
               if (insertionIndex < MAX_CURSOR_GRABBERS) {
-                grabberCandidates.splice(insertionIndex, 0, {
-                  skeleton,
-                  rootDistance,
-                });
-                if (
-                  grabberCandidates.length > MAX_CURSOR_GRABBERS
+                const nextGrabberCount = Math.min(
+                  MAX_CURSOR_GRABBERS,
+                  grabberCount + 1,
+                );
+                for (
+                  let candidateIndex = nextGrabberCount - 1;
+                  candidateIndex > insertionIndex;
+                  candidateIndex--
                 ) {
-                  grabberCandidates.pop();
+                  grabberSkeletons[candidateIndex] =
+                    grabberSkeletons[candidateIndex - 1];
+                  grabberDistances[candidateIndex] =
+                    grabberDistances[candidateIndex - 1];
                 }
+                grabberSkeletons[insertionIndex] = skeleton;
+                grabberDistances[insertionIndex] = rootDistance;
+                grabberCount = nextGrabberCount;
               }
             }
           }
-          const grabberCount = grabberCandidates.length;
           if (collectDiagnostics) {
             diagnostics.grabberCount = grabberCount;
           }
@@ -2615,7 +2728,7 @@
             grabberIndex < grabberCount;
             grabberIndex++
           ) {
-            grabberCandidates[grabberIndex].skeleton.grabbed = true;
+            grabberSkeletons[grabberIndex].grabbed = true;
           }
 
           spatialCountPixels.fill(0);
@@ -2642,29 +2755,39 @@
             const timeSpeedSecondary = timeSpeed * 0.47;
             const timeSpeedDetail = timeSpeed * 1.53;
             const detailPhase = skeleton.phase * 0.31;
+            const noiseABase =
+              timeSpeed + skeleton.phase;
+            const noiseABaseSine = Math.sin(noiseABase);
+            const noiseABaseCosine = Math.cos(noiseABase);
+            const noiseBBase =
+              timeSpeedSecondary + skeleton.phase2;
+            const noiseBBaseSine = Math.sin(noiseBBase);
+            const noiseBBaseCosine = Math.cos(noiseBBase);
+            const noiseCBase =
+              timeSpeedDetail + detailPhase;
+            const noiseCBaseSine = Math.sin(noiseCBase);
+            const noiseCBaseCosine = Math.cos(noiseCBase);
+            const verticalBase =
+              verticalMotionTime + skeleton.phase2;
+            const verticalBaseSine = Math.sin(verticalBase);
+            const verticalBaseCosine = Math.cos(verticalBase);
 
             for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
               const point = points[joint];
               const profile = jointProfiles[joint];
+              const noiseA =
+                noiseABaseSine * profile.noisePhaseACosine +
+                noiseABaseCosine * profile.noisePhaseASine;
+              const noiseB =
+                noiseBBaseSine * profile.noisePhaseBCosine +
+                noiseBBaseCosine * profile.noisePhaseBSine;
+              const noiseC =
+                noiseCBaseSine * profile.noisePhaseCCosine +
+                noiseCBaseCosine * profile.noisePhaseCSine;
               const spatialNoise =
-                Math.sin(
-                  timeSpeed +
-                    skeleton.phase +
-                    profile.noisePhaseA,
-                ) *
-                  0.62 +
-                Math.sin(
-                  timeSpeedSecondary +
-                    skeleton.phase2 -
-                    profile.noisePhaseB,
-                ) *
-                  0.27 +
-                Math.sin(
-                  timeSpeedDetail +
-                    detailPhase +
-                    profile.noisePhaseC,
-                ) *
-                  0.11;
+                noiseA * 0.62 +
+                noiseB * 0.27 +
+                noiseC * 0.11;
               const restAngle =
                 skeleton.baseAngle +
                 skeleton.bend * profile.bendFactor +
@@ -2681,10 +2804,11 @@
                 verticalStep *
                 (
                   0.96 +
-                  Math.sin(
-                    verticalMotionTime +
-                      skeleton.phase2 +
-                      profile.verticalPhase,
+                  (
+                    verticalBaseSine *
+                      profile.verticalPhaseCosine +
+                    verticalBaseCosine *
+                      profile.verticalPhaseSine
                   ) *
                     0.035
                 );
@@ -2707,14 +2831,9 @@
             }
 
             const tip = points[CHAIN_LINKS];
-            const projectedTip = projectPointToCanvas(tip);
             const tipDistance = length2(
-              (
-                pointer.x -
-                projectedTip.x
-              ) *
-                surfaceAspect,
-              pointer.y - projectedTip.y,
+              pointerWorldX - tip.x,
+              pointerWorldY - tip.y,
             );
             const normalizedDistance = clamp(
               tipDistance /
@@ -2801,7 +2920,13 @@
 
             }
 
-            solveChainTowardPointer(skeleton, pointerForce, delta);
+            solveChainTowardPointer(
+              skeleton,
+              pointerForce,
+              delta,
+              pointerWorldX,
+              pointerWorldY,
+            );
 
             if (collectDiagnostics) {
               const forceMagnitude = Math.abs(pointerForce);
@@ -2815,15 +2940,12 @@
                   finalTip.z - restZ,
                 ),
               );
-              const finalProjectedTip =
-                projectPointToCanvas(finalTip);
+              const finalProjectedTipX =
+                finalTip.x / surfaceAspect;
+              const finalProjectedTipY = finalTip.y;
               const cursorDistance = length2(
-                (
-                  pointer.x -
-                  finalProjectedTip.x
-                ) *
-                  surfaceAspect,
-                pointer.y - finalProjectedTip.y,
+                pointerWorldX - finalTip.x,
+                pointerWorldY - finalTip.y,
               );
               if (skeleton.grabbed) {
                 diagnostics.maximumGrabberError = Math.max(
@@ -2833,8 +2955,8 @@
               }
               if (forceMagnitude > 0.48) {
                 diagnostics.strongTipCount += 1;
-                diagnostics.strongTipX += finalProjectedTip.x;
-                diagnostics.strongTipY += finalProjectedTip.y;
+                diagnostics.strongTipX += finalProjectedTipX;
+                diagnostics.strongTipY += finalProjectedTipY;
               }
               if (
                 forceMagnitude > 0.01 ||
@@ -2847,9 +2969,9 @@
                   diagnostics.minimumCursorDistance =
                     cursorDistance;
                   diagnostics.closestTipX =
-                    finalProjectedTip.x;
+                    finalProjectedTipX;
                   diagnostics.closestTipY =
-                    finalProjectedTip.y;
+                    finalProjectedTipY;
                 }
               }
               diagnostics.minimumTipClearance = Math.min(
@@ -3152,7 +3274,13 @@
           gl.bindFramebuffer(gl.FRAMEBUFFER, renderTargets.surfaceFramebuffer);
           gl.viewport(0, 0, pixelWidth, pixelHeight);
           gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.useProgram(surfaceProgram);
+          const activeSurfaceProgram = spatialGridValid
+            ? surfaceProgram
+            : fallbackSurfaceProgram;
+          const activeSurfaceUniforms = spatialGridValid
+            ? surfaceUniforms
+            : fallbackSurfaceUniforms;
+          gl.useProgram(activeSurfaceProgram);
           bindTexture(0, noiseTexture);
           bindTexture(1, skeletonTexture);
           bindTexture(2, skeletonBoundsTexture);
@@ -3160,10 +3288,10 @@
           bindTexture(4, spatialCountTexture);
           bindTexture(5, spatialSegmentMaskTexture);
           gl.uniform1i(
-            surfaceUniforms.useSpatialGrid,
+            activeSurfaceUniforms.useSpatialGrid,
             spatialGridValid ? 1 : 0,
           );
-          gl.uniform1f(surfaceUniforms.time, time);
+          gl.uniform1f(activeSurfaceUniforms.time, time);
           gl.bindVertexArray(surfaceVao);
           gl.drawElements(gl.TRIANGLES, grid.indices.length, gl.UNSIGNED_INT, 0);
 
@@ -3354,6 +3482,12 @@
             canvas.dataset.tentacles = String(skeletons.length);
             canvas.dataset.spatialAcceleration =
               spatialGridValid ? "enabled" : "fallback";
+            canvas.dataset.surfaceShaderPath =
+              spatialGridValid ? "fast-spatial" : "full-fallback";
+            canvas.dataset.spatialCandidateCapacity = String(
+              MAX_SPATIAL_SKELETONS,
+            );
+            canvas.dataset.surfaceGrid = `${gridColumns}x${gridRows}`;
             canvas.dataset.maximumSpatialCellLoad = String(
               maximumSpatialCellLoad,
             );

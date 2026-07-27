@@ -20,6 +20,98 @@ DIAGNOSTIC_QUERY = (
 )
 
 
+def test_dense_surface_uses_the_bounded_spatial_shader(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Keep the production surface on the exact, bounded shader fast path.
+
+    The renderer groups tentacle segments into spatial cells before drawing.
+    Its production scene currently puts only about twenty candidates in the
+    busiest cell, yet the former surface shader still carried a 900-iteration
+    upper bound for every covered pixel. The optimized program has a 64-entry
+    bound and is mathematically identical while the cell fits; if an unusual
+    deformation exceeds that capacity, rendering must switch to the original
+    full-scan program instead of dropping geometry.
+
+    This regression loads the normal full-density rectangle rather than the
+    reduced diagnostic fixture. After the first diagnostics interval it proves
+    that the spatial lists stayed within the documented 64-entry safety margin
+    and that WebGL selected the bounded program. A future change that silently
+    disables the fast path, restores the oversized hot loop, or overfills the
+    compact lookup texture therefore fails here before it can reintroduce the
+    contact-section scroll hitch.
+    """
+
+    page = driver(stored_theme="dark", viewport=(1280, 720))
+    page.goto(
+        f"{base_url}/muta-tentacles.html?generation-seed=12345",
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute(
+        "data-surface-shader-path",
+        "fast-spatial",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-spatial-candidate-capacity",
+        "64",
+    )
+    maximum_cell_load = int(
+        canvas.get_attribute("data-maximum-spatial-cell-load") or "0"
+    )
+    assert 0 < maximum_cell_load < 64
+
+
+def test_spatial_overflow_preserves_every_tentacle_via_full_fallback(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Prove the compact shader can never clip an overloaded spatial cell.
+
+    The fast renderer is allowed to inspect at most its configured number of
+    candidates per spatial cell. Visual fidelity would be lost if a denser
+    future layout merely truncated the remaining tentacles. The production
+    default leaves ample headroom, so this test deterministically lowers only
+    the diagnostic capacity to one entry and forces an overflow without
+    changing the real fallback algorithm.
+
+    The scene must detect that overflow, mark spatial acceleration as a
+    fallback, and draw with the original 900-skeleton shader. This specifically
+    guards the no-visual-loss promise of the optimization: changing the compact
+    buffer size can affect performance, but it must never make geometry vanish.
+    """
+
+    page = driver(stored_theme="dark", viewport=(240, 180))
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-spatial-candidates=1&generation-seed=12345"
+            "&max-tentacles=64&render-supersample=0.5"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute(
+        "data-surface-shader-path",
+        "full-fallback",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-spatial-acceleration",
+        "fallback",
+    )
+    expect(canvas).to_have_attribute(
+        "data-spatial-candidate-capacity",
+        "1",
+    )
+    expect(canvas).to_have_attribute(
+        "data-fps",
+        re.compile(r"^[1-9][0-9]*$"),
+    )
+
+
 @pytest.mark.parametrize(
     "target_viewport",
     [
