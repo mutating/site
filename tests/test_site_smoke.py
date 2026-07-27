@@ -147,6 +147,11 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     gradient pseudo-element is running the original unfold animation and that
     moving the pointer away folds every segment back to zero width.
 
+    The desktop wordmark and every revealed segment must inherit the requested
+    35 px base size—exactly 2.5 times the former 14 px treatment—so the complete
+    supplied effect scales as one unit instead of enlarging only the visible
+    ``TMC`` anchors.
+
     The eye assertions are deliberate: replacing the textual half of the logo
     must never resize, reposition, recolor, or replace the independently
     animated gaze-and-blink component that the user explicitly asked to keep.
@@ -198,12 +203,20 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
               document.querySelector(".brand__word-anchor"),
             ).color,
             wordmarkColor: getComputedStyle(wordmark).color,
+            stageFontSize: getComputedStyle(
+              document.querySelector(".brand__wordmark-stage"),
+            ).fontSize,
+            revealFontSizes: revealElements.map(
+              (element) => getComputedStyle(element).fontSize,
+            ),
           };
         }
         """
     )
     assert all(width <= 0.01 for width in initial["revealWidths"])
     assert initial["anchorColor"] == initial["wordmarkColor"]
+    assert initial["stageFontSize"] == "35px"
+    assert initial["revealFontSizes"] == ["35px", "35px", "35px"]
 
     wordmark.hover()
     page.wait_for_function(

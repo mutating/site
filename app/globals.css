@@ -264,7 +264,7 @@ img {
 
 .brand__wordmark-stage {
   width: 10.82em;
-  font-size: 14px;
+  font-size: 35px;
   line-height: 1.2;
   font-family: "Helvetica Neue", Arial, sans-serif;
 }
@@ -2115,6 +2115,10 @@ a.section-index:focus-visible {
 }
 
 @media (max-width: 1120px) {
+  .brand__wordmark-stage {
+    font-size: 26px;
+  }
+
   .hero {
     grid-template-columns: 1fr 0.78fr;
     gap: 42px;
@@ -2154,6 +2158,10 @@ a.section-index:focus-visible {
 
   .site-header {
     background: color-mix(in srgb, var(--bg) 93%, transparent);
+  }
+
+  .brand__wordmark-stage {
+    font-size: 17px;
   }
 
   .mobile-menu {
