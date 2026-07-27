@@ -85,7 +85,10 @@ def test_tentacle_iframe_revision_matches_its_current_file_contents() -> None:
     )
     revision = hashlib.sha256(surface.read_bytes()).hexdigest()[:12]
 
-    assert f'/muta-tentacles.html?v={revision}"' in page_source
+    assert (
+        f'/muta-tentacles.html?v={revision}&embedded=1"'
+        in page_source
+    )
 
 
 def test_ticker_selection_inverts_only_its_own_colors(

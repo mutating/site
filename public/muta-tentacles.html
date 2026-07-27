@@ -1273,9 +1273,16 @@
         };
         let activeTheme = "light";
         let substrateColor = themeColors.light;
-        let runtimeVisible = true;
+        // Standalone previews animate immediately. When embedded in the site,
+        // stay paused until the parent visibility observer explicitly enables
+        // the contact section; this also closes the brief startup window before
+        // the first cross-frame runtime message arrives.
+        const isEmbeddedRuntime =
+          runtimeSearch.get("embedded") === "1";
+        let runtimeVisible = !isEmbeddedRuntime;
         let scrollRenderingSuppressed = false;
         let scrollSuppressionCount = 0;
+        const SCROLL_IDLE_FALLBACK_MS = 320;
 
         function applyTheme(theme) {
           activeTheme = theme === "dark" ? "dark" : "light";
@@ -1313,6 +1320,10 @@
         window.__mutaTentaclesSetRuntimeState = applyRuntimeState;
 
         applyTheme(readParentTheme());
+        applyRuntimeState({
+          visible: runtimeVisible,
+          scrollActive: false,
+        });
         addEventListener("message", (event) => {
           if (
             event.data?.type === "muta-tentacles-theme" &&
@@ -1342,7 +1353,7 @@
                 visible: runtimeVisible,
                 scrollActive: false,
               });
-            }, 160);
+            }, SCROLL_IDLE_FALLBACK_MS);
             if (window.parent !== window) {
               window.parent.postMessage(
                 { type: "muta-tentacles-scroll-input" },
@@ -3425,6 +3436,21 @@
             return;
           }
           canvas.dataset.runtimePaused = "false";
+          if (scrollRenderingSuppressed && !pointer.pressed) {
+            // The last complete full-resolution texture is already held on
+            // screen during a scroll burst. Advancing hundreds of invisible
+            // Verlet chains here only competes with the parent page's scroll
+            // frames, so keep the entire simulation state still until the
+            // scroll-end handoff. Updating the clock prevents a catch-up step
+            // when ordinary animation resumes.
+            lastTime = now;
+            diagnosticStart = now;
+            skipRedundantAnimationFrame = false;
+            canvas.dataset.scrollPhysics = "suppressed";
+            scheduleFrame();
+            return;
+          }
+          canvas.dataset.scrollPhysics = "active";
           if (
             skipRedundantAnimationFrame &&
             now - lastTime < 0.008
@@ -3434,14 +3460,6 @@
             return;
           }
           skipRedundantAnimationFrame = false;
-          if (
-            scrollRenderingSuppressed &&
-            !pointer.pressed &&
-            now - lastTime < 1 / 30
-          ) {
-            scheduleFrame();
-            return;
-          }
           const delta = Math.min(
             0.033,
             Math.max(0.001, now - lastTime),

@@ -979,6 +979,7 @@ function TentacleContactBackground() {
     let contactIsNearViewport = false;
     let scrollIsActive = false;
     let scrollIdleTimer = 0;
+    const scrollIdleFallbackMs = 320;
 
     const sendTheme = () => {
       const theme: Theme =
@@ -1045,7 +1046,10 @@ function TentacleContactBackground() {
       if (scrollIdleTimer) {
         window.clearTimeout(scrollIdleTimer);
       }
-      scrollIdleTimer = window.setTimeout(finishScroll, 120);
+      scrollIdleTimer = window.setTimeout(
+        finishScroll,
+        scrollIdleFallbackMs,
+      );
     };
 
     const handleMessage = (event: MessageEvent) => {
@@ -1123,9 +1127,9 @@ function TentacleContactBackground() {
     <iframe
       ref={frameRef}
       className="contact__tentacles"
-      src="/muta-tentacles.html?v=e44d1b709538"
+      src="/muta-tentacles.html?v=ba600cb796ce&embedded=1"
       title="Interactive field of cursor-responsive Muta tentacles"
-      loading="lazy"
+      loading="eager"
       tabIndex={-1}
     />
   );

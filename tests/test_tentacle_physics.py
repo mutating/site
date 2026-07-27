@@ -465,28 +465,33 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     assert elapsed_milliseconds == 33.0
 
 
-def test_scroll_mode_preserves_full_resolution_while_physics_advances(
+def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """Free the compositor during scroll without degrading the organism.
+    """Prevent invisible tentacle physics from stealing page-scroll frames.
 
     The contact surface renders a supersampled 2400-pixel-wide WebGL frame on a
-    typical desktop viewport. Continuing its surface, scatter, and composite
-    passes while Chromium also composites a page scroll made the final section
-    visibly hitch. Lowering resolution, deleting tentacles, weakening shaders,
-    or pausing interaction would hide the cost by changing the approved visual
-    or behavior, so the production contract instead holds the last complete
-    texture only for the brief active-scroll interval.
+    typical desktop viewport. The first scroll optimization correctly held its
+    last complete texture instead of submitting new surface, scatter, and
+    composite passes, but it still advanced hundreds of 50-link Verlet chains
+    in the iframe. Those invisible updates consumed roughly six milliseconds
+    on the same main thread every animation tick and made the parent page move
+    in steps even though the canvas appeared frozen.
 
     This test activates that exact iframe runtime mode and records the canvas
     backing dimensions, rendered frame id, and independent physics frame id.
-    During the interval, the backing dimensions must remain unchanged and no
-    new GPU presentation may replace the full-quality cached frame, while the
-    physics counter must continue advancing. Once scrolling ends, rendering
-    must resume immediately at the same dimensions. A regression to continuous
-    WebGL submission makes the rendered id advance; a crude pause freezes the
-    physics id; a dynamic-resolution workaround changes the canvas dimensions.
+    During active scrolling both counters must remain unchanged: Chromium can
+    composite the existing full-quality texture without any hidden JavaScript
+    physics or GPU work. Once scrolling ends, one ordinary frame must advance
+    both counters at the original backing dimensions. Pointer-press tests cover
+    the deliberate exception that keeps an active mouse interaction responsive.
+
+    Reintroducing the former "render-only" suppression makes the physics id
+    advance and fails this regression; lowering resolution changes the stored
+    dimensions; and accidentally leaving the iframe paused after ``scrollend``
+    prevents the final frame from advancing. Together those assertions protect
+    smooth scrolling without allowing a visual-quality workaround.
     """
 
     page = driver(
@@ -558,7 +563,7 @@ def test_scroll_mode_preserves_full_resolution_while_physics_advances(
     assert during_scroll["width"] == baseline["width"]
     assert during_scroll["height"] == baseline["height"]
     assert during_scroll["rendered"] == baseline["rendered"]
-    assert during_scroll["physics"] > baseline["physics"]
+    assert during_scroll["physics"] == baseline["physics"]
 
     canvas.evaluate(
         """
@@ -576,6 +581,9 @@ def test_scroll_mode_preserves_full_resolution_while_physics_advances(
     assert int(
         canvas.get_attribute("data-rendered-frame-id") or "0"
     ) > during_scroll["rendered"]
+    assert int(
+        canvas.get_attribute("data-physics-frame-id") or "0"
+    ) > during_scroll["physics"]
     resumed = canvas.evaluate(
         "element => ({width: element.width, height: element.height})"
     )
@@ -583,6 +591,51 @@ def test_scroll_mode_preserves_full_resolution_while_physics_advances(
         "width": baseline["width"],
         "height": baseline["height"],
     }
+
+
+def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
+    driver: DriverFactory,
+) -> None:
+    """Keep expensive WebGL startup out of the contact-section scroll.
+
+    The tentacle iframe sits several screens below the initial viewport. With
+    native lazy loading, Chromium postponed downloading the document, creating
+    its WebGL context, compiling all shader programs, generating the noise
+    field, and building hundreds of tentacle chains until the user was already
+    scrolling toward the footer. That one-time burst occurred in precisely the
+    area reported as jerky, independently of the steady-state FPS improvements.
+
+    This integration regression remains at ``scrollY == 0`` and requires the
+    real iframe canvas to initialize while the contact section is still far
+    below the viewport. Its runtime must then be paused by the existing
+    visibility protocol, so prewarming consumes no ongoing animation work.
+    Restoring ``loading="lazy"`` makes the canvas absent and fails; forgetting
+    the visibility handoff leaves the offscreen simulation running and also
+    fails. The test therefore moves only startup cost away from scrolling
+    without trading it for permanent background rendering.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+    )
+    assert page.evaluate("() => window.scrollY") == 0
+    assert page.locator("#contact").evaluate(
+        "element => element.getBoundingClientRect().top"
+    ) > 5 * 720
+
+    canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    expect(canvas).to_have_attribute(
+        "data-runtime-visible",
+        "false",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-runtime-paused",
+        "true",
+        timeout=30_000,
+    )
 
 
 def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
@@ -599,12 +652,15 @@ def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
     pointer sits on the tentacles—and requires the same transition before the
     parent document has a chance to deliver its own scroll event. Both paths
     must return to ordinary rendering when Chromium emits ``scrollend`` (with
-    the 120 ms quiet timer retained as a fallback), without a click, resize,
-    theme toggle, or reload.
+    a conservative 320 ms quiet timer retained as a fallback), without a
+    click, resize, theme toggle, or reload.
 
     Reverting only the parent listener leaves the iframe permanently ``active``
     and fails the first assertion. Forgetting or repeatedly postponing the
-    scroll-end handoff leaves it ``suppressed`` and fails the second. The test
+    scroll-end handoff leaves it ``suppressed`` and fails the final assertion.
+    Resuming after the former 120 ms timeout fails the intermediate assertion:
+    a slightly delayed trackpad event would otherwise allow one full expensive
+    frame between two parts of the same momentum-scroll burst. The test
     therefore protects the exact user-visible path that previously made the
     bottom of the page scroll in steps.
     """
@@ -627,6 +683,11 @@ def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
     )
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
     expect(canvas).to_have_attribute(
+        "data-runtime-visible",
+        "true",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
         "data-scroll-rendering",
         "active",
         timeout=30_000,
@@ -648,6 +709,11 @@ def test_contact_scroll_events_toggle_compositor_friendly_runtime_mode(
         }
         """,
         arg=[".contact__tentacles", baseline_suppressions],
+    )
+    page.wait_for_timeout(180)
+    expect(canvas).to_have_attribute(
+        "data-scroll-rendering",
+        "suppressed",
     )
     page.evaluate(
         "() => window.dispatchEvent(new Event('scrollend'))"
