@@ -49,10 +49,10 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     aspect-aware reload to finish. It deliberately pauses only animation-frame
     delivery—the browser condition that makes the race deterministic—while
     preserving real pointer events and wall-clock timers. Three actual left
-    clicks must each show the source-strength impulse on press and submit a
-    zero-force recovery frame immediately on release without waiting for
-    another animation frame. Once regular delivery resumes, the short recovery
-    must finish as ordinary hover.
+    clicks must each show the source-strength impulse on press and submit an
+    ordinary hover frame immediately on release without waiting for another
+    animation frame. The release frame must neither retain peak force nor
+    introduce a synthetic zero-force recovery kick.
     Repeating the click cycle is intentional: it guards the formerly
     intermittent second-or-later click as well as the first click after a
     resize.
@@ -133,9 +133,9 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
             })
             """
         )
-        assert released_state["phase"] in {"recovering", "hover"}
+        assert released_state["phase"] == "hover"
         assert released_state["pressed"] == "false"
-        assert released_state["force"] in {0, 1}
+        assert released_state["force"] == 1
         canvas.evaluate(
             """
             element => {
@@ -212,7 +212,7 @@ def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
     released_phase = canvas.get_attribute(
         "data-rendered-interaction-phase"
     )
-    assert released_phase in {"recovering", "hover"}
+    assert released_phase == "hover"
 
 
 @pytest.mark.parametrize(
@@ -326,7 +326,7 @@ def test_full_density_surface_never_queues_a_deadline_render(
     released_phase = canvas.get_attribute(
         "data-rendered-interaction-phase"
     )
-    assert released_phase in {"recovering", "hover"}
+    assert released_phase == "hover"
 
 
 def test_slow_rendered_frame_matches_the_original_single_step_clock(
@@ -491,9 +491,9 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     Every press must first submit a short, wide impulse and then settle into its
     held mode. Both buttons retain the original 13.333× impulse. The left button
     continues with 2× attraction, while only the right button's held repulsion
-    is strengthened from 1× to 2×. Releasing either button must submit a
-    zero-force recovery frame before returning to ordinary hover attraction,
-    without changing the shared timing or radius.
+    is strengthened from 1× to 2×. Releasing either button must submit an
+    ordinary hover frame immediately, without adding a zero-force recovery kick
+    or changing the shared timing and radius.
 
     Rendering density is reduced only for headless test speed; the production
     pointer and physics paths under test are unchanged.
@@ -557,9 +557,9 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
         })
         """
     )
-    assert released_state["phase"] in {"recovering", "hover"}
+    assert released_state["phase"] == "hover"
     assert released_state["pressed"] == "false"
-    assert released_state["force"] in {0, 1}
+    assert released_state["force"] == 1
     expect(canvas).to_have_attribute(
         "data-rendered-interaction-phase",
         "hover",
@@ -707,15 +707,15 @@ def _press_surface(page: Page, canvas: Page) -> tuple[float, float, float]:
     return baseline, peak, pressed_frame
 
 
-def _assert_release_redraw(
+def _assert_release_continuity(
     page: Page,
     canvas: Page,
     *,
     release: str,
 ) -> None:
-    """Assert a selected release path clears force and the rendered star."""
+    """Assert release clears peak force without snapping geometry backward."""
 
-    baseline, peak, pressed_frame = _press_surface(page, canvas)
+    _baseline, peak, pressed_frame = _press_surface(page, canvas)
     if release == "pointerup":
         page.mouse.up(button="left")
     elif release == "implicit-buttons-zero":
@@ -736,11 +736,11 @@ def _assert_release_redraw(
 
     released = _read_release_metrics(canvas)
     assert released["pressed"] == "false"
-    assert released["phase"] in {"recovering", "hover"}
+    assert released["phase"] == "hover"
     assert released["frame"] > pressed_frame
-    assert released["force"] in {0, 1}
-    assert released["displacement"] <= baseline * 1.25
-    assert released["displacement"] <= peak * 0.5
+    assert released["force"] == 1
+    assert released["displacement"] >= peak * 0.8
+    assert released["displacement"] <= peak * 1.5
 
     page.evaluate("window.__mutaTentaclesDebugFrameAfter(200)")
     settled = _read_release_metrics(canvas)
@@ -840,32 +840,32 @@ def test_impulse_uses_the_exact_original_41_5_ms_envelope(
         (1024, 650),
     ],
 )
-def test_release_redraws_the_actual_tentacle_geometry_at_every_width(
+def test_release_keeps_tentacle_geometry_continuous_at_every_width(
     driver: DriverFactory,
     base_url: str,
     viewport: tuple[int, int],
 ) -> None:
-    """Prevent the rendered attraction star from surviving a completed click.
+    """Prevent a synthetic reverse impulse when the mouse button is released.
 
-    Earlier tests asserted only the logical ``phase`` and force attributes.
-    The video demonstrates why that was insufficient: the phase could already
-    read ``hover`` while Verlet/IK points remained pulled into a bright star for
-    seconds. The intermittent narrow-window variant was especially easy to
-    miss because a resize can delay normal animation frames after the strong
-    immediate input render.
+    A previous attempt to clear a stale attraction frame performed an immediate
+    33 ms zero-force recovery step with much stronger damping and rest response
+    than the normal simulation. That made the original attraction end, but it
+    also pulled the geometry sharply in the opposite direction as soon as the
+    button was released—the distinct reverse pulse reported by the user.
 
     At phone, tablet, and desktop widths this test pauses the normal animation
     loop, uses a fixed tentacle generation seed, records the actual maximum
-    rendered tip displacement, clicks, and releases. Release itself must submit
-    a newer WebGL frame, clear the pressed force, and bring geometry back close
-    to its pre-click displacement and below half of the impulse peak. A manual
-    200 ms wall-clock step must leave an ordinary hover frame. Thus the test
-    fails on the visible defect even if state strings alone look correct.
+    rendered tip displacement, presses, and releases. Release must submit a
+    newer ordinary-hover frame and clear peak force, while displacement remains
+    continuous—within 20% below and 50% above the last pressed frame instead of
+    snapping below half its value. A later manual frame must remain ordinary
+    hover. The test therefore detects both a stale pressed frame and the
+    artificial reverse kick that replaced it.
     """
 
     page = driver(stored_theme="dark", viewport=viewport)
     canvas = _open_diagnostic_surface(page, base_url)
-    _assert_release_redraw(page, canvas, release="pointerup")
+    _assert_release_continuity(page, canvas, release="pointerup")
 
 
 @pytest.mark.parametrize(
@@ -890,14 +890,15 @@ def test_missing_pointerup_still_ends_and_redraws_the_impulse(
     replacement WebGL frame, leaving the last strong image on screen.
 
     For each independent fallback this test starts a real impulse, deliberately
-    omits ``pointerup``, and demands the same force clearing and geometric
-    recovery as a normal release. It exercises the exact two lifecycle paths
-    that make the user's intermittent report reproducible.
+    omits ``pointerup``, and demands the same force clearing and continuous
+    hover transition as a normal release. It exercises the exact two lifecycle
+    paths that make the user's intermittent report reproducible without
+    permitting a reverse recovery kick.
     """
 
     page = driver(stored_theme="dark", viewport=(755, 620))
     canvas = _open_diagnostic_surface(page, base_url)
-    _assert_release_redraw(page, canvas, release=release)
+    _assert_release_continuity(page, canvas, release=release)
 
 
 TIMING_MUTATIONS = [
@@ -949,16 +950,33 @@ TIMING_MUTATIONS = [
         id="raise-held-attraction",
     ),
     pytest.param(
-        "const RELEASE_RECOVERY_SECONDS = 0.18;",
-        "const RELEASE_RECOVERY_SECONDS = 5;",
+        "          runImmediateInteractionFrame(true);",
+        """          const releaseEnergy = pointer.energy;
+          pointer.energy = -4;
+          for (
+            let recoveryFrame = 0;
+            recoveryFrame < 8;
+            recoveryFrame++
+          ) {
+            runImmediateInteractionFrame(true, 0.033);
+          }
+          pointer.energy = releaseEnergy;""",
         "release",
-        id="never-finish-recovery",
+        id="inject-reverse-force-on-release",
     ),
     pytest.param(
-        "const RELEASE_RECOVERY_RATE = 34;",
-        "const RELEASE_RECOVERY_RATE = 1;",
+        """            return {
+              forceMultiplier: 1,
+              radiusMultiplier: 1,
+              phase: "hover",
+            };""",
+        """            return {
+              forceMultiplier: 0,
+              radiusMultiplier: 1,
+              phase: "recovering",
+            };""",
         "release",
-        id="leave-geometry-in-star",
+        id="restore-zero-force-release-phase",
     ),
     pytest.param(
         """canvas.addEventListener("pointermove", (event) => {
@@ -1004,8 +1022,8 @@ def test_timing_regressions_are_detected_by_eleven_independent_mutations(
     5. raise peak force;
     6. widen the strong radius;
     7. strengthen the post-impulse held attraction;
-    8. make release recovery effectively never finish;
-    9. slow geometric recovery so the star remains visible;
+    8. inject a multi-frame force in the opposite direction on release;
+    9. restore the synthetic zero-force release phase;
     10. lose the ``buttons == 0`` fallback when ``pointerup`` disappears;
     11. lose the blur cleanup used during focus/iframe lifecycle changes.
 
@@ -1047,19 +1065,19 @@ def test_timing_regressions_are_detected_by_eleven_independent_mutations(
         elif contract == "deadline-render":
             _assert_no_deadline_render(page, canvas)
         elif contract == "release":
-            _assert_release_redraw(
+            _assert_release_continuity(
                 page,
                 canvas,
                 release="pointerup",
             )
         elif contract == "implicit-buttons-zero":
-            _assert_release_redraw(
+            _assert_release_continuity(
                 page,
                 canvas,
                 release=contract,
             )
         elif contract == "window-blur":
-            _assert_release_redraw(
+            _assert_release_continuity(
                 page,
                 canvas,
                 release=contract,
