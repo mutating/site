@@ -26,6 +26,40 @@
   [stroke-width="4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.5714285714; }
   [stroke-width="4.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.0178571429; }
   [stroke-width="5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.4642857143; }
+
+  /*
+   * In the dark theme every neutral material swaps to its dark counterpart.
+   * The saturated pink controls, traces, and active card intentionally retain
+   * their source colors.
+   */
+  :root[data-theme="dark"] [fill="#fffdfd"] { fill: #090608; }
+  :root[data-theme="dark"] [fill="#fffafa"] { fill: #0c090b; }
+  :root[data-theme="dark"] [fill="#fff8fa"] { fill: #100c0f; }
+  :root[data-theme="dark"] [fill="#fffafb"] { fill: #0c080a; }
+  :root[data-theme="dark"] [fill="#fff"] { fill: #090608; }
+  :root[data-theme="dark"] [fill="#fcf7f8"] { fill: #171015; }
+  :root[data-theme="dark"] [stroke="#fffdfd"] { stroke: #090608; }
+  :root[data-theme="dark"] [stroke="#fffafa"] { stroke: #0c090b; }
+  :root[data-theme="dark"] [stroke="#fff8fa"] { stroke: #100c0f; }
+  :root[data-theme="dark"] [stroke="#fffafb"] { stroke: #0c080a; }
+  :root[data-theme="dark"] [stroke="#fff"] { stroke: #090608; }
+  :root[data-theme="dark"] [stop-color="#fffdfd"] { stop-color: #090608; }
+  :root[data-theme="dark"] [stop-color="#fffafb"] { stop-color: #0c080a; }
+  :root[data-theme="dark"] [stop-color="#fcf7f8"] { stop-color: #171015; }
+
+  :root[data-theme="dark"] [fill="#b37889"] { fill: #4a3a41; }
+  :root[data-theme="dark"] [fill="#b77f90"] { fill: #4d3c43; }
+  :root[data-theme="dark"] [fill="#bb7f90"] { fill: #514047; }
+  :root[data-theme="dark"] [fill="#c28c9c"] { fill: #58444c; }
+  :root[data-theme="dark"] [fill="#c28e9e"] { fill: #5a464e; }
+  :root[data-theme="dark"] [fill="#c48d9e"] { fill: #5c4850; }
+  :root[data-theme="dark"] [fill="#c58b9c"] { fill: #5b4650; }
+  :root[data-theme="dark"] [fill="#ca95a4"] { fill: #62505a; }
+  :root[data-theme="dark"] [fill="#d0a2af"] { fill: #6b5861; }
+  :root[data-theme="dark"] [fill="#d4a9b4"] { fill: #716069; }
+  :root[data-theme="dark"] [fill="#d8afb9"] { fill: #77656e; }
+  :root[data-theme="dark"] [stroke="#d9bcc5"] { stroke: #6a5961; }
+  :root[data-theme="dark"] [stroke="#dfbbc5"] { stroke: #735f68; }
 </style>
 <defs>
   <radialGradient id="paper" cx="50%" cy="47%" r="74%">

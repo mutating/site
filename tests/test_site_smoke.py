@@ -146,6 +146,10 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     switch made while the embedded document is already running. This guards the
     same-origin theme bridge: without it the SVG would keep the palette that was
     active at load time and drift out of sync with the rest of the page.
+    The same switch must invert every neutral interior surface, texture speckle,
+    card dot, highlight, and secondary outline instead of leaving bright white
+    structures beneath the newly white contour. Saturated brand pink is the
+    sole exception and must retain its exact source RGB values in both themes.
 
     Finally, the normalized SVG hash locks every original geometry and
     ``stroke-width`` byte from the supplied extended-handle revision. Only the
@@ -412,6 +416,85 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     )
     assert dark_ink["stroke"] == "rgb(255, 250, 250)"
     assert dark_ink["fill"] == "rgb(255, 250, 250)"
+
+    dark_palette = embedded_svg.evaluate(
+        """
+        (embedded) => {
+          const childDocument = embedded.contentDocument;
+          const neutral = new Set([
+            "#fffdfd", "#fffafa", "#fff8fa", "#fffafb", "#fff", "#fcf7f8",
+            "#b37889", "#b77f90", "#bb7f90", "#c28c9c", "#c28e9e",
+            "#c48d9e", "#c58b9c", "#ca95a4", "#d0a2af", "#d4a9b4",
+            "#d8afb9", "#d9bcc5", "#dfbbc5",
+          ]);
+          const hotPink = new Set([
+            "#f51659", "#f72467", "#f72468", "#f72567",
+            "#fa1c61", "#fa2466", "#fd1c62", "#ff3374",
+          ]);
+          const properties = [
+            ["fill", "fill"],
+            ["stroke", "stroke"],
+            ["stop-color", "stopColor"],
+          ];
+          const sourceRgb = (hex) => {
+            const normalized = hex.length === 4
+              ? `#${[...hex.slice(1)].map((value) => value.repeat(2)).join("")}`
+              : hex;
+            const value = Number.parseInt(normalized.slice(1), 16);
+            return `rgb(${value >> 16}, ${(value >> 8) & 255}, ${value & 255})`;
+          };
+          const records = [];
+
+          for (const element of childDocument.querySelectorAll("*")) {
+            const style = getComputedStyle(element);
+            for (const [attribute, styleProperty] of properties) {
+              const source = element.getAttribute(attribute)?.toLowerCase();
+              if (!source || (!neutral.has(source) && !hotPink.has(source))) {
+                continue;
+              }
+              records.push({
+                source,
+                category: neutral.has(source) ? "neutral" : "hotPink",
+                property: attribute,
+                computed: style[styleProperty],
+                sourceRgb: sourceRgb(source),
+              });
+            }
+          }
+
+          const cardDots = records.filter(
+            (record) => record.property === "fill"
+              && ["#c58b9c", "#ca95a4"].includes(record.source),
+          );
+          return {records, cardDots};
+        }
+        """
+    )
+    neutral_records = [
+        record
+        for record in dark_palette["records"]
+        if record["category"] == "neutral"
+    ]
+    pink_records = [
+        record
+        for record in dark_palette["records"]
+        if record["category"] == "hotPink"
+    ]
+    assert neutral_records
+    assert pink_records
+    assert dark_palette["cardDots"]
+    assert all(
+        record["computed"] != record["sourceRgb"]
+        for record in neutral_records
+    )
+    assert all(
+        record["computed"] == record["sourceRgb"]
+        for record in pink_records
+    )
+    assert all(
+        record["computed"] != record["sourceRgb"]
+        for record in dark_palette["cardDots"]
+    )
 
 
 def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
