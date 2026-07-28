@@ -429,7 +429,7 @@ img {
 .source-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.45em;
+  gap: 0.675em;
 }
 
 .source-link__icon {

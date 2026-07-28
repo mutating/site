@@ -56,6 +56,9 @@ def test_all_github_navigation_links_use_sources_label_and_icon(
     ``Open source`` label must not survive in any of those navigation areas.
     The icon is hidden from assistive technology so the accessible link name
     remains exactly ``Sources`` instead of repeating or garbling the label.
+    It also locks the requested word-to-icon gap at ``0.675em``—one and a half
+    times the original ``0.45em``—while allowing each navigation context to
+    retain its own font size.
     """
 
     page = driver(color_scheme="light")
@@ -71,6 +74,21 @@ def test_all_github_navigation_links_use_sources_label_and_icon(
         expect(link.locator(".source-link__icon")).to_have_attribute(
             "aria-hidden",
             "true",
+        )
+        spacing = link.evaluate(
+            """
+            (element) => {
+              const style = getComputedStyle(element);
+              return {
+                gap: Number.parseFloat(style.columnGap),
+                fontSize: Number.parseFloat(style.fontSize),
+              };
+            }
+            """
+        )
+        assert spacing["gap"] == pytest.approx(
+            spacing["fontSize"] * 0.675,
+            abs=0.1,
         )
 
     expect(
