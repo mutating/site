@@ -3,6 +3,29 @@
 <style>
   :root { --pantograph-ink: #171316; }
   :root[data-theme="dark"] { --pantograph-ink: #fffafa; }
+
+  /*
+   * The site enlarges the complete SVG viewport to 112%. Compensate the
+   * source stroke widths by the reciprocal factor so the drawing grows while
+   * its visible line weight remains identical to the supplied SVG.
+   */
+  [stroke-width="1"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: .8928571429; }
+  [stroke-width="1.25"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.1160714286; }
+  [stroke-width="1.4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.25; }
+  [stroke-width="1.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.3392857143; }
+  [stroke-width="1.8"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.6071428571; }
+  [stroke-width="2"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.7857142857; }
+  [stroke-width="2.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.2321428571; }
+  [stroke-width="2.6"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.3214285714; }
+  [stroke-width="2.8"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.5; }
+  [stroke-width="3"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.6785714286; }
+  [stroke-width="3.1"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.7678571429; }
+  [stroke-width="3.25"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.9017857143; }
+  [stroke-width="3.4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.0357142857; }
+  [stroke-width="3.6"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.2142857143; }
+  [stroke-width="4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.5714285714; }
+  [stroke-width="4.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.0178571429; }
+  [stroke-width="5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.4642857143; }
 </style>
 <defs>
   <radialGradient id="paper" cx="50%" cy="47%" r="74%">

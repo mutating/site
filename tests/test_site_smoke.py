@@ -153,6 +153,12 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     black ink are ignored. This catches subtle integration regressions such as
     changing a 3.25-unit line to 3 units or altering a handle path while still
     allowing the site-specific transparent background and dark-theme palette.
+    Because the viewport is intentionally enlarged to 112%, the browser-level
+    assertions also require every normally scaling stroke to use the exact
+    reciprocal width. The resulting screen-space weight therefore matches the
+    original SVG instead of becoming 12% heavier with the larger illustration.
+    A source element that explicitly opts into ``non-scaling-stroke`` is
+    excluded because the browser already preserves its original screen weight.
     """
 
     svg_source = (
@@ -285,6 +291,30 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     assert metrics["config"]["springMode"] == "removed"
     assert metrics["config"]["penMode"] == "extended-solid"
     assert metrics["finite"] is True
+
+    stroke_metrics = embedded_svg.evaluate(
+        """
+        (embedded) => [
+          ...embedded.contentDocument.querySelectorAll("[stroke-width]"),
+        ].map((element) => ({
+          source: Number.parseFloat(element.getAttribute("stroke-width")),
+          computed: Number.parseFloat(getComputedStyle(element).strokeWidth),
+          vectorEffect: getComputedStyle(element).vectorEffect,
+        }))
+        """
+    )
+    assert stroke_metrics
+    for stroke in stroke_metrics:
+        if stroke["vectorEffect"] == "non-scaling-stroke":
+            assert stroke["computed"] == pytest.approx(
+                stroke["source"],
+                abs=0.0001,
+            )
+        else:
+            assert stroke["computed"] * 1.12 == pytest.approx(
+                stroke["source"],
+                abs=0.0001,
+            )
 
     adaptive_ink = embedded_svg.evaluate(
         """
