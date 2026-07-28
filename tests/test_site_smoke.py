@@ -113,8 +113,8 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
         "public/mutant-mascot-transparent.png",
         "public/mutant-mascot.jpg",
         "public/og.png",
-        "public/pantograph-frame.html",
-        "public/pantograph-variant-20-clean.svg",
+        "public/pantograph-frame-v2.html",
+        "public/pantograph-variant-20-clean-v2.svg",
         "public/tokamak-reactor.html",
         "public/muta-tentacles.html",
     ]
@@ -170,10 +170,25 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     source marker as data for fidelity checks but deliberately lets that bar
     scale with its neighbouring arms. Its dedicated assertion prevents the
     overly thick rails from returning.
+
+    The frame must request a revisioned SVG URL with ``no-store`` caching.
+    Reusing the old stable asset URL lets a browser retain the pre-inversion
+    light artwork across deployments, which looks exactly like an opaque white
+    panel even though every current frame layer is transparent.
     """
 
-    svg_source = (
+    frame_source = (
+        PROJECT_ROOT / "public/pantograph-frame-v2.html"
+    ).read_text()
+    assert '"/pantograph-variant-20-clean-v2.svg"' in frame_source
+    assert '{cache: "no-store"}' in frame_source
+    assert not (PROJECT_ROOT / "public/pantograph-frame.html").exists()
+    assert not (
         PROJECT_ROOT / "public/pantograph-variant-20-clean.svg"
+    ).exists()
+
+    svg_source = (
+        PROJECT_ROOT / "public/pantograph-variant-20-clean-v2.svg"
     ).read_text()
     assert '<rect width="1536" height="1024" fill="url(#paper)"/>' not in (
         svg_source
@@ -211,7 +226,7 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     embedded_svg = visual.locator(".pantograph-visual__object")
 
     expect(page.locator(".network-visual")).to_have_count(0)
-    expect(embedded_svg).to_have_attribute("src", "/pantograph-frame.html")
+    expect(embedded_svg).to_have_attribute("src", "/pantograph-frame-v2.html")
     container_style = visual.evaluate(
         """
         (element) => {

@@ -1002,7 +1002,7 @@ function PantographVisual() {
       <iframe
         ref={objectRef}
         className="pantograph-visual__object"
-        src="/pantograph-frame.html"
+        src="/pantograph-frame-v2.html"
         title=""
         aria-hidden="true"
         tabIndex={-1}
