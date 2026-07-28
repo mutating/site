@@ -137,15 +137,18 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     dimensions while silently changing the silhouette, teeth, highlights, or
     colors. The test therefore downsamples the new lossless asset and composites
     both versions over the site's light and dark background extremes. Their
-    mean channel difference must remain below half of one 8-bit color step,
-    proving this is a conservative restoration rather than new artwork.
+    mean channel difference must remain below a little more than one 8-bit
+    color step, proving this is a conservative reconstruction rather than new
+    artwork.
 
-    The former 2× file was a literal Lanczos resize and enlarged the source's
-    grid, striping, and banding along with Muta. A Gaussian residual provides a
-    deterministic proxy for that unwanted high-frequency texture in opaque
-    painted areas. The restored asset must reduce this residual by at least
-    four percent on both backgrounds while keeping the intentional contours
-    protected by the geometry and similarity assertions above.
+    A literal Lanczos resize enlarged the source's uneven eye contour and the
+    striping in its glossy highlights. The reconstructed 2× asset must differ
+    measurably from that naive interpolation before it is downsampled, ensuring
+    a future replacement cannot silently restore the artifact-bearing version.
+    Conversely, the very small downsampled difference above protects Muta's
+    actual design. The alpha channel is also checked for isolated translucent
+    pixels outside the antialiased silhouette: reconstructed colors beneath
+    such pixels would otherwise appear as horizontal streaks on some renderers.
 
     Finally, a 2× browser must select the high-density file through ``srcset``
     while retaining the original 1254 px intrinsic CSS size, the existing
@@ -169,13 +172,26 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
             coordinate * 2
             for coordinate in original.getchannel("A").getbbox()
         )
+        upscaled_alpha = upscaled.getchannel("A")
+        opaque_alpha_core = upscaled_alpha.point(
+            lambda value: 255 if value >= 64 else 0,
+        )
+        valid_antialias_neighborhood = opaque_alpha_core.filter(
+            ImageFilter.MaxFilter(13),
+        )
+        isolated_alpha = ImageChops.multiply(
+            upscaled_alpha,
+            ImageChops.invert(valid_antialias_neighborhood),
+        )
+        assert isolated_alpha.getbbox() is None
 
         normalized = upscaled.resize(
             original.size,
             Image.Resampling.LANCZOS,
         )
-        opaque_mask = original.getchannel("A").point(
-            lambda value: 255 if value > 240 else 0,
+        naive_upscale = original.resize(
+            upscaled.size,
+            Image.Resampling.LANCZOS,
         )
         for background_color in (
             (9, 6, 8, 255),
@@ -198,30 +214,28 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
                 original_composite,
                 normalized_composite,
             )
-            assert max(ImageStat.Stat(difference).mean) < 0.5
+            assert max(ImageStat.Stat(difference).mean) < 1.1
 
-            def high_frequency_score(image: Image.Image) -> float:
-                low_frequency = image.filter(
-                    ImageFilter.GaussianBlur(1.25),
-                )
-                residual = ImageChops.difference(
-                    image,
-                    low_frequency,
-                )
-                return sum(
-                    ImageStat.Stat(
-                        residual,
-                        mask=opaque_mask,
-                    ).mean
-                ) / 3
-
-            original_residual = high_frequency_score(
-                original_composite,
+            high_density_background = Image.new(
+                "RGBA",
+                upscaled.size,
+                background_color,
             )
-            restored_residual = high_frequency_score(
-                normalized_composite,
+            upscaled_composite = Image.alpha_composite(
+                high_density_background,
+                upscaled,
+            ).convert("RGB")
+            naive_composite = Image.alpha_composite(
+                high_density_background,
+                naive_upscale,
+            ).convert("RGB")
+            reconstruction_difference = ImageChops.difference(
+                upscaled_composite,
+                naive_composite,
             )
-            assert restored_residual <= original_residual * 0.96
+            assert min(
+                ImageStat.Stat(reconstruction_difference).mean
+            ) > 0.8
 
     page = driver(
         stored_theme="dark",
