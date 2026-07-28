@@ -265,6 +265,78 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     )
 
 
+@pytest.mark.parametrize(
+    ("selector", "requires_expansion"),
+    [
+        (".brand", False),
+        (".animated-eye-logo", False),
+        (".brand__word-part--t .brand__word-anchor", False),
+        (".brand__word-part--m .brand__word-anchor", False),
+        (
+            ".brand__word-part:not(.brand__word-part--t)"
+            ":not(.brand__word-part--m) .brand__word-anchor",
+            False,
+        ),
+        ('.brand__word-reveal[data-text="ompany"]', True),
+    ],
+    ids=[
+        "unified-container",
+        "eye",
+        "letter-t",
+        "letter-m",
+        "letter-c",
+        "expanded-wordmark",
+    ],
+)
+def test_every_visible_brand_area_uses_the_link_pointer_cursor(
+    driver: DriverFactory,
+    selector: str,
+    requires_expansion: bool,
+) -> None:
+    """Show the link-style pointer over every part of the unified logo control.
+
+    The eye and animated TMC wordmark are now children of one clickable
+    ``div``. The parent already declared ``cursor: pointer``, but the old
+    wordmark styling explicitly restored ``cursor: default`` on its subtree.
+    As a result the cursor correctly looked like a link over the eye and then
+    changed back to an ordinary arrow as soon as it crossed TMC—even though
+    both areas performed the same reload action.
+
+    This parameterized regression checks the computed cursor on the shared
+    container, the eye, each initially visible TMC anchor, and text that becomes
+    clickable only after the hover expansion finishes. The expanded case waits
+    for the actual animation endpoint before moving the pointer onto “ompany”,
+    so the test covers the complete revealed hit area rather than a hidden DOM
+    node. Reintroducing a child-level ``default`` or ``auto`` cursor anywhere in
+    these paths makes the corresponding case fail while leaving unrelated page
+    elements unconstrained.
+    """
+
+    page = driver(
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+    )
+
+    if requires_expansion:
+        page.locator(".brand__wordmark").hover()
+        page.wait_for_function(
+            """
+            () => [...document.querySelectorAll(".brand__word-reveal")].every(
+              (element) =>
+                element.getBoundingClientRect().width > 1 &&
+                getComputedStyle(element).opacity === "1",
+            )
+            """
+        )
+
+    target = page.locator(selector)
+    assert target.count() == 1
+    target.hover()
+    assert target.evaluate(
+        "(element) => getComputedStyle(element).cursor"
+    ) == "pointer"
+
+
 def test_animated_wordmark_keeps_the_existing_narrow_header_contract(
     driver: DriverFactory,
 ) -> None:
