@@ -6,6 +6,7 @@ import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
+from PIL import Image, ImageChops, ImageStat
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -105,6 +106,7 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
     required_assets = [
         "public/muta-eye-surface.webp",
         "public/muta-v2-transparent.png",
+        "public/muta-v2-transparent-2x.webp",
         "public/mutant-mascot-transparent.png",
         "public/mutant-mascot.jpg",
         "public/og.png",
@@ -116,6 +118,118 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
         asset = PROJECT_ROOT / relative_path
         assert asset.is_file(), f"{relative_path} must be a file"
         assert asset.stat().st_size > 0, f"{relative_path} must not be empty"
+
+
+def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
+    driver: DriverFactory,
+) -> None:
+    """Keep the hero illustration crisp without changing its visible design.
+
+    The original 1254 px transparent PNG was only marginally larger than the
+    650 CSS-pixel hero card, so a Retina display could expose its source pixels.
+    The replacement must provide exactly twice the width and height while
+    retaining the same square canvas, transparent background, and alpha bounds.
+    Those bounds matter because even a small change to the transparent padding
+    would make Muta appear to move or resize inside the otherwise unchanged
+    hero composition.
+
+    Resolution alone is not enough: a generative redraw could satisfy the
+    dimensions while silently changing the silhouette, teeth, highlights, or
+    colors. The test therefore downsamples the new lossless asset and composites
+    both versions over the site's light and dark background extremes. Their
+    mean channel difference must remain below a fraction of one 8-bit color
+    step, proving this is a faithful resampling rather than new artwork.
+
+    Finally, a 2× browser must select the high-density file through ``srcset``
+    while retaining the original 1254 px intrinsic CSS size, the existing
+    ``contain`` fit, and 50% 46% positioning. This catches both fallback to the
+    low-density source and a density-descriptor mistake that would visibly
+    resize the hero after the replacement.
+    """
+
+    original_path = PROJECT_ROOT / "public/muta-v2-transparent.png"
+    upscaled_path = PROJECT_ROOT / "public/muta-v2-transparent-2x.webp"
+
+    with (
+        Image.open(original_path).convert("RGBA") as original,
+        Image.open(upscaled_path).convert("RGBA") as upscaled,
+    ):
+        assert upscaled.size == (
+            original.width * 2,
+            original.height * 2,
+        )
+        assert upscaled.getchannel("A").getbbox() == tuple(
+            coordinate * 2
+            for coordinate in original.getchannel("A").getbbox()
+        )
+
+        normalized = upscaled.resize(
+            original.size,
+            Image.Resampling.LANCZOS,
+        )
+        for background_color in (
+            (9, 6, 8, 255),
+            (255, 250, 251, 255),
+        ):
+            background = Image.new(
+                "RGBA",
+                original.size,
+                background_color,
+            )
+            original_composite = Image.alpha_composite(
+                background,
+                original,
+            ).convert("RGB")
+            normalized_composite = Image.alpha_composite(
+                background,
+                normalized,
+            ).convert("RGB")
+            difference = ImageChops.difference(
+                original_composite,
+                normalized_composite,
+            )
+            assert max(ImageStat.Stat(difference).mean) < 0.2
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1440, 900),
+        device_scale_factor=2,
+        load_interactive_visuals=False,
+    )
+    mascot = page.locator(".mascot-card__art")
+    expect(mascot).to_have_attribute(
+        "src",
+        "/muta-v2-transparent.png",
+    )
+    expect(mascot).to_have_attribute(
+        "srcset",
+        "/muta-v2-transparent.png 1x, /muta-v2-transparent-2x.webp 2x",
+    )
+    rendered = mascot.evaluate(
+        """
+        (element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return {
+            currentSource: element.currentSrc,
+            naturalWidth: element.naturalWidth,
+            naturalHeight: element.naturalHeight,
+            renderedWidth: rect.width,
+            objectFit: style.objectFit,
+            objectPosition: style.objectPosition,
+          };
+        }
+        """
+    )
+    assert rendered["currentSource"].endswith(
+        "/muta-v2-transparent-2x.webp",
+    )
+    assert rendered["naturalWidth"] == 1254
+    assert rendered["naturalHeight"] == 1254
+    assert rendered["renderedWidth"] <= 650.5
+    assert 2508 >= rendered["renderedWidth"] * 3
+    assert rendered["objectFit"] == "contain"
+    assert rendered["objectPosition"] == "50% 46%"
 
 
 def test_tentacle_iframe_revision_matches_its_current_file_contents() -> None:
