@@ -320,6 +320,141 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
+def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
+    driver: DriverFactory,
+    theme: str,
+) -> None:
+    """Pin the exact Science Gothic treatment selected as font option five.
+
+    The approved comparison did not use an arbitrary Science Gothic default.
+    Its compact ``TMC`` state used weight 780, width 128, and contrast 34;
+    the expanded company name used weight 680, width 76, and contrast 20.
+    The three anchor letters must smoothly adopt the expanded width/contrast
+    axes during the same 350 ms hover transition so the finished wordmark
+    matches the chosen preview instead of mixing two unrelated silhouettes.
+
+    This test first waits for the locally hosted, deliberately subsetted web
+    font and proves that Chromium has actually loaded it, preventing a quiet
+    fallback to Helvetica when the asset path or font-face declaration breaks.
+    It then checks the collapsed axes, the lighter/condensed reveal axes, the
+    transition contract, and the final axes after deterministically finishing
+    the CSS animations. Finally, both collapsed and expanded lettering must
+    fit inside the pre-reserved stage so switching fonts cannot make the logo
+    collide with the navigation even though the outer header remains fixed.
+    Running the contract in both themes also confirms that theme changes only
+    recolor the approved type treatment and never substitute another font.
+    """
+
+    page = driver(
+        stored_theme=theme,
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+    )
+    initial = page.evaluate(
+        """
+        async () => {
+          await document.fonts.load('780 35px "Science Gothic"', "TMC");
+          await document.fonts.ready;
+
+          const readAxes = (style) => Object.fromEntries(
+            [...style.fontVariationSettings.matchAll(
+              /"([^"]+)"\\s+(-?\\d+(?:\\.\\d+)?)/g,
+            )].map((match) => [match[1], Number(match[2])]),
+          );
+          const stage = document.querySelector(".brand__wordmark-stage");
+          const wordmark = document.querySelector(".brand__wordmark");
+          const anchors = [
+            ...document.querySelectorAll(".brand__word-anchor"),
+          ];
+          const reveals = [
+            ...document.querySelectorAll(".brand__word-reveal"),
+          ];
+          const stageRect = stage.getBoundingClientRect();
+          const wordmarkRect = wordmark.getBoundingClientRect();
+          const firstAnchorStyle = getComputedStyle(anchors[0]);
+
+          return {
+            fontLoaded: document.fonts.check(
+              '780 35px "Science Gothic"',
+              "TMC",
+            ),
+            family: getComputedStyle(stage).fontFamily,
+            anchorWeights: anchors.map(
+              (element) => getComputedStyle(element).fontWeight,
+            ),
+            anchorAxes: anchors.map(
+              (element) => readAxes(getComputedStyle(element)),
+            ),
+            revealWeights: reveals.map(
+              (element) => getComputedStyle(element).fontWeight,
+            ),
+            revealAxes: reveals.map(
+              (element) => readAxes(getComputedStyle(element)),
+            ),
+            transitionProperty: firstAnchorStyle.transitionProperty,
+            transitionDuration: firstAnchorStyle.transitionDuration,
+            stageWidth: stageRect.width,
+            wordmarkWidth: wordmarkRect.width,
+          };
+        }
+        """
+    )
+
+    assert initial["fontLoaded"] is True
+    assert initial["family"].startswith('"Science Gothic"')
+    assert initial["anchorWeights"] == ["780", "780", "780"]
+    assert initial["anchorAxes"] == [
+        {"CTRS": 34, "wdth": 128},
+        {"CTRS": 34, "wdth": 128},
+        {"CTRS": 34, "wdth": 128},
+    ]
+    assert initial["revealWeights"] == ["680", "680", "680"]
+    assert initial["revealAxes"] == [
+        {"CTRS": 20, "wdth": 76},
+        {"CTRS": 20, "wdth": 76},
+        {"CTRS": 20, "wdth": 76},
+    ]
+    assert initial["transitionProperty"] == "font-variation-settings"
+    assert initial["transitionDuration"] == "0.35s"
+    assert initial["wordmarkWidth"] <= initial["stageWidth"] + 0.5
+
+    wordmark = page.locator(".brand__wordmark")
+    wordmark.hover()
+    expanded = wordmark.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+
+          const readAxes = (style) => Object.fromEntries(
+            [...style.fontVariationSettings.matchAll(
+              /"([^"]+)"\\s+(-?\\d+(?:\\.\\d+)?)/g,
+            )].map((match) => [match[1], Number(match[2])]),
+          );
+          const stage = element.closest(".brand__wordmark-stage");
+          const stageRect = stage.getBoundingClientRect();
+          const wordmarkRect = element.getBoundingClientRect();
+          return {
+            anchorAxes: [
+              ...element.querySelectorAll(".brand__word-anchor"),
+            ].map((anchor) => readAxes(getComputedStyle(anchor))),
+            stageWidth: stageRect.width,
+            wordmarkWidth: wordmarkRect.width,
+          };
+        }
+        """
+    )
+
+    assert expanded["anchorAxes"] == [
+        {"CTRS": 20, "wdth": 76},
+        {"CTRS": 20, "wdth": 76},
+        {"CTRS": 20, "wdth": 76},
+    ]
+    assert expanded["wordmarkWidth"] <= expanded["stageWidth"] + 0.5
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
 def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
     driver: DriverFactory,
     theme: str,

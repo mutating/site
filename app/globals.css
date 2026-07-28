@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Science Gothic";
+  src: url("/fonts/science-gothic-wordmark.woff2") format("woff2-variations");
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 50% 200%;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
   --bg: #fffafb;
@@ -270,17 +279,16 @@ img {
 }
 
 .brand__wordmark-stage {
-  width: 10.82em;
+  width: 11.6em;
   font-size: 35px;
   line-height: 1.2;
-  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-family: "Science Gothic", "Helvetica Neue", Arial, sans-serif;
 }
 
 .brand__wordmark {
   display: inline-flex;
   align-items: baseline;
   color: var(--ink);
-  font-weight: 700;
   white-space: nowrap;
   cursor: inherit;
 }
@@ -298,6 +306,11 @@ img {
   z-index: 2;
   flex: 0 0 auto;
   color: var(--ink);
+  font-weight: 780;
+  font-variation-settings:
+    "CTRS" 34,
+    "wdth" 128;
+  transition: font-variation-settings 350ms linear;
 }
 
 .brand__word-reveal {
@@ -308,7 +321,10 @@ img {
   min-inline-size: 0;
   overflow: hidden;
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 680;
+  font-variation-settings:
+    "CTRS" 20,
+    "wdth" 76;
   opacity: 0;
   white-space: nowrap;
   interpolate-size: allow-keywords;
@@ -343,6 +359,12 @@ img {
 .brand__wordmark:hover .brand__word-reveal {
   inline-size: max-content;
   opacity: 1;
+}
+
+.brand__wordmark:hover .brand__word-anchor {
+  font-variation-settings:
+    "CTRS" 20,
+    "wdth" 76;
 }
 
 .brand__wordmark:hover .brand__word-part--t,
