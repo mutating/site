@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -145,6 +146,13 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     switch made while the embedded document is already running. This guards the
     same-origin theme bridge: without it the SVG would keep the palette that was
     active at load time and drift out of sync with the rest of the page.
+
+    Finally, the normalized SVG hash locks every original geometry and
+    ``stroke-width`` byte from the supplied extended-handle revision. Only the
+    deliberately removed paper background and the theme-aware replacement of
+    black ink are ignored. This catches subtle integration regressions such as
+    changing a 3.25-unit line to 3 units or altering a handle path while still
+    allowing the site-specific transparent background and dark-theme palette.
     """
 
     svg_source = (
@@ -155,6 +163,24 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     )
     assert 'stroke="var(--pantograph-ink)"' in svg_source
     assert 'fill="var(--pantograph-ink)"' in svg_source
+    normalized_svg = re.sub(
+        r"<style>.*?</style>\n?",
+        "",
+        svg_source,
+        flags=re.DOTALL,
+    )
+    normalized_svg = normalized_svg.replace(
+        "var(--pantograph-ink)",
+        "#171316",
+    )
+    normalized_svg = normalized_svg.replace(
+        '<rect width="1536" height="1024" fill="url(#paper)"/>\n',
+        "",
+    )
+    normalized_svg = re.sub(r"\n{3,}", "\n\n", normalized_svg)
+    assert hashlib.sha256(normalized_svg.encode()).hexdigest() == (
+        "643d3fd8cda3f3e1c9920966ca9958f9d58d203356e57016e435e798b70a27af"
+    )
 
     page = driver(
         stored_theme="light",
@@ -185,6 +211,31 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
         "borderTopWidth": "0px",
         "boxShadow": "none",
     }
+    scaled_geometry = visual.evaluate(
+        """
+        (container) => {
+          const embedded = container.querySelector(
+            ".pantograph-visual__object",
+          );
+          const containerRect = container.getBoundingClientRect();
+          const embeddedRect = embedded.getBoundingClientRect();
+          return {
+            widthRatio: embeddedRect.width / containerRect.width,
+            heightRatio: embeddedRect.height / containerRect.height,
+            centerDeltaX:
+              (embeddedRect.left + embeddedRect.width / 2)
+              - (containerRect.left + containerRect.width / 2),
+            centerDeltaY:
+              (embeddedRect.top + embeddedRect.height / 2)
+              - (containerRect.top + containerRect.height / 2),
+          };
+        }
+        """
+    )
+    assert scaled_geometry["widthRatio"] == pytest.approx(1.12, abs=0.002)
+    assert scaled_geometry["heightRatio"] == pytest.approx(1.12, abs=0.002)
+    assert scaled_geometry["centerDeltaX"] == pytest.approx(0, abs=0.25)
+    assert scaled_geometry["centerDeltaY"] == pytest.approx(0, abs=0.25)
     visual.scroll_into_view_if_needed()
     page.wait_for_function(
         """
@@ -231,6 +282,8 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     )
     assert metrics["playing"] is True
     assert metrics["config"]["duration"] == 8000
+    assert metrics["config"]["springMode"] == "removed"
+    assert metrics["config"]["penMode"] == "extended-solid"
     assert metrics["finite"] is True
 
     adaptive_ink = embedded_svg.evaluate(

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024">
-<metadata id="pantographMetadata">{"name":"b06","duration":8000,"easing":"smooth","baseDrop":90.0,"verticalShare":1.0,"springMode":"rigid","kinematicMode":"paired-105"}</metadata>
+<metadata id="pantographMetadata">{"name":"b06","duration":8000,"easing":"smooth","baseDrop":90.0,"verticalShare":1.0,"springMode":"removed","penMode":"extended-solid","kinematicMode":"paired-105"}</metadata>
 <style>
   :root { --pantograph-ink: #171316; }
   :root[data-theme="dark"] { --pantograph-ink: #fffafa; }
@@ -49,17 +49,13 @@
     <rect x="-15" y="-13" width="31" height="27" rx="4" fill="url(#stippleB)" opacity=".66"/>
     <circle cx=".5" cy="1" r="7.6" fill="#f72468" stroke="var(--pantograph-ink)" stroke-width="3"/>
   </g>
-  <g id="spring">
-    <path d="M0 0 l-8 5 16 5-16 5 16 5-16 5 16 5-16 5 16 5-8 5" fill="none" stroke="var(--pantograph-ink)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
   <g id="needle">
-    <rect x="-10" y="0" width="20" height="48" rx="4" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
-    <rect x="-7" y="4" width="14" height="38" fill="url(#stippleA)" opacity=".72"/>
-    <path d="M-7 48 L0 95 L7 48 Z" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="3.25" stroke-linejoin="round"/>
-    <path d="M0 60 V90" stroke="#f72567" stroke-width="1.8"/>
-    <circle cy="95" r="3" fill="var(--pantograph-ink)"/>
+    <rect x="-10" y="0" width="20" height="87" rx="4" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
+    <rect x="-7" y="4" width="14" height="77" fill="url(#stippleA)" opacity=".72"/>
+    <path d="M-7 87 L0 134 L7 87 Z" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="3.25" stroke-linejoin="round"/>
+    <path d="M0 99 V129" stroke="#f72567" stroke-width="1.8"/>
+    <circle cy="134" r="3" fill="var(--pantograph-ink)"/>
   </g>
-  <g id="hanger"><use href="#spring"/><use href="#needle" y="39"/></g>
 </defs>
 
 <g stroke="var(--pantograph-ink)" stroke-linejoin="round">
@@ -108,22 +104,21 @@
 </g>
 
 <g id="movingHangers">
-  <use href="#railMount" x="276" y="548"/><use data-moving-spring="true" data-x="276" data-y="568" href="#spring" transform="translate(276 568)"/><use data-moving-needle="true" data-x="276" data-y="607" href="#needle" transform="translate(276 607)"/>
-  <use href="#railMount" x="424" y="548"/><use data-moving-spring="true" data-x="424" data-y="568" href="#spring" transform="translate(424 568)"/><use data-moving-needle="true" data-x="424" data-y="607" href="#needle" transform="translate(424 607)"/>
-  <use href="#railMount" x="570" y="548"/><use data-moving-spring="true" data-x="570" data-y="568" href="#spring" transform="translate(570 568)"/><use data-moving-needle="true" data-x="570" data-y="607" href="#needle" transform="translate(570 607)"/>
-  <use href="#railMount" x="717" y="548"/><use data-moving-spring="true" data-x="717" data-y="568" href="#spring" transform="translate(717 568)"/><use data-moving-needle="true" data-x="717" data-y="607" href="#needle" transform="translate(717 607)"/>
+  <use href="#railMount" x="276" y="548"/><use data-moving-needle="true" data-x="276" data-y="568" href="#needle" transform="translate(276 568)"/>
+  <use href="#railMount" x="424" y="548"/><use data-moving-needle="true" data-x="424" data-y="568" href="#needle" transform="translate(424 568)"/>
+  <use href="#railMount" x="570" y="548"/><use data-moving-needle="true" data-x="570" data-y="568" href="#needle" transform="translate(570 568)"/>
+  <use href="#railMount" x="717" y="548"/><use data-moving-needle="true" data-x="717" data-y="568" href="#needle" transform="translate(717 568)"/>
   <use href="#railMount" x="867" y="548"/>
-  <use data-moving-spring="true" data-x="867" data-y="568" href="#spring" transform="translate(867 568)"/>
-  <g data-moving-needle="true" data-x="867" data-y="607" transform="translate(867 607)">
-    <rect x="-10" width="20" height="46" rx="4" fill="#f72567" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
-    <rect x="-7" y="3" width="14" height="37" fill="url(#stippleA)" opacity=".48"/>
-    <path d="M-7 46 L0 95 L7 46 Z" fill="#f72567" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
-    <path d="M0 58 V90" stroke="#fff" stroke-width="1.4"/>
-    <circle id="activeTip" cy="95" r="3" fill="var(--pantograph-ink)"/>
+  <g data-moving-needle="true" data-x="867" data-y="568" transform="translate(867 568)">
+    <rect x="-10" width="20" height="85" rx="4" fill="#f72567" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
+    <rect x="-7" y="3" width="14" height="76" fill="url(#stippleA)" opacity=".48"/>
+    <path d="M-7 85 L0 134 L7 85 Z" fill="#f72567" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
+    <path d="M0 97 V129" stroke="#fff" stroke-width="1.4"/>
+    <circle id="activeTip" cy="134" r="3" fill="var(--pantograph-ink)"/>
   </g>
-  <use href="#railMount" x="1019" y="548"/><use data-moving-spring="true" data-x="1019" data-y="568" href="#spring" transform="translate(1019 568)"/><use data-moving-needle="true" data-x="1019" data-y="607" href="#needle" transform="translate(1019 607)"/>
-  <use href="#railMount" x="1165" y="548"/><use data-moving-spring="true" data-x="1165" data-y="568" href="#spring" transform="translate(1165 568)"/><use data-moving-needle="true" data-x="1165" data-y="607" href="#needle" transform="translate(1165 607)"/>
-  <use href="#railMount" x="1312" y="548"/><use data-moving-spring="true" data-x="1312" data-y="568" href="#spring" transform="translate(1312 568)"/><use data-moving-needle="true" data-x="1312" data-y="607" href="#needle" transform="translate(1312 607)"/>
+  <use href="#railMount" x="1019" y="548"/><use data-moving-needle="true" data-x="1019" data-y="568" href="#needle" transform="translate(1019 568)"/>
+  <use href="#railMount" x="1165" y="548"/><use data-moving-needle="true" data-x="1165" data-y="568" href="#needle" transform="translate(1165 568)"/>
+  <use href="#railMount" x="1312" y="548"/><use data-moving-needle="true" data-x="1312" data-y="568" href="#needle" transform="translate(1312 568)"/>
 </g>
 
 <g id="movingCarriage" stroke="var(--pantograph-ink)" stroke-linejoin="round">
@@ -147,7 +142,7 @@
 <script><![CDATA[
 (() => {
   "use strict";
-  const cfg = {"name":"b06","duration":8000,"easing":"smooth","baseDrop":90.0,"verticalShare":1.0,"springMode":"rigid","kinematicMode":"paired-105"};
+  const cfg = {"name":"b06","duration":8000,"easing":"smooth","baseDrop":90.0,"verticalShare":1.0,"springMode":"removed","penMode":"extended-solid","kinematicMode":"paired-105"};
   const svg = document.documentElement;
   const wave = document.getElementById("targetWave");
   const rail = document.getElementById("movingRail");
