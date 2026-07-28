@@ -1086,38 +1086,6 @@ a.section-index:focus-visible {
   line-height: 1.62;
 }
 
-.chart-key {
-  margin-top: 36px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 10px;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 10px;
-  color: var(--ink-muted);
-  text-transform: uppercase;
-}
-
-.chart-key span {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.chart-key i {
-  width: 20px;
-  height: 3px;
-  border-radius: 9px;
-}
-
-.chart-key__hot {
-  background: var(--hot);
-}
-
-.chart-key__soft {
-  background: var(--hot-soft);
-}
-
 .chart-panel {
   position: relative;
   min-width: 0;

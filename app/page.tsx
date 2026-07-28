@@ -1371,10 +1371,6 @@ export default function Home() {
           <p>
             Advanced testing and verification bend that curve. The bigger the system, the more dramatic the payoff.
           </p>
-          <div className="chart-key">
-            <span><i className="chart-key__hot" /> Unchecked entropy</span>
-            <span><i className="chart-key__soft" /> Verification applied</span>
-          </div>
         </div>
         <div className="chart-panel">
           <div className="chart-panel__header">

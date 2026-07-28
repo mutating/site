@@ -650,7 +650,6 @@ def test_chart_animation_changes_no_section_geometry_or_neighbor_content(
         "#complexity .complexity__copy",
         "#complexity .section-index",
         "#complexity h2",
-        "#complexity .chart-key",
         "#complexity .chart-panel",
         "#complexity .chart-panel__header",
         "#complexity .complexity-chart",
@@ -716,6 +715,38 @@ def test_chart_animation_changes_no_section_geometry_or_neighbor_content(
             before["geometry"][selector],
             abs=0.5,
         )
+
+
+def test_redundant_copy_column_legend_stays_removed(
+    driver: DriverFactory,
+) -> None:
+    """Prevent the duplicate legend beneath the Complexity-section prose.
+
+    The plotted lines already carry the labels ``UNCHECKED ENTROPY`` and
+    ``WITH VERIFICATION`` inside the chart itself. A second key below the two
+    explanatory paragraphs repeated that information, added a stray separator,
+    and made the left column look visually heavier than the graph column.
+
+    This regression verifies that the obsolete ``.chart-key`` structure and its
+    two duplicate labels are absent from the prose column, while the accessible
+    graph wrapper remains present. It therefore catches either accidentally
+    restoring the old legend markup or removing the actual chart along with it.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1440, 900),
+        load_interactive_visuals=False,
+    )
+    copy = page.locator("#complexity .complexity__copy")
+
+    expect(copy.locator(".chart-key")).to_have_count(0)
+    assert "Unchecked entropy" not in copy.inner_text()
+    assert "Verification applied" not in copy.inner_text()
+    expect(page.locator("#complexity .complexity-chart")).to_have_attribute(
+        "role",
+        "img",
+    )
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
