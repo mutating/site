@@ -807,9 +807,9 @@ function ComplexityChart() {
       curvesContext.font = "600 11px var(--font-geist-mono), monospace";
       curvesContext.fillStyle = hot;
       curvesContext.textAlign = "right";
-      curvesContext.fillText("UNCHECKED ENTROPY", width - pad.right - 4, pad.top + 15);
+      curvesContext.fillText("UNCHECKED ENTROPY", width - pad.right - 28, pad.top + 15);
       curvesContext.fillStyle = hotSoft;
-      curvesContext.fillText("WITH VERIFICATION", width - pad.right - 4, pad.top + plotHeight * 0.46);
+      curvesContext.fillText("WITH VERIFICATION", width - pad.right - 4, pad.top + plotHeight * 0.65);
     };
 
     let hasRevealed = false;

@@ -482,14 +482,14 @@ def test_finished_layers_match_the_legacy_single_canvas_pixel_for_pixel(
           referenceContext.textAlign = "right";
           referenceContext.fillText(
             "UNCHECKED ENTROPY",
-            width - pad.right - 4,
+            width - pad.right - 28,
             pad.top + 15,
           );
           referenceContext.fillStyle = hotSoft;
           referenceContext.fillText(
             "WITH VERIFICATION",
             width - pad.right - 4,
-            pad.top + plotHeight * 0.46,
+            pad.top + plotHeight * 0.65,
           );
 
           const composite = document.createElement("canvas");
