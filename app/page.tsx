@@ -964,20 +964,20 @@ function FeedbackLoop() {
   );
 }
 
-function NetworkVisual() {
+function PantographVisual() {
   return (
-    <div className="network-visual" role="img" aria-label="A local machine connected to a scalable distributed verification network">
-      <div className="network-orbit network-orbit--outer" />
-      <div className="network-orbit network-orbit--inner" />
-      <div className="network-node network-node--a">A</div>
-      <div className="network-node network-node--b">B</div>
-      <div className="network-node network-node--c">C</div>
-      <div className="network-node network-node--d">D</div>
-      <div className="network-core">
-        <span>LOCAL</span>
-        1×
-      </div>
-      <p>One command surface.<br />As many workers as needed.</p>
+    <div
+      className="pantograph-visual"
+      role="img"
+      aria-label="An animated pantograph coordinating local and distributed verification work"
+    >
+      <object
+        className="pantograph-visual__object"
+        data="/pantograph-variant-20-clean.svg"
+        type="image/svg+xml"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
     </div>
   );
 }
@@ -1495,7 +1495,7 @@ export default function Home() {
             <li><span>03</span> Scale without changing the mental model</li>
           </ul>
         </div>
-        <NetworkVisual />
+        <PantographVisual />
       </section>
 
       <section className="feedback section-shell" id="feedback" aria-labelledby="feedback-heading">

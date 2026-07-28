@@ -111,6 +111,7 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
         "public/mutant-mascot-transparent.png",
         "public/mutant-mascot.jpg",
         "public/og.png",
+        "public/pantograph-variant-20-clean.svg",
         "public/tokamak-reactor.html",
         "public/muta-tentacles.html",
     ]
@@ -119,6 +120,84 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
         asset = PROJECT_ROOT / relative_path
         assert asset.is_file(), f"{relative_path} must be a file"
         assert asset.stat().st_size > 0, f"{relative_path} must not be empty"
+
+
+def test_distribution_section_runs_the_supplied_pantograph_animation(
+    driver: DriverFactory,
+) -> None:
+    """Keep the supplied animated SVG active in the distribution section.
+
+    The pantograph's linkage motion lives in a script inside the SVG file.
+    Loading that file through a regular ``img`` element would show the correct
+    first frame but browser security rules would prevent the script—and thus
+    the requested animation—from running. This test verifies both halves of
+    the integration: the old network-orbit illustration is gone, and the
+    replacement is embedded as a same-origin SVG document whose pantograph API
+    reports an actively changing progress value after the section enters the
+    viewport. The assertion waits for a state change instead of expecting an
+    exact frame timestamp, so normal differences in browser and CI speed do
+    not make the test flaky.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1440, 900),
+    )
+    visual = page.locator(".pantograph-visual")
+    embedded_svg = visual.locator(".pantograph-visual__object")
+
+    expect(page.locator(".network-visual")).to_have_count(0)
+    expect(embedded_svg).to_have_attribute(
+        "data",
+        "/pantograph-variant-20-clean.svg",
+    )
+    visual.scroll_into_view_if_needed()
+    page.wait_for_function(
+        """
+        () => {
+          const embedded = document.querySelector(
+            ".pantograph-visual__object",
+          );
+          const childDocument = embedded?.contentDocument;
+          const childWindow = childDocument?.defaultView;
+          const childRoot = childDocument?.documentElement;
+          return Boolean(
+            childWindow?.__pantograph
+            && childRoot?.dataset.progress,
+          );
+        }
+        """
+    )
+    initial_progress = embedded_svg.evaluate(
+        """
+        (embedded) => Number.parseFloat(
+          embedded.contentDocument.documentElement.dataset.progress,
+        )
+        """
+    )
+    page.wait_for_function(
+        """
+        (initialProgress) => {
+          const embedded = document.querySelector(
+            ".pantograph-visual__object",
+          );
+          const currentProgress = Number.parseFloat(
+            embedded.contentDocument.documentElement.dataset.progress,
+          );
+          return Math.abs(currentProgress - initialProgress) > 0.003;
+        }
+        """,
+        arg=initial_progress,
+    )
+    metrics = embedded_svg.evaluate(
+        """
+        (embedded) =>
+          embedded.contentDocument.defaultView.__pantograph.metrics()
+        """,
+    )
+    assert metrics["playing"] is True
+    assert metrics["config"]["duration"] == 8000
+    assert metrics["finite"] is True
 
 
 def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
