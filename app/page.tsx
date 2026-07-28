@@ -727,22 +727,19 @@ function Header() {
 }
 
 function ComplexityChart() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const staticCanvasRef = useRef<HTMLCanvasElement>(null);
+  const curvesCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const chart = chartRef.current;
+    const staticCanvas = staticCanvasRef.current;
+    const curvesCanvas = curvesCanvasRef.current;
+    if (!chart || !staticCanvas || !curvesCanvas) return;
 
     const draw = () => {
-      const rect = canvas.getBoundingClientRect();
+      const rect = chart.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-      canvas.height = Math.floor(330 * dpr);
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      ctx.scale(dpr, dpr);
       const width = rect.width;
       const height = 330;
       const pad = { top: 30, right: 24, bottom: 48, left: 42 };
@@ -754,57 +751,123 @@ function ComplexityChart() {
       const hot = styles.getPropertyValue("--hot").trim() || "#ff3e9d";
       const hotSoft = styles.getPropertyValue("--hot-soft").trim() || "#b15b87";
 
-      ctx.clearRect(0, 0, width, height);
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = grid;
-      ctx.setLineDash([3, 6]);
+      for (const canvas of [staticCanvas, curvesCanvas]) {
+        canvas.width = Math.max(1, Math.floor(width * dpr));
+        canvas.height = Math.floor(height * dpr);
+      }
+
+      const staticContext = staticCanvas.getContext("2d");
+      const curvesContext = curvesCanvas.getContext("2d");
+      if (!staticContext || !curvesContext) return;
+
+      staticContext.scale(dpr, dpr);
+      curvesContext.scale(dpr, dpr);
+      staticContext.clearRect(0, 0, width, height);
+      curvesContext.clearRect(0, 0, width, height);
+
+      staticContext.lineWidth = 1;
+      staticContext.strokeStyle = grid;
+      staticContext.setLineDash([3, 6]);
       for (let i = 0; i <= 4; i += 1) {
         const y = pad.top + (plotHeight / 4) * i;
-        ctx.beginPath();
-        ctx.moveTo(pad.left, y);
-        ctx.lineTo(width - pad.right, y);
-        ctx.stroke();
+        staticContext.beginPath();
+        staticContext.moveTo(pad.left, y);
+        staticContext.lineTo(width - pad.right, y);
+        staticContext.stroke();
       }
-      ctx.setLineDash([]);
+      staticContext.setLineDash([]);
 
       const plot = (fn: (x: number) => number, color: string, lineWidth: number) => {
-        ctx.beginPath();
+        curvesContext.beginPath();
         for (let i = 0; i <= 160; i += 1) {
           const t = i / 160;
           const x = pad.left + t * plotWidth;
           const value = Math.min(1, fn(t));
           const y = pad.top + plotHeight - value * plotHeight;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+          if (i === 0) curvesContext.moveTo(x, y);
+          else curvesContext.lineTo(x, y);
         }
-        ctx.lineWidth = lineWidth;
-        ctx.strokeStyle = color;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.stroke();
+        curvesContext.lineWidth = lineWidth;
+        curvesContext.strokeStyle = color;
+        curvesContext.lineCap = "round";
+        curvesContext.lineJoin = "round";
+        curvesContext.stroke();
       };
 
       plot((x) => (Math.exp(4.35 * x) - 1) / (Math.exp(4.35) - 1), hot, 4);
       plot((x) => 0.06 + 0.28 * x + 0.16 * x * x, hotSoft, 3);
 
-      ctx.fillStyle = ink;
-      ctx.font = "500 11px var(--font-geist-mono), monospace";
-      ctx.textAlign = "left";
-      ctx.fillText("CHANGE COST", 0, 14);
-      ctx.textAlign = "right";
-      ctx.fillText("SYSTEM SCALE →", width - pad.right, height - 10);
+      staticContext.fillStyle = ink;
+      staticContext.font = "500 11px var(--font-geist-mono), monospace";
+      staticContext.textAlign = "left";
+      staticContext.fillText("CHANGE COST", 0, 14);
+      staticContext.textAlign = "right";
+      staticContext.fillText("SYSTEM SCALE →", width - pad.right, height - 10);
 
-      ctx.font = "600 11px var(--font-geist-mono), monospace";
-      ctx.fillStyle = hot;
-      ctx.textAlign = "right";
-      ctx.fillText("UNCHECKED ENTROPY", width - pad.right - 4, pad.top + 15);
-      ctx.fillStyle = hotSoft;
-      ctx.fillText("WITH VERIFICATION", width - pad.right - 4, pad.top + plotHeight * 0.46);
+      curvesContext.font = "600 11px var(--font-geist-mono), monospace";
+      curvesContext.fillStyle = hot;
+      curvesContext.textAlign = "right";
+      curvesContext.fillText("UNCHECKED ENTROPY", width - pad.right - 4, pad.top + 15);
+      curvesContext.fillStyle = hotSoft;
+      curvesContext.fillText("WITH VERIFICATION", width - pad.right - 4, pad.top + plotHeight * 0.46);
+    };
+
+    let hasRevealed = false;
+    let revealObserver: IntersectionObserver | null = null;
+    let revealObserverGeneration = 0;
+    const visibilityTarget = chart.closest(".chart-panel") ?? chart;
+
+    const observeForReveal = () => {
+      if (hasRevealed) return;
+
+      revealObserver?.disconnect();
+      revealObserverGeneration += 1;
+      const observerGeneration = revealObserverGeneration;
+      const targetHeight = visibilityTarget.getBoundingClientRect().height;
+      const maximumVisibleRatio = Math.min(
+        1,
+        window.innerHeight / Math.max(1, targetHeight),
+      );
+      const revealThreshold = Math.min(
+        0.985,
+        Math.max(0.5, maximumVisibleRatio - 0.01),
+      );
+
+      revealObserver = new IntersectionObserver(
+        (entries) => {
+          if (
+            hasRevealed ||
+            observerGeneration !== revealObserverGeneration ||
+            !entries.some(
+              (entry) =>
+                entry.isIntersecting &&
+                entry.intersectionRatio >= revealThreshold,
+            )
+          ) {
+            return;
+          }
+
+          hasRevealed = true;
+          chart.dataset.curvesRevealed = "true";
+          revealObserver?.disconnect();
+          revealObserver = null;
+        },
+        { threshold: revealThreshold },
+      );
+      revealObserver.observe(visibilityTarget);
     };
 
     draw();
-    const resizeObserver = new ResizeObserver(draw);
-    resizeObserver.observe(canvas);
+    observeForReveal();
+    const resizeObserver = new ResizeObserver(() => {
+      draw();
+      observeForReveal();
+    });
+    resizeObserver.observe(chart);
+    if (visibilityTarget !== chart) {
+      resizeObserver.observe(visibilityTarget);
+    }
+    window.addEventListener("resize", observeForReveal);
     const themeObserver = new MutationObserver(draw);
     themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -814,16 +877,31 @@ function ComplexityChart() {
     return () => {
       resizeObserver.disconnect();
       themeObserver.disconnect();
+      window.removeEventListener("resize", observeForReveal);
+      revealObserverGeneration += 1;
+      revealObserver?.disconnect();
     };
   }, []);
 
   return (
-    <canvas
+    <div
       className="complexity-chart"
-      ref={canvasRef}
+      ref={chartRef}
       role="img"
       aria-label="Unchecked software complexity rises exponentially with system scale, while deterministic verification keeps the curve much flatter."
-    />
+      data-curves-revealed="false"
+    >
+      <canvas
+        className="complexity-chart__layer complexity-chart__static"
+        ref={staticCanvasRef}
+        aria-hidden="true"
+      />
+      <canvas
+        className="complexity-chart__layer complexity-chart__curves"
+        ref={curvesCanvasRef}
+        aria-hidden="true"
+      />
+    </div>
   );
 }
 

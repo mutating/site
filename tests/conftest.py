@@ -19,6 +19,7 @@ from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ColorScheme = Literal["dark", "light", "no-preference"]
+ReducedMotion = Literal["reduce", "no-preference"]
 DriverFactory = Callable[..., Page]
 
 
@@ -126,6 +127,8 @@ def driver(
         storage_available: bool = True,
         system_theme_available: bool = True,
         viewport: tuple[int, int] | None = None,
+        device_scale_factor: float | None = None,
+        reduced_motion: ReducedMotion = "no-preference",
         load_interactive_visuals: bool = True,
         animation_frame_interval_ms: float | None = None,
         controllable_animation_frames: bool = False,
@@ -150,6 +153,8 @@ def driver(
                 if viewport is not None
                 else None
             ),
+            device_scale_factor=device_scale_factor,
+            reduced_motion=reduced_motion,
         )
 
         if not storage_available:
