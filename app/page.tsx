@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 type Theme = "light" | "dark";
 const THEME_TOGGLE_BLINK_EVENT = "tmc-theme-toggle-blink";
+const BRAND_HOME_ACTIVATE_EVENT = "tmc-brand-home-activate";
+const BRAND_HOME_RELOAD_DELAY_MS = 260;
 const TENTACLE_POINTER_RELAY_EVENT = "tmc-tentacle-pointer-move";
 
 function CurrentYear() {
@@ -114,11 +122,7 @@ function InitialAnchorScroll() {
       const root = document.documentElement;
       const previousScrollBehavior = root.style.scrollBehavior;
       root.style.scrollBehavior = "auto";
-      if (target.id === "top") {
-        window.scrollTo({ top: 0, behavior: "auto" });
-      } else {
-        target.scrollIntoView({ block: "start" });
-      }
+      target.scrollIntoView({ block: "start" });
       root.style.scrollBehavior = previousScrollBehavior;
     };
 
@@ -194,7 +198,6 @@ function AnimatedEyeLogo() {
       'path("M 0 0 L 1 0 L 0 1 Z")',
     );
     let isHeldClosed = false;
-    let reloadWhenClosed = false;
 
     const gaze = {
       x: 0,
@@ -390,31 +393,13 @@ function AnimatedEyeLogo() {
     };
 
     const blinkForThemeToggle = () => {
-      if (isHeldClosed || reloadWhenClosed || document.hidden) return;
+      if (isHeldClosed || document.hidden) return;
       transitionLid(0, reduceMotion ? 120 : 220, "auto");
     };
 
-    const closeWhileHeld = (event: PointerEvent | KeyboardEvent) => {
-      if ("button" in event && event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
+    const holdClosedForHomeReload = () => {
       isHeldClosed = true;
-      eye.setAttribute("aria-pressed", "true");
       transitionLid(0, reduceMotion ? 120 : 240, "manual");
-
-      if ("pointerId" in event) {
-        eye.setPointerCapture?.(event.pointerId);
-      }
-    };
-
-    const openAfterRelease = () => {
-      if (!isHeldClosed) return;
-      isHeldClosed = false;
-      eye.setAttribute("aria-pressed", "false");
-
-      if (lid.openness < 0.0001 || lid.phase === "held") {
-        transitionLid(1, reduceMotion ? 150 : 300, "manual");
-      }
     };
 
     const updateLid = (now: number) => {
@@ -442,12 +427,6 @@ function AnimatedEyeLogo() {
 
       lid.openness = lid.to;
       if (lid.to === 0) {
-        if (reloadWhenClosed) {
-          lid.phase = "held";
-          window.location.reload();
-          return;
-        }
-
         if (isHeldClosed) {
           lid.phase = "held";
         } else {
@@ -494,34 +473,8 @@ function AnimatedEyeLogo() {
       animationFrame = window.requestAnimationFrame(animate);
     };
 
-    const handleEyePointerDown = (event: PointerEvent) => closeWhileHeld(event);
-    const handleEyeClick = (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      reloadWhenClosed = true;
-
-      if (lid.openness < 0.0001) {
-        lid.phase = "held";
-        window.location.reload();
-      } else if (lid.phase !== "closing") {
-        transitionLid(0, reduceMotion ? 120 : 240, "manual");
-      }
-    };
-    const handleEyeKeyDown = (event: KeyboardEvent) => {
-      if ((event.key === " " || event.key === "Enter") && !event.repeat) {
-        closeWhileHeld(event);
-      }
-    };
-    const handleEyeKeyUp = (event: KeyboardEvent) => {
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        event.stopPropagation();
-        openAfterRelease();
-      }
-    };
     const handleWindowBlur = () => {
       centerGaze();
-      openAfterRelease();
     };
     const handleViewportResize = () => {
       updateBounds();
@@ -541,15 +494,13 @@ function AnimatedEyeLogo() {
       TENTACLE_POINTER_RELAY_EVENT,
       handleRelayedPointerMove,
     );
-    window.addEventListener("pointerup", openAfterRelease, { passive: true });
-    window.addEventListener("pointercancel", openAfterRelease, { passive: true });
     window.addEventListener("blur", handleWindowBlur);
     window.addEventListener(THEME_TOGGLE_BLINK_EVENT, blinkForThemeToggle);
+    window.addEventListener(
+      BRAND_HOME_ACTIVATE_EVENT,
+      holdClosedForHomeReload,
+    );
     document.addEventListener("pointerout", handlePointerOut);
-    eye.addEventListener("pointerdown", handleEyePointerDown);
-    eye.addEventListener("click", handleEyeClick);
-    eye.addEventListener("keydown", handleEyeKeyDown);
-    eye.addEventListener("keyup", handleEyeKeyUp);
 
     blinkInterval = window.setInterval(blink, 30000);
     animationFrame = window.requestAnimationFrame(animate);
@@ -567,15 +518,13 @@ function AnimatedEyeLogo() {
         TENTACLE_POINTER_RELAY_EVENT,
         handleRelayedPointerMove,
       );
-      window.removeEventListener("pointerup", openAfterRelease);
-      window.removeEventListener("pointercancel", openAfterRelease);
       window.removeEventListener("blur", handleWindowBlur);
       window.removeEventListener(THEME_TOGGLE_BLINK_EVENT, blinkForThemeToggle);
+      window.removeEventListener(
+        BRAND_HOME_ACTIVATE_EVENT,
+        holdClosedForHomeReload,
+      );
       document.removeEventListener("pointerout", handlePointerOut);
-      eye.removeEventListener("pointerdown", handleEyePointerDown);
-      eye.removeEventListener("click", handleEyeClick);
-      eye.removeEventListener("keydown", handleEyeKeyDown);
-      eye.removeEventListener("keyup", handleEyeKeyUp);
     };
   }, []);
 
@@ -583,10 +532,7 @@ function AnimatedEyeLogo() {
     <span
       className="animated-eye-logo"
       ref={eyeRef}
-      role="button"
-      tabIndex={0}
-      aria-pressed="false"
-      aria-label="Muta eye. It follows the pointer, blinks, and refreshes the page when pressed."
+      aria-hidden="true"
     >
       <span className="animated-eye-logo__clip" ref={eyeClipRef}>
         <span className="animated-eye-logo__outline" aria-hidden="true" />
@@ -703,18 +649,58 @@ function AnimatedWordmark() {
   );
 }
 
+function BrandHomeControl() {
+  const reloadScheduledRef = useRef(false);
+
+  const activateHome = () => {
+    if (reloadScheduledRef.current) return;
+    reloadScheduledRef.current = true;
+
+    const hashlessUrl = `${window.location.pathname}${window.location.search}`;
+    window.history.replaceState(window.history.state, "", hashlessUrl);
+    window.dispatchEvent(new Event(BRAND_HOME_ACTIVATE_EVENT));
+    window.setTimeout(
+      () => window.location.reload(),
+      BRAND_HOME_RELOAD_DELAY_MS,
+    );
+  };
+
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    activateHome();
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.repeat || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    activateHome();
+  };
+
+  return (
+    <div
+      className="brand"
+      role="link"
+      tabIndex={0}
+      aria-label="Reload The Mutating Company home page"
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+    >
+      <span className="brand__mark brand__mark--eye">
+        <AnimatedEyeLogo />
+      </span>
+      <AnimatedWordmark />
+    </div>
+  );
+}
+
 function Header() {
   const mobileMenuRef = useRef<HTMLDetailsElement>(null);
   const closeMobileMenu = () => mobileMenuRef.current?.removeAttribute("open");
 
   return (
     <header className="site-header">
-      <a className="brand" href="#top" aria-label="The Mutating Company home">
-        <span className="brand__mark brand__mark--eye">
-          <AnimatedEyeLogo />
-        </span>
-        <AnimatedWordmark />
-      </a>
+      <BrandHomeControl />
 
       <nav className="main-nav" aria-label="Main navigation">
         <a href="https://github.com/mutating">Open source</a>
@@ -1246,7 +1232,7 @@ function TentacleContactBackground() {
 
 export default function Home() {
   return (
-    <main id="top">
+    <main>
       <InitialAnchorScroll />
       <Header />
 

@@ -391,7 +391,9 @@ def test_tokamak_pauses_when_it_leaves_the_viewport(
     )
     canvas = _show_reactor(page)
 
-    page.locator("#top").evaluate("(element) => element.scrollIntoView()")
+    page.evaluate(
+        "() => window.scrollTo({top: 0, behavior: 'instant'})"
+    )
     expect(canvas).to_have_attribute("data-render-visible", "false")
     expect(canvas).to_have_attribute("data-render-paused", "true")
     paused_frames = int(canvas.get_attribute("data-render-frames") or "0")

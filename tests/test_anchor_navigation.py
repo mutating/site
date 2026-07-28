@@ -12,7 +12,6 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, ex
 DriverFactory = Callable[..., Page]
 
 ANCHOR_TARGET_IDS = {
-    "top",
     "sections",
     "complexity",
     "containment",
@@ -25,6 +24,21 @@ ANCHOR_TARGET_IDS = {
     "field-notes",
     "contact",
 }
+
+BRAND_RELOAD_CASES = [
+    (None, "intermediate"),
+    ("sections", "eye"),
+    ("complexity", "tmc"),
+    ("containment", "expanded"),
+    ("thesis", "intermediate"),
+    ("what-we-build", "eye"),
+    ("scale", "tmc"),
+    ("feedback", "expanded"),
+    ("the-deal", "intermediate"),
+    ("open-source", "eye"),
+    ("field-notes", "tmc"),
+    ("contact", "expanded"),
+]
 
 
 class AnchorGeometry(TypedDict):
@@ -52,9 +66,6 @@ def _wait_for_anchor_alignment(
             (targetId) => {
               const target = document.getElementById(targetId);
               if (!target) return false;
-              if (targetId === "top") {
-                return window.scrollY <= 1;
-              }
 
               const rect = target.getBoundingClientRect();
               const documentTop = rect.top + window.scrollY;
@@ -125,10 +136,6 @@ def _assert_anchor_is_aligned(
         _wait_for_anchor_alignment(page, target_id)
 
     geometry = _read_anchor_geometry(page, target_id)
-    if target_id == "top":
-        assert geometry["scroll_y"] <= 1
-        return
-
     expected_scroll = min(
         max(
             geometry["target_document_top"]
@@ -203,6 +210,284 @@ def test_every_internal_fragment_link_has_one_real_target(
         assert item["targetCount"] == 1, item
 
 
+def test_top_fragment_is_completely_absent_from_rendered_elements(
+    driver: DriverFactory,
+) -> None:
+    """Forbid the retired ``#top`` fragment everywhere in the rendered page.
+
+    The former logo was an anchor with ``href="#top"`` and the root ``main``
+    owned ``id="top"``. That made even an ordinary home-logo click create a
+    fragment entry instead of performing the newly required hashless reload.
+    Merely changing the click handler is insufficient: a stale ``href``, ID,
+    data attribute, or nested element could still expose the retired fragment
+    to the browser's default navigation.
+
+    This structural regression scans every attribute on every rendered
+    element, rejects both an exact ``#top`` value and any ``id="top"`` owner,
+    verifies that the unified logo control is a ``div`` rather than an anchor,
+    and confirms that it has no ``href`` at all. It therefore fails if any
+    future refactor reintroduces the old fragment independently of the reload
+    implementation.
+    """
+
+    page = driver(load_interactive_visuals=False)
+    violations = page.evaluate(
+        """
+        () =>
+          [...document.querySelectorAll("*")].flatMap((element) =>
+            [...element.attributes]
+              .filter(
+                (attribute) =>
+                  attribute.value === "#top" ||
+                  (attribute.name === "id" && attribute.value === "top"),
+              )
+              .map((attribute) => ({
+                tag: element.tagName,
+                name: attribute.name,
+                value: attribute.value,
+              })),
+          )
+        """
+    )
+    brand = page.locator(".brand")
+
+    assert violations == []
+    assert brand.count() == 1
+    assert brand.evaluate("(element) => element.tagName") == "DIV"
+    expect(brand).to_have_attribute("role", "link")
+    assert brand.get_attribute("href") is None
+    assert page.url.endswith("/")
+
+
+def _click_brand_variant(page: Page, variant: str) -> None:
+    """Activate one precise visible sub-area of the unified logo control."""
+
+    if variant == "eye":
+        page.locator(".animated-eye-logo").click()
+        return
+
+    if variant == "tmc":
+        page.locator(
+            ".brand__word-part--t .brand__word-anchor"
+        ).click()
+        return
+
+    wordmark = page.locator(".brand__wordmark")
+    wordmark.hover()
+
+    if variant == "expanded":
+        page.wait_for_function(
+            """
+            () => [...document.querySelectorAll(".brand__word-reveal")].every(
+              (element) =>
+                element.getBoundingClientRect().width > 1 &&
+                getComputedStyle(element).opacity === "1",
+            )
+            """
+        )
+        page.locator(
+            '.brand__word-reveal[data-text="ompany"]'
+        ).click()
+        return
+
+    if variant != "intermediate":
+        raise AssertionError(f"Unknown brand click variant: {variant}")
+
+    reveal = page.locator('.brand__word-reveal[data-text="utating"]')
+    page.wait_for_function(
+        """
+        () => {
+          const element = document.querySelector(
+            '.brand__word-reveal[data-text="utating"]',
+          );
+          const opacity = Number.parseFloat(getComputedStyle(element).opacity);
+          return element.getBoundingClientRect().width > 2 &&
+            opacity > 0 &&
+            opacity < 1;
+        }
+        """
+    )
+    intermediate_state = page.locator(".brand").evaluate(
+        """
+        (brand) => {
+          for (const animation of brand.getAnimations({subtree: true})) {
+            const duration = Number(animation.effect?.getTiming().duration);
+            if (Number.isFinite(duration) && duration > 0) {
+              animation.currentTime = duration / 2;
+              animation.pause();
+            }
+          }
+
+          const reveal = brand.querySelector(
+            '.brand__word-reveal[data-text="utating"]',
+          );
+          const rect = reveal.getBoundingClientRect();
+          return {
+            width: rect.width,
+            fullWidth: reveal.scrollWidth,
+            opacity: Number.parseFloat(getComputedStyle(reveal).opacity),
+          };
+        }
+        """
+    )
+    assert 0 < intermediate_state["width"] < intermediate_state["fullWidth"]
+    assert 0 < intermediate_state["opacity"] < 1
+    reveal.click()
+
+
+@pytest.mark.parametrize(
+    ("target_id", "click_variant"),
+    BRAND_RELOAD_CASES,
+    ids=[
+        f"{target_id or 'arbitrary-scroll'}-{click_variant}"
+        for target_id, click_variant in BRAND_RELOAD_CASES
+    ],
+)
+def test_every_logo_sub_area_clears_fragments_and_reloads_home(
+    driver: DriverFactory,
+    base_url: str,
+    target_id: str | None,
+    click_variant: str,
+) -> None:
+    """Reload the hashless home page from every logo area and scroll context.
+
+    All visible pieces of the header logo now form one control: the animated
+    eye, the compact ``TMC`` letters, a fully revealed word segment, and a
+    partially revealed segment while its 350 ms transition is in progress.
+    The former nested behaviors were inconsistent—clicking the text created
+    ``#top``, while clicking the eye reloaded the current fragment—so testing
+    only the wrapper's center would leave the original defects undetected.
+
+    The parameter table covers every remaining internal fragment target and an
+    additional arbitrary non-anchor scroll position, rotating through all four
+    required click variants. Before activation, the test instruments both the
+    History API and ``hashchange`` while persisting observations through the
+    upcoming document load. It then requires a real browser navigation and uses
+    a new-document init script plus an in-memory sentinel to prove that the
+    current JavaScript document was destroyed and loaded again. This is more
+    robust than ``PerformanceNavigationTiming.type``: Chromium reports
+    ``navigate`` rather than ``reload`` when ``history.replaceState`` removes a
+    fragment immediately before ``location.reload()``.
+
+    Finally, the recorded history proves that ``#top`` was never created even
+    transiently. Reintroducing an anchor default, preserving the active hash
+    during reload, handling only the eye, omitting the expanded hit area, or
+    losing clicks midway through the wordmark transition makes at least one
+    parameterized case fail.
+    """
+
+    page = driver(
+        viewport=(1440, 900),
+        load_interactive_visuals=False,
+    )
+
+    if target_id is None:
+        page.evaluate(
+            """
+            () => window.scrollTo({
+              top: document.documentElement.scrollHeight * 0.42,
+              behavior: "instant",
+            })
+            """
+        )
+        assert page.evaluate("window.scrollY") > 0
+        assert page.evaluate("window.location.hash") == ""
+    else:
+        page.goto(
+            f"{base_url}/#{target_id}",
+            wait_until="domcontentloaded",
+        )
+        page.locator('html[data-theme-ready="true"]').wait_for(
+            state="attached",
+        )
+        _assert_anchor_is_aligned(page, target_id)
+        assert page.url.endswith(f"#{target_id}")
+
+    page.evaluate(
+        """
+        () => {
+          const key = "tmc-logo-navigation-observed-hashes";
+          const record = (url) => {
+            const parsed = new URL(url ?? location.href, location.href);
+            const values = JSON.parse(sessionStorage.getItem(key) || "[]");
+            values.push(parsed.hash);
+            sessionStorage.setItem(key, JSON.stringify(values));
+          };
+
+          sessionStorage.setItem(key, JSON.stringify([location.hash]));
+          addEventListener("hashchange", () => record(location.href));
+
+          const replaceState = history.replaceState.bind(history);
+          history.replaceState = (state, unused, url) => {
+            record(url);
+            return replaceState(state, unused, url);
+          };
+
+          const pushState = history.pushState.bind(history);
+          history.pushState = (state, unused, url) => {
+            record(url);
+            return pushState(state, unused, url);
+          };
+        }
+        """
+    )
+    page.add_init_script(
+        """
+        {
+          const key = "tmc-logo-document-load-count";
+          const count = Number.parseInt(sessionStorage.getItem(key) || "0", 10);
+          sessionStorage.setItem(key, String(count + 1));
+        }
+        """
+    )
+    page.evaluate(
+        """
+        () => {
+          sessionStorage.setItem("tmc-logo-document-load-count", "0");
+          window.__tmcBrandPreReloadDocument = true;
+        }
+        """
+    )
+
+    _click_brand_variant(page, click_variant)
+    page.wait_for_function(
+        """
+        () => (
+          sessionStorage.getItem("tmc-logo-document-load-count") === "1"
+          && window.__tmcBrandPreReloadDocument === undefined
+        )
+        """,
+        timeout=5_000,
+    )
+
+    page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
+    expect(page).to_have_url(f"{base_url}/")
+    assert page.evaluate("window.location.hash") == ""
+    assert page.evaluate(
+        """
+        () => sessionStorage.getItem("tmc-logo-document-load-count")
+        """
+    ) == "1"
+    assert page.evaluate(
+        """
+        () => window.__tmcBrandPreReloadDocument
+        """
+    ) is None
+
+    observed_hashes = page.evaluate(
+        """
+        () =>
+          JSON.parse(
+            sessionStorage.getItem(
+              "tmc-logo-navigation-observed-hashes",
+            ) || "[]",
+          )
+        """
+    )
+    assert "#top" not in observed_hashes
+    assert observed_hashes[-1] == ""
+
+
 def test_every_anchor_target_aligns_on_a_direct_deep_link(
     driver: DriverFactory,
     base_url: str,
@@ -219,8 +504,8 @@ def test_every_anchor_target_aligns_on_a_direct_deep_link(
     Besides checking all numbered sections, this includes the invisible
     ``#sections`` target used by “Read our thesis”, the nested
     ``#field-notes`` article that previously disappeared beneath the sticky
-    header, the bottom ``#contact`` section, and ``#top``. Any target left
-    clipped, overscrolled, or connected only after an in-page click fails here.
+    header and the bottom ``#contact`` section. Any target left clipped,
+    overscrolled, or connected only after an in-page click fails here.
     """
 
     page = driver(
@@ -315,15 +600,15 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
     A correct fragment target is insufficient if React event handling, sticky
     navigation, smooth scrolling, or a nested layout prevents the actual link
     from navigating. This test clicks representative links from the hero,
-    numbered section label, sticky desktop navigation, and brand. After each
-    real Playwright click it verifies both externally visible outcomes: the
+    numbered section label and sticky desktop navigation. After each real
+    Playwright click it verifies both externally visible outcomes: the
     exact fragment is present in the address bar and the corresponding target
     is positioned with the intended header clearance.
 
     The sequence explicitly covers the invisible list-start target, a regular
     numbered section, the nested Blog card, Contact near the document bottom,
-    the open-source section, and the return-to-top logo. It therefore guards
-    the click path independently from the direct-load and reload tests.
+    and the open-source section. The separate logo-navigation regression covers
+    the intentionally hashless full reload back to the home page.
     """
 
     page = driver(
@@ -336,7 +621,6 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
         ('.main-nav a[href="#field-notes"]', "field-notes"),
         ('.main-nav a[href="#contact"]', "contact"),
         ('.hero__actions a[href="#open-source"]', "open-source"),
-        ('.brand[href="#top"]', "top"),
     ]
 
     for selector, target_id in click_cases:

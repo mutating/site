@@ -169,11 +169,9 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     navigation = page.locator(".main-nav")
     reveals = page.locator(".brand__word-reveal")
 
-    expect(
-        page.locator('.brand[href="#top"]')
-    ).to_have_attribute(
+    expect(page.locator(".brand")).to_have_attribute(
         "aria-label",
-        "The Mutating Company home",
+        "Reload The Mutating Company home page",
     )
     assert wordmark.text_content().replace("\n", "").replace(" ", "") == (
         "TheMutatingCompany"
@@ -291,13 +289,13 @@ def test_animated_wordmark_keeps_the_existing_narrow_header_contract(
     )
     stage = page.locator(".brand__wordmark-stage")
     eye = page.locator(".animated-eye-logo")
-    brand = page.locator('.brand[href="#top"]')
+    brand = page.locator(".brand")
 
     expect(stage).to_be_hidden()
     expect(eye).to_be_visible()
     expect(brand).to_have_attribute(
         "aria-label",
-        "The Mutating Company home",
+        "Reload The Mutating Company home page",
     )
     eye_box = eye.bounding_box()
     assert eye_box is not None
