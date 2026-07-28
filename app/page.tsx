@@ -1371,7 +1371,7 @@ export default function Home() {
           <img
             className="mascot-card__art"
             src="/muta-v2-transparent.png"
-            srcSet="/muta-v2-transparent.png 1x, /muta-v2-transparent-2x-v5.webp 2x"
+            srcSet="/muta-v2-transparent.png 1x, /muta-v2-transparent-2x-v6.webp 2x"
             alt="A cheerful pink one-eyed mutant with a suspicious grin"
           />
           <figcaption>
