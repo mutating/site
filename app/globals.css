@@ -426,6 +426,19 @@ img {
   background: var(--surface-raised);
 }
 
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+}
+
+.source-link__icon {
+  width: 1.15em;
+  height: 1.15em;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
 .header-actions {
   display: flex;
   align-items: center;

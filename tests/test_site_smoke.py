@@ -45,6 +45,42 @@ def test_home_page_renders_core_content(driver: DriverFactory) -> None:
     )
 
 
+def test_all_github_navigation_links_use_sources_label_and_icon(
+    driver: DriverFactory,
+) -> None:
+    """Keep the GitHub destination consistently branded across navigation.
+
+    The desktop header, responsive menu, and footer all point to the same
+    source repository. Each occurrence must use the concise visible label
+    ``Sources`` followed by the decorative GitHub mark, while the old
+    ``Open source`` label must not survive in any of those navigation areas.
+    The icon is hidden from assistive technology so the accessible link name
+    remains exactly ``Sources`` instead of repeating or garbling the label.
+    """
+
+    page = driver(color_scheme="light")
+    links = page.locator(
+        'a.source-link[href="https://github.com/mutating"]',
+    )
+
+    expect(links).to_have_count(3)
+    for index in range(3):
+        link = links.nth(index)
+        expect(link).to_have_text("Sources")
+        expect(link.locator(".source-link__icon")).to_have_count(1)
+        expect(link.locator(".source-link__icon")).to_have_attribute(
+            "aria-hidden",
+            "true",
+        )
+
+    expect(
+        page.locator(".main-nav, .mobile-menu, .site-footer__links").get_by_text(
+            "Open source",
+            exact=True,
+        ),
+    ).to_have_count(0)
+
+
 def test_site_critical_assets_are_local_and_non_empty() -> None:
     """Verify that every critical visual asset is present in the repository."""
 
