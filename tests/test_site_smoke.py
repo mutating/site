@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageFilter, ImageStat
@@ -112,6 +113,7 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
         "public/mutant-mascot-transparent.png",
         "public/mutant-mascot.jpg",
         "public/og.png",
+        "public/pantograph-frame.html",
         "public/pantograph-variant-20-clean.svg",
         "public/tokamak-reactor.html",
         "public/muta-tentacles.html",
@@ -209,10 +211,7 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     embedded_svg = visual.locator(".pantograph-visual__object")
 
     expect(page.locator(".network-visual")).to_have_count(0)
-    expect(embedded_svg).to_have_attribute(
-        "data",
-        "/pantograph-variant-20-clean.svg",
-    )
+    expect(embedded_svg).to_have_attribute("src", "/pantograph-frame.html")
     container_style = visual.evaluate(
         """
         (element) => {
@@ -277,7 +276,13 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
         (embedded) => ({
           objectBackground: getComputedStyle(embedded).backgroundColor,
           svgBackground: getComputedStyle(
+            embedded.contentDocument.querySelector("svg"),
+          ).backgroundColor,
+          frameRootBackground: getComputedStyle(
             embedded.contentDocument.documentElement,
+          ).backgroundColor,
+          frameBodyBackground: getComputedStyle(
+            embedded.contentDocument.body,
           ).backgroundColor,
         })
         """
@@ -285,7 +290,17 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     assert transparent_layers == {
         "objectBackground": "rgba(0, 0, 0, 0)",
         "svgBackground": "rgba(0, 0, 0, 0)",
+        "frameRootBackground": "rgba(0, 0, 0, 0)",
+        "frameBodyBackground": "rgba(0, 0, 0, 0)",
     }
+    visual.evaluate(
+        "(element) => { element.style.background = 'rgb(12, 34, 56)'; }"
+    )
+    transparency_probe = Image.open(BytesIO(visual.screenshot())).convert(
+        "RGB"
+    )
+    assert transparency_probe.getpixel((4, 4)) == (12, 34, 56)
+    visual.evaluate("(element) => { element.style.background = ''; }")
     initial_progress = embedded_svg.evaluate(
         """
         (embedded) => Number.parseFloat(

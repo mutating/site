@@ -965,7 +965,7 @@ function FeedbackLoop() {
 }
 
 function PantographVisual() {
-  const objectRef = useRef<HTMLObjectElement>(null);
+  const objectRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     const embedded = objectRef.current;
@@ -999,11 +999,11 @@ function PantographVisual() {
       role="img"
       aria-label="An animated pantograph coordinating local and distributed verification work"
     >
-      <object
+      <iframe
         ref={objectRef}
         className="pantograph-visual__object"
-        data="/pantograph-variant-20-clean.svg"
-        type="image/svg+xml"
+        src="/pantograph-frame.html"
+        title=""
         aria-hidden="true"
         tabIndex={-1}
       />
