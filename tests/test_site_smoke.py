@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageStat
+from PIL import Image, ImageChops, ImageFilter, ImageStat
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -137,8 +137,15 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     dimensions while silently changing the silhouette, teeth, highlights, or
     colors. The test therefore downsamples the new lossless asset and composites
     both versions over the site's light and dark background extremes. Their
-    mean channel difference must remain below a fraction of one 8-bit color
-    step, proving this is a faithful resampling rather than new artwork.
+    mean channel difference must remain below half of one 8-bit color step,
+    proving this is a conservative restoration rather than new artwork.
+
+    The former 2× file was a literal Lanczos resize and enlarged the source's
+    grid, striping, and banding along with Muta. A Gaussian residual provides a
+    deterministic proxy for that unwanted high-frequency texture in opaque
+    painted areas. The restored asset must reduce this residual by at least
+    four percent on both backgrounds while keeping the intentional contours
+    protected by the geometry and similarity assertions above.
 
     Finally, a 2× browser must select the high-density file through ``srcset``
     while retaining the original 1254 px intrinsic CSS size, the existing
@@ -167,6 +174,9 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
             original.size,
             Image.Resampling.LANCZOS,
         )
+        opaque_mask = original.getchannel("A").point(
+            lambda value: 255 if value > 240 else 0,
+        )
         for background_color in (
             (9, 6, 8, 255),
             (255, 250, 251, 255),
@@ -188,7 +198,30 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
                 original_composite,
                 normalized_composite,
             )
-            assert max(ImageStat.Stat(difference).mean) < 0.2
+            assert max(ImageStat.Stat(difference).mean) < 0.5
+
+            def high_frequency_score(image: Image.Image) -> float:
+                low_frequency = image.filter(
+                    ImageFilter.GaussianBlur(1.25),
+                )
+                residual = ImageChops.difference(
+                    image,
+                    low_frequency,
+                )
+                return sum(
+                    ImageStat.Stat(
+                        residual,
+                        mask=opaque_mask,
+                    ).mean
+                ) / 3
+
+            original_residual = high_frequency_score(
+                original_composite,
+            )
+            restored_residual = high_frequency_score(
+                normalized_composite,
+            )
+            assert restored_residual <= original_residual * 0.96
 
     page = driver(
         stored_theme="dark",
