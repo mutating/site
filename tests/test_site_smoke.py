@@ -106,7 +106,7 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
     required_assets = [
         "public/muta-eye-surface.webp",
         "public/muta-v2-transparent.png",
-        "public/muta-v2-transparent-2x-v7.webp",
+        "public/muta-v2-transparent-2x-v8.webp",
         "public/mutant-mascot-transparent.png",
         "public/mutant-mascot.jpg",
         "public/og.png",
@@ -158,7 +158,7 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     """
 
     original_path = PROJECT_ROOT / "public/muta-v2-transparent.png"
-    upscaled_path = PROJECT_ROOT / "public/muta-v2-transparent-2x-v7.webp"
+    upscaled_path = PROJECT_ROOT / "public/muta-v2-transparent-2x-v8.webp"
 
     with (
         Image.open(original_path).convert("RGBA") as original,
@@ -250,7 +250,7 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     )
     expect(mascot).to_have_attribute(
         "srcset",
-        "/muta-v2-transparent.png 1x, /muta-v2-transparent-2x-v7.webp 2x",
+        "/muta-v2-transparent.png 1x, /muta-v2-transparent-2x-v8.webp 2x",
     )
     rendered = mascot.evaluate(
         """
@@ -269,7 +269,7 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
         """
     )
     assert rendered["currentSource"].endswith(
-        "/muta-v2-transparent-2x-v7.webp",
+        "/muta-v2-transparent-2x-v8.webp",
     )
     assert rendered["naturalWidth"] == 1254
     assert rendered["naturalHeight"] == 1254
