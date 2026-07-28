@@ -1370,8 +1370,8 @@ export default function Home() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className="mascot-card__art"
-            src="/muta-v2-transparent.png"
-            srcSet="/muta-v2-transparent.png 1x, /muta-v2-transparent-2x-v10.webp 2x"
+            src="/muta-v2-transparent-v10.webp"
+            srcSet="/muta-v2-transparent-v10.webp 1x, /muta-v2-transparent-2x-v10.webp 2x"
             alt="A cheerful pink one-eyed mutant with a suspicious grin"
           />
           <figcaption>

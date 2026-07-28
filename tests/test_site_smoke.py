@@ -106,6 +106,7 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
     required_assets = [
         "public/muta-eye-surface.webp",
         "public/muta-v2-transparent.png",
+        "public/muta-v2-transparent-v10.webp",
         "public/muta-v2-transparent-2x-v10.webp",
         "public/mutant-mascot-transparent.png",
         "public/mutant-mascot.jpg",
@@ -150,20 +151,28 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     pixels outside the antialiased silhouette: reconstructed colors beneath
     such pixels would otherwise appear as horizontal streaks on some renderers.
 
-    Finally, a 2× browser must select the high-density file through ``srcset``
-    while retaining the original 1254 px intrinsic CSS size, the existing
-    ``contain`` fit, and 50% 46% positioning. This catches both fallback to the
-    low-density source and a density-descriptor mistake that would visibly
-    resize the hero after the replacement.
+    Both density candidates must come from the reconstructed artwork. A prior
+    regression left the legacy PNG as ``src`` and the 1× ``srcset`` candidate,
+    so standard-density displays and some browser zoom levels silently showed
+    the obsolete artifact-bearing image even though Retina displays looked
+    correct. The test checks the actual ``currentSrc`` at both density factors
+    to make that fallback impossible.
+
+    The 2× browser must still retain the 1254 px intrinsic CSS size, the
+    existing ``contain`` fit, and 50% 46% positioning. This catches a density
+    descriptor mistake that would visibly resize the hero after replacement.
     """
 
     original_path = PROJECT_ROOT / "public/muta-v2-transparent.png"
+    standard_path = PROJECT_ROOT / "public/muta-v2-transparent-v10.webp"
     upscaled_path = PROJECT_ROOT / "public/muta-v2-transparent-2x-v10.webp"
 
     with (
         Image.open(original_path).convert("RGBA") as original,
+        Image.open(standard_path).convert("RGBA") as standard,
         Image.open(upscaled_path).convert("RGBA") as upscaled,
     ):
+        assert standard.size == original.size
         assert upscaled.size == (
             original.width * 2,
             original.height * 2,
@@ -189,6 +198,7 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
             original.size,
             Image.Resampling.LANCZOS,
         )
+        assert ImageChops.difference(standard, normalized).getbbox() is None
         naive_upscale = original.resize(
             upscaled.size,
             Image.Resampling.LANCZOS,
@@ -208,7 +218,7 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
             ).convert("RGB")
             normalized_composite = Image.alpha_composite(
                 background,
-                normalized,
+                standard,
             ).convert("RGB")
             difference = ImageChops.difference(
                 original_composite,
@@ -246,11 +256,11 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     mascot = page.locator(".mascot-card__art")
     expect(mascot).to_have_attribute(
         "src",
-        "/muta-v2-transparent.png",
+        "/muta-v2-transparent-v10.webp",
     )
     expect(mascot).to_have_attribute(
         "srcset",
-        "/muta-v2-transparent.png 1x, /muta-v2-transparent-2x-v10.webp 2x",
+        "/muta-v2-transparent-v10.webp 1x, /muta-v2-transparent-2x-v10.webp 2x",
     )
     rendered = mascot.evaluate(
         """
@@ -277,6 +287,19 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     assert 2508 >= rendered["renderedWidth"] * 3
     assert rendered["objectFit"] == "contain"
     assert rendered["objectPosition"] == "50% 46%"
+
+    standard_density_page = driver(
+        stored_theme="dark",
+        viewport=(1440, 900),
+        device_scale_factor=1,
+        load_interactive_visuals=False,
+    )
+    standard_density_source = standard_density_page.locator(
+        ".mascot-card__art",
+    ).evaluate("(element) => element.currentSrc")
+    assert standard_density_source.endswith(
+        "/muta-v2-transparent-v10.webp",
+    )
 
 
 def test_tentacle_iframe_revision_matches_its_current_file_contents() -> None:
