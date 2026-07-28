@@ -1339,11 +1339,8 @@ a.section-index:focus-visible {
 .pantograph-visual {
   position: relative;
   min-height: 550px;
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  background: #fffafb;
+  background: transparent;
   overflow: hidden;
-  box-shadow: var(--shadow);
 }
 
 .pantograph-visual__object {

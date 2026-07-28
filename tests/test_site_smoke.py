@@ -125,7 +125,7 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
 def test_distribution_section_runs_the_supplied_pantograph_animation(
     driver: DriverFactory,
 ) -> None:
-    """Keep the supplied animated SVG active in the distribution section.
+    """Keep the supplied SVG animated, frameless, and synchronized to the theme.
 
     The pantograph's linkage motion lives in a script inside the SVG file.
     Loading that file through a regular ``img`` element would show the correct
@@ -137,7 +137,24 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     viewport. The assertion waits for a state change instead of expecting an
     exact frame timestamp, so normal differences in browser and CI speed do
     not make the test flaky.
+
+    The illustration must also sit directly on the section background instead
+    of retaining either the old card border/shadow or the supplied SVG's opaque
+    paper rectangle. Its original black structural ink stays black in the light
+    theme and becomes white in the dark theme, including after a manual theme
+    switch made while the embedded document is already running. This guards the
+    same-origin theme bridge: without it the SVG would keep the palette that was
+    active at load time and drift out of sync with the rest of the page.
     """
+
+    svg_source = (
+        PROJECT_ROOT / "public/pantograph-variant-20-clean.svg"
+    ).read_text()
+    assert '<rect width="1536" height="1024" fill="url(#paper)"/>' not in (
+        svg_source
+    )
+    assert 'stroke="var(--pantograph-ink)"' in svg_source
+    assert 'fill="var(--pantograph-ink)"' in svg_source
 
     page = driver(
         stored_theme="light",
@@ -151,6 +168,23 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
         "data",
         "/pantograph-variant-20-clean.svg",
     )
+    container_style = visual.evaluate(
+        """
+        (element) => {
+          const style = getComputedStyle(element);
+          return {
+            backgroundColor: style.backgroundColor,
+            borderTopWidth: style.borderTopWidth,
+            boxShadow: style.boxShadow,
+          };
+        }
+        """
+    )
+    assert container_style == {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderTopWidth": "0px",
+        "boxShadow": "none",
+    }
     visual.scroll_into_view_if_needed()
     page.wait_for_function(
         """
@@ -198,6 +232,71 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     assert metrics["playing"] is True
     assert metrics["config"]["duration"] == 8000
     assert metrics["finite"] is True
+
+    adaptive_ink = embedded_svg.evaluate(
+        """
+        (embedded) => {
+          const childDocument = embedded.contentDocument;
+          const stroke = childDocument.querySelector(
+            '[stroke="var(--pantograph-ink)"]',
+          );
+          const fill = childDocument.querySelector(
+            '[fill="var(--pantograph-ink)"]',
+          );
+          return {
+            strokeCount: childDocument.querySelectorAll(
+              '[stroke="var(--pantograph-ink)"]',
+            ).length,
+            fillCount: childDocument.querySelectorAll(
+              '[fill="var(--pantograph-ink)"]',
+            ).length,
+            stroke: getComputedStyle(stroke).stroke,
+            fill: getComputedStyle(fill).fill,
+          };
+        }
+        """
+    )
+    assert adaptive_ink["strokeCount"] > 0
+    assert adaptive_ink["fillCount"] > 0
+    assert adaptive_ink["stroke"] == "rgb(23, 19, 22)"
+    assert adaptive_ink["fill"] == "rgb(23, 19, 22)"
+
+    page.get_by_role(
+        "button",
+        name="Toggle color theme",
+        exact=True,
+    ).click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    page.wait_for_function(
+        """
+        () => {
+          const embedded = document.querySelector(
+            ".pantograph-visual__object",
+          );
+          return embedded?.contentDocument?.documentElement?.dataset.theme
+            === "dark";
+        }
+        """
+    )
+    dark_ink = embedded_svg.evaluate(
+        """
+        (embedded) => {
+          const childDocument = embedded.contentDocument;
+          const stroke = childDocument.querySelector(
+            '[stroke="var(--pantograph-ink)"]',
+          );
+          const fill = childDocument.querySelector(
+            '[fill="var(--pantograph-ink)"]',
+          );
+          return {
+            stroke: getComputedStyle(stroke).stroke,
+            fill: getComputedStyle(fill).fill,
+          };
+        }
+        """
+    )
+    assert dark_ink["stroke"] == "rgb(255, 250, 250)"
+    assert dark_ink["fill"] == "rgb(255, 250, 250)"
 
 
 def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(

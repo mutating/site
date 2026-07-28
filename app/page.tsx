@@ -965,6 +965,34 @@ function FeedbackLoop() {
 }
 
 function PantographVisual() {
+  const objectRef = useRef<HTMLObjectElement>(null);
+
+  useEffect(() => {
+    const embedded = objectRef.current;
+    if (!embedded) return;
+
+    const syncTheme = () => {
+      const embeddedRoot = embedded.contentDocument?.documentElement;
+      if (!embeddedRoot) return;
+
+      embeddedRoot.dataset.theme =
+        document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    };
+
+    const themeObserver = new MutationObserver(syncTheme);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    embedded.addEventListener("load", syncTheme);
+    syncTheme();
+
+    return () => {
+      themeObserver.disconnect();
+      embedded.removeEventListener("load", syncTheme);
+    };
+  }, []);
+
   return (
     <div
       className="pantograph-visual"
@@ -972,6 +1000,7 @@ function PantographVisual() {
       aria-label="An animated pantograph coordinating local and distributed verification work"
     >
       <object
+        ref={objectRef}
         className="pantograph-visual__object"
         data="/pantograph-variant-20-clean.svg"
         type="image/svg+xml"
