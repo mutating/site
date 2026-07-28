@@ -97,7 +97,7 @@
 
   <path d="M758 160 V229 M787 163 V228" fill="none" stroke-width="4"/>
   <g id="bConnector">
-    <rect x="443" y="346" width="30" height="105" rx="15" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="4.5" vector-effect="non-scaling-stroke"/>
+    <rect x="443" y="346" width="30" height="105" rx="15" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="4.5" data-source-vector-effect="non-scaling-stroke"/>
     <rect x="447" y="350" width="22" height="97" rx="11" fill="url(#stippleB)" stroke="none" opacity=".72"/>
   </g>
   <g fill="#fffdfd" stroke-width="4">

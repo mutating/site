@@ -157,8 +157,13 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     assertions also require every normally scaling stroke to use the exact
     reciprocal width. The resulting screen-space weight therefore matches the
     original SVG instead of becoming 12% heavier with the larger illustration.
-    A source element that explicitly opts into ``non-scaling-stroke`` is
-    excluded because the browser already preserves its original screen weight.
+    The supplied connector bar is a special regression case: its
+    ``non-scaling-stroke`` made the two side rails stay at 4.5 CSS pixels while
+    the rest of the mechanism shrank with the responsive viewport, so they
+    looked disproportionately heavy on the site. The integration preserves the
+    source marker as data for fidelity checks but deliberately lets that bar
+    scale with its neighbouring arms. Its dedicated assertion prevents the
+    overly thick rails from returning.
     """
 
     svg_source = (
@@ -178,6 +183,10 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     normalized_svg = normalized_svg.replace(
         "var(--pantograph-ink)",
         "#171316",
+    )
+    normalized_svg = normalized_svg.replace(
+        'data-source-vector-effect="non-scaling-stroke"',
+        'vector-effect="non-scaling-stroke"',
     )
     normalized_svg = normalized_svg.replace(
         '<rect width="1536" height="1024" fill="url(#paper)"/>\n',
@@ -315,6 +324,29 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
                 stroke["source"],
                 abs=0.0001,
             )
+
+    connector_stroke = embedded_svg.evaluate(
+        """
+        (embedded) => {
+          const connector = embedded.contentDocument.querySelector(
+            "#bConnector > rect",
+          );
+          const style = getComputedStyle(connector);
+          return {
+            source: Number.parseFloat(
+              connector.getAttribute("stroke-width"),
+            ),
+            computed: Number.parseFloat(style.strokeWidth),
+            vectorEffect: style.vectorEffect,
+          };
+        }
+        """
+    )
+    assert connector_stroke["vectorEffect"] == "none"
+    assert connector_stroke["computed"] * 1.12 == pytest.approx(
+        connector_stroke["source"],
+        abs=0.0001,
+    )
 
     adaptive_ink = embedded_svg.evaluate(
         """
