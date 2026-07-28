@@ -272,6 +272,20 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
         }
         """
     )
+    transparent_layers = embedded_svg.evaluate(
+        """
+        (embedded) => ({
+          objectBackground: getComputedStyle(embedded).backgroundColor,
+          svgBackground: getComputedStyle(
+            embedded.contentDocument.documentElement,
+          ).backgroundColor,
+        })
+        """
+    )
+    assert transparent_layers == {
+        "objectBackground": "rgba(0, 0, 0, 0)",
+        "svgBackground": "rgba(0, 0, 0, 0)",
+    }
     initial_progress = embedded_svg.evaluate(
         """
         (embedded) => Number.parseFloat(

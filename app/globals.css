@@ -1351,6 +1351,7 @@ a.section-index:focus-visible {
   width: 112%;
   height: 112%;
   border: 0;
+  background: transparent;
   pointer-events: none;
   transform: translate(-50%, -50%);
 }

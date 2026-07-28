@@ -1,7 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024">
 <metadata id="pantographMetadata">{"name":"b06","duration":8000,"easing":"smooth","baseDrop":90.0,"verticalShare":1.0,"springMode":"removed","penMode":"extended-solid","kinematicMode":"paired-105"}</metadata>
 <style>
-  :root { --pantograph-ink: #171316; }
+  :root {
+    --pantograph-ink: #171316;
+    background: transparent;
+  }
   :root[data-theme="dark"] { --pantograph-ink: #fffafa; }
 
   /*
