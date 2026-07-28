@@ -265,6 +265,297 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     )
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
+    driver: DriverFactory,
+    theme: str,
+) -> None:
+    """Lock down the exact collapsed, expanded, and recollapsed TMC states.
+
+    At rest the logo must show only the T, M, and C anchors: every hidden word
+    segment has zero width and opacity, the separating margins are absent, and
+    the completed spectrum overlay is transparent. Hovering must run the
+    350 ms unfold animation, reveal all three words to their natural widths,
+    bring their opacity to one, and add spacing only after T and M. Moving the
+    pointer away must run the inverse fold animation and restore the original
+    zero-width state without leaving a partially expanded hit area.
+
+    The test finishes Web Animations directly instead of sleeping for 350 ms,
+    so CPU speed and display refresh rate cannot make it flaky. Both themes are
+    covered because the textual base color changes with the theme even though
+    the hover mechanics are shared. Removing either hover rule, breaking the
+    transition endpoint, changing the animation direction, or preventing the
+    logo from folding again makes a specific phase of this regression fail.
+    """
+
+    page = driver(
+        stored_theme=theme,
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+    )
+    wordmark = page.locator(".brand__wordmark")
+
+    initial = wordmark.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+
+          const reveals = [...element.querySelectorAll(".brand__word-reveal")];
+          const parts = [...element.querySelectorAll(".brand__word-part")];
+          return {
+            widths: reveals.map(
+              (reveal) => reveal.getBoundingClientRect().width,
+            ),
+            opacities: reveals.map(
+              (reveal) => Number.parseFloat(getComputedStyle(reveal).opacity),
+            ),
+            margins: parts.map(
+              (part) => Number.parseFloat(getComputedStyle(part).marginRight),
+            ),
+            spectrumOpacities: reveals.map(
+              (reveal) => Number.parseFloat(
+                getComputedStyle(reveal, "::after").opacity,
+              ),
+            ),
+            animationNames: reveals.map(
+              (reveal) => getComputedStyle(reveal, "::after").animationName,
+            ),
+          };
+        }
+        """
+    )
+    assert all(width <= 0.01 for width in initial["widths"])
+    assert initial["opacities"] == [0, 0, 0]
+    assert initial["margins"] == [0, 0, 0]
+    assert initial["spectrumOpacities"] == [0, 0, 0]
+    assert initial["animationNames"] == ["brand-spectrum-fold"] * 3
+
+    wordmark.hover()
+    expanded = wordmark.evaluate(
+        """
+        (element) => {
+          const animations = element.getAnimations({subtree: true});
+          const spectrumNames = animations
+            .map((animation) => animation.animationName)
+            .filter(Boolean);
+
+          for (const animation of animations) {
+            animation.finish();
+          }
+
+          const reveals = [...element.querySelectorAll(".brand__word-reveal")];
+          const parts = [...element.querySelectorAll(".brand__word-part")];
+          return {
+            widths: reveals.map(
+              (reveal) => reveal.getBoundingClientRect().width,
+            ),
+            naturalWidths: reveals.map((reveal) => reveal.scrollWidth),
+            opacities: reveals.map(
+              (reveal) => Number.parseFloat(getComputedStyle(reveal).opacity),
+            ),
+            margins: parts.map(
+              (part) => Number.parseFloat(getComputedStyle(part).marginRight),
+            ),
+            spectrumOpacities: reveals.map(
+              (reveal) => Number.parseFloat(
+                getComputedStyle(reveal, "::after").opacity,
+              ),
+            ),
+            spectrumNames,
+          };
+        }
+        """
+    )
+    assert expanded["spectrumNames"] == ["brand-spectrum-unfold"] * 3
+    for width, natural_width in zip(
+        expanded["widths"],
+        expanded["naturalWidths"],
+    ):
+        assert abs(width - natural_width) <= 1
+    assert expanded["opacities"] == [1, 1, 1]
+    assert expanded["margins"][0] > 0
+    assert expanded["margins"][1] > 0
+    assert expanded["margins"][2] == 0
+    assert expanded["spectrumOpacities"] == [0, 0, 0]
+
+    page.mouse.move(
+        page.viewport_size["width"] - 1,
+        page.viewport_size["height"] - 1,
+    )
+    collapsed = wordmark.evaluate(
+        """
+        (element) => {
+          const animations = element.getAnimations({subtree: true});
+          const spectrumNames = animations
+            .map((animation) => animation.animationName)
+            .filter(Boolean);
+
+          for (const animation of animations) {
+            animation.finish();
+          }
+
+          const reveals = [...element.querySelectorAll(".brand__word-reveal")];
+          const parts = [...element.querySelectorAll(".brand__word-part")];
+          return {
+            widths: reveals.map(
+              (reveal) => reveal.getBoundingClientRect().width,
+            ),
+            opacities: reveals.map(
+              (reveal) => Number.parseFloat(getComputedStyle(reveal).opacity),
+            ),
+            margins: parts.map(
+              (part) => Number.parseFloat(getComputedStyle(part).marginRight),
+            ),
+            spectrumOpacities: reveals.map(
+              (reveal) => Number.parseFloat(
+                getComputedStyle(reveal, "::after").opacity,
+              ),
+            ),
+            spectrumNames,
+          };
+        }
+        """
+    )
+    assert collapsed["spectrumNames"] == ["brand-spectrum-fold"] * 3
+    assert all(width <= 0.01 for width in collapsed["widths"])
+    assert collapsed["opacities"] == [0, 0, 0]
+    assert collapsed["margins"] == [0, 0, 0]
+    assert collapsed["spectrumOpacities"] == [0, 0, 0]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
+    driver: DriverFactory,
+    theme: str,
+) -> None:
+    """Verify the visible pink shimmer while TMC is actively unfolding.
+
+    Endpoint-only tests cannot detect a silently lost flourish: the words can
+    still expand correctly even when the pseudo-element is transparent, its
+    spectrum is replaced by a flat color, or the gradient stops moving. This
+    regression pauses every 350 ms wordmark animation at 25%, 50%, and 75%.
+    At each deterministic sample the hidden text must be only partly revealed,
+    the spectrum overlay must be visibly opaque, and its background position
+    must travel from right to left rather than remaining fixed.
+
+    The style contract also requires the current 98-degree, 230%-wide gradient
+    to contain the three dominant pink stops used by the supplied animation.
+    The overlay itself remains transparent text filled through background
+    clipping, and the named animation retains its linear 350 ms timing. Running
+    the same checks in both themes proves that the pink shimmer remains present
+    over either foreground color. Removing the overlay, flattening its colors,
+    stopping its travel, or changing the reveal into an instant jump makes this
+    test fail without depending on real elapsed time.
+    """
+
+    page = driver(
+        stored_theme=theme,
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+    )
+    wordmark = page.locator(".brand__wordmark")
+    wordmark.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+        }
+        """
+    )
+
+    wordmark.hover()
+    spectrum = wordmark.evaluate(
+        """
+        (element) => {
+          const animations = element.getAnimations({subtree: true});
+          const timedAnimations = animations.filter((animation) => {
+            const duration = Number(animation.effect?.getTiming().duration);
+            return Number.isFinite(duration) && Math.abs(duration - 350) <= 0.1;
+          });
+          const spectrumAnimations = timedAnimations.filter(
+            (animation) =>
+              animation.animationName === "brand-spectrum-unfold",
+          );
+          const reveal = element.querySelector(".brand__word-reveal");
+          const samples = [];
+
+          for (const progress of [0.25, 0.5, 0.75]) {
+            for (const animation of timedAnimations) {
+              const duration = Number(animation.effect.getTiming().duration);
+              animation.pause();
+              animation.currentTime = duration * progress;
+            }
+
+            const revealStyle = getComputedStyle(reveal);
+            const spectrumStyle = getComputedStyle(reveal, "::after");
+            samples.push({
+              progress,
+              width: reveal.getBoundingClientRect().width,
+              naturalWidth: reveal.scrollWidth,
+              revealOpacity: Number.parseFloat(revealStyle.opacity),
+              spectrumOpacity: Number.parseFloat(spectrumStyle.opacity),
+              backgroundPositionX: Number.parseFloat(
+                spectrumStyle.backgroundPositionX,
+              ),
+            });
+          }
+
+          const spectrumStyle = getComputedStyle(reveal, "::after");
+          const gradient = spectrumStyle.backgroundImage;
+          const pinkStops = [
+            "rgb(240, 0, 120)",
+            "rgb(255, 101, 189)",
+            "rgb(255, 45, 149)",
+          ];
+
+          return {
+            samples,
+            spectrumAnimationCount: spectrumAnimations.length,
+            animationName: spectrumStyle.animationName,
+            animationDuration: spectrumStyle.animationDuration,
+            animationTimingFunction: spectrumStyle.animationTimingFunction,
+            backgroundImage: gradient,
+            backgroundSize: spectrumStyle.backgroundSize,
+            overlayColor: spectrumStyle.color,
+            pinkStopCount: pinkStops.filter(
+              (color) => gradient.includes(color),
+            ).length,
+          };
+        }
+        """
+    )
+
+    assert spectrum["spectrumAnimationCount"] == 3
+    assert spectrum["animationName"] == "brand-spectrum-unfold"
+    assert spectrum["animationDuration"] == "0.35s"
+    assert spectrum["animationTimingFunction"] == "linear"
+    assert spectrum["backgroundImage"].startswith("linear-gradient(98deg")
+    assert spectrum["backgroundSize"] == "230% 100%"
+    assert spectrum["overlayColor"] == "rgba(0, 0, 0, 0)"
+    assert spectrum["pinkStopCount"] == 3
+
+    samples = spectrum["samples"]
+    assert len(samples) == 3
+    assert (
+        samples[0]["backgroundPositionX"]
+        > samples[1]["backgroundPositionX"]
+        > samples[2]["backgroundPositionX"]
+    )
+    assert (
+        samples[0]["width"]
+        < samples[1]["width"]
+        < samples[2]["width"]
+    )
+    for sample in samples:
+        assert 0 < sample["width"] < sample["naturalWidth"]
+        assert 0 < sample["revealOpacity"] < 1
+        assert 0.2 < sample["spectrumOpacity"] < 0.7
+        assert 0 < sample["backgroundPositionX"] < 100
+
+
 @pytest.mark.parametrize(
     ("selector", "requires_expansion"),
     [
