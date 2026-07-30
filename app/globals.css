@@ -2390,10 +2390,6 @@ a.section-index:focus-visible {
 }
 
 @media (max-width: 1120px) {
-  .brand__wordmark-stage {
-    font-size: 26px;
-  }
-
   .hero {
     grid-template-columns: 1fr 0.78fr;
     gap: 42px;
@@ -2483,7 +2479,6 @@ a.section-index:focus-visible {
 
   .brand__wordmark-stage {
     width: max-content;
-    font-size: 17px;
   }
 
   .brand__wordmark-stage[data-can-expand="true"] {
@@ -2755,7 +2750,6 @@ a.section-index:focus-visible {
 
   .brand__wordmark-stage {
     display: block;
-    font-size: clamp(10px, calc(10vw - 18px), 17px);
   }
 
   .hero {
@@ -2972,6 +2966,18 @@ a.section-index:focus-visible {
   .site-footer {
     margin-top: 110px;
     padding-block: 24px;
+  }
+}
+
+@media (max-width: 340px) {
+  .site-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 

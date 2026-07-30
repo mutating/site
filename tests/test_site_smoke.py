@@ -3196,11 +3196,12 @@ def test_tmc_wordmark_is_always_visible_in_the_narrow_header(
 
     This regression covers the mobile breakpoint, a normal phone, the 304 px
     width from the reported screen recording, and the two narrowest supported
-    widths. It requires the stage and all three anchor
-    letters to have real visible geometry, verifies their exact ``T``, ``M``,
-    and ``C`` content, and proves that the compact wordmark stays between the
-    eye and the action group without being clipped outside the header. Restoring
-    the old ``display: none``, hiding individual anchors, or allowing flex
+    widths. At the smallest widths the action group may wrap below the brand so
+    the now-fixed-size letters never need to shrink. It requires the stage and
+    all three anchor letters to have real visible geometry, verifies their exact
+    ``T``, ``M``, and ``C`` content, and proves that the compact wordmark neither
+    overlaps the action group nor gets clipped outside the header. Restoring the
+    old ``display: none``, hiding individual anchors, or allowing flex
     compression to push the letters beneath the controls makes the test fail.
     """
 
@@ -3230,7 +3231,9 @@ def test_tmc_wordmark_is_always_visible_in_the_narrow_header(
             const box = element.getBoundingClientRect();
             return {
               left: box.left,
+              top: box.top,
               right: box.right,
+              bottom: box.bottom,
               width: box.width,
               height: box.height,
             };
@@ -3257,12 +3260,76 @@ def test_tmc_wordmark_is_always_visible_in_the_narrow_header(
     assert geometry["eye"]["width"] == pytest.approx(48, abs=0.5)
     assert geometry["eye"]["height"] == pytest.approx(48, abs=0.5)
     assert geometry["stage"]["left"] >= geometry["header"]["left"] - 0.5
-    assert geometry["stage"]["right"] <= geometry["actions"]["left"] + 0.5
+    same_row = (
+        geometry["stage"]["bottom"] > geometry["actions"]["top"] + 0.5
+        and geometry["actions"]["bottom"] > geometry["stage"]["top"] + 0.5
+    )
+    if same_row:
+        assert geometry["stage"]["right"] <= geometry["actions"]["left"] + 0.5
+    else:
+        assert geometry["stage"]["bottom"] <= geometry["actions"]["top"] + 0.5
     for anchor in geometry["anchors"]:
         assert anchor["width"] > 0
         assert anchor["height"] > 0
         assert anchor["visibility"] == "visible"
         assert anchor["opacity"] == pytest.approx(1, abs=0.01)
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize(
+    "viewport_width",
+    [1280, 860, 580, 390],
+    ids=["desktop", "tablet", "mobile-boundary", "phone"],
+)
+def test_tmc_wordmark_letter_size_is_fixed_across_header_widths(
+    driver: DriverFactory,
+    theme: str,
+    viewport_width: int,
+) -> None:
+    """Keep the rendered ``TMC`` letter size independent of viewport width.
+
+    The wordmark is sized against the header strip, whose single-row height is
+    stable across desktop, tablet, and ordinary phone layouts. Previous media
+    rules reduced its base size from 35 px to 26, 17, and eventually 10 px as
+    the viewport narrowed, making the company initials look unrelated to the
+    same header at desktop width.
+
+    This regression renders the real header in both themes at representative
+    wide and narrow breakpoints. It requires the stage to retain the approved
+    35 px Science Gothic base size, all three visible anchors to keep the same
+    42 px line box, and the letters to occupy a substantial, consistent share
+    of the header strip. Reintroducing any viewport-dependent font-size rule
+    therefore fails on the exact narrow layouts where the bug was visible.
+    """
+
+    page = driver(
+        stored_theme=theme,
+        viewport=(viewport_width, 844),
+        load_interactive_visuals=False,
+    )
+    geometry = page.locator(".site-header").evaluate(
+        """
+        (header) => {
+          const stage = header.querySelector(".brand__wordmark-stage");
+          const anchors = [...header.querySelectorAll(".brand__word-anchor")];
+          return {
+            headerHeight: header.getBoundingClientRect().height,
+            stageFontSize: getComputedStyle(stage).fontSize,
+            stageLineHeight: stage.getBoundingClientRect().height,
+            anchorHeights: anchors.map(
+              (anchor) => anchor.getBoundingClientRect().height,
+            ),
+          };
+        }
+        """
+    )
+
+    assert geometry["stageFontSize"] == "35px"
+    assert geometry["stageLineHeight"] == pytest.approx(42, abs=0.5)
+    assert geometry["anchorHeights"] == pytest.approx([42, 42, 42], abs=0.5)
+    assert (
+        geometry["stageLineHeight"] / geometry["headerHeight"]
+    ) >= 0.56
 
 
 @pytest.mark.parametrize(
@@ -3271,8 +3338,9 @@ def test_tmc_wordmark_is_always_visible_in_the_narrow_header(
         (280, False),
         (320, False),
         (390, False),
-        (460, True),
-        (580, True),
+        (460, False),
+        (580, False),
+        (720, True),
         (860, True),
     ],
 )
@@ -3293,8 +3361,8 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
 
     The component therefore measures the horizontal interval from the brand's
     left edge to the action group's left edge after fonts and responsive styles
-    settle. This parameterized regression exercises three widths where the full
-    reservation cannot fit and three where it can. It independently recomputes
+    settle. This parameterized regression exercises five widths where the full
+    reservation cannot fit and two where it can. It independently recomputes
     the same physical requirement from rendered geometry, checks the published
     ``data-can-expand`` decision, then deterministically finishes CSS
     animations after hover. Blocked cases must keep every reveal at zero width
@@ -3510,7 +3578,9 @@ def test_very_narrow_header_preserves_eye_and_theme_toggle_geometry(
     280 pixels. Before and after a deep scroll it requires the eye to retain its
     circular 1:1 geometry; the track, thumb, and active icon to retain
     their fixed geometry; the active icon and thumb to share the same center;
-    and the brand/actions groups to remain separated inside the viewport.
+    and the brand/actions groups to remain separated inside the viewport. At
+    widths where fixed-size TMC no longer shares the row safely, the controls
+    are allowed to wrap below it and must remain vertically separated instead.
     Timing is irrelevant: all assertions use layout boxes and computed styles,
     so a future responsive rule that silently reintroduces flex shrinking fails
     deterministically.
@@ -3589,7 +3659,14 @@ def test_very_narrow_header_preserves_eye_and_theme_toggle_geometry(
 
         assert header["left"] >= -0.5
         assert header["right"] <= geometry["viewportWidth"] + 0.5
-        assert brand["right"] <= actions["left"] + 0.5
+        same_row = (
+            brand["bottom"] > actions["top"] + 0.5
+            and actions["bottom"] > brand["top"] + 0.5
+        )
+        if same_row:
+            assert brand["right"] <= actions["left"] + 0.5
+        else:
+            assert brand["bottom"] <= actions["top"] + 0.5
         assert eye["width"] == pytest.approx(48, abs=0.5)
         assert eye["height"] == pytest.approx(48, abs=0.5)
         assert track["width"] == pytest.approx(68, abs=0.5)
