@@ -5,10 +5,8 @@ let html = fs.readFileSync(filePath, "utf8");
 
 const revision = "demand-batched-v5";
 const previousRevision = "demand-batched-v4";
-
-if (html.includes(`dataset.performanceRevision="${revision}"`)) {
-  process.exit(0);
-}
+const lightPaletteRevision = "warm-site-pink-v2";
+const previousLightPaletteRevision = "warm-site-pink-v1";
 
 function replaceOnce(label, previousValue, nextValue) {
   const matches = html.split(previousValue).length - 1;
@@ -20,12 +18,71 @@ function replaceOnce(label, previousValue, nextValue) {
   html = html.replace(previousValue, nextValue);
 }
 
+if (
+  html.includes(`dataset.performanceRevision="${revision}"`) &&
+  !html.includes(`dataset.lightPalette="${lightPaletteRevision}"`)
+) {
+  const hasPreviousLightPalette = html.includes(
+    `dataset.lightPalette="${previousLightPaletteRevision}"`,
+  );
+  replaceOnce(
+    "warm light-theme plasma core",
+    hasPreviousLightPalette
+      ? 'lightCoreColor=new Bt("#ff2c70").multiplyScalar(1.5)'
+      : 'lightCoreColor=new Bt("#ff2c92").multiplyScalar(1.5)',
+    'lightCoreColor=new Bt("#ff2c58").multiplyScalar(1.5)',
+  );
+  replaceOnce(
+    "warm light-theme plasma outer shader color",
+    hasPreviousLightPalette
+      ? "vec3 outerColor=vec3(1.0,0.173,0.439);"
+      : "vec3 outerColor=vec3(1.0,0.173,0.573);",
+    "vec3 outerColor=vec3(1.0,0.173,0.345);",
+  );
+  replaceOnce(
+    "warm light-theme plasma inner shader color",
+    hasPreviousLightPalette
+      ? "vec3 innerColor=vec3(1.0,0.4,0.565);"
+      : "vec3 innerColor=vec3(1.0,0.4,0.682);",
+    "vec3 innerColor=vec3(1.0,0.4,0.52);",
+  );
+  replaceOnce(
+    "warm light-theme plasma halo",
+    hasPreviousLightPalette
+      ? '[.17,.12,16723056,"light","halo"]'
+      : '[.17,.12,16723090,"light","halo"]',
+    '[.17,.12,16723032,"light","halo"]',
+  );
+  replaceOnce(
+    "warm light-theme wireframe",
+    hasPreviousLightPalette
+      ? 'LIGHT_WIRE_COLOR="#ff2c70"'
+      : 'LIGHT_WIRE_COLOR="#ff2c92"',
+    'LIGHT_WIRE_COLOR="#ff2c58"',
+  );
+  replaceOnce(
+    "light palette diagnostics",
+    hasPreviousLightPalette
+      ? `s.domElement.dataset.lightPalette="${previousLightPaletteRevision}",`
+      : "s.domElement.dataset.darkWireColor=DARK_WIRE_COLOR,",
+    hasPreviousLightPalette
+      ? `s.domElement.dataset.lightPalette="${lightPaletteRevision}",`
+      : `s.domElement.dataset.lightPalette="${lightPaletteRevision}",s.domElement.dataset.darkWireColor=DARK_WIRE_COLOR,`,
+  );
+  fs.writeFileSync(filePath, html);
+  process.exit(0);
+}
+
+if (html.includes(`dataset.performanceRevision="${revision}"`)) {
+  process.exit(0);
+}
+
 const originalPlasmaRing =
   'function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l]of[[.22,.085,16722024],[.125,.15,16723051],[.052,1,hL]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,new Ji({color:l,toneMapped:r!==.052,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r===.052?9:8:r===.052?3.5:3,c.add(u)}}';
 const wideLightPlasmaRing =
   'function pM(e,t){return new Ue({uniforms:{uColor:{value:new Bt(t)},uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform vec3 uColor;uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float feather=pow(smoothstep(0.0,1.0,facing),4.0);gl_FragColor=vec4(uColor,uOpacity*feather);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function plasmaLightMaterial(e){return new Ue({uniforms:{uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float outer=pow(smoothstep(0.0,1.0,facing),1.5);float inner=pow(smoothstep(0.0,1.0,facing),8.0);vec3 outerColor=vec3(1.0,0.025,0.28);vec3 innerColor=vec3(1.0,0.62,0.82);vec3 glowColor=mix(outerColor,innerColor,inner);float alpha=uOpacity*(0.32*outer+0.68*inner);gl_FragColor=vec4(glowColor,alpha);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l,z]of[[.36,.18,16722024,"dark"],[.48,.14,16722024,"light"],[.052,1,hL,"both"],[.018,1,16777215,"light"]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,r===.36?pM(o,l):r===.48?plasmaLightMaterial(o):new Ji({color:r===.018?new Bt(l).multiplyScalar(2.8):l,toneMapped:!1,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.userData.plasmaTheme=z,u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r<=.052?9:8:r<=.052?3.5:3,c.add(u)}}';
 const themeAwarePlasmaRing =
-  'function pM(e,t){return new Ue({uniforms:{uColor:{value:new Bt(t)},uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform vec3 uColor;uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float feather=pow(smoothstep(0.0,1.0,facing),4.0);gl_FragColor=vec4(uColor,uOpacity*feather);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function plasmaLightMaterial(e){return new Ue({uniforms:{uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float outer=pow(smoothstep(0.0,1.0,facing),1.8);float inner=pow(smoothstep(0.0,1.0,facing),8.0);vec3 outerColor=vec3(1.0,0.025,0.28);vec3 innerColor=vec3(1.0,0.42,0.66);vec3 glowColor=mix(outerColor,innerColor,inner);float alpha=uOpacity*(0.35*outer+0.65*inner);gl_FragColor=vec4(glowColor,alpha);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.userData.plasmaTheme="dark",a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l,z,k]of[[.36,.18,16722024,"dark","halo"],[.052,1,hL,"dark","core"],[.18,.08,16722024,"light","halo"],[.052,1,16715872,"light","core"],[.018,1,16777215,"light","hot"]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,k==="halo"?(z==="dark"?pM(o,l):plasmaLightMaterial(o)):new Ji({color:l,toneMapped:!1,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.userData.plasmaTheme=z,u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r<=.052?9:8:r<=.052?3.5:3,c.add(u)}}';
+  'function pM(e,t){return new Ue({uniforms:{uColor:{value:new Bt(t)},uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform vec3 uColor;uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float feather=pow(smoothstep(0.0,1.0,facing),4.0);gl_FragColor=vec4(uColor,uOpacity*feather);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function plasmaLightMaterial(e){return new Ue({uniforms:{uOpacity:{value:e}},vertexShader:`varying vec3 vNormal;varying vec3 vViewDir;void main(){vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vViewDir=normalize(-mvPosition.xyz);gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform float uOpacity;varying vec3 vNormal;varying vec3 vViewDir;void main(){float facing=abs(dot(normalize(vNormal),normalize(vViewDir)));float outer=pow(smoothstep(0.0,1.0,facing),1.8);float inner=pow(smoothstep(0.0,1.0,facing),8.0);vec3 outerColor=vec3(1.0,0.025,0.28);vec3 innerColor=vec3(1.0,0.42,0.66);vec3 glowColor=mix(outerColor,innerColor,inner);float alpha=uOpacity*(0.35*outer+0.65*inner);gl_FragColor=vec4(glowColor,alpha);}`,transparent:!0,blending:ba,depthTest:!1,depthWrite:!1,side:oi,toneMapped:!1})}function mL(e){let i=new Ln;i.name="energy-ring-front";let s=new Ln;s.name="energy-ring-back",e.add(s,i);let a=new We(new Dc(2.02,3.32,160),new Ji({color:16720991,transparent:!0,opacity:.05,side:oi,blending:ba,depthTest:!1,depthWrite:!1}));a.userData.plasmaTheme="dark",a.rotation.x=-Math.PI/2,a.position.y=.46-.02,a.renderOrder=3,e.add(a);for(let[r,o,l,z,k]of[[.36,.18,16722024,"dark","halo"],[.052,1,hL,"dark","core"],[.18,.08,16722024,"light","halo"],[.078,1,16723090,"light","core"],[.032,1,16777215,"light","hot"]])for(let[c,h]of[[s,!1],[i,!0]]){let p=new Bo(2.55,r,12,84,Math.PI);h||p.rotateZ(Math.PI);let u=new We(p,k==="halo"?(z==="dark"?pM(o,l):plasmaLightMaterial(o)):new Ji({color:l,toneMapped:!1,transparent:!0,opacity:o,blending:ba,depthTest:!1,depthWrite:!1}));u.userData.plasmaTheme=z,u.rotation.x=Math.PI/2,u.position.y=.46,u.renderOrder=h?r<=.052?9:8:r<=.052?3.5:3,c.add(u)}}';
 const standardPlasmaVisibility =
   'if(F?.blending===ba){w.visible=!0;return}';
 const themeAwarePlasmaVisibility =

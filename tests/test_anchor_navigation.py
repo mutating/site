@@ -152,6 +152,53 @@ def _assert_anchor_is_aligned(
     assert geometry["target_top"] >= geometry["header_bottom"]
 
 
+def _interrupt_anchor_alignment_at_top(
+    page: Page,
+    *,
+    restore_scroll_behavior: bool = True,
+) -> str:
+    """Send real Home intent and wait for its own non-animated endpoint.
+
+    The helper deliberately does not follow the keyboard gesture with a
+    programmatic ``scrollTo(0)``. Chromium can occasionally finish one last
+    native Home scroll step after that competing command, making a correct
+    cancellation look as though the site pulled the page back toward its hash.
+    Waiting for the real gesture to reach zero preserves the user-input contract
+    while removing the test-only race between two independent scroll sources.
+    """
+
+    previous_scroll_behavior = page.evaluate(
+        """
+        () => {
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+          const root = document.documentElement;
+          const previousScrollBehavior = root.style.scrollBehavior;
+          root.style.scrollBehavior = "auto";
+          return previousScrollBehavior;
+        }
+        """
+    )
+    page.keyboard.press("Home")
+    page.wait_for_function(
+        "window.__tmcAnchorAlignmentInterrupted === true"
+    )
+    page.wait_for_function("window.scrollY === 0")
+    if restore_scroll_behavior:
+        page.evaluate(
+            """
+            (previousScrollBehavior) => {
+              document.documentElement.style.scrollBehavior =
+                previousScrollBehavior;
+            }
+            """,
+            previous_scroll_behavior,
+        )
+
+    return previous_scroll_behavior
+
+
 def test_every_internal_fragment_link_has_one_real_target(
     driver: DriverFactory,
 ) -> None:
@@ -549,13 +596,30 @@ def test_reload_realigns_the_hash_before_dom_content_loaded_returns(
     section noticeably later. That race was especially visible for late-page
     targets and was sensitive to viewport width and cache timing.
 
-    This regression test first opens a valid deep link, deliberately scrolls to
-    the top while leaving the fragment in the URL, and reloads. The first
-    assertion runs immediately when the initial ``load`` event returns, catching
-    native fragment scrolling that gets displaced between ``DOMContentLoaded``
-    and ``load``. The reload assertion is stricter: it runs as soon as
+    This regression test first opens a valid deep link, then uses a real Home
+    key gesture to return to the top while leaving the fragment in the URL. It
+    deliberately waits for fonts, pending images, and the alignment frames that
+    used to be queued after ``load``. The page must respect that user intent
+    instead of snapping back to the old fragment. This preparation is important:
+    a reload must begin from a genuinely different scroll position rather than
+    accidentally inheriting an already-correct anchor position.
+
+    The reload assertion itself remains stricter: it runs as soon as
     ``DOMContentLoaded`` returns, without waiting for React, fonts, animation
-    frames, or a polling helper.
+    frames, or a polling helper. Thus the same scenario independently protects
+    both sides of the race: late initial alignment must not override a user who
+    has moved away, while a new navigation must reset that cancellation and
+    align the requested fragment before hydration.
+
+    To make the first half deterministic, the test dispatches the same ``load``
+    signal used by the React alignment layer immediately before and after the
+    Home gesture. The first signal leaves two correction frames pending for the
+    cancellation path to clear when scheduling permits; the second
+    deterministically proves later callbacks honor the interrupted state.
+    Removing the effective guard protection therefore snaps the page back and
+    fails on observable scroll geometry, rather than merely failing an
+    implementation-marker assertion. The two guard levels intentionally remain
+    redundant, so removing only one may preserve correct behavior.
 
     Desktop, intermediate, and mobile cases cover a late section, a 3D section,
     and the formerly unoffset nested Blog card. Removing the pre-hydration
@@ -567,6 +631,13 @@ def test_reload_realigns_the_hash_before_dom_content_loaded_returns(
         viewport=viewport,
         load_interactive_visuals=False,
     )
+    page.add_init_script(
+        """
+        addEventListener("pageshow", () => {
+          window.__tmcAnchorTestPageShowObserved = true;
+        }, { once: true });
+        """
+    )
     page.goto("about:blank")
     page.goto(
         f"{base_url}/#{target_id}",
@@ -574,21 +645,333 @@ def test_reload_realigns_the_hash_before_dom_content_loaded_returns(
     )
     _assert_anchor_is_aligned(page, target_id, wait=False)
 
+    page.wait_for_function(
+        "window.__tmcAnchorTestPageShowObserved === true"
+    )
     page.evaluate(
         """
-        () => window.scrollTo({
-          top: 0,
-          behavior: "instant",
-        })
+        async () => {
+          await document.fonts.ready;
+          await Promise.all(
+            [...document.images]
+              .filter((image) => !image.complete)
+              .map((image) => new Promise((resolve) => {
+                image.addEventListener("load", resolve, { once: true });
+                image.addEventListener("error", resolve, { once: true });
+              })),
+          );
+          await new Promise((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+              });
+            });
+          });
+          window.dispatchEvent(new Event("load"));
+        }
         """
     )
-    assert page.evaluate("window.scrollY") == 0
+    _interrupt_anchor_alignment_at_top(page)
+    page.evaluate(
+        """
+        async () => {
+          window.dispatchEvent(new Event("load"));
+          await new Promise((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+              });
+            });
+          });
+        }
+        """
+    )
+    # Chromium may retain a sub-line keyboard-scroll residue after restoring
+    # the page's CSS scroll behavior. A real hash snap is thousands of pixels,
+    # so this tight near-top bound keeps the behavioral distinction exact.
+    assert page.evaluate("window.scrollY") <= 16
     assert page.url.endswith(f"#{target_id}")
 
     page.reload(wait_until="domcontentloaded")
 
     assert page.url.endswith(f"#{target_id}")
     _assert_anchor_is_aligned(page, target_id, wait=False)
+
+
+def test_non_scroll_pointer_input_does_not_cancel_anchor_alignment(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Keep ordinary clicks distinct from genuine scroll intent.
+
+    The late-alignment cancellation originally listened to every
+    ``pointerdown`` and ``touchstart``. That included harmless clicks on the
+    theme toggle, buttons, text, and other controls: a click that never moved
+    the viewport could silently disable a still-needed font or image correction.
+
+    This regression opens a deep link, clicks the theme control with a real
+    Playwright pointer sequence, then activates that focused button with Space.
+    It proves both the fragment geometry and shared alignment state stay active:
+    neither pointer activation nor a keyboard action consumed by an interactive
+    control is scroll intent. Dispatching a later load correction must remain
+    allowed. Restoring broad pointerdown or unfiltered key cancellation makes the
+    interrupted flag true and fails without relying on event timing.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    _assert_anchor_is_aligned(page, "field-notes")
+
+    toggle = page.get_by_role(
+        "button",
+        name="Toggle color theme",
+        exact=True,
+    )
+    toggle.click()
+    toggle.press("Space")
+
+    assert page.evaluate(
+        "window.__tmcAnchorAlignmentInterrupted"
+    ) is False
+    page.evaluate("window.dispatchEvent(new Event('load'))")
+    _settle_anchor_frames = """
+      () => new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(resolve);
+          });
+        });
+      })
+    """
+    page.evaluate(_settle_anchor_frames)
+    _assert_anchor_is_aligned(page, "field-notes", wait=False)
+
+
+def test_only_real_tentacle_scroll_messages_cancel_anchor_alignment(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Authenticate cross-frame scroll intent before cancelling an anchor.
+
+    Wheel input over the tentacle iframe cannot bubble into the parent window,
+    so the child forwards its vertical delta with ``postMessage``. Accepting the
+    type string alone would let the parent page, an unrelated frame, or a
+    zero-delta message disable late anchor correction without any user scroll.
+
+    This test sends two forged messages—one from the parent with a real delta
+    and one from the expected iframe with a zero delta—and requires both to be
+    ignored. It then emits the same-origin, finite, non-zero message from the
+    actual tentacle frame and requires interruption. Removing source, origin, or
+    delta validation breaks a corresponding assertion; rejecting the legitimate
+    child-to-parent protocol breaks the final one.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    _assert_anchor_is_aligned(page, "field-notes")
+    page.wait_for_function(
+        "window.__tmcAnchorAlignmentInterrupted === false"
+    )
+
+    result = page.evaluate(
+        """
+        () => {
+          const frame = document.querySelector(".contact__tentacles");
+          const dispatch = (source, deltaY) => {
+            window.dispatchEvent(
+              new MessageEvent("message", {
+                data: {
+                  type: "muta-tentacles-scroll-input",
+                  deltaY,
+                },
+                origin: window.location.origin,
+                source,
+              }),
+            );
+            return window.__tmcAnchorAlignmentInterrupted;
+          };
+
+          return {
+            forgedParent: dispatch(window, 120),
+            zeroFromFrame: dispatch(frame.contentWindow, 0),
+            validFromFrame: dispatch(frame.contentWindow, 120),
+          };
+        }
+        """
+    )
+
+    assert result == {
+        "forgedParent": False,
+        "zeroFromFrame": False,
+        "validFromFrame": True,
+    }
+
+
+def test_pageshow_resets_interruption_only_for_a_restored_navigation(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Distinguish the initial pageshow race from a BFCache restoration.
+
+    A normal ``pageshow`` follows ``load`` on a fresh document. If a very fast
+    user scroll lands between those events, resetting cancellation on that
+    ordinary pageshow yanks the page back to its hash. A persisted pageshow is
+    different: it represents a real back/forward-cache navigation and must begin
+    a new alignment session for the restored URL.
+
+    The test first drains the document's natural ``pageshow`` so its scheduling
+    cannot be confused with either controlled branch below. It then interrupts a
+    deep-link alignment with the Home key, dispatches a non-persisted
+    PageTransitionEvent and verifies the event causes no movement from the
+    normalized top position, then dispatches its persisted counterpart and
+    requires both the interruption flag and exact anchor geometry to reset.
+    After the real Home gesture records user intent, the test temporarily keeps
+    CSS scrolling non-animated through both controlled branches so a leftover
+    smooth-scroll frame cannot masquerade as pageshow movement or undo the
+    persisted realignment after the wait observes it. A real erroneous hash snap
+    still moves this late mobile target by several thousand pixels. Treating every
+    pageshow identically breaks one of these two externally visible outcomes.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.add_init_script(
+        """
+        addEventListener("pageshow", () => {
+          window.__tmcAnchorTestInitialPageShowObserved = true;
+        }, { once: true });
+        """
+    )
+    page.goto("about:blank")
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    page.wait_for_function(
+        "window.__tmcAnchorTestInitialPageShowObserved === true"
+    )
+    _assert_anchor_is_aligned(page, "field-notes")
+
+    previous_scroll_behavior = _interrupt_anchor_alignment_at_top(
+        page,
+        restore_scroll_behavior=False,
+    )
+    try:
+        page.evaluate(
+            """
+            () => new Promise((resolve) => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(resolve);
+                });
+              });
+            })
+            """
+        )
+        settled_scroll_y = page.evaluate("window.scrollY")
+        assert settled_scroll_y == 0
+
+        page.evaluate(
+            """
+            () => window.dispatchEvent(
+              new PageTransitionEvent("pageshow", { persisted: false }),
+            )
+            """
+        )
+        page.evaluate(
+            """
+            () => new Promise((resolve) => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(resolve);
+                });
+              });
+            })
+            """
+        )
+        after_pageshow_scroll_y = page.evaluate("window.scrollY")
+        assert abs(after_pageshow_scroll_y - settled_scroll_y) <= 1
+        assert page.evaluate(
+            "window.__tmcAnchorAlignmentInterrupted"
+        ) is True
+
+        page.evaluate(
+            """
+            () => window.dispatchEvent(
+              new PageTransitionEvent("pageshow", { persisted: true }),
+            )
+            """
+        )
+        page.wait_for_function(
+            "window.__tmcAnchorAlignmentInterrupted === false"
+        )
+        _assert_anchor_is_aligned(page, "field-notes")
+    finally:
+        page.evaluate(
+            """
+            (previous) => {
+              document.documentElement.style.scrollBehavior = previous;
+            }
+            """,
+            previous_scroll_behavior,
+        )
+
+
+def test_hashchange_starts_a_new_alignment_after_user_scroll(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Let a new fragment supersede cancellation from an earlier fragment.
+
+    Scroll intent cancels only pending corrections for the currently active
+    hash. It must not permanently disable internal navigation. This test moves
+    away from ``#field-notes`` with a real Home key, then assigns
+    ``#complexity`` and requires the hashchange path to clear interruption and
+    align the new target exactly.
+
+    The initial real ``pageshow`` is explicitly drained before Home. Without
+    that boundary, Chromium may still be completing its first fragment
+    navigation while the test starts the user gesture, producing a race between
+    two browser-owned scroll operations rather than exercising the later
+    hashchange contract. Starting from ``about:blank`` also guarantees the
+    observed pageshow belongs to this deep-link navigation.
+
+    Forgetting to reset the shared flag on hashchange leaves the user stranded
+    at the top even though the address bar changes; resetting on unrelated
+    pointer activity is covered separately.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.add_init_script(
+        """
+        addEventListener("pageshow", () => {
+          window.__tmcAnchorTestInitialPageShowObserved = true;
+        }, { once: true });
+        """
+    )
+    page.goto("about:blank")
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    page.wait_for_function(
+        "window.__tmcAnchorTestInitialPageShowObserved === true"
+    )
+    _assert_anchor_is_aligned(page, "field-notes")
+
+    _interrupt_anchor_alignment_at_top(page)
+
+    page.evaluate("window.location.hash = '#complexity'")
+    expect(page).to_have_url(f"{base_url}/#complexity")
+    page.wait_for_function(
+        "window.__tmcAnchorAlignmentInterrupted === false"
+    )
+    _assert_anchor_is_aligned(page, "complexity")
 
 
 def test_representative_anchor_clicks_update_the_url_and_scroll(
@@ -619,7 +1002,7 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
         ('.hero__actions a[href="#sections"]', "sections"),
         ('#complexity a[href="#complexity"]', "complexity"),
         ('.main-nav a[href="#field-notes"]', "field-notes"),
-        ('.main-nav a[href="#contact"]', "contact"),
+        ('.main-nav a[href="/#contact"]', "contact"),
         ('.hero__actions a[href="#open-source"]', "open-source"),
     ]
 
@@ -630,6 +1013,82 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
 
         expect(page).to_have_url(f"{base_url}/#{target_id}")
         _assert_anchor_is_aligned(page, target_id)
+
+
+@pytest.mark.parametrize(
+    ("viewport", "selector", "open_mobile_menu"),
+    [
+        ((1440, 900), '.main-nav a[href="/#contact"]', False),
+        ((800, 900), '.mobile-menu nav a[href="/#contact"]', True),
+    ],
+    ids=["desktop-header", "mobile-header"],
+)
+def test_header_contact_returns_to_home_before_resolving_the_fragment(
+    driver: DriverFactory,
+    base_url: str,
+    viewport: tuple[int, int],
+    selector: str,
+    open_mobile_menu: bool,
+) -> None:
+    """Make the shared header's Contact link safe on future nested pages.
+
+    A fragment-only ``href="#contact"`` works on today's one-page site but is
+    resolved against whichever pathname currently owns the header. Reusing that
+    header on a future Blog or Sources page would therefore search for a
+    nonexistent local ``#contact`` target instead of returning to the landing
+    page.
+
+    This regression emulates that future state without needing a second route:
+    it moves the current document to a nested same-origin pathname through the
+    History API, then clicks the real desktop or mobile Contact link. The
+    authored href must be ``/#contact``, its fully resolved URL must point to
+    the origin root, clicking it must replace the nested pathname with ``/``,
+    and the landing-page Contact section must align below the sticky header.
+    A fragment-only link, relative nested path, desktop/mobile mismatch, or URL
+    update without correct scrolling makes the test fail.
+    """
+
+    page = driver(
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    future_url = f"{base_url}/future/about?preview=1#feedback"
+    page.evaluate(
+        """
+        (url) => {
+          history.replaceState({futurePage: true}, "", url);
+        }
+        """,
+        future_url,
+    )
+    expect(page).to_have_url(future_url)
+
+    if open_mobile_menu:
+        page.locator(".mobile-menu > summary").click()
+
+    contact_link = page.locator(selector)
+    assert contact_link.count() == 1
+    link_contract = contact_link.evaluate(
+        """
+        (link) => {
+          const resolved = new URL(link.href);
+          return {
+            authored: link.getAttribute("href"),
+            pathname: resolved.pathname,
+            hash: resolved.hash,
+          };
+        }
+        """
+    )
+    assert link_contract == {
+        "authored": "/#contact",
+        "pathname": "/",
+        "hash": "#contact",
+    }
+
+    contact_link.click()
+    expect(page).to_have_url(f"{base_url}/#contact")
+    _assert_anchor_is_aligned(page, "contact")
 
 
 def test_back_and_forward_history_realign_each_fragment(
@@ -658,7 +1117,7 @@ def test_back_and_forward_history_realign_each_fragment(
     page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
     _assert_anchor_is_aligned(page, "complexity")
 
-    contact_link = page.locator('.main-nav a[href="#contact"]')
+    contact_link = page.locator('.main-nav a[href="/#contact"]')
     assert contact_link.count() == 1
     contact_link.click()
     expect(page).to_have_url(f"{base_url}/#contact")

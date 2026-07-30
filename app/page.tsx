@@ -4,6 +4,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -13,6 +14,7 @@ const THEME_TOGGLE_BLINK_EVENT = "tmc-theme-toggle-blink";
 const BRAND_HOME_ACTIVATE_EVENT = "tmc-brand-home-activate";
 const BRAND_HOME_RELOAD_DELAY_MS = 260;
 const TENTACLE_POINTER_RELAY_EVENT = "tmc-tentacle-pointer-move";
+const HOME_CONTACT_HREF = "/#contact";
 
 function CurrentYear() {
   return <>{new Date().getFullYear()}</>;
@@ -100,12 +102,21 @@ function Ticker() {
 
 function InitialAnchorScroll() {
   useLayoutEffect(() => {
+    const anchorWindow = window as Window & {
+      __tmcAnchorAlignmentInterrupted?: boolean;
+    };
     let cancelled = false;
     let firstFrameRequest = 0;
     let secondFrameRequest = 0;
 
     const scrollToCurrentHash = () => {
-      if (cancelled || !window.location.hash) return;
+      if (
+        cancelled ||
+        anchorWindow.__tmcAnchorAlignmentInterrupted ||
+        !window.location.hash
+      ) {
+        return;
+      }
 
       const encodedId = window.location.hash.slice(1);
       let id = encodedId;
@@ -127,7 +138,7 @@ function InitialAnchorScroll() {
     };
 
     const alignCurrentHash = () => {
-      if (cancelled) return;
+      if (cancelled || anchorWindow.__tmcAnchorAlignmentInterrupted) return;
 
       scrollToCurrentHash();
       if (firstFrameRequest) {
@@ -144,6 +155,87 @@ function InitialAnchorScroll() {
       });
     };
 
+    const cancelPendingAlignment = () => {
+      anchorWindow.__tmcAnchorAlignmentInterrupted = true;
+      if (firstFrameRequest) {
+        window.cancelAnimationFrame(firstFrameRequest);
+        firstFrameRequest = 0;
+      }
+      if (secondFrameRequest) {
+        window.cancelAnimationFrame(secondFrameRequest);
+        secondFrameRequest = 0;
+      }
+    };
+
+    const cancelPendingAlignmentFromKey = (event: KeyboardEvent) => {
+      const target =
+        event.target instanceof Element ? event.target : null;
+      const isInteractive = target?.closest(
+        'a[href], button, input, select, textarea, summary, [contenteditable="true"]',
+      );
+      if (
+        isInteractive &&
+        (event.key === "ArrowUp" ||
+          event.key === "ArrowDown" ||
+          event.key === "Home" ||
+          event.key === "End" ||
+          event.key === " ")
+      ) {
+        return;
+      }
+
+      if (
+        event.key === "ArrowUp" ||
+        event.key === "ArrowDown" ||
+        event.key === "PageUp" ||
+        event.key === "PageDown" ||
+        event.key === "Home" ||
+        event.key === "End" ||
+        event.key === " "
+      ) {
+        cancelPendingAlignment();
+      }
+    };
+
+    const cancelPendingAlignmentFromWheel = (event: WheelEvent) => {
+      if (
+        !event.ctrlKey &&
+        Number.isFinite(event.deltaY) &&
+        event.deltaY !== 0
+      ) {
+        cancelPendingAlignment();
+      }
+    };
+
+    const restartHashAlignment = () => {
+      anchorWindow.__tmcAnchorAlignmentInterrupted = false;
+      alignCurrentHash();
+    };
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        restartHashAlignment();
+      } else {
+        alignCurrentHash();
+      }
+    };
+
+    const handleFrameScrollInput = (event: MessageEvent) => {
+      const frame = document.querySelector<HTMLIFrameElement>(
+        ".contact__tentacles",
+      );
+      const deltaY = Number(event.data?.deltaY);
+      if (
+        event.origin === window.location.origin &&
+        event.source === frame?.contentWindow &&
+        event.data?.type === "muta-tentacles-scroll-input" &&
+        Number.isFinite(deltaY) &&
+        deltaY !== 0
+      ) {
+        cancelPendingAlignment();
+      }
+    };
+
     const pendingImages = Array.from(document.images).filter(
       (image) => !image.complete,
     );
@@ -155,8 +247,22 @@ function InitialAnchorScroll() {
 
     alignCurrentHash();
     window.addEventListener("load", alignCurrentHash);
-    window.addEventListener("pageshow", alignCurrentHash);
-    window.addEventListener("hashchange", alignCurrentHash);
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("hashchange", restartHashAlignment);
+    window.addEventListener("wheel", cancelPendingAlignmentFromWheel, {
+      passive: true,
+      capture: true,
+    });
+    window.addEventListener("touchmove", cancelPendingAlignment, {
+      passive: true,
+      capture: true,
+    });
+    window.addEventListener(
+      "keydown",
+      cancelPendingAlignmentFromKey,
+      true,
+    );
+    window.addEventListener("message", handleFrameScrollInput);
     document.fonts?.ready.then(alignCurrentHash);
 
     return () => {
@@ -172,8 +278,20 @@ function InitialAnchorScroll() {
         image.removeEventListener("error", alignCurrentHash);
       }
       window.removeEventListener("load", alignCurrentHash);
-      window.removeEventListener("pageshow", alignCurrentHash);
-      window.removeEventListener("hashchange", alignCurrentHash);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("hashchange", restartHashAlignment);
+      window.removeEventListener(
+        "wheel",
+        cancelPendingAlignmentFromWheel,
+        true,
+      );
+      window.removeEventListener("touchmove", cancelPendingAlignment, true);
+      window.removeEventListener(
+        "keydown",
+        cancelPendingAlignmentFromKey,
+        true,
+      );
+      window.removeEventListener("message", handleFrameScrollInput);
     };
   }, []);
 
@@ -548,16 +666,19 @@ const pillars = [
     number: "01",
     title: "Verifiability",
     copy: "Proof-oriented infrastructure that turns ‘looks good’ into evidence an agent can act on.",
+    image: "/pillar-verifiability-v1.png",
   },
   {
     number: "02",
     title: "Interpretability",
     copy: "Human-scale explanations for machine-scale output, so teams can understand what changed and why.",
+    image: "/pillar-interpretability-v1.png",
   },
   {
     number: "03",
     title: "Testing at agent speed",
     copy: "Fast, deterministic checks built for workers that never get tired and rarely stop at one attempt.",
+    image: "/pillar-testing-speed-v1.png",
   },
 ];
 
@@ -623,8 +744,81 @@ function ThemeToggle() {
 }
 
 function AnimatedWordmark() {
+  const stageRef = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    const brand = stage?.closest<HTMLElement>(".brand");
+    const header = stage?.closest<HTMLElement>(".site-header");
+    const actions = header?.querySelector<HTMLElement>(".header-actions");
+    const eye = brand?.querySelector<HTMLElement>(".brand__mark--eye");
+    if (!stage || !brand || !header || !actions || !eye) return;
+
+    let frameRequest = 0;
+
+    const updateExpansionAvailability = () => {
+      window.cancelAnimationFrame(frameRequest);
+      frameRequest = window.requestAnimationFrame(() => {
+        if (window.matchMedia("(min-width: 861px)").matches) {
+          stage.dataset.canExpand = "true";
+          stage.dataset.expansionMeasured = "true";
+          stage.dataset.expansionRevision = String(
+            Number(stage.dataset.expansionRevision || 0) + 1,
+          );
+          return;
+        }
+
+        const brandStyle = getComputedStyle(brand);
+        const headerStyle = getComputedStyle(header);
+        const eyeStyle = getComputedStyle(eye);
+        const stageStyle = getComputedStyle(stage);
+        const headerRect = header.getBoundingClientRect();
+        const actionsRect = actions.getBoundingClientRect();
+        const eyeRect = eye.getBoundingClientRect();
+        const brandGap = Number.parseFloat(brandStyle.columnGap) || 0;
+        const eyeMargins =
+          (Number.parseFloat(eyeStyle.marginLeft) || 0) +
+          (Number.parseFloat(eyeStyle.marginRight) || 0);
+        const expandedStageWidth =
+          (Number.parseFloat(stageStyle.fontSize) || 0) * 11.6;
+        const requiredWidth =
+          eyeRect.width + eyeMargins + brandGap + expandedStageWidth;
+        const availableWidth =
+          headerRect.width -
+          (Number.parseFloat(headerStyle.paddingLeft) || 0) -
+          (Number.parseFloat(headerStyle.paddingRight) || 0) -
+          actionsRect.width;
+
+        stage.dataset.canExpand =
+          availableWidth + 0.5 >= requiredWidth ? "true" : "false";
+        stage.dataset.expansionMeasured = "true";
+        stage.dataset.expansionRevision = String(
+          Number(stage.dataset.expansionRevision || 0) + 1,
+        );
+      });
+    };
+
+    const resizeObserver = new ResizeObserver(updateExpansionAvailability);
+    resizeObserver.observe(header);
+    resizeObserver.observe(actions);
+    window.addEventListener("resize", updateExpansionAvailability);
+    updateExpansionAvailability();
+    void document.fonts?.ready.then(updateExpansionAvailability);
+
+    return () => {
+      window.cancelAnimationFrame(frameRequest);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateExpansionAvailability);
+    };
+  }, []);
+
   return (
-    <span className="brand__wordmark-stage" aria-hidden="true">
+    <span
+      ref={stageRef}
+      className="brand__wordmark-stage"
+      data-can-expand="false"
+      aria-hidden="true"
+    >
       <span className="brand__wordmark">
         <span className="brand__word-part brand__word-part--t">
           <span className="brand__word-anchor">T</span>
@@ -722,13 +916,10 @@ function Header() {
           <SourcesLinkLabel />
         </a>
         <a href="#field-notes">Blog</a>
-        <a href="#contact">Contact</a>
+        <a href={HOME_CONTACT_HREF}>Contact</a>
       </nav>
 
       <div className="header-actions">
-        <span className="language" aria-label="Current language: English">
-          EN <span aria-hidden="true">↘</span>
-        </span>
         <ThemeToggle />
         <details className="mobile-menu" ref={mobileMenuRef}>
           <summary aria-label="Open navigation menu">Menu</summary>
@@ -741,7 +932,7 @@ function Header() {
               <SourcesLinkLabel />
             </a>
             <a href="#field-notes" onClick={closeMobileMenu}>Blog</a>
-            <a href="#contact" onClick={closeMobileMenu}>Contact</a>
+            <a href={HOME_CONTACT_HREF} onClick={closeMobileMenu}>Contact</a>
           </nav>
         </details>
       </div>
@@ -765,11 +956,11 @@ function ComplexityChart() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const width = rect.width;
       const height = 330;
-      const pad = { top: 30, right: 24, bottom: 48, left: 42 };
+      const pad = { top: 30, right: 24, bottom: 48, left: 0 };
       const plotWidth = width - pad.left - pad.right;
       const plotHeight = height - pad.top - pad.bottom;
+      const gridTop = pad.top + plotHeight / 12;
       const styles = getComputedStyle(document.documentElement);
-      const ink = styles.getPropertyValue("--ink-muted").trim() || "#8d8790";
       const grid = styles.getPropertyValue("--line").trim() || "#ddd6dc";
       const hot = styles.getPropertyValue("--hot").trim() || "#ff3e9d";
       const hotSoft = styles.getPropertyValue("--hot-soft").trim() || "#b15b87";
@@ -792,10 +983,10 @@ function ComplexityChart() {
       staticContext.strokeStyle = grid;
       staticContext.setLineDash([3, 6]);
       for (let i = 0; i <= 4; i += 1) {
-        const y = pad.top + (plotHeight / 4) * i;
+        const y = gridTop + (plotHeight / 4) * i;
         staticContext.beginPath();
-        staticContext.moveTo(pad.left, y);
-        staticContext.lineTo(width - pad.right, y);
+        staticContext.moveTo(0, y);
+        staticContext.lineTo(width, y);
         staticContext.stroke();
       }
       staticContext.setLineDash([]);
@@ -820,19 +1011,63 @@ function ComplexityChart() {
       plot((x) => (Math.exp(4.35 * x) - 1) / (Math.exp(4.35) - 1), hot, 4);
       plot((x) => 0.06 + 0.28 * x + 0.16 * x * x, hotSoft, 3);
 
-      staticContext.fillStyle = ink;
-      staticContext.font = "500 11px var(--font-geist-mono), monospace";
-      staticContext.textAlign = "left";
-      staticContext.fillText("CHANGE COST", 0, 14);
-      staticContext.textAlign = "right";
-      staticContext.fillText("SYSTEM SCALE →", width - pad.right, height - 10);
-
-      curvesContext.font = "600 11px var(--font-geist-mono), monospace";
-      curvesContext.fillStyle = hot;
-      curvesContext.textAlign = "right";
-      curvesContext.fillText("UNCHECKED ENTROPY", width - pad.right - 28, pad.top + 15);
-      curvesContext.fillStyle = hotSoft;
-      curvesContext.fillText("WITH VERIFICATION", width - pad.right - 4, pad.top + plotHeight * 0.65);
+      const verificationLabel = chart.querySelector<HTMLElement>(
+        ".complexity-chart__curve-label--verification",
+      );
+      if (verificationLabel) {
+        const labelRect = verificationLabel.getBoundingClientRect();
+        const entropyValueAt = (progress: number) =>
+          (Math.exp(4.35 * progress) - 1) / (Math.exp(4.35) - 1);
+        const verificationValueAt = (progress: number) =>
+          0.06 + 0.28 * progress + 0.16 * progress * progress;
+        let crossingLow = 0;
+        let crossingHigh = 1;
+        for (let iteration = 0; iteration < 32; iteration += 1) {
+          const crossingMiddle = (crossingLow + crossingHigh) / 2;
+          if (
+            entropyValueAt(crossingMiddle) <
+            verificationValueAt(crossingMiddle)
+          ) {
+            crossingLow = crossingMiddle;
+          } else {
+            crossingHigh = crossingMiddle;
+          }
+        }
+        const crossingProgress = (crossingLow + crossingHigh) / 2;
+        const crossingX = pad.left + crossingProgress * plotWidth;
+        const baseLabelRight = pad.right + 4;
+        const baseLabelLeft = width - baseLabelRight - labelRect.width;
+        const maximumLabelLeft = width - 4 - labelRect.width;
+        const labelLeft = Math.min(
+          maximumLabelLeft,
+          Math.max(baseLabelLeft, crossingX + 6),
+        );
+        const labelRight = width - labelLeft - labelRect.width;
+        const labelStartProgress = Math.max(
+          0,
+          Math.min(1, (labelLeft - pad.left) / plotWidth),
+        );
+        const lowestCurveValue = Math.min(
+          entropyValueAt(labelStartProgress),
+          verificationValueAt(labelStartProgress),
+        );
+        const lowestCurveY =
+          pad.top + plotHeight - lowestCurveValue * plotHeight;
+        const verticalScale = rect.height / height;
+        const labelTop = Math.min(
+          rect.height - labelRect.height - 4,
+          lowestCurveY * verticalScale + 8,
+        );
+        chart.style.setProperty(
+          "--verification-label-right",
+          `${labelRight}px`,
+        );
+        chart.style.setProperty(
+          "--verification-label-top",
+          `${labelTop}px`,
+        );
+        chart.dataset.labelLayoutWidth = width.toFixed(3);
+      }
     };
 
     let hasRevealed = false;
@@ -880,7 +1115,11 @@ function ComplexityChart() {
       revealObserver.observe(visibilityTarget);
     };
 
+    let disposed = false;
     draw();
+    void document.fonts.ready.then(() => {
+      if (!disposed) draw();
+    });
     observeForReveal();
     const resizeObserver = new ResizeObserver(() => {
       draw();
@@ -898,6 +1137,7 @@ function ComplexityChart() {
     });
 
     return () => {
+      disposed = true;
       resizeObserver.disconnect();
       themeObserver.disconnect();
       window.removeEventListener("resize", observeForReveal);
@@ -924,6 +1164,20 @@ function ComplexityChart() {
         ref={curvesCanvasRef}
         aria-hidden="true"
       />
+      <div className="complexity-chart__annotations" aria-hidden="true">
+        <span className="complexity-chart__curve-label complexity-chart__curve-label--entropy">
+          UNCHECKED ENTROPY
+        </span>
+        <span className="complexity-chart__curve-label complexity-chart__curve-label--verification">
+          WITH VERIFICATION
+        </span>
+      </div>
+      <span
+        className="chart-panel__axis-label chart-panel__cost"
+        aria-hidden="true"
+      >
+        ↑ CHANGE COST
+      </span>
     </div>
   );
 }
@@ -933,63 +1187,155 @@ function FeedbackLoop() {
     <div className="feedback-loop" role="img" aria-label="A feedback loop between product, tests, signals, and agents">
       <div className="feedback-node feedback-node--top">
         <span>01</span>
-        Better product
-      </div>
-      <div className="feedback-arrow feedback-arrow--one" aria-hidden="true">
-        ↘
+        <strong>Better product</strong>
       </div>
       <div className="feedback-node feedback-node--right">
         <span>02</span>
-        Faster tests
-      </div>
-      <div className="feedback-arrow feedback-arrow--two" aria-hidden="true">
-        ↙
+        <strong>Faster tests</strong>
       </div>
       <div className="feedback-node feedback-node--bottom">
         <span>03</span>
-        Sharper signals
-      </div>
-      <div className="feedback-arrow feedback-arrow--three" aria-hidden="true">
-        ↖
+        <strong>Sharper signals</strong>
       </div>
       <div className="feedback-node feedback-node--left">
         <span>04</span>
-        Smarter agents
+        <strong>Smarter agents</strong>
       </div>
-      <div className="feedback-arrow feedback-arrow--four" aria-hidden="true">
-        ↗
-      </div>
+      <svg
+        className="feedback-arrows"
+        viewBox="0 0 100 100"
+        aria-hidden="true"
+      >
+        {[0, 90, 180, 270].map((rotation) => (
+          <g
+            className="feedback-arrow"
+            key={rotation}
+            transform={`rotate(${rotation} 50 50)`}
+          >
+            <path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90" />
+            <path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73" />
+          </g>
+        ))}
+      </svg>
       <div className="feedback-core">LOOP<br />GAINS</div>
     </div>
   );
 }
 
+function CoexistencePair() {
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  return (
+    <button
+      type="button"
+      className={`coexistence__pair${isFlipped ? " is-flipped" : ""}`}
+      aria-label={
+        isFlipped
+          ? "ROBOT and HUMAN. Flip to place HUMAN first."
+          : "HUMAN and ROBOT. Flip to place ROBOT first."
+      }
+      aria-pressed={isFlipped}
+      onClick={() => setIsFlipped((current) => !current)}
+    >
+      <span className="coexistence__pair-inner">
+        <span
+          className="coexistence__pair-face coexistence__pair-face--front"
+          aria-hidden={isFlipped}
+        >
+          <span>HUMAN</span>
+          <i>⇄</i>
+          <span>ROBOT</span>
+          <small>SHARED GROUND: EVIDENCE</small>
+        </span>
+        <span
+          className="coexistence__pair-face coexistence__pair-face--back"
+          aria-hidden={!isFlipped}
+        >
+          <span>ROBOT</span>
+          <i>⇄</i>
+          <span>HUMAN</span>
+          <small>SHARED GROUND: EVIDENCE</small>
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function PantographVisual() {
-  const objectRef = useRef<HTMLIFrameElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const embedded = objectRef.current;
-    if (!embedded) return;
+    const stage = stageRef.current;
+    if (!stage) return;
 
-    const syncTheme = () => {
-      const embeddedRoot = embedded.contentDocument?.documentElement;
-      if (!embeddedRoot) return;
+    const controller = new AbortController();
+    type PantographRuntime = {
+      destroy?: () => void;
+      pause?: () => void;
+    };
+    const runtimeWindow = window as Window & {
+      __pantograph?: PantographRuntime;
+    };
+    let mountedRuntime: PantographRuntime | undefined;
 
-      embeddedRoot.dataset.theme =
-        document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    const mountPantograph = async () => {
+      const response = await fetch(
+        "/pantograph-variant-20-clean-v2.svg",
+        {
+          cache: "no-store",
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Pantograph SVG failed to load: ${response.status}`);
+      }
+
+      const source = new DOMParser().parseFromString(
+        await response.text(),
+        "image/svg+xml",
+      );
+      const parseError = source.querySelector("parsererror");
+      if (parseError) {
+        throw new Error(parseError.textContent || "Pantograph SVG is invalid");
+      }
+
+      const sourceScript = source.querySelector("script");
+      const runtimeCode = sourceScript?.textContent || "";
+      sourceScript?.remove();
+
+      const svg = document.importNode(source.documentElement, true);
+      svg.removeAttribute("width");
+      svg.removeAttribute("height");
+      stage.replaceChildren(svg);
+
+      if (runtimeCode) {
+        const runtime = document.createElement("script");
+        runtime.textContent = runtimeCode;
+        stage.append(runtime);
+        mountedRuntime = runtimeWindow.__pantograph;
+      }
     };
 
-    const themeObserver = new MutationObserver(syncTheme);
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
+    void mountPantograph().catch((error: unknown) => {
+      if (controller.signal.aborted) return;
+      stage.dataset.pantographError =
+        error instanceof Error ? error.message : String(error);
     });
-    embedded.addEventListener("load", syncTheme);
-    syncTheme();
 
     return () => {
-      themeObserver.disconnect();
-      embedded.removeEventListener("load", syncTheme);
+      controller.abort();
+      if (
+        mountedRuntime &&
+        runtimeWindow.__pantograph === mountedRuntime
+      ) {
+        if (mountedRuntime.destroy) {
+          mountedRuntime.destroy();
+        } else {
+          mountedRuntime.pause?.();
+        }
+        delete runtimeWindow.__pantograph;
+      }
+      stage.replaceChildren();
     };
   }, []);
 
@@ -999,13 +1345,10 @@ function PantographVisual() {
       role="img"
       aria-label="An animated pantograph coordinating local and distributed verification work"
     >
-      <iframe
-        ref={objectRef}
+      <div
+        ref={stageRef}
         className="pantograph-visual__object"
-        src="/pantograph-frame-v2.html"
-        title=""
         aria-hidden="true"
-        tabIndex={-1}
       />
     </div>
   );
@@ -1039,10 +1382,14 @@ function TokamakVisual() {
         Math.max(0, (window.innerHeight - rect.top) / distanceFromEntryToCenter),
       );
       const rotationX = edgeOnRotation * scrollProgress;
-      const responsiveHeight =
-        window.innerWidth <= 580 ? 410 : window.innerWidth <= 860 ? 520 : 600;
-      const modelScale =
-        1 / (1 + (600 - responsiveHeight) * 0.00125);
+      const renderedHeight = Math.min(600, Math.max(1, rect.height));
+      const heightScale =
+        1 / (1 + (600 - renderedHeight) * 0.00125);
+      const aspectScale = Math.min(
+        1,
+        (Math.max(1, rect.width) / renderedHeight) * 1.1,
+      );
+      const modelScale = Math.min(heightScale, aspectScale);
       const theme =
         document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 
@@ -1122,7 +1469,7 @@ function TokamakVisual() {
       <iframe
         ref={frameRef}
         className="tokamak-model__frame"
-        src="/tokamak-reactor.html?v=performance-6"
+        src="/tokamak-reactor.html?v=responsive-frame-1"
         title="Scroll-linked three-dimensional tokamak reactor"
         tabIndex={-1}
         aria-label="A three-dimensional tokamak reactor whose angle follows its position in the viewport"
@@ -1431,16 +1778,44 @@ export default function Home() {
             <span>MODEL 04.35</span>
           </div>
           <ComplexityChart />
-          <p className="chart-panel__caption">Illustrative model—not a promise from marketing.</p>
+          <div className="chart-panel__footer">
+            <span className="chart-panel__axis-label chart-panel__scale">
+              SYSTEM SCALE →
+            </span>
+            <p className="chart-panel__caption">Illustrative model—not a promise from marketing.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="manifesto section-shell" id="thesis">
+        <a className="section-index" href="#thesis">02 / OUR THESIS</a>
+        <div className="manifesto__headline">
+          <h2>More intelligence deserves more resistance.</h2>
+        </div>
+        <div className="manifesto__body">
+          <p className="large-copy">
+            Agents can ship more work than human-era systems were designed to inspect. Old feedback loops become bottlenecks. Quiet mistakes become architecture.
+          </p>
+          <p>
+            Our answer is not to slow agents down. It is to pair them with rigorous systems that question every result, point to concrete problems, and demand another pass when the evidence is weak.
+          </p>
+          <p>
+            Techniques once dismissed as too expensive become ordinary when labor is no longer the constraint. That changes the economics of correctness—and the possible scale of software itself.
+          </p>
+        </div>
+        <div className="manifesto__visual" aria-hidden="true">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className="manifesto__art"
+            src="/thesis-resistance-field-pink.png"
+            alt=""
+          />
         </div>
       </section>
 
       <section className="containment section-shell" id="containment" aria-labelledby="containment-heading">
-        <div className="containment__visual">
-          <TokamakVisual />
-        </div>
         <div className="containment__copy">
-          <a className="section-index" href="#containment">02 / CONTAINMENT</a>
+          <a className="section-index" href="#containment">03 / CONTAINMENT</a>
           <h2 id="containment-heading">Hold the plasma. Aim the power.</h2>
           <p className="large-copy">
             Agents are innately nondeterministic. That is part of their power—and exactly why they need a field around them.
@@ -1465,30 +1840,15 @@ export default function Home() {
             <span>directed capability</span>
           </div>
         </div>
+        <div className="containment__visual">
+          <TokamakVisual />
+        </div>
         <div className="containment__formula containment__formula--mobile">
           <span>agent variance</span>
           <b>×</b>
           <span>deterministic checks</span>
           <b>=</b>
           <span>directed capability</span>
-        </div>
-      </section>
-
-      <section className="manifesto section-shell" id="thesis">
-        <a className="section-index" href="#thesis">03 / OUR THESIS</a>
-        <div className="manifesto__headline">
-          <h2>More intelligence deserves more resistance.</h2>
-        </div>
-        <div className="manifesto__body">
-          <p className="large-copy">
-            Agents can ship more work than human-era systems were designed to inspect. Old feedback loops become bottlenecks. Quiet mistakes become architecture.
-          </p>
-          <p>
-            Our answer is not to slow agents down. It is to pair them with rigorous systems that question every result, point to concrete problems, and demand another pass when the evidence is weak.
-          </p>
-          <p>
-            Techniques once dismissed as too expensive become ordinary when labor is no longer the constraint. That changes the economics of correctness—and the possible scale of software itself.
-          </p>
         </div>
       </section>
 
@@ -1501,8 +1861,8 @@ export default function Home() {
           {pillars.map((pillar) => (
             <article className="pillar-card" key={pillar.number}>
               <span className="pillar-card__number">{pillar.number}</span>
-              <div className="pillar-card__icon" aria-hidden="true">
-                {pillar.number === "01" ? "✓?" : pillar.number === "02" ? "≋" : "↯"}
+              <div className="pillar-card__visual" aria-hidden="true">
+                <img src={pillar.image} alt="" />
               </div>
               <h3>{pillar.title}</h3>
               <p>{pillar.copy}</p>
@@ -1550,12 +1910,7 @@ export default function Home() {
         <p>
           But only when both can rely on checks that are powerful, distributed, deterministic—and legible to the people accountable for the outcome.
         </p>
-        <div className="coexistence__pair" aria-hidden="true">
-          <span>HUMAN</span>
-          <i>⇄</i>
-          <span>ROBOT</span>
-          <small>SHARED GROUND: EVIDENCE</small>
-        </div>
+        <CoexistencePair />
       </section>
 
       <section className="dispatches section-shell" id="open-source" aria-labelledby="dispatches-heading">

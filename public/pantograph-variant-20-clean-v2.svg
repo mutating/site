@@ -1,68 +1,110 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024">
+<svg id="pantographArtwork" xmlns="http://www.w3.org/2000/svg" width="1536" height="885" viewBox="0 0 1536 885">
 <metadata id="pantographMetadata">{"name":"b06","duration":8000,"easing":"smooth","baseDrop":90.0,"verticalShare":1.0,"springMode":"removed","penMode":"extended-solid","kinematicMode":"paired-105"}</metadata>
 <style>
-  :root {
+  #pantographArtwork {
     --pantograph-ink: #171316;
+    --pantograph-surface: #fffdfd;
+    --pantograph-surface-soft: #fffafa;
+    --pantograph-accent: var(--hot, #ff2c92);
+    --pantograph-accent-bright: var(--hot-bright, #ff66ae);
+    --pantograph-accent-deep: color-mix(
+      in srgb,
+      var(--pantograph-accent) 82%,
+      #720038
+    );
     background: transparent;
   }
-  :root[data-theme="dark"] { --pantograph-ink: #fffafa; }
+  :root[data-theme="dark"] #pantographArtwork {
+    --pantograph-ink: #fffafa;
+    --pantograph-surface: #090608;
+    --pantograph-surface-soft: #0c090b;
+  }
 
   /*
    * The site enlarges the complete SVG viewport to 112%. Compensate the
    * source stroke widths by the reciprocal factor so the drawing grows while
    * its visible line weight remains identical to the supplied SVG.
    */
-  [stroke-width="1"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: .8928571429; }
-  [stroke-width="1.25"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.1160714286; }
-  [stroke-width="1.4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.25; }
-  [stroke-width="1.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.3392857143; }
-  [stroke-width="1.8"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.6071428571; }
-  [stroke-width="2"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.7857142857; }
-  [stroke-width="2.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.2321428571; }
-  [stroke-width="2.6"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.3214285714; }
-  [stroke-width="2.8"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.5; }
-  [stroke-width="3"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.6785714286; }
-  [stroke-width="3.1"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.7678571429; }
-  [stroke-width="3.25"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.9017857143; }
-  [stroke-width="3.4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.0357142857; }
-  [stroke-width="3.6"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.2142857143; }
-  [stroke-width="4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.5714285714; }
-  [stroke-width="4.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.0178571429; }
-  [stroke-width="5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.4642857143; }
+  #pantographArtwork [stroke-width="1"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: .8928571429; }
+  #pantographArtwork [stroke-width="1.25"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.1160714286; }
+  #pantographArtwork [stroke-width="1.4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.25; }
+  #pantographArtwork [stroke-width="1.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.3392857143; }
+  #pantographArtwork [stroke-width="1.8"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.6071428571; }
+  #pantographArtwork [stroke-width="2"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 1.7857142857; }
+  #pantographArtwork [stroke-width="2.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.2321428571; }
+  #pantographArtwork [stroke-width="2.6"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.3214285714; }
+  #pantographArtwork [stroke-width="2.8"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.5; }
+  #pantographArtwork [stroke-width="3"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.6785714286; }
+  #pantographArtwork [stroke-width="3.1"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.7678571429; }
+  #pantographArtwork [stroke-width="3.25"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 2.9017857143; }
+  #pantographArtwork [stroke-width="3.4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.0357142857; }
+  #pantographArtwork [stroke-width="3.6"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.2142857143; }
+  #pantographArtwork [stroke-width="4"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 3.5714285714; }
+  #pantographArtwork [stroke-width="4.5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.0178571429; }
+  #pantographArtwork [stroke-width="5"]:not([vector-effect="non-scaling-stroke"]) { stroke-width: 4.4642857143; }
+
+  #pantographArtwork [fill="#f72467"],
+  #pantographArtwork [fill="#f72468"],
+  #pantographArtwork [fill="#f72567"],
+  #pantographArtwork [fill="#fa2466"],
+  #pantographArtwork [fill="#fa1c61"],
+  #pantographArtwork [fill="#ff2c92"] {
+    fill: var(--pantograph-accent);
+  }
+
+  #pantographArtwork [stroke="#f72567"],
+  #pantographArtwork [stroke="#fa2466"],
+  #pantographArtwork [stroke="#fa1c61"],
+  #pantographArtwork [stroke="#ff2c92"] {
+    stroke: var(--pantograph-accent);
+  }
+
+  #pantographArtwork [stop-color="#ff3374"] {
+    stop-color: var(--pantograph-accent-bright);
+  }
+
+  #pantographArtwork [stop-color="#fd1c62"] {
+    stop-color: var(--pantograph-accent);
+  }
+
+  #pantographArtwork [stop-color="#f51659"] {
+    stop-color: var(--pantograph-accent-deep);
+  }
 
   /*
    * In the dark theme every neutral material swaps to its dark counterpart.
-   * The saturated pink controls, traces, and active card intentionally retain
-   * their source colors.
+   * Neutral materials invert, while every saturated trace, active-card edge,
+   * control, and fastener follows the same theme-aware pink system as the
+   * site's hero button.
    */
-  :root[data-theme="dark"] [fill="#fffdfd"] { fill: #090608; }
-  :root[data-theme="dark"] [fill="#fffafa"] { fill: #0c090b; }
-  :root[data-theme="dark"] [fill="#fff8fa"] { fill: #100c0f; }
-  :root[data-theme="dark"] [fill="#fffafb"] { fill: #0c080a; }
-  :root[data-theme="dark"] [fill="#fff"] { fill: #090608; }
-  :root[data-theme="dark"] [fill="#fcf7f8"] { fill: #171015; }
-  :root[data-theme="dark"] [stroke="#fffdfd"] { stroke: #090608; }
-  :root[data-theme="dark"] [stroke="#fffafa"] { stroke: #0c090b; }
-  :root[data-theme="dark"] [stroke="#fff8fa"] { stroke: #100c0f; }
-  :root[data-theme="dark"] [stroke="#fffafb"] { stroke: #0c080a; }
-  :root[data-theme="dark"] [stroke="#fff"] { stroke: #090608; }
-  :root[data-theme="dark"] [stop-color="#fffdfd"] { stop-color: #090608; }
-  :root[data-theme="dark"] [stop-color="#fffafb"] { stop-color: #0c080a; }
-  :root[data-theme="dark"] [stop-color="#fcf7f8"] { stop-color: #171015; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#fffdfd"] { fill: #090608; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#fffafa"] { fill: #0c090b; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#fff8fa"] { fill: #100c0f; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#fffafb"] { fill: #0c080a; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#fff"] { fill: #090608; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#fcf7f8"] { fill: #171015; }
+  :root[data-theme="dark"] #pantographArtwork [stroke="#fffdfd"] { stroke: #090608; }
+  :root[data-theme="dark"] #pantographArtwork [stroke="#fffafa"] { stroke: #0c090b; }
+  :root[data-theme="dark"] #pantographArtwork [stroke="#fff8fa"] { stroke: #100c0f; }
+  :root[data-theme="dark"] #pantographArtwork [stroke="#fffafb"] { stroke: #0c080a; }
+  :root[data-theme="dark"] #pantographArtwork [stroke="#fff"] { stroke: #090608; }
+  :root[data-theme="dark"] #pantographArtwork [stop-color="#fffdfd"] { stop-color: #090608; }
+  :root[data-theme="dark"] #pantographArtwork [stop-color="#fffafb"] { stop-color: #0c080a; }
+  :root[data-theme="dark"] #pantographArtwork [stop-color="#fcf7f8"] { stop-color: #171015; }
 
-  :root[data-theme="dark"] [fill="#b37889"] { fill: #4a3a41; }
-  :root[data-theme="dark"] [fill="#b77f90"] { fill: #4d3c43; }
-  :root[data-theme="dark"] [fill="#bb7f90"] { fill: #514047; }
-  :root[data-theme="dark"] [fill="#c28c9c"] { fill: #58444c; }
-  :root[data-theme="dark"] [fill="#c28e9e"] { fill: #5a464e; }
-  :root[data-theme="dark"] [fill="#c48d9e"] { fill: #5c4850; }
-  :root[data-theme="dark"] [fill="#c58b9c"] { fill: #5b4650; }
-  :root[data-theme="dark"] [fill="#ca95a4"] { fill: #62505a; }
-  :root[data-theme="dark"] [fill="#d0a2af"] { fill: #6b5861; }
-  :root[data-theme="dark"] [fill="#d4a9b4"] { fill: #716069; }
-  :root[data-theme="dark"] [fill="#d8afb9"] { fill: #77656e; }
-  :root[data-theme="dark"] [stroke="#d9bcc5"] { stroke: #6a5961; }
-  :root[data-theme="dark"] [stroke="#dfbbc5"] { stroke: #735f68; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#b37889"] { fill: #4a3a41; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#b77f90"] { fill: #4d3c43; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#bb7f90"] { fill: #514047; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#c28c9c"] { fill: #58444c; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#c28e9e"] { fill: #5a464e; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#c48d9e"] { fill: #5c4850; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#c58b9c"] { fill: #5b4650; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#ca95a4"] { fill: #62505a; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#d0a2af"] { fill: #6b5861; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#d4a9b4"] { fill: #716069; }
+  :root[data-theme="dark"] #pantographArtwork [fill="#d8afb9"] { fill: #77656e; }
+  :root[data-theme="dark"] #pantographArtwork [stroke="#d9bcc5"] { stroke: #6a5961; }
+  :root[data-theme="dark"] #pantographArtwork [stroke="#dfbbc5"] { stroke: #735f68; }
 </style>
 <defs>
   <radialGradient id="paper" cx="50%" cy="47%" r="74%">
@@ -101,27 +143,27 @@
     <rect x="-18" y="-18" width="1567" height="115" fill="url(#railStippleSeed)" filter="url(#scatterRailStipple)"/>
   </pattern>
   <g id="fastener">
-    <circle r="5.2" fill="#fffafa" stroke="var(--pantograph-ink)" stroke-width="2.8"/>
+    <circle r="5.2" fill="var(--pantograph-surface-soft)" stroke="var(--pantograph-ink)" stroke-width="2.8"/>
     <circle r="1.35" fill="#f72467"/>
   </g>
   <g id="railMount">
-    <rect x="-21" y="-19" width="43" height="39" rx="7" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="3.6"/>
+    <rect x="-21" y="-19" width="43" height="39" rx="7" fill="var(--pantograph-surface)" stroke="var(--pantograph-ink)" stroke-width="3.6"/>
     <rect x="-15" y="-13" width="31" height="27" rx="4" fill="url(#stippleB)" opacity=".66"/>
     <circle cx=".5" cy="1" r="7.6" fill="#f72468" stroke="var(--pantograph-ink)" stroke-width="3"/>
   </g>
   <g id="needle">
-    <rect x="-10" y="0" width="20" height="87" rx="4" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
+    <rect x="-10" y="0" width="20" height="87" rx="4" fill="var(--pantograph-surface)" stroke="var(--pantograph-ink)" stroke-width="3.25"/>
     <rect x="-7" y="4" width="14" height="77" fill="url(#stippleA)" opacity=".72"/>
-    <path d="M-7 87 L0 134 L7 87 Z" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="3.25" stroke-linejoin="round"/>
+    <path d="M-7 87 L0 134 L7 87 Z" fill="var(--pantograph-surface)" stroke="var(--pantograph-ink)" stroke-width="3.25" stroke-linejoin="round"/>
     <path d="M0 99 V129" stroke="#f72567" stroke-width="1.8"/>
     <circle cy="134" r="3" fill="var(--pantograph-ink)"/>
   </g>
 </defs>
 
 <g stroke="var(--pantograph-ink)" stroke-linejoin="round">
-  <rect x="725" y="101" width="95" height="179" rx="11" fill="#fffdfd" stroke-width="5"/>
-  <rect x="731" y="107" width="82" height="166" rx="6" fill="url(#stippleA)" stroke="none" opacity=".77"/>
-  <use href="#fastener" x="741" y="116"/><use href="#fastener" x="805" y="116"/><use href="#fastener" x="805" y="264"/>
+  <rect data-fixed-head="true" x="725" y="101" width="95" height="179" rx="11" fill="#fffdfd" stroke-width="5"/>
+  <rect data-fixed-head="true" x="731" y="107" width="82" height="166" rx="6" fill="url(#stippleA)" stroke="none" opacity=".77"/>
+  <use data-fixed-head="true" href="#fastener" x="741" y="116"/><use data-fixed-head="true" href="#fastener" x="805" y="116"/><use data-fixed-head="true" href="#fastener" x="805" y="264"/>
 
   <path id="arm1Outer" d="M766.49958400 132.91314758 L451.49958400 335.91314758 L464.50041600 356.08685242 L779.50041600 153.08685242 Z" fill="#fffdfd" stroke-width="4.5"/>
   <path id="arm1Inner" d="M768.39553866 135.85514620 L453.39553866 338.85514620 L462.60446134 353.14485380 L777.60446134 150.14485380 Z" fill="url(#arm1Stipple)" stroke="none" opacity=".77"/>
@@ -132,25 +174,25 @@
   <path id="arm4Outer" d="M462.80287459 440.00307335 L794.80287459 585.00307335 L785.19712541 606.99692665 L453.19712541 461.99692665 Z" fill="#fffdfd" stroke-width="4.5"/>
   <path id="arm4Inner" d="M461.40203617 443.21051029 L793.40203617 588.21051029 L786.59796383 603.78948971 L454.59796383 458.78948971 Z" fill="url(#stippleB)" stroke="none" opacity=".76"/>
 
-  <path d="M758 160 V229 M787 163 V228" fill="none" stroke-width="4"/>
+  <path data-fixed-head="true" d="M758 160 V229 M787 163 V228" fill="none" stroke-width="4"/>
   <g id="bConnector">
     <rect x="443" y="346" width="30" height="105" rx="15" fill="#fffdfd" stroke="var(--pantograph-ink)" stroke-width="4.5" data-source-vector-effect="non-scaling-stroke"/>
     <rect x="447" y="350" width="22" height="97" rx="11" fill="url(#stippleB)" stroke="none" opacity=".72"/>
   </g>
   <g fill="#fffdfd" stroke-width="4">
-    <circle cx="773" cy="143" r="24"/><circle cx="773" cy="248" r="24"/>
+    <circle data-fixed-head="true" cx="773" cy="143" r="24"/><circle data-fixed-head="true" cx="773" cy="248" r="24"/>
     <circle data-joint="b1" cx="458" cy="346" r="24"/><circle data-joint="b2" cx="458" cy="451" r="24"/>
   </g>
   <g fill="none" stroke-width="3.1">
-    <circle cx="773" cy="143" r="12"/><circle cx="773" cy="248" r="12"/>
+    <circle data-fixed-head="true" cx="773" cy="143" r="12"/><circle data-fixed-head="true" cx="773" cy="248" r="12"/>
     <circle data-joint="b1" cx="458" cy="346" r="9"/><circle data-joint="b2" cx="458" cy="451" r="9"/>
   </g>
   <g fill="#f72567" stroke-width="2.8">
-    <circle cx="773" cy="143" r="4.4"/><circle cx="773" cy="248" r="4.4"/>
+    <circle data-fixed-head="true" cx="773" cy="143" r="4.4"/><circle data-fixed-head="true" cx="773" cy="248" r="4.4"/>
     <circle data-joint="b1" cx="458" cy="346" r="4"/><circle data-joint="b2" cx="458" cy="451" r="4"/>
   </g>
   <g fill="#fff" stroke-width="1.8">
-    <circle cx="773" cy="126" r="3"/><circle cx="790" cy="143" r="3"/><circle cx="773" cy="231" r="3"/><circle cx="790" cy="248" r="3"/>
+    <circle data-fixed-head="true" cx="773" cy="126" r="3"/><circle data-fixed-head="true" cx="790" cy="143" r="3"/><circle data-fixed-head="true" cx="773" cy="231" r="3"/><circle data-fixed-head="true" cx="790" cy="248" r="3"/>
   </g>
 </g>
 
@@ -203,7 +245,8 @@
 (() => {
   "use strict";
   const cfg = {"name":"b06","duration":8000,"easing":"smooth","baseDrop":90.0,"verticalShare":1.0,"springMode":"removed","penMode":"extended-solid","kinematicMode":"paired-105"};
-  const svg = document.documentElement;
+  const svg = document.getElementById("pantographArtwork");
+  const progressRoot = document.documentElement;
   const wave = document.getElementById("targetWave");
   const rail = document.getElementById("movingRail");
   const hangers = document.getElementById("movingHangers");
@@ -219,7 +262,16 @@
   const b2Els = [...document.querySelectorAll("[data-joint='b2']")];
   const bConnector = document.getElementById("bConnector");
   const needles = [...document.querySelectorAll("[data-moving-needle]")];
+  const fixedHeadEls = [...document.querySelectorAll("[data-fixed-head]")];
   const LINK_GAP = 105;
+  const TWO_COLUMN_BREAKPOINT = 860;
+  const WIDE_HEIGHT_SCALE = 1.2;
+  const ARTWORK_VIEW_BOX = "0 0 1536 885";
+  const ORIGINAL_HEAD_TOP = 101;
+  const ORIGINAL_RAIL_TOP = 525;
+  const WIDE_HEAD_LIFT = Math.round(
+    (ORIGINAL_RAIL_TOP - ORIGINAL_HEAD_TOP) * (WIDE_HEIGHT_SCALE - 1) * 10
+  ) / 10;
   const A1 = {x:773,y:143}, A2 = {x:773,y:143+LINK_GAP};
   const B10 = {x:458,y:346}, B20 = {x:458,y:346+LINK_GAP};
   const C10 = {x:790,y:491}, C20 = {x:790,y:596};
@@ -233,6 +285,8 @@
   const totalWaveLength = wave.getTotalLength();
   let playing = true, progress = 0, startTime = performance.now(), raf = 0;
   let lastState = null;
+  let appliedHeadLift = Number.NaN;
+  let appliedViewBox = "";
 
   function easedTravel(p) {
     p = ((p % 1) + 1) % 1;
@@ -285,8 +339,30 @@
     elements.forEach(el => { el.setAttribute("cx",p.x); el.setAttribute("cy",p.y); });
   }
 
+  function placeFixedHead(headLift) {
+    if (headLift === appliedHeadLift) return;
+    const transform = headLift ? `translate(0 ${headLift})` : null;
+    fixedHeadEls.forEach(el => {
+      if (transform) el.setAttribute("transform",transform);
+      else el.removeAttribute("transform");
+    });
+    appliedHeadLift = headLift;
+  }
+
+  function placeViewBox() {
+    if (ARTWORK_VIEW_BOX === appliedViewBox) return;
+    svg.setAttribute("viewBox", ARTWORK_VIEW_BOX);
+    appliedViewBox = ARTWORK_VIEW_BOX;
+  }
+
   function applyFrame(p) {
     progress = Math.max(0,Math.min(1,Number(p)||0));
+    const isWideLayout = window.innerWidth > TWO_COLUMN_BREAKPOINT;
+    const headLift = isWideLayout ? -WIDE_HEAD_LIFT : 0;
+    const fixedA1 = {x:A1.x,y:A1.y+headLift};
+    const fixedA2 = {x:A2.x,y:A2.y+headLift};
+    placeViewBox();
+    placeFixedHead(headLift);
     const travel = easedTravel(progress);
     const target = wave.getPointAtLength(totalWaveLength * travel);
     const dx = target.x-tip0.x;
@@ -295,7 +371,7 @@
     const extension = 0;
     const c1={x:C10.x+dx,y:C10.y+railDy};
     const c2={x:C20.x+dx,y:C20.y+railDy};
-    const b1=circleIntersection(A1,c1,lengths.a1b1,lengths.b1c1,B10);
+    const b1=circleIntersection(fixedA1,c1,lengths.a1b1,lengths.b1c1,B10);
     const b2={x:b1.x,y:b1.y+LINK_GAP};
     const assembly=`translate(${dx} ${railDy})`;
     rail.setAttribute("transform",assembly);
@@ -308,8 +384,8 @@
     });
 
     const armTransforms=[
-      rigidTransform(A1,B10,A1,b1),
-      rigidTransform(A2,B20,A2,b2),
+      rigidTransform(A1,B10,fixedA1,b1),
+      rigidTransform(A2,B20,fixedA2,b2),
       rigidTransform(B10,C10,b1,c1),
       rigidTransform(B20,C20,b2,c2)
     ];
@@ -318,12 +394,18 @@
     bConnector.setAttribute("transform",linkedTransform(B10,B20,b1,b2));
 
     const tip={x:tip0.x+dx,y:tip0.y+railDy+extension};
-    const current=[dist(A1,b1),dist(A2,b2),dist(b1,c1),dist(b2,c2)];
+    const current=[
+      dist(fixedA1,b1),dist(fixedA2,b2),dist(b1,c1),dist(b2,c2)
+    ];
     const original=[lengths.a1b1,lengths.a2b2,lengths.b1c1,lengths.b2c2];
     const maxBarDrift=Math.max(...current.map((n,i)=>Math.abs(n/original[i]-1)));
     lastState={
       progress, travel, target:{x:target.x,y:target.y}, tip, dx, railDy, extension,
-      A1:{...A1},A2:{...A2},b1,b2,c1,c2,
+      layoutMode:isWideLayout ? "wide" : "single-column",
+      heightScale:isWideLayout ? WIDE_HEIGHT_SCALE : 1,
+      viewBox:appliedViewBox,
+      headLift,
+      A1:fixedA1,A2:fixedA2,b1,b2,c1,c2,
       tipDistance:dist(tip,target),
       maxBarDrift,
       verticalLinkDrift:Math.abs(dist(b1,b2)/lengths.vertical-1),
@@ -333,6 +415,7 @@
         .every(Number.isFinite)
     };
     svg.dataset.progress=progress.toFixed(6);
+    progressRoot.dataset.progress=progress.toFixed(6);
     return lastState;
   }
 
@@ -352,6 +435,11 @@
     return progress;
   }
   function seek(p) { pause(); return applyFrame(p); }
+  function syncResponsiveLayout() { applyFrame(progress); }
+  function destroy() {
+    pause();
+    window.removeEventListener("resize",syncResponsiveLayout);
+  }
   function metrics() {
     return {
       ...lastState,
@@ -361,7 +449,8 @@
       apiVersion:1
     };
   }
-  window.__pantograph={seek,pause,play,metrics};
+  window.addEventListener("resize",syncResponsiveLayout);
+  window.__pantograph={seek,pause,play,metrics,destroy};
   applyFrame(0);
   raf=requestAnimationFrame(tick);
 })();

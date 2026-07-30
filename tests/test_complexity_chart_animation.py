@@ -70,18 +70,108 @@ def _settle_view_observation(page: Page) -> None:
     )
 
 
+def _wait_for_initial_chart_layout(page: Page) -> None:
+    """Wait until font and ResizeObserver sizing finishes before reveal tests."""
+
+    page.evaluate("document.fonts.ready")
+    page.wait_for_function(
+        """
+        () => {
+          const chart = document.querySelector(".complexity-chart");
+          const staticLayer = chart?.querySelector(
+            ".complexity-chart__static",
+          );
+          const curvesLayer = chart?.querySelector(
+            ".complexity-chart__curves",
+          );
+          if (
+            !chart ||
+            !staticLayer ||
+            !curvesLayer ||
+            !chart.dataset.labelLayoutWidth
+          ) {
+            return false;
+          }
+
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const expectedWidth = Math.max(
+            1,
+            Math.floor(chart.getBoundingClientRect().width * dpr),
+          );
+          const expectedHeight = Math.floor(330 * dpr);
+          return (
+            Math.abs(
+              Number(chart.dataset.labelLayoutWidth) -
+              chart.getBoundingClientRect().width
+            ) < 0.1 &&
+            staticLayer.width === expectedWidth &&
+            curvesLayer.width === expectedWidth &&
+            staticLayer.height === expectedHeight &&
+            curvesLayer.height === expectedHeight
+          );
+        }
+        """
+    )
+    page.evaluate(
+        """
+        () => new Promise((resolve) => {
+          const readSignature = () => {
+            const chart = document.querySelector(".complexity-chart");
+            const staticLayer = chart.querySelector(
+              ".complexity-chart__static",
+            );
+            const curvesLayer = chart.querySelector(
+              ".complexity-chart__curves",
+            );
+            return [
+              chart.getBoundingClientRect().width.toFixed(3),
+              chart.dataset.labelLayoutWidth,
+              staticLayer.width,
+              staticLayer.height,
+              curvesLayer.width,
+              curvesLayer.height,
+            ].join("|");
+          };
+
+          let previousSignature = null;
+          let stableFrames = 0;
+          const checkNextFrame = () => {
+            requestAnimationFrame(() => {
+              const signature = readSignature();
+              stableFrames =
+                signature === previousSignature ? stableFrames + 1 : 0;
+              previousSignature = signature;
+              if (stableFrames >= 2) {
+                resolve();
+              } else {
+                checkNextFrame();
+              }
+            });
+          };
+          checkNextFrame();
+        })
+        """
+    )
+
+
 def _finish_curve_animation(page: Page) -> None:
-    """Move the curve reveal to its exact CSS endpoint without a timing wait."""
+    """Move curves and their DOM annotations to the exact reveal endpoint."""
 
     _wait_for_curve_animation(page)
-    page.locator(".complexity-chart__curves").evaluate(
+    page.locator(".complexity-chart").evaluate(
         """
-        (curves) => {
-          const [animation] = curves.getAnimations();
-          if (!animation) {
-            throw new Error("The curve reveal animation did not start");
+        (chart) => {
+          const animatedLayers = [
+            chart.querySelector(".complexity-chart__curves"),
+            chart.querySelector(".complexity-chart__annotations"),
+          ];
+          for (const layer of animatedLayers) {
+            const [animation] = layer.getAnimations();
+            if (!animation) {
+              throw new Error("A chart reveal animation did not start");
+            }
+            animation.finish();
           }
-          animation.finish();
         }
         """
     )
@@ -96,9 +186,13 @@ def _wait_for_curve_animation(page: Page) -> None:
     )
     page.wait_for_function(
         """
-        () =>
-          document.querySelector(".complexity-chart__curves")
-            .getAnimations().length === 1
+        () => {
+          const chart = document.querySelector(".complexity-chart");
+          return [
+            chart.querySelector(".complexity-chart__curves"),
+            chart.querySelector(".complexity-chart__annotations"),
+          ].every((layer) => layer.getAnimations().length === 1);
+        }
         """
     )
 
@@ -140,6 +234,18 @@ def _install_controlled_intersection_observer(page: Page) -> None:
           }
 
           window.__complexityControlledObservers = instances;
+          window.__complexityControlledChartObservers = () => {
+            const panel = document.querySelector(
+              "#complexity .chart-panel",
+            );
+            return instances.filter((observer) =>
+              observer.targets.includes(panel),
+            );
+          };
+          window.__complexityControlledActiveChartObservers = () =>
+            window.__complexityControlledChartObservers().filter(
+              (observer) => observer.disconnectCount === 0,
+            );
           window.IntersectionObserver = ControlledIntersectionObserver;
         })();
         """
@@ -348,27 +454,35 @@ def test_finished_curves_fill_the_chart_in_every_theme_and_layout(
         ("dark", (390, 844), 1),
     ],
 )
-def test_finished_layers_match_the_legacy_single_canvas_pixel_for_pixel(
+def test_finished_canvas_layers_match_the_curve_and_grid_reference_pixel_for_pixel(
     driver: DriverFactory,
     theme: str,
     viewport: tuple[int, int],
     device_scale_factor: float,
 ) -> None:
-    """Keep the expanded graph identical to the former single-canvas artwork.
+    """Keep the expanded canvas artwork identical after moving text into DOM.
 
     Alpha in three broad bands cannot distinguish the intended two curves from
-    a wrong formula, thickness, label position, color, or arbitrary pink
-    scribble. The strongest contract for “fully expanded looks exactly as it
-    does now” is the original renderer itself.
+    a wrong formula, thickness, color, or arbitrary pink scribble. The curve
+    labels now intentionally live in selectable DOM elements, so this pixel
+    comparison is scoped to the two canvases: the grid and both plotted paths.
 
     For both themes, both responsive layouts, and DPR 1/2, this test draws an
-    offscreen reference with the exact former single-canvas order: grid,
-    unchecked-entropy path, verification path, axes, then curve labels. It
-    separately composites the new static and curve layers and compares every
-    RGBA channel. A two-channel tolerance is reserved only for transparent
-    premultiplication at antialiased edges. Changing the exponential constant,
-    sampling, padding, stroke width/caps, text position, theme colors, or layer
-    order therefore fails this regression.
+    offscreen references with the exact production layer split: the independently
+    expanded grid on one canvas and both curves on the other, composited in DOM
+    order. The dotted working
+    zone must span the full chart-content width—aligned with the header's
+    ``COMPLEXITY`` edge—and be shifted down by exactly one third of the distance
+    between adjacent guides. The two curve paths must now begin at that same
+    left edge, while retaining their established breathing room on the right.
+
+    The test composites the static and curve layers and compares every RGBA
+    channel. A two-channel tolerance is reserved only for transparent
+    premultiplication at antialiased edges. Changing either grid endpoint or
+    offset, the exponential constant, sampling, curve padding, stroke
+    width/caps, theme colors, or layer order therefore fails this regression,
+    while DOM typography and collision safety are protected by their dedicated
+    tests below.
     """
 
     page = driver(
@@ -394,6 +508,13 @@ def test_finished_layers_match_the_legacy_single_canvas_pixel_for_pixel(
     )
     toggle.click()
     expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    page.evaluate(
+        """
+        () => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })
+        """
+    )
 
     comparison = page.locator(".complexity-chart").evaluate(
         """
@@ -407,12 +528,11 @@ def test_finished_layers_match_the_legacy_single_canvas_pixel_for_pixel(
           const dpr = Math.min(window.devicePixelRatio || 1, 2);
           const width = chart.getBoundingClientRect().width;
           const height = 330;
-          const pad = { top: 30, right: 24, bottom: 48, left: 42 };
+          const pad = { top: 30, right: 24, bottom: 48, left: 0 };
           const plotWidth = width - pad.left - pad.right;
           const plotHeight = height - pad.top - pad.bottom;
+          const gridTop = pad.top + plotHeight / 12;
           const styles = getComputedStyle(document.documentElement);
-          const ink =
-            styles.getPropertyValue("--ink-muted").trim() || "#8d8790";
           const grid =
             styles.getPropertyValue("--line").trim() || "#ddd6dc";
           const hot = styles.getPropertyValue("--hot").trim() || "#ff3e9d";
@@ -429,32 +549,38 @@ def test_finished_layers_match_the_legacy_single_canvas_pixel_for_pixel(
           referenceContext.setLineDash([3, 6]);
 
           for (let index = 0; index <= 4; index += 1) {
-            const y = pad.top + (plotHeight / 4) * index;
+            const y = gridTop + (plotHeight / 4) * index;
             referenceContext.beginPath();
-            referenceContext.moveTo(pad.left, y);
-            referenceContext.lineTo(width - pad.right, y);
+            referenceContext.moveTo(0, y);
+            referenceContext.lineTo(width, y);
             referenceContext.stroke();
           }
           referenceContext.setLineDash([]);
 
+          const curvesReference = document.createElement("canvas");
+          curvesReference.width = curvesLayer.width;
+          curvesReference.height = curvesLayer.height;
+          const curvesReferenceContext = curvesReference.getContext("2d");
+          curvesReferenceContext.scale(dpr, dpr);
+
           const plot = (fn, color, lineWidth) => {
-            referenceContext.beginPath();
+            curvesReferenceContext.beginPath();
             for (let index = 0; index <= 160; index += 1) {
               const progress = index / 160;
               const x = pad.left + progress * plotWidth;
               const value = Math.min(1, fn(progress));
               const y = pad.top + plotHeight - value * plotHeight;
               if (index === 0) {
-                referenceContext.moveTo(x, y);
+                curvesReferenceContext.moveTo(x, y);
               } else {
-                referenceContext.lineTo(x, y);
+                curvesReferenceContext.lineTo(x, y);
               }
             }
-            referenceContext.lineWidth = lineWidth;
-            referenceContext.strokeStyle = color;
-            referenceContext.lineCap = "round";
-            referenceContext.lineJoin = "round";
-            referenceContext.stroke();
+            curvesReferenceContext.lineWidth = lineWidth;
+            curvesReferenceContext.strokeStyle = color;
+            curvesReferenceContext.lineCap = "round";
+            curvesReferenceContext.lineJoin = "round";
+            curvesReferenceContext.stroke();
           };
 
           plot(
@@ -465,32 +591,13 @@ def test_finished_layers_match_the_legacy_single_canvas_pixel_for_pixel(
           );
           plot((x) => 0.06 + 0.28 * x + 0.16 * x * x, hotSoft, 3);
 
-          referenceContext.fillStyle = ink;
-          referenceContext.font =
-            "500 11px var(--font-geist-mono), monospace";
-          referenceContext.textAlign = "left";
-          referenceContext.fillText("CHANGE COST", 0, 14);
-          referenceContext.textAlign = "right";
-          referenceContext.fillText(
-            "SYSTEM SCALE →",
-            width - pad.right,
-            height - 10,
-          );
-          referenceContext.font =
-            "600 11px var(--font-geist-mono), monospace";
-          referenceContext.fillStyle = hot;
-          referenceContext.textAlign = "right";
-          referenceContext.fillText(
-            "UNCHECKED ENTROPY",
-            width - pad.right - 28,
-            pad.top + 15,
-          );
-          referenceContext.fillStyle = hotSoft;
-          referenceContext.fillText(
-            "WITH VERIFICATION",
-            width - pad.right - 4,
-            pad.top + plotHeight * 0.65,
-          );
+          const expectedComposite = document.createElement("canvas");
+          expectedComposite.width = staticLayer.width;
+          expectedComposite.height = staticLayer.height;
+          const expectedCompositeContext =
+            expectedComposite.getContext("2d");
+          expectedCompositeContext.drawImage(reference, 0, 0);
+          expectedCompositeContext.drawImage(curvesReference, 0, 0);
 
           const composite = document.createElement("canvas");
           composite.width = staticLayer.width;
@@ -499,11 +606,11 @@ def test_finished_layers_match_the_legacy_single_canvas_pixel_for_pixel(
           compositeContext.drawImage(staticLayer, 0, 0);
           compositeContext.drawImage(curvesLayer, 0, 0);
 
-          const expected = referenceContext.getImageData(
+          const expected = expectedCompositeContext.getImageData(
             0,
             0,
-            reference.width,
-            reference.height,
+            expectedComposite.width,
+            expectedComposite.height,
           ).data;
           const actual = compositeContext.getImageData(
             0,
@@ -747,6 +854,608 @@ def test_redundant_copy_column_legend_stays_removed(
         "role",
         "img",
     )
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_chart_axis_labels_share_one_dom_typography_in_every_theme(
+    driver: DriverFactory,
+    theme: str,
+) -> None:
+    """Render both axis labels with exactly the same text pipeline and style.
+
+    ``CHANGE COST`` used to be painted into the static canvas while
+    ``SYSTEM SCALE →`` became a DOM label so it could participate in the new
+    hover transition. Although both implementations requested an 11px
+    semibold mono font and ``--ink-muted``, canvas text used a different
+    antialiasing path and could silently fall back when its CSS font variable
+    was not resolved. The result was a visible mismatch in glyph shape,
+    thickness, and apparent color.
+
+    The corrected chart keeps both labels as DOM spans with one shared class.
+    This regression checks light and dark themes and compares every typography
+    property that affects their appearance: resolved family, size, weight,
+    line height, color, letter spacing, style, and capitalization. It also
+    requires two real span elements, so moving ``CHANGE COST`` back into the
+    canvas or styling either axis independently makes the test fail instead of
+    allowing the subtle mismatch to return.
+    """
+
+    page = driver(
+        stored_theme=theme,
+        viewport=(1440, 900),
+        load_interactive_visuals=False,
+    )
+    _center_chart_panel(page)
+
+    labels = page.locator(".chart-panel__axis-label")
+    expect(labels).to_have_count(2)
+    expect(page.locator(".chart-panel__cost")).to_have_text("↑ CHANGE COST")
+    expect(page.locator(".chart-panel__scale")).to_have_text(
+        "SYSTEM SCALE →",
+    )
+
+    resolved = labels.evaluate_all(
+        """
+        (elements) => elements.map((element) => {
+          const style = getComputedStyle(element);
+          return {
+            tagName: element.tagName,
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            lineHeight: style.lineHeight,
+            color: style.color,
+            letterSpacing: style.letterSpacing,
+            fontStyle: style.fontStyle,
+            textTransform: style.textTransform,
+          };
+        })
+        """
+    )
+
+    assert resolved[0]["tagName"] == "SPAN"
+    assert resolved[1]["tagName"] == "SPAN"
+    assert resolved[0] == resolved[1]
+
+
+@pytest.mark.parametrize("viewport", [(1440, 900), (390, 844)])
+def test_change_cost_label_and_curves_align_with_the_dotted_working_area(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Align the curves and upper axis label with the expanded dotted grid.
+
+    The chart's dotted working area spans the full canvas width, but a previous
+    iteration kept the curves and ``↑ CHANGE COST`` on the old 42 px inset.
+    That left a conspicuous empty strip at the start of the graph even though
+    the guides had already moved left. The label also sat too close to the
+    solid header divider instead of being centered in the band between that
+    divider and the first dotted guide.
+
+    This regression exercises both desktop and phone widths. It requires the
+    complete selectable label to share the dotted zone's exact left edge and
+    to have its vertical center equidistant from the header divider and first
+    dotted guide. It also samples the rendered curve canvas and requires a
+    non-transparent curve pixel at the same left edge. Restoring the legacy
+    42 px plot padding, applying a breakpoint-specific offset, or moving only
+    the text while leaving the curves behind makes the test fail.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    _center_chart_panel(page)
+    _finish_curve_animation(page)
+
+    geometry = page.locator(".complexity-chart").evaluate(
+        """
+        (chart) => {
+          const chartRect = chart.getBoundingClientRect();
+          const label = chart.querySelector(".chart-panel__cost");
+          const labelRect = label.getBoundingClientRect();
+          const canvas = chart.querySelector(".complexity-chart__curves");
+          const context = canvas.getContext("2d");
+          const dpr = canvas.width / chartRect.width;
+          let firstCurveColumn = null;
+
+          for (let x = 0; x < canvas.width && firstCurveColumn === null; x += 1) {
+            const pixels = context.getImageData(x, 0, 1, canvas.height).data;
+            for (let index = 3; index < pixels.length; index += 4) {
+              if (pixels[index] !== 0) {
+                firstCurveColumn = x / dpr;
+                break;
+              }
+            }
+          }
+
+          const plotHeight = 330 - 30 - 48;
+          const firstGuideY = 30 + plotHeight / 12;
+          const labelCenterY =
+            labelRect.top - chartRect.top + labelRect.height / 2;
+          return {
+            text: label.textContent.trim(),
+            leftOffset: labelRect.left - chartRect.left,
+            labelCenterY,
+            firstGuideY,
+            distanceFromDivider: labelCenterY,
+            distanceFromFirstGuide: firstGuideY - labelCenterY,
+            firstCurveColumn,
+          };
+        }
+        """
+    )
+
+    assert geometry["text"] == "↑ CHANGE COST"
+    assert geometry["leftOffset"] == pytest.approx(0, abs=0.5)
+    assert geometry["labelCenterY"] == pytest.approx(
+        geometry["firstGuideY"] / 2,
+        abs=0.5,
+    )
+    assert geometry["distanceFromDivider"] == pytest.approx(
+        geometry["distanceFromFirstGuide"],
+        abs=0.5,
+    )
+    assert geometry["firstCurveColumn"] is not None
+    assert geometry["firstCurveColumn"] <= 1
+
+
+@pytest.mark.parametrize("viewport", [(1440, 900), (390, 844)])
+def test_chart_footer_caption_is_visible_only_while_the_panel_is_hovered(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Reveal the marketing disclaimer only for the chart's hover state.
+
+    The resting chart footer must show just ``SYSTEM SCALE →``. Its right edge
+    must match the full-width dotted working area, and its vertical center must
+    sit halfway between the final dotted guide and the panel's inner bottom.
+    Hovering anywhere over the
+    chart card must raise the scale label and reveal
+    ``Illustrative model—not a promise from marketing.`` by moving it downward
+    from beneath the scale label. At the end of that transition, the scale and
+    disclaimer must occupy the established pre-change positions: the scale
+    remains inside the bottom of the canvas and the disclaimer begins directly
+    below it without changing the panel's geometry.
+
+    This regression exercises desktop and phone layouts, completes CSS
+    transitions programmatically instead of sleeping for animation timing, and
+    then moves the pointer away again. It verifies the complete round trip:
+    hidden/lowered at rest, visible/raised while hovered, and the exact initial
+    state restored after hover ends. A permanently visible disclaimer, a
+    one-way animation, a JavaScript-controlled sticky state, or a footer that
+    shifts neighboring layout therefore makes the test fail deterministically.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    _center_chart_panel(page)
+
+    panel = page.locator(".chart-panel")
+    footer = page.locator(".chart-panel__footer")
+    scale = page.locator(".chart-panel__scale")
+    caption = page.locator(".chart-panel__caption")
+
+    expect(scale).to_have_text("SYSTEM SCALE →")
+    expect(caption).to_have_text(
+        "Illustrative model—not a promise from marketing.",
+    )
+
+    def state() -> dict[str, object]:
+        return footer.evaluate(
+            """
+            (footer) => {
+              const chart = footer.previousElementSibling;
+              const scale = footer.querySelector(".chart-panel__scale");
+              const caption = footer.querySelector(".chart-panel__caption");
+              const scaleStyle = getComputedStyle(scale);
+              const captionStyle = getComputedStyle(caption);
+              const transformY = (style) =>
+                style.transform === "none"
+                  ? 0
+                  : new DOMMatrixReadOnly(style.transform).m42;
+              const rectangle = (element) => {
+                const rect = element.getBoundingClientRect();
+                return {
+                  top: rect.top,
+                  right: rect.right,
+                  bottom: rect.bottom,
+                  height: rect.height,
+                };
+              };
+              const panel = footer.closest(".chart-panel");
+              const panelStyle = getComputedStyle(panel);
+              const panelRect = panel.getBoundingClientRect();
+
+              return {
+                chart: rectangle(chart),
+                footer: rectangle(footer),
+                scale: rectangle(scale),
+                caption: rectangle(caption),
+                scaleTransform: scaleStyle.transform,
+                captionTransform: captionStyle.transform,
+                scaleTransformY: transformY(scaleStyle),
+                captionTransformY: transformY(captionStyle),
+                captionOpacity: captionStyle.opacity,
+                captionVisibility: captionStyle.visibility,
+                captionClipPath: captionStyle.clipPath,
+                panelHeight: panelRect.height,
+                panelInnerBottom:
+                  panelRect.bottom - parseFloat(panelStyle.paddingBottom),
+              };
+            }
+            """
+        )
+
+    resting = state()
+    assert resting["captionOpacity"] == "0"
+    assert resting["captionVisibility"] == "hidden"
+    assert resting["captionClipPath"] != "inset(0px)"
+    canvas_scale = resting["chart"]["height"] / 330
+    last_guide_y = resting["chart"]["top"] + (
+        30 + ((330 - 30 - 48) / 12) + (330 - 30 - 48)
+    ) * canvas_scale
+    scale_center_y = (
+        resting["scale"]["top"] + resting["scale"]["bottom"]
+    ) / 2
+    lower_band_center_y = (
+        last_guide_y + resting["panelInnerBottom"]
+    ) / 2
+    assert resting["scale"]["right"] == pytest.approx(
+        resting["chart"]["right"],
+        abs=0.5,
+    )
+    assert scale_center_y == pytest.approx(lower_band_center_y, abs=0.75)
+
+    panel.hover()
+    footer.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+        }
+        """
+    )
+    hovered = state()
+
+    assert hovered["captionOpacity"] == "1"
+    assert hovered["captionVisibility"] == "visible"
+    assert hovered["captionClipPath"] == "inset(0px)"
+    assert hovered["scaleTransformY"] == pytest.approx(0, abs=0.01)
+    assert hovered["captionTransformY"] == pytest.approx(0, abs=0.01)
+    assert resting["scale"]["top"] - hovered["scale"]["top"] == pytest.approx(
+        resting["scaleTransformY"],
+        abs=0.75,
+    )
+    assert hovered["caption"]["top"] - resting["caption"]["top"] == pytest.approx(
+        12,
+        abs=0.75,
+    )
+    assert hovered["caption"]["top"] == pytest.approx(
+        hovered["chart"]["bottom"],
+        abs=0.75,
+    )
+    assert hovered["panelHeight"] == pytest.approx(
+        resting["panelHeight"],
+        abs=0.01,
+    )
+
+    page.mouse.move(1, 1)
+    footer.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+        }
+        """
+    )
+    restored = state()
+
+    assert restored["captionOpacity"] == "0"
+    assert restored["captionVisibility"] == "hidden"
+    assert restored["scale"]["top"] == pytest.approx(
+        resting["scale"]["top"],
+        abs=0.01,
+    )
+    assert restored["caption"]["top"] == pytest.approx(
+        resting["caption"]["top"],
+        abs=0.01,
+    )
+    assert restored["panelHeight"] == pytest.approx(
+        resting["panelHeight"],
+        abs=0.01,
+    )
+
+
+def test_verification_label_stays_clear_of_both_curves_across_all_layout_ranges(
+    driver: DriverFactory,
+) -> None:
+    """Prevent ``WITH VERIFICATION`` from touching either curve at any width.
+
+    Earlier collision handling considered only the burgundy verification path.
+    At several intermediate and narrow widths, the fixed-width label began to
+    the left of the curves' crossing, so the brighter entropy path could still
+    pass through its first letters even though the burgundy gap was correct.
+    A breakpoint cannot cover every possible panel width because both the
+    crossing coordinate and the label's relative width vary continuously.
+
+    The production layout now measures the real DOM label, moves it right until
+    its left edge clears the mathematical crossing whenever the available width
+    permits, and otherwise uses every available horizontal pixel. Its vertical
+    coordinate is then derived from whichever curve is lower at that edge.
+    Because both curves rise monotonically to the right, this single edge is the
+    strict collision boundary for the entire word.
+
+    This test resizes one live page through an eight-pixel sweep from 320 to
+    1600 px, then checks large desktop endpoints through 2560 px. At every width
+    it waits for ResizeObserver to publish the matching layout, independently
+    recomputes both equations and their intersection, accounts for the mobile
+    canvas's vertical scaling, and requires at least six CSS pixels between
+    each stroke and the label box. It also proves that the label actually shifts
+    right on constrained layouts, retains its established 28 px inset when no
+    collision exists, and never leaves the chart. Restoring the old one-curve
+    calculation, using a stale label measurement, applying a coarse breakpoint,
+    or allowing either path through the text therefore fails without screenshot
+    timing or font-antialiasing assumptions.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(320, 900),
+        load_interactive_visuals=False,
+    )
+    page.evaluate("document.fonts.ready")
+    viewport_widths = [*range(320, 1601, 8), 1920, 2560]
+    shifted_widths: list[int] = []
+    unchanged_widths: list[int] = []
+
+    for viewport_width in viewport_widths:
+        page.set_viewport_size({"width": viewport_width, "height": 900})
+        page.wait_for_function(
+            """
+            () => {
+              const chart = document.querySelector(".complexity-chart");
+              if (!chart?.dataset.labelLayoutWidth) return false;
+              return Math.abs(
+                Number(chart.dataset.labelLayoutWidth) -
+                chart.getBoundingClientRect().width
+              ) < 0.1;
+            }
+            """
+        )
+        geometry = page.locator(".complexity-chart").evaluate(
+            """
+            (chart) => {
+              const label = chart.querySelector(
+                ".complexity-chart__curve-label--verification",
+              );
+              const chartRect = chart.getBoundingClientRect();
+              const labelRect = label.getBoundingClientRect();
+              const pad = {top: 30, right: 24, bottom: 48, left: 0};
+              const plotWidth = chartRect.width - pad.left - pad.right;
+              const plotHeight = 330 - pad.top - pad.bottom;
+              const labelLeft = labelRect.left - chartRect.left;
+              const entropyValueAt = (progress) =>
+                (Math.exp(4.35 * progress) - 1) /
+                (Math.exp(4.35) - 1);
+              const verificationValueAt = (progress) =>
+                0.06 + 0.28 * progress + 0.16 * progress * progress;
+              const progress = Math.max(
+                0,
+                Math.min(1, (labelLeft - pad.left) / plotWidth),
+              );
+              let crossingLow = 0;
+              let crossingHigh = 1;
+              for (let iteration = 0; iteration < 48; iteration += 1) {
+                const middle = (crossingLow + crossingHigh) / 2;
+                if (
+                  entropyValueAt(middle) <
+                  verificationValueAt(middle)
+                ) {
+                  crossingLow = middle;
+                } else {
+                  crossingHigh = middle;
+                }
+              }
+              const crossingProgress = (crossingLow + crossingHigh) / 2;
+              const crossingX =
+                chartRect.left + pad.left + crossingProgress * plotWidth;
+              const verticalScale = chartRect.height / 330;
+              const entropyY =
+                chartRect.top +
+                (
+                  pad.top +
+                  plotHeight -
+                  entropyValueAt(progress) * plotHeight
+                ) * verticalScale;
+              const verificationY =
+                chartRect.top +
+                (
+                  pad.top +
+                  plotHeight -
+                  verificationValueAt(progress) * plotHeight
+                ) * verticalScale;
+
+              return {
+                chartWidth: chartRect.width,
+                labelLeft: labelRect.left,
+                labelRight: labelRect.right,
+                labelWidth: labelRect.width,
+                chartLeft: chartRect.left,
+                chartRight: chartRect.right,
+                entropyGap: labelRect.top - entropyY,
+                verificationGap: labelRect.top - verificationY,
+                crossingX,
+                rightInset: chartRect.right - labelRect.right,
+              };
+            }
+            """
+        )
+
+        assert geometry["entropyGap"] >= 6, (
+            f"verification label touched the entropy curve at viewport "
+            f"{viewport_width}px / chart {geometry['chartWidth']:.2f}px: "
+            f"gap was {geometry['entropyGap']:.2f}px"
+        )
+        assert geometry["verificationGap"] >= 6, (
+            f"verification label touched its own curve at viewport "
+            f"{viewport_width}px / chart {geometry['chartWidth']:.2f}px: "
+            f"gap was {geometry['verificationGap']:.2f}px"
+        )
+        assert geometry["labelLeft"] >= geometry["chartLeft"]
+        assert geometry["labelRight"] <= geometry["chartRight"]
+        if geometry["rightInset"] < 27.5:
+            shifted_widths.append(viewport_width)
+        else:
+            unchanged_widths.append(viewport_width)
+
+        maximum_label_left = (
+            geometry["chartRight"] - 4 - geometry["labelWidth"]
+        )
+        if maximum_label_left >= geometry["crossingX"] + 6:
+            assert geometry["labelLeft"] >= geometry["crossingX"] + 5.5
+
+    assert shifted_widths
+    assert unchanged_widths
+
+
+def test_every_chart_text_is_real_user_selectable_dom_content(
+    driver: DriverFactory,
+) -> None:
+    """Make every visible word in the graph selectable with a pointer.
+
+    The two curve names were formerly painted with ``canvas.fillText``. They
+    looked like labels but were only pixels, so a user could select the header,
+    axes, and hover caption while ``UNCHECKED ENTROPY`` and
+    ``WITH VERIFICATION`` silently refused selection. A partial fix would still
+    leave the hidden-on-rest caption or one axis blocked by a canvas layer or by
+    ``pointer-events: none``.
+
+    This test enumerates every textual item in the chart panel: both header
+    values, both curve names, both axes, and the hover-only explanatory caption.
+    After revealing the caption it requires one real DOM node per item, explicit
+    ``user-select: text``, pointer hit-testing, and a complete Range selection
+    equal to the visible string. It then instruments ``fillText`` and forces
+    both a theme redraw and a resize redraw; zero calls prove that no future
+    label can be moved back into either canvas while the DOM assertions happen
+    to remain green. Restoring canvas text, disabling pointer events on the
+    footer, or covering a label with a drawing layer makes this regression fail.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1280, 900),
+        load_interactive_visuals=False,
+    )
+    _center_chart_panel(page)
+    _finish_curve_animation(page)
+    panel = page.locator("#complexity .chart-panel")
+    panel.hover()
+    expect(page.locator(".chart-panel__caption")).to_be_visible()
+    page.wait_for_function(
+        """
+        () => {
+          const caption = document.querySelector(".chart-panel__caption");
+          const rect = caption?.getBoundingClientRect();
+          if (!caption || !rect) return false;
+          const hit = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          );
+          return hit === caption || caption.contains(hit);
+        }
+        """
+    )
+
+    labels = {
+        ".chart-panel__header span:first-child": "COMPLEXITY / CHANGE COST",
+        ".chart-panel__header span:last-child": "MODEL 04.35",
+        ".chart-panel__cost": "↑ CHANGE COST",
+        ".complexity-chart__curve-label--entropy": "UNCHECKED ENTROPY",
+        ".complexity-chart__curve-label--verification": "WITH VERIFICATION",
+        ".chart-panel__scale": "SYSTEM SCALE →",
+        ".chart-panel__caption": (
+            "Illustrative model—not a promise from marketing."
+        ),
+    }
+
+    for selector, expected_text in labels.items():
+        label = page.locator(selector)
+        expect(label).to_have_count(1)
+        expect(label).to_have_text(expected_text)
+        selection = label.evaluate(
+            """
+            (element) => {
+              const style = getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              const hit = document.elementFromPoint(
+                rect.left + rect.width / 2,
+                rect.top + rect.height / 2,
+              );
+              const range = document.createRange();
+              range.selectNodeContents(element);
+              const selection = window.getSelection();
+              selection.removeAllRanges();
+              selection.addRange(range);
+              const selectedText = selection.toString();
+              selection.removeAllRanges();
+
+              return {
+                selectedText,
+                userSelect: style.userSelect,
+                pointerEvents: style.pointerEvents,
+                hitTarget:
+                  hit === element ||
+                  element.contains(hit),
+              };
+            }
+            """
+        )
+
+        assert selection["selectedText"].casefold() == expected_text.casefold()
+        assert selection["userSelect"] == "text"
+        assert selection["pointerEvents"] != "none"
+        assert selection["hitTarget"] is True, selector
+
+    page.evaluate(
+        """
+        () => {
+          window.__chartFillTextCalls = 0;
+          const original = CanvasRenderingContext2D.prototype.fillText;
+          CanvasRenderingContext2D.prototype.fillText = function (...args) {
+            window.__chartFillTextCalls += 1;
+            return original.apply(this, args);
+          };
+        }
+        """
+    )
+    toggle = page.get_by_role(
+        "button",
+        name="Toggle color theme",
+        exact=True,
+    )
+    toggle.click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    page.set_viewport_size({"width": 760, "height": 900})
+    page.wait_for_function(
+        """
+        () => {
+          const chart = document.querySelector(".complexity-chart");
+          return chart?.dataset.labelLayoutWidth &&
+            Math.abs(
+              Number(chart.dataset.labelLayoutWidth) -
+              chart.getBoundingClientRect().width
+            ) < 0.1;
+        }
+        """
+    )
+    assert page.evaluate("window.__chartFillTextCalls") == 0
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -1087,15 +1796,19 @@ def test_reveal_uses_css_without_inline_frames_or_dom_replacement(
     The requirement prefers a CSS animation, so the IntersectionObserver may
     set one persistent marker but must not run a JavaScript frame loop, rewrite
     inline ``clip-path`` values, append temporary masks, or replace either
-    canvas. Before revealing, this test records both layer nodes and observes
-    the chart subtree for attributes and child-list changes.
+    canvas. As soon as the chart mounts, this test records both layer nodes and
+    observes the complete chart subtree. It lets font and ResizeObserver setup
+    finish, accepting only intrinsic canvas sizing plus the chart's calculated
+    label-layout attributes; child replacement or any other initialization
+    mutation still fails.
 
-    It then starts the reveal and seeks the CSS Animation through four exact
-    progress points. Computed clipping must change at every point even though
-    the curve canvas has no inline animation styles and the original child
-    nodes remain in place. The sole permitted mutation is the wrapper marker
-    changing from false to true. A requestAnimationFrame renderer or DOM-mask
-    implementation fails this regression without any timing assumptions.
+    The initialization records are then cleared before the test starts reveal
+    and seeks the CSS Animation through four exact progress points. Computed
+    clipping must change at every point even though the curve canvas has no
+    inline animation styles and the original child nodes remain in place. The
+    sole reveal mutation permitted is the wrapper marker changing from false
+    to true. A requestAnimationFrame renderer that manipulates reveal styles or
+    a DOM-mask implementation fails this regression without timing assumptions.
     """
 
     page = driver(
@@ -1127,6 +1840,55 @@ def test_reveal_uses_css_without_inline_frames_or_dom_replacement(
           });
         }
         """
+    )
+    _wait_for_initial_chart_layout(page)
+    expect(chart).to_have_attribute("data-curves-revealed", "false")
+    initialization = chart.evaluate(
+        """
+        (element) => {
+          window.__complexityMutationObserver.takeRecords().forEach((record) => {
+            window.__complexityMutations.push({
+              type: record.type,
+              attributeName: record.attributeName,
+              targetClass: record.target.className,
+              added: record.addedNodes.length,
+              removed: record.removedNodes.length,
+            });
+          });
+          const result = {
+            sameChildren:
+              element.children.length ===
+                window.__complexityOriginalChildren.length &&
+              [...element.children].every(
+                (child, index) =>
+                  child === window.__complexityOriginalChildren[index],
+              ),
+            mutations: window.__complexityMutations,
+          };
+          window.__complexityMutations = [];
+          return result;
+        }
+        """
+    )
+    assert initialization["sameChildren"]
+    assert all(
+        mutation["type"] == "attributes"
+        and (
+            (
+                mutation["targetClass"]
+                in {
+                    "complexity-chart__layer complexity-chart__static",
+                    "complexity-chart__layer complexity-chart__curves",
+                }
+                and mutation["attributeName"] in {"width", "height"}
+            )
+            or (
+                mutation["targetClass"] == "complexity-chart"
+                and mutation["attributeName"]
+                in {"style", "data-label-layout-width"}
+            )
+        )
+        for mutation in initialization["mutations"]
     )
 
     _center_chart_panel(page)
@@ -1201,11 +1963,13 @@ def test_batched_intersection_delivery_remembers_a_fast_complete_pass(
     postpones the requested first reveal until the user scrolls back.
 
     A controlled observer supplies all three entries in one callback, with no
-    scheduler or wall-clock dependency. The implementation must inspect the
-    complete batch, set its persistent marker once, disconnect that observer,
-    and instantiate exactly one CSS animation. Reverting the callback to
-    ``([entry]) => ...`` reproduces the fast-scroll defect and makes this test
-    fail.
+    scheduler or wall-clock dependency. The test resolves that observer by its
+    ``.chart-panel`` target rather than construction order because the tokamak and
+    tentacle visibility observers may mount before or after it. The implementation
+    must inspect the complete batch, set its persistent marker once, disconnect
+    that observer, and instantiate exactly one CSS animation. Reverting the
+    callback to ``([entry]) => ...`` reproduces the fast-scroll defect and makes
+    this test fail.
     """
 
     page = driver(
@@ -1216,14 +1980,21 @@ def test_batched_intersection_delivery_remembers_a_fast_complete_pass(
     _install_controlled_intersection_observer(page)
     chart = page.locator(".complexity-chart")
     expect(chart).to_have_attribute("data-curves-revealed", "false")
+    page.wait_for_function(
+        """
+        () =>
+          window.__complexityControlledActiveChartObservers().length === 1
+        """
+    )
 
     result = page.evaluate(
         """
         () => {
-          const instances = window.__complexityControlledObservers;
-          const observer = instances[instances.length - 1];
+          const [observer] =
+            window.__complexityControlledActiveChartObservers();
           const threshold = Number(observer.options.threshold);
           const target = observer.targets[0];
+          const disconnectBefore = observer.disconnectCount;
           observer.callback([
             {
               target,
@@ -1244,7 +2015,8 @@ def test_batched_intersection_delivery_remembers_a_fast_complete_pass(
           return {
             threshold,
             targetClass: target.className,
-            disconnectCount: observer.disconnectCount,
+            disconnectBefore,
+            disconnectAfter: observer.disconnectCount,
           };
         }
         """
@@ -1252,7 +2024,7 @@ def test_batched_intersection_delivery_remembers_a_fast_complete_pass(
 
     assert result["targetClass"] == "chart-panel"
     assert result["threshold"] == pytest.approx(0.985, abs=0.001)
-    assert result["disconnectCount"] >= 1
+    assert result["disconnectAfter"] == result["disconnectBefore"] + 1
     _wait_for_curve_animation(page)
 
 
@@ -1268,12 +2040,15 @@ def test_stale_observer_from_old_viewport_cannot_start_the_reveal(
     callback can reveal the chart at a ratio that is valid for the old short
     window but below the new 98.5% requirement.
 
-    This deterministic test captures the active short-window observer, resizes
-    until a new observer with a higher threshold exists, and then manually
-    delivers an 80% entry through the stale callback. The marker must remain
-    false. Only a qualifying entry from the newest observer may start the one
-    CSS animation. Removing the generation check reproduces the race and makes
-    the first marker assertion fail.
+    This deterministic test captures the active short-window chart observer by
+    its ``.chart-panel`` target, resizes until a new chart observer with a higher
+    threshold exists, and then manually delivers an entry whose ratio is computed
+    strictly between the old and new thresholds through the stale callback.
+    Resolving by target prevents unrelated tokamak or tentacle observers from
+    making mount order part of the contract. The marker must remain false. Only a
+    qualifying entry from the newest observer may start the one CSS animation.
+    Removing the generation check reproduces the race and makes the first marker
+    assertion fail.
     """
 
     page = driver(
@@ -1283,15 +2058,19 @@ def test_stale_observer_from_old_viewport_cannot_start_the_reveal(
     )
     _install_controlled_intersection_observer(page)
     page.wait_for_function(
-        "() => window.__complexityControlledObservers.length >= 1"
+        """
+        () =>
+          window.__complexityControlledActiveChartObservers().length === 1
+        """
     )
     before_resize = page.evaluate(
         """
         () => {
-          const instances = window.__complexityControlledObservers;
-          window.__complexityStaleObserver = instances[instances.length - 1];
+          const observers = window.__complexityControlledChartObservers();
+          [window.__complexityStaleObserver] =
+            window.__complexityControlledActiveChartObservers();
           return {
-            count: instances.length,
+            count: observers.length,
             threshold: Number(
               window.__complexityStaleObserver.options.threshold,
             ),
@@ -1304,28 +2083,49 @@ def test_stale_observer_from_old_viewport_cannot_start_the_reveal(
     page.set_viewport_size({"width": 844, "height": 900})
     page.wait_for_function(
         """
-        (oldCount) =>
-          window.__complexityControlledObservers.length > oldCount &&
+        (oldState) =>
+          window.__complexityControlledChartObservers().length >
+            oldState.count &&
+          window.__complexityControlledActiveChartObservers().length === 1 &&
           Number(
-            window.__complexityControlledObservers[
-              window.__complexityControlledObservers.length - 1
-            ].options.threshold
-          ) >= 0.984
+            window.__complexityControlledActiveChartObservers()[0]
+              .options.threshold
+          ) > oldState.threshold
         """,
-        arg=before_resize["count"],
+        arg=before_resize,
     )
+    after_resize = page.evaluate(
+        """
+        () => {
+          const [observer] =
+            window.__complexityControlledActiveChartObservers();
+          return {
+            staleDisconnectCount:
+              window.__complexityStaleObserver.disconnectCount,
+            threshold: Number(observer.options.threshold),
+          };
+        }
+        """
+    )
+    assert after_resize["staleDisconnectCount"] >= 1
+    stale_ratio = (
+        before_resize["threshold"] + after_resize["threshold"]
+    ) / 2
+    assert before_resize["threshold"] < stale_ratio
+    assert stale_ratio < after_resize["threshold"]
 
     page.evaluate(
         """
-        () => {
+        (staleRatio) => {
           const observer = window.__complexityStaleObserver;
           observer.callback([{
             target: observer.targets[0],
             isIntersecting: true,
-            intersectionRatio: 0.8,
+            intersectionRatio: staleRatio,
           }]);
         }
-        """
+        """,
+        stale_ratio,
     )
     chart = page.locator(".complexity-chart")
     expect(chart).to_have_attribute("data-curves-revealed", "false")
@@ -1333,8 +2133,8 @@ def test_stale_observer_from_old_viewport_cannot_start_the_reveal(
     page.evaluate(
         """
         () => {
-          const instances = window.__complexityControlledObservers;
-          const observer = instances[instances.length - 1];
+          const [observer] =
+            window.__complexityControlledActiveChartObservers();
           observer.callback([{
             target: observer.targets[0],
             isIntersecting: true,

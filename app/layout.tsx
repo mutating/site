@@ -80,6 +80,76 @@ const anchorBootstrap = `
   (function () {
     if (!window.location.hash) return;
 
+    window.__tmcAnchorAlignmentInterrupted = false;
+    var frameRequest = 0;
+
+    function cancelPendingAlignment() {
+      window.__tmcAnchorAlignmentInterrupted = true;
+      if (frameRequest) {
+        window.cancelAnimationFrame(frameRequest);
+        frameRequest = 0;
+      }
+    }
+
+    function cancelPendingAlignmentFromKey(event) {
+      var target = event.target;
+      var isInteractive =
+        target instanceof Element &&
+        target.closest(
+          'a[href], button, input, select, textarea, summary, [contenteditable="true"]'
+        );
+      if (
+        isInteractive &&
+        (
+          event.key === 'ArrowUp' ||
+          event.key === 'ArrowDown' ||
+          event.key === 'Home' ||
+          event.key === 'End' ||
+          event.key === ' '
+        )
+      ) {
+        return;
+      }
+
+      if (
+        event.key === 'ArrowUp' ||
+        event.key === 'ArrowDown' ||
+        event.key === 'PageUp' ||
+        event.key === 'PageDown' ||
+        event.key === 'Home' ||
+        event.key === 'End' ||
+        event.key === ' '
+      ) {
+        cancelPendingAlignment();
+      }
+    }
+
+    function cancelPendingAlignmentFromWheel(event) {
+      if (
+        !event.ctrlKey &&
+        Number.isFinite(event.deltaY) &&
+        event.deltaY !== 0
+      ) {
+        cancelPendingAlignment();
+      }
+    }
+
+    function cancelPendingAlignmentFromFrame(event) {
+      var frame = document.querySelector('.contact__tentacles');
+      var deltaY = Number(event.data && event.data.deltaY);
+      if (
+        event.origin === window.location.origin &&
+        frame &&
+        event.source === frame.contentWindow &&
+        event.data &&
+        event.data.type === 'muta-tentacles-scroll-input' &&
+        Number.isFinite(deltaY) &&
+        deltaY !== 0
+      ) {
+        cancelPendingAlignment();
+      }
+    }
+
     function findHashTarget() {
       var encodedId = window.location.hash.slice(1);
       var id = encodedId;
@@ -92,6 +162,8 @@ const anchorBootstrap = `
     }
 
     function scrollToHash() {
+      if (window.__tmcAnchorAlignmentInterrupted) return;
+
       var target = findHashTarget();
       if (!target) return;
 
@@ -107,8 +179,29 @@ const anchorBootstrap = `
     }
 
     function alignHashTarget() {
+      if (window.__tmcAnchorAlignmentInterrupted) return;
+
       scrollToHash();
-      window.requestAnimationFrame(scrollToHash);
+      if (frameRequest) {
+        window.cancelAnimationFrame(frameRequest);
+      }
+      frameRequest = window.requestAnimationFrame(function () {
+        frameRequest = 0;
+        scrollToHash();
+      });
+    }
+
+    function restartHashAlignment() {
+      window.__tmcAnchorAlignmentInterrupted = false;
+      alignHashTarget();
+    }
+
+    function handlePageShow(event) {
+      if (event.persisted) {
+        restartHashAlignment();
+      } else {
+        alignHashTarget();
+      }
     }
 
     if (document.readyState === 'loading') {
@@ -120,7 +213,25 @@ const anchorBootstrap = `
     }
 
     window.addEventListener('load', alignHashTarget, { once: true });
-    window.addEventListener('pageshow', alignHashTarget);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('hashchange', restartHashAlignment);
+    window.addEventListener('wheel', cancelPendingAlignmentFromWheel, {
+      passive: true,
+      capture: true,
+    });
+    window.addEventListener('touchmove', cancelPendingAlignment, {
+      passive: true,
+      capture: true,
+    });
+    window.addEventListener(
+      'keydown',
+      cancelPendingAlignmentFromKey,
+      true,
+    );
+    window.addEventListener(
+      'message',
+      cancelPendingAlignmentFromFrame,
+    );
   })();
 `;
 

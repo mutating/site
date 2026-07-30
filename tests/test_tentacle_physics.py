@@ -680,14 +680,35 @@ def _open_contact_with_active_tentacle_runtime(
 
 
 def _settle_page_at_bottom(page: Page, canvas: Locator) -> Locator:
-    """Move to the lower boundary and settle the real scroll lifecycle."""
+    """Move to the lower boundary and settle the native scroll lifecycle."""
 
     frame = page.locator(".contact__tentacles")
     page.evaluate(
         """
-        () => {
+        async () => {
           const root = document.scrollingElement;
-          window.scrollTo({top: root.scrollHeight, behavior: "instant"});
+          const maximumScrollTop =
+            root.scrollHeight - root.clientHeight;
+          const waitForScrollEnd = () => new Promise((resolve) => {
+            window.addEventListener("scrollend", resolve, {once: true});
+          });
+          const retreatScrollTop = Math.max(0, maximumScrollTop - 2);
+
+          if (Math.abs(retreatScrollTop - root.scrollTop) > 0.5) {
+            const retreatFinished = waitForScrollEnd();
+            window.scrollTo({
+              top: retreatScrollTop,
+              behavior: "instant",
+            });
+            await retreatFinished;
+          }
+
+          const boundaryFinished = waitForScrollEnd();
+          window.scrollTo({
+            top: maximumScrollTop,
+            behavior: "instant",
+          });
+          await boundaryFinished;
         }
         """
     )
@@ -700,9 +721,6 @@ def _settle_page_at_bottom(page: Page, canvas: Locator) -> Locator:
           ) <= 1;
         }
         """
-    )
-    page.evaluate(
-        "() => window.dispatchEvent(new Event('scrollend'))"
     )
     expect(frame).to_have_attribute("data-scroll-active", "false")
     expect(canvas).to_have_attribute("data-runtime-visible", "true")
@@ -977,13 +995,16 @@ def test_bottom_boundary_input_cancels_an_inflight_scroll_pause(
     parent state can reapply that pause after the child has locally resumed.
     The visible result is a shorter version of the same bottom-of-page freeze.
 
-    At both responsive widths this test starts from the exact page bottom,
-    deliberately places the real parent/iframe protocol into active-scroll
-    mode, and then emits an outward wheel delta that cannot change scrollTop.
-    The parent state and child renderer must both become active immediately.
-    Advancing the fake clock through the discarded deadline must not produce a
-    late state reversal. This catches incomplete fixes that filter only new
-    pauses, clear only one of the two timers, or update the iframe without
+    At both responsive widths this test starts from the exact page bottom and
+    emits an inward iframe wheel delta. Synthetic wheel events do not move the
+    document, but this one can scroll upward and therefore deterministically
+    places the real child-to-parent protocol into active-scroll mode without
+    racing a browser-generated ``scrollend``. It then emits an outward delta
+    that cannot change ``scrollTop``. The parent state and child renderer must
+    both become active immediately. Advancing the fake clock through the
+    discarded deadline must not produce a late state reversal. This catches
+    incomplete fixes that filter only new pauses, introduce another suppression
+    transition at the discarded deadline, or update the iframe without
     synchronizing the host lifecycle.
     """
 
@@ -992,11 +1013,22 @@ def test_bottom_boundary_input_cancels_an_inflight_scroll_pause(
         viewport,
     )
     frame = _settle_page_at_bottom(page, canvas)
-    page.evaluate(
-        "() => window.dispatchEvent(new Event('scroll'))"
+    baseline_suppressions = int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    )
+    canvas.evaluate(
+        """
+        element => element.dispatchEvent(new WheelEvent("wheel", {
+          bubbles: true,
+          deltaY: -120,
+        }))
+        """
     )
     expect(frame).to_have_attribute("data-scroll-active", "true")
     expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
+    assert int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    ) == baseline_suppressions + 1
 
     canvas.evaluate(
         """
@@ -1008,10 +1040,22 @@ def test_bottom_boundary_input_cancels_an_inflight_scroll_pause(
     )
     expect(frame).to_have_attribute("data-scroll-active", "false")
     expect(canvas).to_have_attribute("data-scroll-rendering", "active")
+    assert int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    ) == baseline_suppressions + 1
 
     page.clock.fast_forward(320)
     assert frame.get_attribute("data-scroll-active") == "false"
     assert canvas.get_attribute("data-scroll-rendering") == "active"
+    assert int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    ) == baseline_suppressions + 1
+    page.clock.fast_forward(320)
+    assert frame.get_attribute("data-scroll-active") == "false"
+    assert canvas.get_attribute("data-scroll-rendering") == "active"
+    assert int(
+        canvas.get_attribute("data-scroll-suppression-count") or "0"
+    ) == baseline_suppressions + 1
 
 
 @pytest.mark.parametrize(
