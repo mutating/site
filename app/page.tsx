@@ -671,7 +671,7 @@ const pillars = [
   {
     number: "02",
     title: "Interpretability",
-    copy: "Human-scale explanations for machine-scale output, so teams can understand what changed and why.",
+    copy: "Human-scale explanations for machine-scale output—what changed and why.",
     image: "/pillar-interpretability-v1.png",
   },
   {
