@@ -1395,10 +1395,19 @@ def test_desktop_pillars_index_sits_directly_above_left_aligned_heading(
     [
         ("light", (1440, 900)),
         ("dark", (1440, 900)),
+        ("light", (590, 900)),
+        ("dark", (590, 900)),
         ("light", (390, 844)),
         ("dark", (390, 844)),
     ],
-    ids=["desktop-light", "desktop-dark", "phone-light", "phone-dark"],
+    ids=[
+        "desktop-light",
+        "desktop-dark",
+        "narrow-light",
+        "narrow-dark",
+        "phone-light",
+        "phone-dark",
+    ],
 )
 def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     driver: DriverFactory,
@@ -1472,8 +1481,11 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
               (candidate) => Number(getComputedStyle(candidate).opacity) > 0.5
             );
             const motionTarget = card.querySelector(".pillar-card__rotor") || image;
+            const copy = card.querySelector("p");
             const cardRect = card.getBoundingClientRect();
             const imageRect = image.getBoundingClientRect();
+            const copyRect = copy.getBoundingClientRect();
+            const cardStyle = getComputedStyle(card);
             return {
               source: image.getAttribute("src"),
               allSources: images.map((candidate) => candidate.getAttribute("src")),
@@ -1485,6 +1497,13 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
               animationName: getComputedStyle(motionTarget).animationName,
               animationDuration: getComputedStyle(motionTarget).animationDuration,
               animationIterationCount: getComputedStyle(motionTarget).animationIterationCount,
+              copyWidth: copyRect.width,
+              contentWidth:
+                cardRect.width
+                - parseFloat(cardStyle.paddingLeft)
+                - parseFloat(cardStyle.paddingRight)
+                - parseFloat(cardStyle.borderLeftWidth)
+                - parseFloat(cardStyle.borderRightWidth),
               contained:
                 imageRect.left >= cardRect.left - 0.5
                 && imageRect.right <= cardRect.right + 0.5
@@ -1521,6 +1540,13 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     assert rendered["cards"][2]["animationName"] == "pillar-rotor-spin"
     assert rendered["cards"][2]["animationDuration"] == "36s"
     assert rendered["cards"][2]["animationIterationCount"] == "infinite"
+    if viewport[0] <= 860:
+        assert all(
+            card["copyWidth"] == pytest.approx(card["contentWidth"], abs=0.5)
+            for card in rendered["cards"]
+        )
+    else:
+        assert all(card["copyWidth"] <= 380.5 for card in rendered["cards"])
 
 
 def test_distribution_mobile_order_places_visual_before_numbered_list(

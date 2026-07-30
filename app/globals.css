@@ -2679,6 +2679,11 @@ a.section-index:focus-visible {
     margin-top: 18px;
   }
 
+  .pillar-card p {
+    width: 100%;
+    max-width: none;
+  }
+
   .containment__visual {
     order: 2;
   }
