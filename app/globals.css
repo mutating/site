@@ -1124,7 +1124,7 @@ a.section-index:focus-visible {
   position: absolute;
   inset: 0;
   transform-origin: 50% 50%;
-  animation: pillar-rotor-spin 36s linear infinite;
+  animation: pillar-rotor-spin 180s linear infinite;
   will-change: transform;
 }
 

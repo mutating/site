@@ -1538,7 +1538,7 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
         "none",
     ]
     assert rendered["cards"][2]["animationName"] == "pillar-rotor-spin"
-    assert rendered["cards"][2]["animationDuration"] == "36s"
+    assert rendered["cards"][2]["animationDuration"] == "180s"
     assert rendered["cards"][2]["animationIterationCount"] == "infinite"
     if viewport[0] <= 860:
         assert all(
