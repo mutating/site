@@ -1862,11 +1862,22 @@ export default function Home() {
             <article className="pillar-card" key={pillar.number}>
               <span className="pillar-card__number">{pillar.number}</span>
               <div className="pillar-card__visual" aria-hidden="true">
-                <img
-                  className={pillar.number === "03" ? "pillar-card__rotor" : undefined}
-                  src={pillar.image}
-                  alt=""
-                />
+                {pillar.number === "03" ? (
+                  <span className="pillar-card__rotor">
+                    <img
+                      className="pillar-card__rotor-image pillar-card__rotor-image--light"
+                      src="/pillar-testing-speed-rotor-v4.png"
+                      alt=""
+                    />
+                    <img
+                      className="pillar-card__rotor-image pillar-card__rotor-image--dark"
+                      src={pillar.image}
+                      alt=""
+                    />
+                  </span>
+                ) : (
+                  <img src={pillar.image} alt="" />
+                )}
               </div>
               <h3>{pillar.title}</h3>
               <p>{pillar.copy}</p>

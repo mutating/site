@@ -7,6 +7,7 @@ const assetPaths = [
   "public/pillar-interpretability-v1.png",
   "public/pillar-testing-speed-v1.png",
   "public/pillar-testing-speed-rotor-v2.png",
+  "public/pillar-testing-speed-rotor-v4.png",
 ];
 const requestedPaths = process.argv.slice(2);
 const pathsToPrepare = requestedPaths.length > 0 ? requestedPaths : assetPaths;

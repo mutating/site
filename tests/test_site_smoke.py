@@ -1416,13 +1416,23 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     rectangular matte, crop an illustration, or let it cover the card copy.
     """
 
-    expected_sources = [
+    expected_asset_sources = [
         "/pillar-verifiability-v1.png",
         "/pillar-interpretability-v1.png",
         "/pillar-testing-speed-rotor-v2.png",
+        "/pillar-testing-speed-rotor-v4.png",
+    ]
+    expected_visible_sources = [
+        "/pillar-verifiability-v1.png",
+        "/pillar-interpretability-v1.png",
+        (
+            "/pillar-testing-speed-rotor-v4.png"
+            if theme == "light"
+            else "/pillar-testing-speed-rotor-v2.png"
+        ),
     ]
 
-    for source in expected_sources:
+    for source in expected_asset_sources:
         with Image.open(PROJECT_ROOT / "public" / source.removeprefix("/")) as image:
             assert image.mode == "RGBA"
             alpha = image.getchannel("A")
@@ -1436,10 +1446,16 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
                     (image.width - 1, image.height - 1),
                 ]
             )
-            if source == "/pillar-testing-speed-rotor-v2.png":
+            if source == "/pillar-testing-speed-rotor-v4.png":
                 histogram = alpha.histogram()
                 partially_transparent_pixels = sum(histogram[1:255])
-                assert partially_transparent_pixels > image.width * image.height * 0.1
+                partial_values = [
+                    value
+                    for value, count in enumerate(histogram[1:255], start=1)
+                    for _ in range(count)
+                ]
+                assert partially_transparent_pixels > image.width * image.height * 0.25
+                assert partial_values[len(partial_values) // 2] <= 20
 
     page = driver(
         stored_theme=theme,
@@ -1451,19 +1467,24 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
         (section) => ({
           theme: document.documentElement.dataset.theme,
           cards: [...section.querySelectorAll(".pillar-card")].map((card) => {
-            const image = card.querySelector(".pillar-card__visual img");
+            const images = [...card.querySelectorAll(".pillar-card__visual img")];
+            const image = images.find(
+              (candidate) => Number(getComputedStyle(candidate).opacity) > 0.5
+            );
+            const motionTarget = card.querySelector(".pillar-card__rotor") || image;
             const cardRect = card.getBoundingClientRect();
             const imageRect = image.getBoundingClientRect();
             return {
               source: image.getAttribute("src"),
-              complete: image.complete,
+              allSources: images.map((candidate) => candidate.getAttribute("src")),
+              complete: images.every((candidate) => candidate.complete),
               naturalWidth: image.naturalWidth,
               naturalHeight: image.naturalHeight,
               cardBackground: getComputedStyle(card).backgroundColor,
               imageBackground: getComputedStyle(image).backgroundColor,
-              animationName: getComputedStyle(image).animationName,
-              animationDuration: getComputedStyle(image).animationDuration,
-              animationIterationCount: getComputedStyle(image).animationIterationCount,
+              animationName: getComputedStyle(motionTarget).animationName,
+              animationDuration: getComputedStyle(motionTarget).animationDuration,
+              animationIterationCount: getComputedStyle(motionTarget).animationIterationCount,
               contained:
                 imageRect.left >= cardRect.left - 0.5
                 && imageRect.right <= cardRect.right + 0.5
@@ -1476,7 +1497,11 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     )
 
     assert rendered["theme"] == theme
-    assert [card["source"] for card in rendered["cards"]] == expected_sources
+    assert [card["source"] for card in rendered["cards"]] == expected_visible_sources
+    assert rendered["cards"][2]["allSources"] == [
+        "/pillar-testing-speed-rotor-v4.png",
+        "/pillar-testing-speed-rotor-v2.png",
+    ]
     assert all(card["complete"] for card in rendered["cards"])
     assert all(card["naturalWidth"] > 0 for card in rendered["cards"])
     assert all(card["naturalHeight"] > 0 for card in rendered["cards"])
