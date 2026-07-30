@@ -678,7 +678,7 @@ const pillars = [
     number: "03",
     title: "Testing at agent speed",
     copy: "Fast, deterministic checks built for workers that never get tired and rarely stop at one attempt.",
-    image: "/pillar-testing-speed-v1.png",
+    image: "/pillar-testing-speed-rotor-v2.png",
   },
 ];
 
@@ -1862,7 +1862,11 @@ export default function Home() {
             <article className="pillar-card" key={pillar.number}>
               <span className="pillar-card__number">{pillar.number}</span>
               <div className="pillar-card__visual" aria-hidden="true">
-                <img src={pillar.image} alt="" />
+                <img
+                  className={pillar.number === "03" ? "pillar-card__rotor" : undefined}
+                  src={pillar.image}
+                  alt=""
+                />
               </div>
               <h3>{pillar.title}</h3>
               <p>{pillar.copy}</p>

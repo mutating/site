@@ -1419,7 +1419,7 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     expected_sources = [
         "/pillar-verifiability-v1.png",
         "/pillar-interpretability-v1.png",
-        "/pillar-testing-speed-v1.png",
+        "/pillar-testing-speed-rotor-v2.png",
     ]
 
     for source in expected_sources:
@@ -1436,6 +1436,10 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
                     (image.width - 1, image.height - 1),
                 ]
             )
+            if source == "/pillar-testing-speed-rotor-v2.png":
+                histogram = alpha.histogram()
+                partially_transparent_pixels = sum(histogram[1:255])
+                assert partially_transparent_pixels > image.width * image.height * 0.1
 
     page = driver(
         stored_theme=theme,
@@ -1457,6 +1461,9 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
               naturalHeight: image.naturalHeight,
               cardBackground: getComputedStyle(card).backgroundColor,
               imageBackground: getComputedStyle(image).backgroundColor,
+              animationName: getComputedStyle(image).animationName,
+              animationDuration: getComputedStyle(image).animationDuration,
+              animationIterationCount: getComputedStyle(image).animationIterationCount,
               contained:
                 imageRect.left >= cardRect.left - 0.5
                 && imageRect.right <= cardRect.right + 0.5
@@ -1482,6 +1489,13 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
         card["cardBackground"] != "rgba(0, 0, 0, 0)"
         for card in rendered["cards"]
     )
+    assert [card["animationName"] for card in rendered["cards"][:2]] == [
+        "none",
+        "none",
+    ]
+    assert rendered["cards"][2]["animationName"] == "pillar-rotor-spin"
+    assert rendered["cards"][2]["animationDuration"] == "36s"
+    assert rendered["cards"][2]["animationIterationCount"] == "infinite"
 
 
 def test_distribution_mobile_order_places_visual_before_numbered_list(

@@ -6,7 +6,10 @@ const assetPaths = [
   "public/pillar-verifiability-v1.png",
   "public/pillar-interpretability-v1.png",
   "public/pillar-testing-speed-v1.png",
+  "public/pillar-testing-speed-rotor-v2.png",
 ];
+const requestedPaths = process.argv.slice(2);
+const pathsToPrepare = requestedPaths.length > 0 ? requestedPaths : assetPaths;
 
 function removeGreenSpill(data, width, height, channels, warmRightEdge = false) {
   for (let pixel = 0; pixel < width * height; pixel += 1) {
@@ -53,7 +56,7 @@ function removeGreenSpill(data, width, height, channels, warmRightEdge = false) 
   }
 }
 
-for (const relativePath of assetPaths) {
+for (const relativePath of pathsToPrepare) {
   const assetPath = path.resolve(relativePath);
   const decoded = await sharp(assetPath)
     .ensureAlpha()
@@ -94,4 +97,4 @@ for (const relativePath of assetPaths) {
   await fs.rename(temporaryPath, assetPath);
 }
 
-console.log(`Prepared ${assetPaths.length} transparent pillar assets.`);
+console.log(`Prepared ${pathsToPrepare.length} transparent pillar assets.`);

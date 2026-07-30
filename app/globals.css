@@ -1120,6 +1120,18 @@ a.section-index:focus-visible {
   );
 }
 
+.pillar-card__rotor {
+  transform-origin: 50% 50%;
+  animation: pillar-rotor-spin 36s linear infinite;
+  will-change: transform;
+}
+
+@keyframes pillar-rotor-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 .pillar-card h3 {
   margin: 22px 0 10px;
   font-size: 23px;
