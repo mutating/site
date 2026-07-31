@@ -21,7 +21,6 @@ ANCHOR_TARGET_IDS = {
     "feedback",
     "the-deal",
     "open-source",
-    "field-notes",
     "contact",
 }
 
@@ -411,10 +410,10 @@ def test_every_logo_sub_area_clears_fragments_and_reloads_home(
     History API and ``hashchange`` while persisting observations through the
     upcoming document load. It then requires a real browser navigation and uses
     a new-document init script plus an in-memory sentinel to prove that the
-    current JavaScript document was destroyed and loaded again. This is more
-    robust than ``PerformanceNavigationTiming.type``: Chromium reports
-    ``navigate`` rather than ``reload`` when ``history.replaceState`` removes a
-    fragment immediately before ``location.reload()``.
+    current JavaScript document was destroyed and loaded again. Hugo parses the
+    two same-origin visual iframes immediately, so the init script may increment
+    their shared session counter too; any positive value proves a new document
+    while the top-window sentinel identifies the actual page reload.
 
     Finally, the recorded history proves that ``#top`` was never created even
     transiently. Reintroducing an anchor default, preserving the active hash
@@ -500,7 +499,7 @@ def test_every_logo_sub_area_clears_fragments_and_reloads_home(
     page.wait_for_function(
         """
         () => (
-          sessionStorage.getItem("tmc-logo-document-load-count") === "1"
+          Number(sessionStorage.getItem("tmc-logo-document-load-count")) >= 1
           && window.__tmcBrandPreReloadDocument === undefined
         )
         """,
@@ -510,11 +509,11 @@ def test_every_logo_sub_area_clears_fragments_and_reloads_home(
     page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
     expect(page).to_have_url(f"{base_url}/")
     assert page.evaluate("window.location.hash") == ""
-    assert page.evaluate(
+    assert int(page.evaluate(
         """
         () => sessionStorage.getItem("tmc-logo-document-load-count")
         """
-    ) == "1"
+    )) >= 1
     assert page.evaluate(
         """
         () => window.__tmcBrandPreReloadDocument
@@ -989,9 +988,10 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
     is positioned with the intended header clearance.
 
     The sequence explicitly covers the invisible list-start target, a regular
-    numbered section, the nested Blog card, Contact near the document bottom,
-    and the open-source section. The separate logo-navigation regression covers
-    the intentionally hashless full reload back to the home page.
+    numbered section, Contact near the document bottom, and the open-source
+    section. Blog now owns a real Hugo route and is covered by the blog suite.
+    The separate logo-navigation regression covers the intentionally hashless
+    full reload back to the home page.
     """
 
     page = driver(
@@ -1001,7 +1001,6 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
     click_cases = [
         ('.hero__actions a[href="#sections"]', "sections"),
         ('#complexity a[href="#complexity"]', "complexity"),
-        ('.main-nav a[href="#field-notes"]', "field-notes"),
         ('.main-nav a[href="/#contact"]', "contact"),
         ('.hero__actions a[href="#open-source"]', "open-source"),
     ]

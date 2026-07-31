@@ -13,6 +13,7 @@ from playwright.sync_api import Locator, Page, expect
 
 DriverFactory = Callable[..., Page]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+THEME_STATIC_ROOT = PROJECT_ROOT / "themes" / "mutating" / "static"
 DIAGNOSTIC_QUERY = (
     "?max-tentacles=64&render-supersample=0.5"
     "&manual-animation-frame=1&interaction-diagnostics=1"
@@ -1762,7 +1763,7 @@ def test_old_release_recovery_fails_the_reverse_impulse_guard(
     """
 
     source = (
-        PROJECT_ROOT / "public" / "muta-tentacles.html"
+        THEME_STATIC_ROOT / "muta-tentacles.html"
     ).read_text(encoding="utf-8")
     legacy_source = _restore_legacy_release_recovery(source)
 
@@ -1924,7 +1925,7 @@ def test_timing_regressions_are_detected_by_eleven_independent_mutations(
     """
 
     source = (
-        PROJECT_ROOT / "public" / "muta-tentacles.html"
+        THEME_STATIC_ROOT / "muta-tentacles.html"
     ).read_text(encoding="utf-8")
     assert source.count(original) == 1
     mutated = source.replace(original, replacement, 1)

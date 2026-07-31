@@ -14,6 +14,9 @@ from playwright.sync_api import Page, expect
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+THEME_ROOT = PROJECT_ROOT / "themes" / "mutating"
+THEME_STATIC_ROOT = THEME_ROOT / "static"
+THEME_ASSET_ROOT = THEME_ROOT / "assets"
 DriverFactory = Callable[..., Page]
 
 
@@ -139,20 +142,20 @@ def test_site_critical_assets_are_local_and_non_empty() -> None:
     """Verify that every critical visual asset is present in the repository."""
 
     required_assets = [
-        "public/muta-eye-surface.webp",
-        "public/muta-v2-transparent.png",
-        "public/muta-v2-transparent-v10.webp",
-        "public/muta-v2-transparent-2x-v10.webp",
-        "public/mutant-mascot-transparent.png",
-        "public/mutant-mascot.jpg",
-        "public/og.png",
-        "public/pantograph-variant-20-clean-v2.svg",
-        "public/tokamak-reactor.html",
-        "public/muta-tentacles.html",
+        "muta-eye-surface.webp",
+        "muta-v2-transparent.png",
+        "muta-v2-transparent-v10.webp",
+        "muta-v2-transparent-2x-v10.webp",
+        "mutant-mascot-transparent.png",
+        "mutant-mascot.jpg",
+        "og.png",
+        "pantograph-variant-20-clean-v2.svg",
+        "tokamak-reactor.html",
+        "muta-tentacles.html",
     ]
 
     for relative_path in required_assets:
-        asset = PROJECT_ROOT / relative_path
+        asset = THEME_STATIC_ROOT / relative_path
         assert asset.is_file(), f"{relative_path} must be a file"
         assert asset.stat().st_size > 0, f"{relative_path} must not be empty"
 
@@ -214,17 +217,15 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     this regression test is specifically intended to catch.
     """
 
-    page_source = (PROJECT_ROOT / "app/page.tsx").read_text()
+    page_source = (THEME_ASSET_ROOT / "js" / "site.js").read_text()
     assert '"/pantograph-variant-20-clean-v2.svg"' in page_source
     assert 'cache: "no-store"' in page_source
     assert "pantograph-frame" not in page_source
-    assert not (PROJECT_ROOT / "public/pantograph-frame-v2.html").exists()
-    assert not (
-        PROJECT_ROOT / "public/pantograph-variant-20-clean.svg"
-    ).exists()
+    assert not (THEME_STATIC_ROOT / "pantograph-frame-v2.html").exists()
+    assert not (THEME_STATIC_ROOT / "pantograph-variant-20-clean.svg").exists()
 
     svg_source = (
-        PROJECT_ROOT / "public/pantograph-variant-20-clean-v2.svg"
+        THEME_STATIC_ROOT / "pantograph-variant-20-clean-v2.svg"
     ).read_text()
     assert '<rect width="1536" height="1024" fill="url(#paper)"/>' not in (
         svg_source
@@ -1442,7 +1443,7 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     ]
 
     for source in expected_asset_sources:
-        with Image.open(PROJECT_ROOT / "public" / source.removeprefix("/")) as image:
+        with Image.open(THEME_STATIC_ROOT / source.removeprefix("/")) as image:
             assert image.mode == "RGBA"
             alpha = image.getchannel("A")
             assert alpha.getextrema() == (0, 255)
@@ -2297,9 +2298,9 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     descriptor mistake that would visibly resize the hero after replacement.
     """
 
-    original_path = PROJECT_ROOT / "public/muta-v2-transparent.png"
-    standard_path = PROJECT_ROOT / "public/muta-v2-transparent-v10.webp"
-    upscaled_path = PROJECT_ROOT / "public/muta-v2-transparent-2x-v10.webp"
+    original_path = THEME_STATIC_ROOT / "muta-v2-transparent.png"
+    standard_path = THEME_STATIC_ROOT / "muta-v2-transparent-v10.webp"
+    upscaled_path = THEME_STATIC_ROOT / "muta-v2-transparent-2x-v10.webp"
 
     with (
         Image.open(original_path).convert("RGBA") as original,
@@ -2452,14 +2453,14 @@ def test_tentacle_iframe_revision_matches_its_current_file_contents() -> None:
     by the test suite rather than a stale cached copy.
     """
 
-    surface = PROJECT_ROOT / "public" / "muta-tentacles.html"
-    page_source = (PROJECT_ROOT / "app" / "page.tsx").read_text(
+    surface = THEME_STATIC_ROOT / "muta-tentacles.html"
+    page_source = (PROJECT_ROOT / "content" / "_index.md").read_text(
         encoding="utf-8"
     )
     revision = hashlib.sha256(surface.read_bytes()).hexdigest()[:12]
 
     assert (
-        f'/muta-tentacles.html?v={revision}&embedded=1"'
+        f'/muta-tentacles.html?v={revision}&amp;embedded=1"'
         in page_source
     )
 

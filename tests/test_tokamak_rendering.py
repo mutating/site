@@ -285,7 +285,9 @@ def test_tokamak_frame_edges_remain_transparent_and_feathered(
     assert effective_mask.count("linear-gradient") == 2
     embedded_source = (
         Path(__file__).resolve().parents[1]
-        / "public"
+        / "themes"
+        / "mutating"
+        / "static"
         / "tokamak-reactor.html"
     ).read_text(encoding="utf-8")
     assert (
