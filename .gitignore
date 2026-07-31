@@ -1,47 +1,15 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Hugo build output and caches
+/public/
+/resources/
+/.hugo_build.lock
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
+# Python test environment and caches
 /venv/
 /.pytest_cache/
 __pycache__/
 *.py[cod]
 
-# next.js
-/.next/
-/.vinext/
-/out/
-
-# misc
+# Local/editor files
 .DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
 .env*
-
-# vercel
-.vercel
-
-# typescript
-next-env.d.ts
-/dist/
-/.wrangler/
-/outputs/
-/work/
-/site/
+*.pem
