@@ -246,8 +246,21 @@ server with `rsync --delete-delay`. Files no longer present in the current Hugo
 build are removed from the server, so the remote directory becomes an exact
 copy of the generated site without deleting it before a successful transfer.
 
-Configure these GitHub repository secrets under **Settings → Secrets and
-variables → Actions**:
+### Add the deployment secrets to GitHub
+
+The deployment workflow reads every value through the GitHub Actions
+`secrets` context. Add them as repository **Secrets**, not repository
+**Variables**:
+
+1. Open the repository on GitHub.
+2. Select **Settings**.
+3. In the left sidebar, select **Secrets and variables → Actions**.
+4. Open the **Secrets** tab.
+5. Select **New repository secret**.
+6. Enter the exact secret name and its value, then select **Add secret**.
+7. Repeat the process for every secret in the following table.
+
+The repository needs these seven secrets:
 
 | Secret | Purpose |
 | --- | --- |
@@ -256,13 +269,21 @@ variables → Actions**:
 | `DEPLOY_PORT` | Numeric SSH port, normally `22`. |
 | `DEPLOY_USER` | Dedicated SSH user that owns or can write the deployment directory. |
 | `DEPLOY_PATH` | Existing absolute server directory containing only this site, for example `/var/www/mutating.tech`. Broad paths such as `/`, `/var`, and `/var/www` are rejected. |
-| `DEPLOY_SSH_PRIVATE_KEY` | Non-interactive private key for the dedicated deploy user, including its `BEGIN` and `END` lines. Store the matching public key in that user's `authorized_keys`. |
+| `DEPLOY_PASSWORD` | SSH login password for `DEPLOY_USER`. Use a strong, unique password belonging to the dedicated deploy account. This is not a `sudo` password. |
 | `DEPLOY_KNOWN_HOSTS` | Verified SSH host-key line for the server. Generate it with `ssh-keyscan -p <port> <host>`, verify its fingerprint out of band, and then save the complete output as the secret. |
 
+Enter `DEPLOY_HOST` without `https://` or the SSH port. Enter
+`SITE_BASE_URL` as a complete public URL, including `https://` and preferably a
+trailing slash. `DEPLOY_PASSWORD` must be the password accepted by the SSH
+server when logging in as `DEPLOY_USER`; the workflow never invokes `sudo`.
+GitHub hides a secret after it has been saved; it can be replaced but its value
+cannot be viewed again.
+
 The server must have `rsync` installed, and `DEPLOY_PATH` must already exist and
-be writable by `DEPLOY_USER`. Use a dedicated unprivileged deploy account whose
-permissions are limited to that directory. No checked-in password, private key,
-or server address is required.
+be writable by `DEPLOY_USER`. The SSH server must allow password authentication
+for that account. Use a dedicated unprivileged deploy account whose permissions
+are limited to that directory. No checked-in password or server address is
+required.
 
 ## Writing tests
 
