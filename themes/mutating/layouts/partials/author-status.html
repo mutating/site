@@ -1,0 +1,22 @@
+{{- $author := .author -}}
+{{- $variant := default "profile" .variant -}}
+{{- $status := lower (default "human" $author.Params.status) -}}
+{{- $authorSlug := $author.File.ContentBaseName -}}
+{{- $tooltipID := printf "author-status-%s-%s" $authorSlug $variant -}}
+<div
+  class="author-status author-status--{{ $variant }}{{ with .class }} {{ . }}{{ end }}"
+  data-author-status="{{ $status }}"
+  aria-describedby="{{ $tooltipID }}"
+  {{- if eq $variant "profile" }} tabindex="0"{{ end }}
+>
+  {{- if eq $variant "post" }}
+    {{ partial "author-byline.html" (dict "author" $author "link" true "prefix" "By ") }}
+  {{- else }}
+    <i class="author-status__light" aria-hidden="true"></i>
+    <span class="author-status__label">{{ upper $status }}</span>
+  {{- end }}
+  <span class="author-status__tooltip" id="{{ $tooltipID }}" role="tooltip">
+    The Mutating Company identifies every author as human or automated.
+    {{ $author.Title }} is {{ if eq $status "robot" }}an automated author{{ else }}a human author{{ end }}.
+  </span>
+</div>

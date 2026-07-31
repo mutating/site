@@ -1,0 +1,30 @@
+{{- $description := .Description | default site.Params.description -}}
+{{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" .Title) -}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ $title }}</title>
+<meta name="description" content="{{ $description }}">
+<meta name="theme-color" content="#ff3e9d">
+<meta property="og:title" content="{{ $title }}">
+<meta property="og:description" content="{{ $description }}">
+<meta property="og:type" content="{{ if .IsPage }}article{{ else }}website{{ end }}">
+<meta property="og:url" content="{{ .Permalink }}">
+<meta property="og:image" content="{{ "og.png" | absURL }}">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:,">
+{{- $siteStyles := resources.Get "css/site.css" | fingerprint -}}
+<link rel="stylesheet" href="{{ $siteStyles.RelPermalink }}" integrity="{{ $siteStyles.Data.Integrity }}" crossorigin="anonymous">
+<script>
+  (function () {
+    var theme = "dark";
+    if (typeof matchMedia === "function") {
+      if (matchMedia("(prefers-color-scheme: dark)").matches) theme = "dark";
+      else if (matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+    }
+    try {
+      var stored = localStorage.getItem("tmc-theme");
+      if (stored === "dark" || stored === "light") theme = stored;
+    } catch (_) {}
+    document.documentElement.dataset.theme = theme;
+  })();
+</script>

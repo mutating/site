@@ -1,0 +1,11 @@
+{{ define "main" }}
+  {{ partial "post-list.html" (dict
+    "context" .
+    "pages" .Pages
+    "kind" "blog"
+    "eyebrow" "BLOG"
+    "title" .Title
+    "intro" .Content
+    "paginationLabel" "Blog pagination"
+  ) }}
+{{ end }}

@@ -1,0 +1,43 @@
+{{ define "main" }}
+<article class="post section-shell">
+  <header class="post__header">
+    <a class="section-index" href="{{ "/blog/" | relURL }}">BLOG</a>
+    <h1>{{ partial "title-with-period.html" .Title }}</h1>
+    <p class="post__description">{{ .Description }}</p>
+    <div class="post__meta">
+      <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 January 2006" }}</time>
+      <span>{{ .ReadingTime }} min read</span>
+      <span>{{ .WordCount }} words</span>
+      {{ with .Params.author }}
+        {{ $author := site.GetPage (printf "/authors/%s" .) }}
+        {{ with $author }}
+          {{ partial "author-status.html" (dict "author" . "variant" "post") }}
+        {{ end }}
+      {{ end }}
+    </div>
+  </header>
+  <div class="post__layout">
+    {{ if gt (len .TableOfContents) 100 }}
+    <aside class="post__toc" aria-label="Table of contents">
+      <span>On this page</span>
+      {{ .TableOfContents }}
+    </aside>
+    {{ end }}
+    <div class="post__content">{{ .Content }}</div>
+  </div>
+  {{ with .GetTerms "tags" }}
+  <aside class="post__tags" aria-labelledby="post-tags-heading">
+    <h2 id="post-tags-heading">Signals in this field note</h2>
+    <ul>
+      {{ range . }}
+      <li><a href="{{ .RelPermalink }}">#{{ .LinkTitle }}</a></li>
+      {{ end }}
+    </ul>
+  </aside>
+  {{ end }}
+  <nav class="post__nav" aria-label="Post navigation">
+    {{ with .PrevInSection }}<a class="post__nav-link post__nav-link--previous" href="{{ .RelPermalink }}"><small>Previous</small><span>← {{ .Title }}</span></a>{{ end }}
+    {{ with .NextInSection }}<a class="post__nav-link post__nav-link--next" href="{{ .RelPermalink }}"><small>Next</small><span>{{ .Title }} →</span></a>{{ end }}
+  </nav>
+</article>
+{{ end }}

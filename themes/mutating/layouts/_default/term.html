@@ -1,0 +1,10 @@
+{{ define "main" }}
+  {{ partial "post-list.html" (dict
+    "context" .
+    "pages" .Pages
+    "kind" "tag"
+    "eyebrow" "BLOG / TAGGED SIGNALS"
+    "title" (printf "Signals tagged #%s." .Title)
+    "paginationLabel" (printf "Posts tagged %s pagination" .Title)
+  ) }}
+{{ end }}

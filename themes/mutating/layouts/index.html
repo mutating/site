@@ -1,0 +1,8 @@
+{{ define "main" }}
+  {{- $latestPosts := partial "latest-posts.html" . -}}
+  {{- $content := replaceRE `(?s)<section class="dispatches section-shell" id="open-source".*?</section>` $latestPosts .Content -}}
+  {{- if not $latestPosts -}}
+    {{- $content = replace $content `href="#open-source"` `href="https://github.com/mutating"` -}}
+  {{- end -}}
+  {{- $content | safeHTML -}}
+{{ end }}

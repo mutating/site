@@ -1,0 +1,43 @@
+<header class="site-header">
+  <div class="brand" role="link" tabindex="0" aria-label="Reload The Mutating Company home page" data-home-url="{{ "/" | relURL }}">
+    <span class="brand__mark brand__mark--eye">
+      <span class="animated-eye-logo" aria-hidden="true">
+        <span class="animated-eye-logo__clip">
+          <span class="animated-eye-logo__outline" aria-hidden="true"></span>
+          <span class="animated-eye-logo__surface" aria-hidden="true"></span>
+          <span class="animated-eye-logo__pupil" aria-hidden="true"></span>
+        </span>
+      </span>
+    </span>
+    <span class="brand__wordmark-stage" data-can-expand="true" aria-hidden="true">
+      <span class="brand__wordmark">
+        <span class="brand__word-part brand__word-part--t"><span class="brand__word-anchor">T</span><span class="brand__word-reveal" data-text="he">he</span></span>
+        <span class="brand__word-part brand__word-part--m"><span class="brand__word-anchor">M</span><span class="brand__word-reveal" data-text="utating">utating</span></span>
+        <span class="brand__word-part"><span class="brand__word-anchor">C</span><span class="brand__word-reveal" data-text="ompany">ompany</span></span>
+      </span>
+    </span>
+  </div>
+  <nav class="main-nav" aria-label="Main navigation">
+    {{ partial "source-link.html" . }}
+    <a href="{{ "/blog/" | relURL }}">Blog</a>
+    <a href="{{ "/#contact" | relURL }}">Contact</a>
+  </nav>
+  <div class="header-actions">
+    <button class="theme-toggle" type="button" aria-label="Toggle color theme">
+      <span class="theme-toggle__track" aria-hidden="true">
+        <span class="theme-toggle__sun"><span class="theme-toggle__sun-core"></span><span class="theme-toggle__sun-rays"></span><span class="theme-toggle__sun-rays theme-toggle__sun-rays--diagonal"></span></span>
+        <span class="theme-toggle__moon"></span>
+        <span class="theme-toggle__thumb"></span>
+      </span>
+    </button>
+    <details class="mobile-menu">
+      <summary aria-label="Open navigation menu">Menu</summary>
+      <nav aria-label="Mobile navigation">
+        {{ partial "source-link.html" . }}
+        <a href="{{ "/blog/" | relURL }}">Blog</a>
+        <a href="{{ "/#contact" | relURL }}">Contact</a>
+      </nav>
+    </details>
+  </div>
+</header>
+

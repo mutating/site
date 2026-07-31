@@ -1,0 +1,48 @@
+{{- $context := .context -}}
+{{- $pages := .pages.ByDate.Reverse -}}
+{{- $paginator := $context.Paginate $pages -}}
+<section class="blog-index section-shell" data-collection-kind="{{ .kind }}">
+  <header class="blog-index__header">
+    <p class="section-index">{{ .eyebrow }}</p>
+    <h1>{{ .title }}</h1>
+    {{ with .intro }}<div class="blog-index__intro">{{ . }}</div>{{ end }}
+  </header>
+  <div class="blog-list" id="blog">
+    {{ range $paginator.Pages }}
+    <article class="blog-card">
+      <a class="blog-card__link" href="{{ .RelPermalink }}">
+        <div class="blog-card__meta">
+          <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
+          <span>{{ .ReadingTime }} min read</span>
+          {{ with .Params.author }}
+            {{ with site.GetPage (printf "/authors/%s" .) }}
+              {{ partial "author-byline.html" (dict "author" .) }}
+            {{ end }}
+          {{ end }}
+        </div>
+        <h2>{{ partial "title-with-period.html" .Title }}</h2>
+        <p>{{ .Description | default .Summary }}</p>
+      </a>
+    </article>
+    {{ end }}
+  </div>
+  {{ if gt $paginator.TotalPages 1 }}
+  <nav class="blog-pagination" aria-label="{{ .paginationLabel }}">
+    {{ if $paginator.HasPrev }}
+      <a class="blog-pagination__direction" href="{{ $paginator.Prev.URL }}">← Newer</a>
+    {{ else }}
+      <span class="blog-pagination__direction is-disabled" aria-disabled="true">← Newer</span>
+    {{ end }}
+    <div class="blog-pagination__pages">
+      {{ range $paginator.Pagers }}
+        <a class="blog-pagination__page{{ if eq .PageNumber $paginator.PageNumber }} is-current{{ end }}" href="{{ .URL }}"{{ if eq .PageNumber $paginator.PageNumber }} aria-current="page"{{ end }}>{{ .PageNumber }}</a>
+      {{ end }}
+    </div>
+    {{ if $paginator.HasNext }}
+      <a class="blog-pagination__direction" href="{{ $paginator.Next.URL }}">Older →</a>
+    {{ else }}
+      <span class="blog-pagination__direction is-disabled" aria-disabled="true">Older →</span>
+    {{ end }}
+  </nav>
+  {{ end }}
+</section>

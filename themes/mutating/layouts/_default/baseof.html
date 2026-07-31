@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{ partial "head.html" . }}
+  </head>
+  <body class="{{ with .Params.bodyClass }}{{ . }}{{ else }}site-page{{ end }}">
+    <main>
+      {{ partial "header.html" . }}
+      {{ block "main" . }}{{ end }}
+      {{ partial "footer.html" . }}
+    </main>
+    {{- $siteScript := resources.Get "js/site.js" | fingerprint -}}
+    <script src="{{ $siteScript.RelPermalink }}" integrity="{{ $siteScript.Data.Integrity }}" crossorigin="anonymous" defer></script>
+  </body>
+</html>

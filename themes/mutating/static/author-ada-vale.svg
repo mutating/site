@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-labelledby="title description">
+  <title id="title">Abstract portrait of Ada Vale</title>
+  <desc id="description">A geometric human portrait in black, cream, and vivid pink.</desc>
+  <defs>
+    <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7f3"/>
+      <stop offset="1" stop-color="#edb7b8"/>
+    </linearGradient>
+    <linearGradient id="coat" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff68ac"/>
+      <stop offset="1" stop-color="#d8176d"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="13" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path d="M115 724c22-151 132-236 285-236s263 85 285 236z" fill="url(#coat)" stroke="#ff91c1" stroke-width="9"/>
+  <path d="M285 529c34 44 196 44 230 0l-26-109H311z" fill="url(#skin)" stroke="#bc476f" stroke-width="8"/>
+  <path d="M238 237c18-130 105-187 180-187 124 0 205 94 193 246-7 96-43 211-120 258-47 29-120 29-171-2-79-49-101-198-82-315z" fill="#160d13"/>
+  <path d="M268 253c24-96 84-142 158-142 99 0 154 79 141 204-10 99-57 201-158 215-91-14-144-105-152-203-2-28 2-52 11-74z" fill="url(#skin)" stroke="#ff7db8" stroke-width="9"/>
+  <path d="M250 264c24-137 98-193 184-193 103 0 167 76 173 186-51-30-94-70-126-121-38 66-123 115-231 128z" fill="#160d13"/>
+  <path d="M290 302c30-31 70-40 110-16M438 286c38-19 78-11 103 18" fill="none" stroke="#160d13" stroke-width="17" stroke-linecap="round"/>
+  <ellipse cx="354" cy="324" rx="15" ry="20" fill="#160d13"/>
+  <ellipse cx="479" cy="324" rx="15" ry="20" fill="#160d13"/>
+  <path d="M417 337l-13 74 32 4" fill="none" stroke="#bd7180" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M355 448c39 34 91 34 126-2" fill="none" stroke="#9f214f" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="236" cy="363" r="15" fill="#ff2c92" filter="url(#glow)"/>
+  <circle cx="571" cy="363" r="15" fill="#ff2c92" filter="url(#glow)"/>
+  <path d="M210 352h91M525 352h74M397 352h46" fill="none" stroke="#ff2c92" stroke-width="8" stroke-linecap="round"/>
+  <rect x="294" y="292" width="109" height="91" rx="36" fill="none" stroke="#ff2c92" stroke-width="9"/>
+  <rect x="440" y="292" width="109" height="91" rx="36" fill="none" stroke="#ff2c92" stroke-width="9"/>
+  <path d="M366 565l42 45 44-45 64 160H297z" fill="#fff7fb" opacity=".95"/>
+  <path d="M398 607l11 118h34l8-117-43 1z" fill="#160d13"/>
+</svg>
