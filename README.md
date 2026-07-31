@@ -282,7 +282,7 @@ The repository needs these six secrets:
 | Secret | Purpose |
 | --- | --- |
 | `SITE_BASE_URL` | Public site URL used by Hugo, including the scheme and preferably the trailing slash, for example `https://mutating.tech/`. |
-| `DEPLOY_HOST` | SSH hostname or IP address of the production server. |
+| `DEPLOY_HOST` | Public SSH hostname or IPv4 address of the production server. The standard GitHub-hosted runner deploys over IPv4. |
 | `DEPLOY_PORT` | Numeric SSH port, normally `22`. |
 | `DEPLOY_USER` | Dedicated SSH user that owns or can write the deployment directory. |
 | `DEPLOY_PATH` | Existing absolute server directory containing only this site, for example `/var/www/mutating.tech`. Broad paths such as `/`, `/var`, and `/var/www` are rejected. |
@@ -294,6 +294,11 @@ trailing slash. `DEPLOY_PASSWORD` must be the password accepted by the SSH
 server when logging in as `DEPLOY_USER`; the workflow never invokes `sudo`.
 GitHub hides a secret after it has been saved; it can be replaced but its value
 cannot be viewed again.
+
+`DEPLOY_HOST` must resolve to a public IPv4 address, and the server firewall must
+accept connections to `DEPLOY_PORT` from GitHub-hosted runners. An IPv6-only
+address, an address from a private network, or an SSH service restricted to a
+local/VPN network is not reachable from the standard `ubuntu-latest` runner.
 
 The server must have `rsync` installed, and `DEPLOY_PATH` must already exist and
 be writable by `DEPLOY_USER`. The SSH server must allow password authentication

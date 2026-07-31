@@ -93,6 +93,11 @@ jobs:
             exit 1
           fi
 
+          if ! getent ahostsv4 "$DEPLOY_HOST" >/dev/null; then
+            echo "::error title=No IPv4 deployment address::DEPLOY_HOST does not resolve to IPv4. A standard GitHub-hosted runner cannot reach an IPv6-only SSH endpoint."
+            exit 1
+          fi
+
           if [[ ! "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
             echo "DEPLOY_PATH must be an absolute path without spaces." >&2
             exit 1
@@ -114,10 +119,12 @@ jobs:
           esac
 
           ssh_options=(
+            -4
             -p "$DEPLOY_PORT"
             -o PreferredAuthentications=password
             -o PubkeyAuthentication=no
             -o NumberOfPasswordPrompts=1
+            -o ConnectTimeout=15
             -o StrictHostKeyChecking=no
             -o UserKnownHostsFile=/dev/null
           )
@@ -141,7 +148,7 @@ jobs:
           if ! sshpass -e ssh "${ssh_options[@]}" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "$remote_preflight"; then
-            echo "::error title=SSH preflight failed::Check DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER, DEPLOY_PASSWORD, remote rsync, and DEPLOY_PATH permissions."
+            echo "::error title=SSH connection or preflight failed::If SSH reported 'Network is unreachable', DEPLOY_HOST must point to a public IPv4 address reachable on DEPLOY_PORT. Otherwise review the SSH message above, the server firewall, credentials, remote rsync, and DEPLOY_PATH permissions."
             exit 1
           fi
 
@@ -152,7 +159,7 @@ jobs:
             --delete-delay \
             --delay-updates \
             --chmod=D755,F644 \
-            -e "ssh -p $DEPLOY_PORT -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            -e "ssh -4 -p $DEPLOY_PORT -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ConnectTimeout=15 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
             public/ \
             "$DEPLOY_USER@$DEPLOY_HOST:$target_path/"; then
             echo "::error title=Upload failed::SSH succeeded, but rsync could not synchronize public/ to DEPLOY_PATH. Review the rsync output above."
