@@ -267,8 +267,12 @@ def test_code_copy_button_writes_the_rendered_source(
 
     block = page.locator(".post__content .code-block")
     expected_source = block.locator("code").text_content()
+    block.scroll_into_view_if_needed()
     block.hover()
     button = block.locator(".code-copy-button")
+    expect(button).to_be_visible()
+    expect(button).to_have_css("opacity", "1")
+    expect(button).to_have_css("transform", "matrix(1, 0, 0, 1, 0, 0)")
     button.click()
 
     expect(button).to_have_attribute("data-copy-state", "copied")

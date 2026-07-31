@@ -3018,8 +3018,32 @@ def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
         }
         """
     )
+    wordmark.evaluate(
+        """
+        (element) => {
+          window.__tmcWordmarkAnimationsCaptured = false;
+          element.addEventListener("pointerover", () => {
+            const reveal = element.querySelector(".brand__word-reveal");
+            getComputedStyle(reveal).opacity;
+            const animations = element.getAnimations({subtree: true});
+            const timedAnimations = animations.filter((animation) => {
+              const duration = Number(animation.effect?.getTiming().duration);
+              return Number.isFinite(duration) &&
+                Math.abs(duration - 350) <= 0.1;
+            });
+            for (const animation of timedAnimations) {
+              animation.pause();
+              animation.currentTime = 0;
+            }
+            window.__tmcWordmarkAnimationsCaptured =
+              timedAnimations.length >= 6;
+          }, { once: true });
+        }
+        """
+    )
 
     wordmark.hover()
+    assert page.evaluate("window.__tmcWordmarkAnimationsCaptured") is True
     spectrum = wordmark.evaluate(
         """
         (element) => {
@@ -3882,6 +3906,8 @@ def test_header_eye_gaze_speed_is_stable_when_animation_frames_are_delayed(
         (390, 844),
     ],
 )
+@pytest.mark.interactive_visuals
+@pytest.mark.xdist_group(name="tentacle-webgl")
 def test_header_eye_tracks_pointer_inside_tentacle_iframe(
     driver: DriverFactory,
     viewport: tuple[int, int],
@@ -3916,9 +3942,10 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
     )
     frame = page.locator(".contact__tentacles")
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
-    pupil = page.locator(".animated-eye-logo__pupil")
 
-    frame.scroll_into_view_if_needed()
+    frame.evaluate(
+        "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
+    )
     expect(canvas).to_be_visible()
 
     def move_tentacle_pointer(normalized_x: float) -> None:
@@ -3943,24 +3970,19 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
         )
 
     move_tentacle_pointer(0.25)
-    page.wait_for_function(
+    first_position = page.wait_for_function(
         """
-        () =>
-          Number.parseFloat(
+        () => {
+          const position = Number.parseFloat(
             getComputedStyle(
               document.querySelector(".animated-eye-logo__pupil"),
             ).getPropertyValue("--gaze-x"),
-          ) > 0.5
+          );
+          return position > 0.5 ? position : false;
+        }
         """
-    )
-    first_position = pupil.evaluate(
-        """
-        (element) =>
-          Number.parseFloat(
-            getComputedStyle(element).getPropertyValue("--gaze-x"),
-          )
-        """
-    )
+    ).json_value()
+    assert isinstance(first_position, (int, float))
 
     move_tentacle_pointer(0.9)
     page.wait_for_function(

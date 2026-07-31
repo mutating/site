@@ -113,25 +113,91 @@ def _find_available_port() -> int:
         return int(port_socket.getsockname()[1])
 
 
-def _wait_for_site(base_url: str, process: subprocess.Popen[bytes]) -> None:
-    """Wait until the development server answers or fail with a clear error."""
+def _wait_for_site(base_url: str, process: subprocess.Popen[bytes]) -> bool:
+    """Return when Hugo answers, or report an early process exit."""
 
     deadline = time.monotonic() + 60
 
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(
-                f"The site server exited early with code {process.returncode}."
-            )
+            return False
 
         try:
             with urlopen(base_url, timeout=1) as response:
                 if response.status < 500:
-                    return
+                    time.sleep(0.05)
+                    return process.poll() is None
         except (URLError, TimeoutError, ConnectionError):
             time.sleep(0.2)
 
     raise RuntimeError(f"The site did not become available at {base_url}.")
+
+
+def _stop_process(process: subprocess.Popen[bytes]) -> None:
+    """Terminate a complete Hugo process group without leaving child work."""
+
+    if process.poll() is not None:
+        return
+
+    if os.name == "nt":
+        process.terminate()
+    else:
+        os.killpg(process.pid, signal.SIGTERM)
+
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            process.kill()
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5)
+
+
+def _start_hugo_server(
+    temporary_content: Path,
+    cache_directory: Path,
+) -> tuple[subprocess.Popen[bytes], str]:
+    """Start Hugo on a live unique port, retrying transient bind races."""
+
+    for _attempt in range(10):
+        port = _find_available_port()
+        local_url = f"http://localhost:{port}"
+        command = [
+            "hugo",
+            "server",
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--baseURL",
+            f"{local_url}/",
+            "--contentDir",
+            str(temporary_content),
+            "--cacheDir",
+            str(cache_directory),
+            "--disableFastRender",
+            "--noBuildLock",
+            "--renderToMemory",
+        ]
+        process = subprocess.Popen(
+            command,
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            start_new_session=os.name != "nt",
+        )
+
+        try:
+            if _wait_for_site(local_url, process):
+                return process, local_url
+        except BaseException:
+            _stop_process(process)
+            raise
+
+        process.wait(timeout=5)
+
+    raise RuntimeError("Hugo could not acquire a live port after 10 attempts.")
 
 
 @pytest.fixture(scope="session")
@@ -146,7 +212,7 @@ def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     temporary_root = tmp_path_factory.mktemp("mutating-hugo")
     temporary_content = temporary_root / "content"
     build_destination = temporary_root / "build"
-    serve_destination = temporary_root / "serve"
+    cache_directory = temporary_root / "cache"
     shutil.copytree(PROJECT_ROOT / "content", temporary_content)
     for fixture_post in (
         PROJECT_ROOT / "tests" / "fixtures"
@@ -173,6 +239,8 @@ def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
             str(temporary_content),
             "--destination",
             str(build_destination),
+            "--cacheDir",
+            str(cache_directory),
             "--noBuildLock",
         ],
         cwd=PROJECT_ROOT,
@@ -183,53 +251,17 @@ def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     if build.returncode != 0:
         output = build.stdout.decode("utf-8", errors="replace")
         raise RuntimeError(f"Hugo build failed before tests started:\n{output}")
+    shutil.rmtree(build_destination)
 
-    port = _find_available_port()
-    local_url = f"http://localhost:{port}"
-    command = [
-        "hugo",
-        "server",
-        "--bind",
-        "127.0.0.1",
-        "--port",
-        str(port),
-        "--baseURL",
-        f"{local_url}/",
-        "--contentDir",
-        str(temporary_content),
-        "--destination",
-        str(serve_destination),
-        "--cleanDestinationDir",
-        "--disableFastRender",
-        "--noBuildLock",
-        "--renderToMemory=false",
-    ]
-    process = subprocess.Popen(
-        command,
-        cwd=PROJECT_ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-        start_new_session=os.name != "nt",
+    process, local_url = _start_hugo_server(
+        temporary_content,
+        cache_directory,
     )
 
     try:
-        _wait_for_site(local_url, process)
         yield local_url
     finally:
-        if process.poll() is None:
-            if os.name == "nt":
-                process.terminate()
-            else:
-                os.killpg(process.pid, signal.SIGTERM)
-
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                if os.name == "nt":
-                    process.kill()
-                else:
-                    os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=5)
+        _stop_process(process)
 
 
 @pytest.fixture(scope="session")
@@ -246,6 +278,7 @@ def browser() -> Iterator[Browser]:
 def driver(
     browser: Browser,
     base_url: str,
+    request: pytest.FixtureRequest,
 ) -> Iterator[DriverFactory]:
     """Pass tests a factory that creates isolated, theme-aware web drivers."""
 
@@ -260,7 +293,7 @@ def driver(
         viewport: tuple[int, int] | None = None,
         device_scale_factor: float | None = None,
         reduced_motion: ReducedMotion = "no-preference",
-        load_interactive_visuals: bool = True,
+        load_interactive_visuals: bool | None = None,
         animation_frame_interval_ms: float | None = None,
         controllable_animation_frames: bool = False,
     ) -> Page:
@@ -330,7 +363,13 @@ def driver(
                 """
             )
 
-        if not load_interactive_visuals:
+        should_load_interactive_visuals = (
+            request.node.get_closest_marker("interactive_visuals") is not None
+            if load_interactive_visuals is None
+            else load_interactive_visuals
+        )
+
+        if not should_load_interactive_visuals:
             context.route("**/muta-tentacles.html*", lambda route: route.abort())
             context.route("**/tokamak-reactor.html*", lambda route: route.abort())
 

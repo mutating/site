@@ -533,6 +533,8 @@ def test_coexistence_shadow_is_not_clipped_only_on_narrow_screens(
         )
 
 
+@pytest.mark.interactive_visuals
+@pytest.mark.xdist_group(name="tentacle-webgl")
 def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
     driver: DriverFactory,
 ) -> None:
