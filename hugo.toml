@@ -1,0 +1,31 @@
+baseURL = "http://localhost:1313/"
+locale = "en-US"
+title = "The Mutating Company — AI systems that doubt"
+theme = "mutating"
+enableRobotsTXT = true
+disableKinds = ["taxonomy"]
+
+[taxonomies]
+  tag = "tags"
+
+[params]
+  description = "Deterministic verification, interpretability, and testing infrastructure for the AI agents writing tomorrow’s software."
+
+[permalinks]
+  blog = "/blog/:slug/"
+  authors = "/authors/:contentbasename/"
+
+[pagination]
+  pagerSize = 10
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+  [markup.highlight]
+    noClasses = false
+    guessSyntax = true
+
+[outputs]
+  home = ["HTML", "RSS"]
+  section = ["HTML", "RSS"]
