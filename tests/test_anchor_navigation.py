@@ -12,7 +12,6 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, ex
 DriverFactory = Callable[..., Page]
 
 ANCHOR_TARGET_IDS = {
-    "top",
     "sections",
     "complexity",
     "containment",
@@ -22,9 +21,23 @@ ANCHOR_TARGET_IDS = {
     "feedback",
     "the-deal",
     "open-source",
-    "field-notes",
     "contact",
 }
+
+BRAND_RELOAD_CASES = [
+    (None, "intermediate"),
+    ("sections", "eye"),
+    ("complexity", "tmc"),
+    ("containment", "expanded"),
+    ("thesis", "intermediate"),
+    ("what-we-build", "eye"),
+    ("scale", "tmc"),
+    ("feedback", "expanded"),
+    ("the-deal", "intermediate"),
+    ("open-source", "eye"),
+    ("field-notes", "tmc"),
+    ("contact", "expanded"),
+]
 
 
 class AnchorGeometry(TypedDict):
@@ -52,9 +65,6 @@ def _wait_for_anchor_alignment(
             (targetId) => {
               const target = document.getElementById(targetId);
               if (!target) return false;
-              if (targetId === "top") {
-                return window.scrollY <= 1;
-              }
 
               const rect = target.getBoundingClientRect();
               const documentTop = rect.top + window.scrollY;
@@ -125,10 +135,6 @@ def _assert_anchor_is_aligned(
         _wait_for_anchor_alignment(page, target_id)
 
     geometry = _read_anchor_geometry(page, target_id)
-    if target_id == "top":
-        assert geometry["scroll_y"] <= 1
-        return
-
     expected_scroll = min(
         max(
             geometry["target_document_top"]
@@ -143,6 +149,53 @@ def _assert_anchor_is_aligned(
     assert abs(geometry["scroll_y"] - expected_scroll) <= 1
 
     assert geometry["target_top"] >= geometry["header_bottom"]
+
+
+def _interrupt_anchor_alignment_at_top(
+    page: Page,
+    *,
+    restore_scroll_behavior: bool = True,
+) -> str:
+    """Send real Home intent and wait for its own non-animated endpoint.
+
+    The helper deliberately does not follow the keyboard gesture with a
+    programmatic ``scrollTo(0)``. Chromium can occasionally finish one last
+    native Home scroll step after that competing command, making a correct
+    cancellation look as though the site pulled the page back toward its hash.
+    Waiting for the real gesture to reach zero preserves the user-input contract
+    while removing the test-only race between two independent scroll sources.
+    """
+
+    previous_scroll_behavior = page.evaluate(
+        """
+        () => {
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+          const root = document.documentElement;
+          const previousScrollBehavior = root.style.scrollBehavior;
+          root.style.scrollBehavior = "auto";
+          return previousScrollBehavior;
+        }
+        """
+    )
+    page.keyboard.press("Home")
+    page.wait_for_function(
+        "window.__tmcAnchorAlignmentInterrupted === true"
+    )
+    page.wait_for_function("window.scrollY === 0")
+    if restore_scroll_behavior:
+        page.evaluate(
+            """
+            (previousScrollBehavior) => {
+              document.documentElement.style.scrollBehavior =
+                previousScrollBehavior;
+            }
+            """,
+            previous_scroll_behavior,
+        )
+
+    return previous_scroll_behavior
 
 
 def test_every_internal_fragment_link_has_one_real_target(
@@ -203,6 +256,284 @@ def test_every_internal_fragment_link_has_one_real_target(
         assert item["targetCount"] == 1, item
 
 
+def test_top_fragment_is_completely_absent_from_rendered_elements(
+    driver: DriverFactory,
+) -> None:
+    """Forbid the retired ``#top`` fragment everywhere in the rendered page.
+
+    The former logo was an anchor with ``href="#top"`` and the root ``main``
+    owned ``id="top"``. That made even an ordinary home-logo click create a
+    fragment entry instead of performing the newly required hashless reload.
+    Merely changing the click handler is insufficient: a stale ``href``, ID,
+    data attribute, or nested element could still expose the retired fragment
+    to the browser's default navigation.
+
+    This structural regression scans every attribute on every rendered
+    element, rejects both an exact ``#top`` value and any ``id="top"`` owner,
+    verifies that the unified logo control is a ``div`` rather than an anchor,
+    and confirms that it has no ``href`` at all. It therefore fails if any
+    future refactor reintroduces the old fragment independently of the reload
+    implementation.
+    """
+
+    page = driver(load_interactive_visuals=False)
+    violations = page.evaluate(
+        """
+        () =>
+          [...document.querySelectorAll("*")].flatMap((element) =>
+            [...element.attributes]
+              .filter(
+                (attribute) =>
+                  attribute.value === "#top" ||
+                  (attribute.name === "id" && attribute.value === "top"),
+              )
+              .map((attribute) => ({
+                tag: element.tagName,
+                name: attribute.name,
+                value: attribute.value,
+              })),
+          )
+        """
+    )
+    brand = page.locator(".brand")
+
+    assert violations == []
+    assert brand.count() == 1
+    assert brand.evaluate("(element) => element.tagName") == "DIV"
+    expect(brand).to_have_attribute("role", "link")
+    assert brand.get_attribute("href") is None
+    assert page.url.endswith("/")
+
+
+def _click_brand_variant(page: Page, variant: str) -> None:
+    """Activate one precise visible sub-area of the unified logo control."""
+
+    if variant == "eye":
+        page.locator(".animated-eye-logo").click()
+        return
+
+    if variant == "tmc":
+        page.locator(
+            ".brand__word-part--t .brand__word-anchor"
+        ).click()
+        return
+
+    wordmark = page.locator(".brand__wordmark")
+    wordmark.hover()
+
+    if variant == "expanded":
+        page.wait_for_function(
+            """
+            () => [...document.querySelectorAll(".brand__word-reveal")].every(
+              (element) =>
+                element.getBoundingClientRect().width > 1 &&
+                getComputedStyle(element).opacity === "1",
+            )
+            """
+        )
+        page.locator(
+            '.brand__word-reveal[data-text="ompany"]'
+        ).click()
+        return
+
+    if variant != "intermediate":
+        raise AssertionError(f"Unknown brand click variant: {variant}")
+
+    reveal = page.locator('.brand__word-reveal[data-text="utating"]')
+    page.wait_for_function(
+        """
+        () => {
+          const element = document.querySelector(
+            '.brand__word-reveal[data-text="utating"]',
+          );
+          const opacity = Number.parseFloat(getComputedStyle(element).opacity);
+          return element.getBoundingClientRect().width > 2 &&
+            opacity > 0 &&
+            opacity < 1;
+        }
+        """
+    )
+    intermediate_state = page.locator(".brand").evaluate(
+        """
+        (brand) => {
+          for (const animation of brand.getAnimations({subtree: true})) {
+            const duration = Number(animation.effect?.getTiming().duration);
+            if (Number.isFinite(duration) && duration > 0) {
+              animation.currentTime = duration / 2;
+              animation.pause();
+            }
+          }
+
+          const reveal = brand.querySelector(
+            '.brand__word-reveal[data-text="utating"]',
+          );
+          const rect = reveal.getBoundingClientRect();
+          return {
+            width: rect.width,
+            fullWidth: reveal.scrollWidth,
+            opacity: Number.parseFloat(getComputedStyle(reveal).opacity),
+          };
+        }
+        """
+    )
+    assert 0 < intermediate_state["width"] < intermediate_state["fullWidth"]
+    assert 0 < intermediate_state["opacity"] < 1
+    reveal.click()
+
+
+@pytest.mark.parametrize(
+    ("target_id", "click_variant"),
+    BRAND_RELOAD_CASES,
+    ids=[
+        f"{target_id or 'arbitrary-scroll'}-{click_variant}"
+        for target_id, click_variant in BRAND_RELOAD_CASES
+    ],
+)
+def test_every_logo_sub_area_clears_fragments_and_reloads_home(
+    driver: DriverFactory,
+    base_url: str,
+    target_id: str | None,
+    click_variant: str,
+) -> None:
+    """Reload the hashless home page from every logo area and scroll context.
+
+    All visible pieces of the header logo now form one control: the animated
+    eye, the compact ``TMC`` letters, a fully revealed word segment, and a
+    partially revealed segment while its 350 ms transition is in progress.
+    The former nested behaviors were inconsistent—clicking the text created
+    ``#top``, while clicking the eye reloaded the current fragment—so testing
+    only the wrapper's center would leave the original defects undetected.
+
+    The parameter table covers every remaining internal fragment target and an
+    additional arbitrary non-anchor scroll position, rotating through all four
+    required click variants. Before activation, the test instruments both the
+    History API and ``hashchange`` while persisting observations through the
+    upcoming document load. It then requires a real browser navigation and uses
+    a new-document init script plus an in-memory sentinel to prove that the
+    current JavaScript document was destroyed and loaded again. Hugo parses the
+    two same-origin visual iframes immediately, so the init script may increment
+    their shared session counter too; any positive value proves a new document
+    while the top-window sentinel identifies the actual page reload.
+
+    Finally, the recorded history proves that ``#top`` was never created even
+    transiently. Reintroducing an anchor default, preserving the active hash
+    during reload, handling only the eye, omitting the expanded hit area, or
+    losing clicks midway through the wordmark transition makes at least one
+    parameterized case fail.
+    """
+
+    page = driver(
+        viewport=(1440, 900),
+        load_interactive_visuals=False,
+    )
+
+    if target_id is None:
+        page.evaluate(
+            """
+            () => window.scrollTo({
+              top: document.documentElement.scrollHeight * 0.42,
+              behavior: "instant",
+            })
+            """
+        )
+        assert page.evaluate("window.scrollY") > 0
+        assert page.evaluate("window.location.hash") == ""
+    else:
+        page.goto(
+            f"{base_url}/#{target_id}",
+            wait_until="domcontentloaded",
+        )
+        page.locator('html[data-theme-ready="true"]').wait_for(
+            state="attached",
+        )
+        _assert_anchor_is_aligned(page, target_id)
+        assert page.url.endswith(f"#{target_id}")
+
+    page.evaluate(
+        """
+        () => {
+          const key = "tmc-logo-navigation-observed-hashes";
+          const record = (url) => {
+            const parsed = new URL(url ?? location.href, location.href);
+            const values = JSON.parse(sessionStorage.getItem(key) || "[]");
+            values.push(parsed.hash);
+            sessionStorage.setItem(key, JSON.stringify(values));
+          };
+
+          sessionStorage.setItem(key, JSON.stringify([location.hash]));
+          addEventListener("hashchange", () => record(location.href));
+
+          const replaceState = history.replaceState.bind(history);
+          history.replaceState = (state, unused, url) => {
+            record(url);
+            return replaceState(state, unused, url);
+          };
+
+          const pushState = history.pushState.bind(history);
+          history.pushState = (state, unused, url) => {
+            record(url);
+            return pushState(state, unused, url);
+          };
+        }
+        """
+    )
+    page.add_init_script(
+        """
+        {
+          const key = "tmc-logo-document-load-count";
+          const count = Number.parseInt(sessionStorage.getItem(key) || "0", 10);
+          sessionStorage.setItem(key, String(count + 1));
+        }
+        """
+    )
+    page.evaluate(
+        """
+        () => {
+          sessionStorage.setItem("tmc-logo-document-load-count", "0");
+          window.__tmcBrandPreReloadDocument = true;
+        }
+        """
+    )
+
+    _click_brand_variant(page, click_variant)
+    page.wait_for_function(
+        """
+        () => (
+          Number(sessionStorage.getItem("tmc-logo-document-load-count")) >= 1
+          && window.__tmcBrandPreReloadDocument === undefined
+        )
+        """,
+        timeout=5_000,
+    )
+
+    page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
+    expect(page).to_have_url(f"{base_url}/")
+    assert page.evaluate("window.location.hash") == ""
+    assert int(page.evaluate(
+        """
+        () => sessionStorage.getItem("tmc-logo-document-load-count")
+        """
+    )) >= 1
+    assert page.evaluate(
+        """
+        () => window.__tmcBrandPreReloadDocument
+        """
+    ) is None
+
+    observed_hashes = page.evaluate(
+        """
+        () =>
+          JSON.parse(
+            sessionStorage.getItem(
+              "tmc-logo-navigation-observed-hashes",
+            ) || "[]",
+          )
+        """
+    )
+    assert "#top" not in observed_hashes
+    assert observed_hashes[-1] == ""
+
+
 def test_every_anchor_target_aligns_on_a_direct_deep_link(
     driver: DriverFactory,
     base_url: str,
@@ -219,8 +550,8 @@ def test_every_anchor_target_aligns_on_a_direct_deep_link(
     Besides checking all numbered sections, this includes the invisible
     ``#sections`` target used by “Read our thesis”, the nested
     ``#field-notes`` article that previously disappeared beneath the sticky
-    header, the bottom ``#contact`` section, and ``#top``. Any target left
-    clipped, overscrolled, or connected only after an in-page click fails here.
+    header and the bottom ``#contact`` section. Any target left clipped,
+    overscrolled, or connected only after an in-page click fails here.
     """
 
     page = driver(
@@ -264,13 +595,30 @@ def test_reload_realigns_the_hash_before_dom_content_loaded_returns(
     section noticeably later. That race was especially visible for late-page
     targets and was sensitive to viewport width and cache timing.
 
-    This regression test first opens a valid deep link, deliberately scrolls to
-    the top while leaving the fragment in the URL, and reloads. The first
-    assertion runs immediately when the initial ``load`` event returns, catching
-    native fragment scrolling that gets displaced between ``DOMContentLoaded``
-    and ``load``. The reload assertion is stricter: it runs as soon as
+    This regression test first opens a valid deep link, then uses a real Home
+    key gesture to return to the top while leaving the fragment in the URL. It
+    deliberately waits for fonts, pending images, and the alignment frames that
+    used to be queued after ``load``. The page must respect that user intent
+    instead of snapping back to the old fragment. This preparation is important:
+    a reload must begin from a genuinely different scroll position rather than
+    accidentally inheriting an already-correct anchor position.
+
+    The reload assertion itself remains stricter: it runs as soon as
     ``DOMContentLoaded`` returns, without waiting for React, fonts, animation
-    frames, or a polling helper.
+    frames, or a polling helper. Thus the same scenario independently protects
+    both sides of the race: late initial alignment must not override a user who
+    has moved away, while a new navigation must reset that cancellation and
+    align the requested fragment before hydration.
+
+    To make the first half deterministic, the test dispatches the same ``load``
+    signal used by the React alignment layer immediately before and after the
+    Home gesture. The first signal leaves two correction frames pending for the
+    cancellation path to clear when scheduling permits; the second
+    deterministically proves later callbacks honor the interrupted state.
+    Removing the effective guard protection therefore snaps the page back and
+    fails on observable scroll geometry, rather than merely failing an
+    implementation-marker assertion. The two guard levels intentionally remain
+    redundant, so removing only one may preserve correct behavior.
 
     Desktop, intermediate, and mobile cases cover a late section, a 3D section,
     and the formerly unoffset nested Blog card. Removing the pre-hydration
@@ -282,6 +630,13 @@ def test_reload_realigns_the_hash_before_dom_content_loaded_returns(
         viewport=viewport,
         load_interactive_visuals=False,
     )
+    page.add_init_script(
+        """
+        addEventListener("pageshow", () => {
+          window.__tmcAnchorTestPageShowObserved = true;
+        }, { once: true });
+        """
+    )
     page.goto("about:blank")
     page.goto(
         f"{base_url}/#{target_id}",
@@ -289,21 +644,333 @@ def test_reload_realigns_the_hash_before_dom_content_loaded_returns(
     )
     _assert_anchor_is_aligned(page, target_id, wait=False)
 
+    page.wait_for_function(
+        "window.__tmcAnchorTestPageShowObserved === true"
+    )
     page.evaluate(
         """
-        () => window.scrollTo({
-          top: 0,
-          behavior: "instant",
-        })
+        async () => {
+          await document.fonts.ready;
+          await Promise.all(
+            [...document.images]
+              .filter((image) => !image.complete)
+              .map((image) => new Promise((resolve) => {
+                image.addEventListener("load", resolve, { once: true });
+                image.addEventListener("error", resolve, { once: true });
+              })),
+          );
+          await new Promise((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+              });
+            });
+          });
+          window.dispatchEvent(new Event("load"));
+        }
         """
     )
-    assert page.evaluate("window.scrollY") == 0
+    _interrupt_anchor_alignment_at_top(page)
+    page.evaluate(
+        """
+        async () => {
+          window.dispatchEvent(new Event("load"));
+          await new Promise((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+              });
+            });
+          });
+        }
+        """
+    )
+    # Chromium may retain a sub-line keyboard-scroll residue after restoring
+    # the page's CSS scroll behavior. A real hash snap is thousands of pixels,
+    # so this tight near-top bound keeps the behavioral distinction exact.
+    assert page.evaluate("window.scrollY") <= 16
     assert page.url.endswith(f"#{target_id}")
 
     page.reload(wait_until="domcontentloaded")
 
     assert page.url.endswith(f"#{target_id}")
     _assert_anchor_is_aligned(page, target_id, wait=False)
+
+
+def test_non_scroll_pointer_input_does_not_cancel_anchor_alignment(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Keep ordinary clicks distinct from genuine scroll intent.
+
+    The late-alignment cancellation originally listened to every
+    ``pointerdown`` and ``touchstart``. That included harmless clicks on the
+    theme toggle, buttons, text, and other controls: a click that never moved
+    the viewport could silently disable a still-needed font or image correction.
+
+    This regression opens a deep link, clicks the theme control with a real
+    Playwright pointer sequence, then activates that focused button with Space.
+    It proves both the fragment geometry and shared alignment state stay active:
+    neither pointer activation nor a keyboard action consumed by an interactive
+    control is scroll intent. Dispatching a later load correction must remain
+    allowed. Restoring broad pointerdown or unfiltered key cancellation makes the
+    interrupted flag true and fails without relying on event timing.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    _assert_anchor_is_aligned(page, "field-notes")
+
+    toggle = page.get_by_role(
+        "button",
+        name="Toggle color theme",
+        exact=True,
+    )
+    toggle.click()
+    toggle.press("Space")
+
+    assert page.evaluate(
+        "window.__tmcAnchorAlignmentInterrupted"
+    ) is False
+    page.evaluate("window.dispatchEvent(new Event('load'))")
+    _settle_anchor_frames = """
+      () => new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(resolve);
+          });
+        });
+      })
+    """
+    page.evaluate(_settle_anchor_frames)
+    _assert_anchor_is_aligned(page, "field-notes", wait=False)
+
+
+def test_only_real_tentacle_scroll_messages_cancel_anchor_alignment(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Authenticate cross-frame scroll intent before cancelling an anchor.
+
+    Wheel input over the tentacle iframe cannot bubble into the parent window,
+    so the child forwards its vertical delta with ``postMessage``. Accepting the
+    type string alone would let the parent page, an unrelated frame, or a
+    zero-delta message disable late anchor correction without any user scroll.
+
+    This test sends two forged messages—one from the parent with a real delta
+    and one from the expected iframe with a zero delta—and requires both to be
+    ignored. It then emits the same-origin, finite, non-zero message from the
+    actual tentacle frame and requires interruption. Removing source, origin, or
+    delta validation breaks a corresponding assertion; rejecting the legitimate
+    child-to-parent protocol breaks the final one.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    _assert_anchor_is_aligned(page, "field-notes")
+    page.wait_for_function(
+        "window.__tmcAnchorAlignmentInterrupted === false"
+    )
+
+    result = page.evaluate(
+        """
+        () => {
+          const frame = document.querySelector(".contact__tentacles");
+          const dispatch = (source, deltaY) => {
+            window.dispatchEvent(
+              new MessageEvent("message", {
+                data: {
+                  type: "muta-tentacles-scroll-input",
+                  deltaY,
+                },
+                origin: window.location.origin,
+                source,
+              }),
+            );
+            return window.__tmcAnchorAlignmentInterrupted;
+          };
+
+          return {
+            forgedParent: dispatch(window, 120),
+            zeroFromFrame: dispatch(frame.contentWindow, 0),
+            validFromFrame: dispatch(frame.contentWindow, 120),
+          };
+        }
+        """
+    )
+
+    assert result == {
+        "forgedParent": False,
+        "zeroFromFrame": False,
+        "validFromFrame": True,
+    }
+
+
+def test_pageshow_resets_interruption_only_for_a_restored_navigation(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Distinguish the initial pageshow race from a BFCache restoration.
+
+    A normal ``pageshow`` follows ``load`` on a fresh document. If a very fast
+    user scroll lands between those events, resetting cancellation on that
+    ordinary pageshow yanks the page back to its hash. A persisted pageshow is
+    different: it represents a real back/forward-cache navigation and must begin
+    a new alignment session for the restored URL.
+
+    The test first drains the document's natural ``pageshow`` so its scheduling
+    cannot be confused with either controlled branch below. It then interrupts a
+    deep-link alignment with the Home key, dispatches a non-persisted
+    PageTransitionEvent and verifies the event causes no movement from the
+    normalized top position, then dispatches its persisted counterpart and
+    requires both the interruption flag and exact anchor geometry to reset.
+    After the real Home gesture records user intent, the test temporarily keeps
+    CSS scrolling non-animated through both controlled branches so a leftover
+    smooth-scroll frame cannot masquerade as pageshow movement or undo the
+    persisted realignment after the wait observes it. A real erroneous hash snap
+    still moves this late mobile target by several thousand pixels. Treating every
+    pageshow identically breaks one of these two externally visible outcomes.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.add_init_script(
+        """
+        addEventListener("pageshow", () => {
+          window.__tmcAnchorTestInitialPageShowObserved = true;
+        }, { once: true });
+        """
+    )
+    page.goto("about:blank")
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    page.wait_for_function(
+        "window.__tmcAnchorTestInitialPageShowObserved === true"
+    )
+    _assert_anchor_is_aligned(page, "field-notes")
+
+    previous_scroll_behavior = _interrupt_anchor_alignment_at_top(
+        page,
+        restore_scroll_behavior=False,
+    )
+    try:
+        page.evaluate(
+            """
+            () => new Promise((resolve) => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(resolve);
+                });
+              });
+            })
+            """
+        )
+        settled_scroll_y = page.evaluate("window.scrollY")
+        assert settled_scroll_y == 0
+
+        page.evaluate(
+            """
+            () => window.dispatchEvent(
+              new PageTransitionEvent("pageshow", { persisted: false }),
+            )
+            """
+        )
+        page.evaluate(
+            """
+            () => new Promise((resolve) => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(resolve);
+                });
+              });
+            })
+            """
+        )
+        after_pageshow_scroll_y = page.evaluate("window.scrollY")
+        assert abs(after_pageshow_scroll_y - settled_scroll_y) <= 1
+        assert page.evaluate(
+            "window.__tmcAnchorAlignmentInterrupted"
+        ) is True
+
+        page.evaluate(
+            """
+            () => window.dispatchEvent(
+              new PageTransitionEvent("pageshow", { persisted: true }),
+            )
+            """
+        )
+        page.wait_for_function(
+            "window.__tmcAnchorAlignmentInterrupted === false"
+        )
+        _assert_anchor_is_aligned(page, "field-notes")
+    finally:
+        page.evaluate(
+            """
+            (previous) => {
+              document.documentElement.style.scrollBehavior = previous;
+            }
+            """,
+            previous_scroll_behavior,
+        )
+
+
+def test_hashchange_starts_a_new_alignment_after_user_scroll(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Let a new fragment supersede cancellation from an earlier fragment.
+
+    Scroll intent cancels only pending corrections for the currently active
+    hash. It must not permanently disable internal navigation. This test moves
+    away from ``#field-notes`` with a real Home key, then assigns
+    ``#complexity`` and requires the hashchange path to clear interruption and
+    align the new target exactly.
+
+    The initial real ``pageshow`` is explicitly drained before Home. Without
+    that boundary, Chromium may still be completing its first fragment
+    navigation while the test starts the user gesture, producing a race between
+    two browser-owned scroll operations rather than exercising the later
+    hashchange contract. Starting from ``about:blank`` also guarantees the
+    observed pageshow belongs to this deep-link navigation.
+
+    Forgetting to reset the shared flag on hashchange leaves the user stranded
+    at the top even though the address bar changes; resetting on unrelated
+    pointer activity is covered separately.
+    """
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.add_init_script(
+        """
+        addEventListener("pageshow", () => {
+          window.__tmcAnchorTestInitialPageShowObserved = true;
+        }, { once: true });
+        """
+    )
+    page.goto("about:blank")
+    page.goto(f"{base_url}/#field-notes", wait_until="load")
+    page.wait_for_function(
+        "window.__tmcAnchorTestInitialPageShowObserved === true"
+    )
+    _assert_anchor_is_aligned(page, "field-notes")
+
+    _interrupt_anchor_alignment_at_top(page)
+
+    page.evaluate("window.location.hash = '#complexity'")
+    expect(page).to_have_url(f"{base_url}/#complexity")
+    page.wait_for_function(
+        "window.__tmcAnchorAlignmentInterrupted === false"
+    )
+    _assert_anchor_is_aligned(page, "complexity")
 
 
 def test_representative_anchor_clicks_update_the_url_and_scroll(
@@ -315,15 +982,16 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
     A correct fragment target is insufficient if React event handling, sticky
     navigation, smooth scrolling, or a nested layout prevents the actual link
     from navigating. This test clicks representative links from the hero,
-    numbered section label, sticky desktop navigation, and brand. After each
-    real Playwright click it verifies both externally visible outcomes: the
+    numbered section label and sticky desktop navigation. After each real
+    Playwright click it verifies both externally visible outcomes: the
     exact fragment is present in the address bar and the corresponding target
     is positioned with the intended header clearance.
 
     The sequence explicitly covers the invisible list-start target, a regular
-    numbered section, the nested Blog card, Contact near the document bottom,
-    the open-source section, and the return-to-top logo. It therefore guards
-    the click path independently from the direct-load and reload tests.
+    numbered section, Contact near the document bottom, and the open-source
+    section. Blog now owns a real Hugo route and is covered by the blog suite.
+    The separate logo-navigation regression covers the intentionally hashless
+    full reload back to the home page.
     """
 
     page = driver(
@@ -333,10 +1001,8 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
     click_cases = [
         ('.hero__actions a[href="#sections"]', "sections"),
         ('#complexity a[href="#complexity"]', "complexity"),
-        ('.main-nav a[href="#field-notes"]', "field-notes"),
-        ('.main-nav a[href="#contact"]', "contact"),
+        ('.main-nav a[href="/#contact"]', "contact"),
         ('.hero__actions a[href="#open-source"]', "open-source"),
-        ('.brand[href="#top"]', "top"),
     ]
 
     for selector, target_id in click_cases:
@@ -346,6 +1012,82 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
 
         expect(page).to_have_url(f"{base_url}/#{target_id}")
         _assert_anchor_is_aligned(page, target_id)
+
+
+@pytest.mark.parametrize(
+    ("viewport", "selector", "open_mobile_menu"),
+    [
+        ((1440, 900), '.main-nav a[href="/#contact"]', False),
+        ((800, 900), '.mobile-menu nav a[href="/#contact"]', True),
+    ],
+    ids=["desktop-header", "mobile-header"],
+)
+def test_header_contact_returns_to_home_before_resolving_the_fragment(
+    driver: DriverFactory,
+    base_url: str,
+    viewport: tuple[int, int],
+    selector: str,
+    open_mobile_menu: bool,
+) -> None:
+    """Make the shared header's Contact link safe on future nested pages.
+
+    A fragment-only ``href="#contact"`` works on today's one-page site but is
+    resolved against whichever pathname currently owns the header. Reusing that
+    header on a future Blog or Sources page would therefore search for a
+    nonexistent local ``#contact`` target instead of returning to the landing
+    page.
+
+    This regression emulates that future state without needing a second route:
+    it moves the current document to a nested same-origin pathname through the
+    History API, then clicks the real desktop or mobile Contact link. The
+    authored href must be ``/#contact``, its fully resolved URL must point to
+    the origin root, clicking it must replace the nested pathname with ``/``,
+    and the landing-page Contact section must align below the sticky header.
+    A fragment-only link, relative nested path, desktop/mobile mismatch, or URL
+    update without correct scrolling makes the test fail.
+    """
+
+    page = driver(
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    future_url = f"{base_url}/future/about?preview=1#feedback"
+    page.evaluate(
+        """
+        (url) => {
+          history.replaceState({futurePage: true}, "", url);
+        }
+        """,
+        future_url,
+    )
+    expect(page).to_have_url(future_url)
+
+    if open_mobile_menu:
+        page.locator(".mobile-menu > summary").click()
+
+    contact_link = page.locator(selector)
+    assert contact_link.count() == 1
+    link_contract = contact_link.evaluate(
+        """
+        (link) => {
+          const resolved = new URL(link.href);
+          return {
+            authored: link.getAttribute("href"),
+            pathname: resolved.pathname,
+            hash: resolved.hash,
+          };
+        }
+        """
+    )
+    assert link_contract == {
+        "authored": "/#contact",
+        "pathname": "/",
+        "hash": "#contact",
+    }
+
+    contact_link.click()
+    expect(page).to_have_url(f"{base_url}/#contact")
+    _assert_anchor_is_aligned(page, "contact")
 
 
 def test_back_and_forward_history_realign_each_fragment(
@@ -374,7 +1116,7 @@ def test_back_and_forward_history_realign_each_fragment(
     page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
     _assert_anchor_is_aligned(page, "complexity")
 
-    contact_link = page.locator('.main-nav a[href="#contact"]')
+    contact_link = page.locator('.main-nav a[href="/#contact"]')
     assert contact_link.count() == 1
     contact_link.click()
     expect(page).to_have_url(f"{base_url}/#contact")

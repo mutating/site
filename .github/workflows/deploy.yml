@@ -1,0 +1,128 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy over SSH
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install Hugo Extended
+        uses: peaceiris/actions-hugo@v3.2.0
+        with:
+          hugo-version: "0.164.0"
+          extended: true
+
+      - name: Install password-based SSH support
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes rsync sshpass
+
+      - name: Build the production site
+        env:
+          SITE_BASE_URL: ${{ secrets.SITE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SITE_BASE_URL" =~ ^https?:// ]]; then
+            echo "SITE_BASE_URL must be a complete http(s) URL." >&2
+            exit 1
+          fi
+          hugo \
+            --cleanDestinationDir \
+            --environment production \
+            --minify \
+            --baseURL "$SITE_BASE_URL"
+
+      - name: Configure SSH host verification
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          install -m 600 /dev/null "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Replace the deployed site
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          for required_value in \
+            "$DEPLOY_HOST" \
+            "$DEPLOY_PORT" \
+            "$DEPLOY_USER" \
+            "$DEPLOY_PATH" \
+            "$SSHPASS"; do
+            test -n "$required_value"
+          done
+
+          if [[ ! "$DEPLOY_PORT" =~ ^[0-9]+$ ]]; then
+            echo "DEPLOY_PORT must contain only digits." >&2
+            exit 1
+          fi
+
+          if [[ ! "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+            echo "DEPLOY_PATH must be an absolute path without spaces." >&2
+            exit 1
+          fi
+
+          target_path="${DEPLOY_PATH%/}"
+          case "$target_path" in
+            *"/../"*|*"/.."|*"/./"*|*"/.")
+              echo "DEPLOY_PATH must not contain dot path segments." >&2
+              exit 1
+              ;;
+          esac
+
+          case "$target_path" in
+            /|/home|/root|/srv|/usr|/var|/var/www)
+              echo "Refusing to synchronize into an unsafe DEPLOY_PATH." >&2
+              exit 1
+              ;;
+          esac
+
+          ssh_options=(
+            -p "$DEPLOY_PORT"
+            -o PreferredAuthentications=password
+            -o PubkeyAuthentication=no
+            -o NumberOfPasswordPrompts=1
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+
+          sshpass -e ssh "${ssh_options[@]}" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "test -d '$target_path' && test -w '$target_path'"
+
+          sshpass -e rsync \
+            --archive \
+            --compress \
+            --checksum \
+            --delete-delay \
+            --delay-updates \
+            --chmod=D755,F644 \
+            -e "ssh -p $DEPLOY_PORT -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" \
+            public/ \
+            "$DEPLOY_USER@$DEPLOY_HOST:$target_path/"

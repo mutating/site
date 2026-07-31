@@ -139,8 +139,14 @@ def test_primary_layout_does_not_move_after_repeated_theme_switches(
         assert abs(page.evaluate("window.scrollY") - initial_scroll) <= 0.5
 
 
+@pytest.mark.parametrize(
+    "viewport",
+    [(1440, 900), (1121, 900)],
+    ids=["wide", "desktop-boundary"],
+)
 def test_footer_row_is_vertically_centered_below_its_divider(
     driver: DriverFactory,
+    viewport: tuple[int, int],
 ) -> None:
     """Keep the desktop footer labels centered in the space below the rule.
 
@@ -148,12 +154,15 @@ def test_footer_row_is_vertically_centered_below_its_divider(
     50 pixels below it. Although all three label groups shared a baseline, the
     whole row therefore sat 12 pixels above the vertical center of the area
     beneath the divider. This test measures the rendered row and the usable
-    footer box and guards their centers with subpixel tolerance.
+    footer box and guards their centers with subpixel tolerance. It runs both
+    on a wide viewport and one pixel above the medium-layout boundary, proving
+    the requested compact footer does not leak into the unchanged desktop
+    presentation.
     """
 
     page = driver(
         stored_theme="light",
-        viewport=(1440, 900),
+        viewport=viewport,
         load_interactive_visuals=False,
     )
     geometry = page.locator(".site-footer").evaluate(
@@ -173,6 +182,23 @@ def test_footer_row_is_vertically_centered_below_its_divider(
             availableCenter:
               (footerRect.top + borderTop + footerRect.bottom) / 2,
             rowCenter: (rowTop + rowBottom) / 2,
+            columnCount:
+              getComputedStyle(footer).gridTemplateColumns.split(" ").length,
+            legalRight:
+              footer.querySelector(".site-footer__legal")
+                .getBoundingClientRect().right,
+            taglineLeft:
+              footer.querySelector(".site-footer__tagline")
+                .getBoundingClientRect().left,
+            taglineRight:
+              footer.querySelector(".site-footer__tagline")
+                .getBoundingClientRect().right,
+            linksLeft:
+              footer.querySelector(".site-footer__links")
+                .getBoundingClientRect().left,
+            linksDisplay: getComputedStyle(
+              footer.querySelector(".site-footer__links"),
+            ).display,
           };
         }
         """
@@ -181,6 +207,330 @@ def test_footer_row_is_vertically_centered_below_its_divider(
     assert abs(
         geometry["availableCenter"] - geometry["rowCenter"]
     ) <= 0.5
+    assert geometry["columnCount"] == 3
+    assert geometry["linksDisplay"] == "flex"
+    assert geometry["legalRight"] < geometry["taglineLeft"]
+    assert geometry["taglineRight"] < geometry["linksLeft"]
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1120, 900),
+        (1024, 900),
+        (900, 900),
+        (861, 900),
+        (800, 900),
+        (580, 900),
+        (390, 844),
+        (280, 700),
+    ],
+    ids=[
+        "medium-boundary",
+        "medium-wide",
+        "medium",
+        "medium-compact-boundary",
+        "compact",
+        "mobile-wide",
+        "phone",
+        "minimum",
+    ],
+)
+def test_medium_and_narrow_footer_hide_navigation_and_center_legal_copy(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Use a centered two-line footer when the header already owns navigation.
+
+    The wide desktop footer intentionally remains a single three-column row
+    with copyright, tagline, and navigation. On medium and narrow screens,
+    repeating ``Sources``, ``Blog``, and ``Contact`` below an always-sticky
+    header wastes vertical space and leaves the two remaining messages visually
+    unbalanced. The requested compact order is therefore copyright first,
+    tagline second, with both lines centered across the footer.
+
+    This regression measures the complete compact range from the exact 1120 px
+    medium boundary down to the 280 px minimum, including both sides of the
+    site's 860 px content breakpoint. It requires one grid column, hidden
+    duplicate links, copyright above the tagline, and the horizontal center of
+    both visible lines to match the footer center. Reintroducing the former
+    links row, reversing the two messages, left-aligning either line, or limiting
+    the rule to only phones makes at least one viewport fail.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    geometry = page.locator(".site-footer").evaluate(
+        """
+        (footer) => {
+          const rectangle = (element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+              top: rect.top,
+              bottom: rect.bottom,
+              centerX: rect.left + rect.width / 2,
+            };
+          };
+          const footerRect = footer.getBoundingClientRect();
+          const legal = footer.querySelector(".site-footer__legal");
+          const tagline = footer.querySelector(".site-footer__tagline");
+          const links = footer.querySelector(".site-footer__links");
+          return {
+            footerCenterX: footerRect.left + footerRect.width / 2,
+            columnCount:
+              getComputedStyle(footer).gridTemplateColumns.split(" ").length,
+            textAlign: getComputedStyle(footer).textAlign,
+            legal: rectangle(legal),
+            tagline: rectangle(tagline),
+            legalJustifySelf: getComputedStyle(legal).justifySelf,
+            taglineJustifySelf: getComputedStyle(tagline).justifySelf,
+            linksDisplay: getComputedStyle(links).display,
+          };
+        }
+        """
+    )
+
+    assert geometry["columnCount"] == 1
+    assert geometry["linksDisplay"] == "none"
+    assert geometry["textAlign"] == "center"
+    assert geometry["legal"]["bottom"] < geometry["tagline"]["top"]
+    assert geometry["legal"]["centerX"] == pytest.approx(
+        geometry["footerCenterX"],
+        abs=0.5,
+    )
+    assert geometry["tagline"]["centerX"] == pytest.approx(
+        geometry["footerCenterX"],
+        abs=0.5,
+    )
+    assert geometry["legalJustifySelf"] == "center"
+    assert geometry["taglineJustifySelf"] == "center"
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [(580, 900), (390, 844), (280, 700)],
+    ids=["mobile-boundary", "phone", "minimum"],
+)
+def test_narrow_footer_copy_group_is_vertically_centered(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep the two visible footer lines centered below the divider on phones.
+
+    The narrow footer used to override only its top padding to 24 pixels while
+    retaining the desktop 38-pixel bottom padding. That asymmetric box placed
+    the copyright/tagline group seven pixels above the visual center even
+    though both individual lines were horizontally centered. This regression
+    measures the center of the complete two-line group against the center of
+    the footer area below its one-pixel divider at the mobile breakpoint, a
+    representative phone width, and the supported minimum width. Restoring
+    unequal vertical padding or shifting either row independently makes the
+    measured centers diverge and fails the test.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    geometry = page.locator(".site-footer").evaluate(
+        """
+        (footer) => {
+          const footerRect = footer.getBoundingClientRect();
+          const borderTop = parseFloat(
+            getComputedStyle(footer).borderTopWidth,
+          );
+          const legalRect = footer
+            .querySelector(".site-footer__legal")
+            .getBoundingClientRect();
+          const taglineRect = footer
+            .querySelector(".site-footer__tagline")
+            .getBoundingClientRect();
+
+          return {
+            availableCenter:
+              (footerRect.top + borderTop + footerRect.bottom) / 2,
+            copyCenter: (legalRect.top + taglineRect.bottom) / 2,
+          };
+        }
+        """
+    )
+
+    assert geometry["copyCenter"] == pytest.approx(
+        geometry["availableCenter"],
+        abs=0.5,
+    )
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        (1440, 900),
+        (1121, 900),
+        (1120, 900),
+        (861, 900),
+        (580, 900),
+        (390, 844),
+        (280, 700),
+    ],
+    ids=[
+        "wide",
+        "desktop-boundary",
+        "medium-boundary",
+        "compact-boundary",
+        "mobile-boundary",
+        "phone",
+        "minimum",
+    ],
+)
+def test_footer_copy_lines_share_identical_typography_at_every_width(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Give the copyright and tagline exactly the same rendered text styling.
+
+    These are the footer's two persistent text lines: they appear beside one
+    another on desktop and as a centered stack on medium and narrow screens.
+    Separate selectors previously made it easy for their font size, weight,
+    spacing, color, opacity, shadow, or filter to drift at one responsive
+    breakpoint while remaining superficially similar elsewhere. The test
+    samples both sides of every relevant layout boundary and compares the
+    complete set of computed typographic and visual-effect properties. A
+    future rule that changes either line alone therefore fails at the exact
+    width where the inconsistency is introduced.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    typography = page.locator(".site-footer").evaluate(
+        """
+        (footer) => {
+          const properties = [
+            "color",
+            "font-family",
+            "font-size",
+            "font-style",
+            "font-weight",
+            "font-stretch",
+            "font-variation-settings",
+            "line-height",
+            "letter-spacing",
+            "text-transform",
+            "text-decoration-line",
+            "text-shadow",
+            "filter",
+            "opacity",
+          ];
+          const read = (selector) => {
+            const style = getComputedStyle(footer.querySelector(selector));
+            return Object.fromEntries(
+              properties.map((property) => [
+                property,
+                style.getPropertyValue(property),
+              ]),
+            );
+          };
+
+          return {
+            legal: read(".site-footer__legal"),
+            tagline: read(".site-footer__tagline"),
+          };
+        }
+        """
+    )
+
+    assert typography["legal"] == typography["tagline"]
+
+
+@pytest.mark.parametrize(
+    ("viewport", "expected_overflow"),
+    [
+        ((580, 900), "visible"),
+        ((390, 844), "visible"),
+        ((280, 700), "visible"),
+        ((581, 900), "hidden"),
+        ((1440, 900), "hidden"),
+    ],
+    ids=[
+        "mobile-boundary",
+        "phone",
+        "minimum",
+        "one-pixel-above-mobile",
+        "desktop",
+    ],
+)
+def test_coexistence_shadow_is_not_clipped_only_on_narrow_screens(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+    expected_overflow: str,
+) -> None:
+    """Let the HUMAN/ROBOT card cast its full side shadow on narrow screens.
+
+    The card deliberately spans the full width of ``.coexistence`` on phones.
+    Its face owns a large blurred box shadow, while the section historically
+    used ``overflow: hidden``. At widths up to 580 px those two rules put the
+    clipping edge exactly on both vertical sides of the card, producing a hard
+    cutoff: only the upper and lower shadow remained visible. Wide layouts did
+    not expose the defect because the card's 880 px maximum width left ample
+    space inside its section.
+
+    This regression exercises the exact mobile boundary, a normal phone, and
+    the supported minimum width. It requires the narrow section to expose
+    overflow while also proving that the card still occupies the same full
+    content width and retains a real shadow. The adjacent 581 px case and a
+    desktop case must preserve the original clipped section behavior, guarding
+    against an unnecessarily global overflow change. Restoring the old mobile
+    ``overflow: hidden`` rule makes all three narrow cases fail and recreates
+    the photographed side-clipping defect.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    geometry = page.locator("#the-deal").evaluate(
+        """
+        (section) => {
+          const card = section.querySelector(".coexistence__pair");
+          const face = card.querySelector(".coexistence__pair-face");
+          const sectionRect = section.getBoundingClientRect();
+          const cardRect = card.getBoundingClientRect();
+          const sectionStyle = getComputedStyle(section);
+          const faceStyle = getComputedStyle(face);
+
+          return {
+            sectionOverflow: sectionStyle.overflow,
+            sectionOverflowX: sectionStyle.overflowX,
+            sectionWidth: sectionRect.width,
+            cardWidth: cardRect.width,
+            cardLeft: cardRect.left,
+            sectionLeft: sectionRect.left,
+            boxShadow: faceStyle.boxShadow,
+          };
+        }
+        """
+    )
+
+    assert geometry["sectionOverflow"] == expected_overflow
+    assert geometry["sectionOverflowX"] == expected_overflow
+    assert geometry["boxShadow"] != "none"
+
+    if viewport[0] <= 580:
+        assert geometry["cardWidth"] == pytest.approx(
+            geometry["sectionWidth"],
+            abs=0.5,
+        )
+        assert geometry["cardLeft"] == pytest.approx(
+            geometry["sectionLeft"],
+            abs=0.5,
+        )
 
 
 def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(

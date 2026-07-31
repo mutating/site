@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import socket
 import subprocess
 import time
+import tomllib
 from collections.abc import Callable, Iterator
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 from urllib.error import URLError
@@ -19,7 +22,87 @@ from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ColorScheme = Literal["dark", "light", "no-preference"]
+ReducedMotion = Literal["reduce", "no-preference"]
 DriverFactory = Callable[..., Page]
+
+
+def _write_paginated_tag_posts(temporary_content: Path) -> None:
+    """Create a controlled tag collection that always spans two pages."""
+
+    config = tomllib.loads((PROJECT_ROOT / "hugo.toml").read_text())
+    pager_size = int(config["pagination"]["pagerSize"])
+    blog_directory = temporary_content / "blog"
+
+    for index in range(pager_size + 2):
+        post_number = index + 1
+        fixture_date = date(1998, 1, 1) + timedelta(days=index)
+        title_period = "." if index == pager_size + 1 else ""
+        (blog_directory / f"tag-pagination-{post_number:02d}.md").write_text(
+            "\n".join(
+                (
+                    "---",
+                    f'title: "Controlled tag signal {post_number:02d}{title_period}"',
+                    f"date: {fixture_date.isoformat()}T00:00:00Z",
+                    f'slug: "tag-pagination-{post_number:02d}"',
+                    'description: "A controlled post for tag pagination tests."',
+                    "tags:",
+                    "  - controlled-pagination",
+                    "---",
+                    "",
+                    "This fixture exists only inside the temporary test site.",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
+
+
+def _write_paginated_author_posts(temporary_content: Path) -> None:
+    """Create an author archive with older posts spanning two pages."""
+
+    config = tomllib.loads((PROJECT_ROOT / "hugo.toml").read_text())
+    pager_size = int(config["pagination"]["pagerSize"])
+    blog_directory = temporary_content / "blog"
+    archive_directory = temporary_content / "author-posts" / "test-author"
+    archive_directory.mkdir(parents=True)
+    (archive_directory / "_index.md").write_text(
+        "\n".join(
+            (
+                "---",
+                'title: "Controlled author archive"',
+                'author: "test-author"',
+                'type: "author-posts"',
+                'url: "/authors/test-author/posts/"',
+                "---",
+                "",
+                "Controlled archive content.",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    for index in range(pager_size + 2):
+        post_number = index + 1
+        fixture_date = date(1997, 1, 1) + timedelta(days=index)
+        (blog_directory / f"author-pagination-{post_number:02d}.md").write_text(
+            "\n".join(
+                (
+                    "---",
+                    f'title: "Controlled author signal {post_number:02d}"',
+                    f"date: {fixture_date.isoformat()}T00:00:00Z",
+                    f'slug: "author-pagination-{post_number:02d}"',
+                    'description: "A controlled post for author pagination tests."',
+                    'author: "test-author"',
+                    "tags: []",
+                    "---",
+                    "",
+                    "This fixture exists only inside the temporary test site.",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
 
 
 def _find_available_port() -> int:
@@ -52,25 +135,74 @@ def _wait_for_site(base_url: str, process: subprocess.Popen[bytes]) -> None:
 
 
 @pytest.fixture(scope="session")
-def base_url() -> Iterator[str]:
-    """Provide the tested site URL and manage a local server when needed."""
+def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """Build Hugo, run it on a temporary nonstandard port, then stop it."""
 
     configured_url = os.environ.get("TEST_BASE_URL")
     if configured_url:
         yield configured_url.rstrip("/")
         return
 
+    temporary_root = tmp_path_factory.mktemp("mutating-hugo")
+    temporary_content = temporary_root / "content"
+    build_destination = temporary_root / "build"
+    serve_destination = temporary_root / "serve"
+    shutil.copytree(PROJECT_ROOT / "content", temporary_content)
+    for fixture_post in (
+        PROJECT_ROOT / "tests" / "fixtures"
+    ).glob("*-post.md"):
+        shutil.copy2(
+            fixture_post,
+            temporary_content / "blog" / fixture_post.name,
+        )
+    for fixture_author in (
+        PROJECT_ROOT / "tests" / "fixtures"
+    ).glob("*-author.md"):
+        shutil.copy2(
+            fixture_author,
+            temporary_content / "authors" / fixture_author.name,
+        )
+    _write_paginated_tag_posts(temporary_content)
+    _write_paginated_author_posts(temporary_content)
+
+    build = subprocess.run(
+        [
+            "hugo",
+            "--cleanDestinationDir",
+            "--contentDir",
+            str(temporary_content),
+            "--destination",
+            str(build_destination),
+            "--noBuildLock",
+        ],
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if build.returncode != 0:
+        output = build.stdout.decode("utf-8", errors="replace")
+        raise RuntimeError(f"Hugo build failed before tests started:\n{output}")
+
     port = _find_available_port()
     local_url = f"http://localhost:{port}"
     command = [
-        "npm",
-        "run",
-        "dev",
-        "--",
-        "--host",
+        "hugo",
+        "server",
+        "--bind",
         "127.0.0.1",
         "--port",
         str(port),
+        "--baseURL",
+        f"{local_url}/",
+        "--contentDir",
+        str(temporary_content),
+        "--destination",
+        str(serve_destination),
+        "--cleanDestinationDir",
+        "--disableFastRender",
+        "--noBuildLock",
+        "--renderToMemory=false",
     ]
     process = subprocess.Popen(
         command,
@@ -126,8 +258,11 @@ def driver(
         storage_available: bool = True,
         system_theme_available: bool = True,
         viewport: tuple[int, int] | None = None,
+        device_scale_factor: float | None = None,
+        reduced_motion: ReducedMotion = "no-preference",
         load_interactive_visuals: bool = True,
         animation_frame_interval_ms: float | None = None,
+        controllable_animation_frames: bool = False,
     ) -> Page:
         storage_state = {"cookies": [], "origins": []}
 
@@ -149,6 +284,8 @@ def driver(
                 if viewport is not None
                 else None
             ),
+            device_scale_factor=device_scale_factor,
+            reduced_motion=reduced_motion,
         )
 
         if not storage_available:
@@ -206,17 +343,55 @@ def driver(
                   const frameInterval = {frame_interval!r};
                   const nativeRequestAnimationFrame =
                     window.requestAnimationFrame.bind(window);
-                  let virtualTimestamp = null;
+                  let virtualTimestamp = 0;
+                  let previousNativeTimestamp = null;
 
                   window.requestAnimationFrame = (callback) =>
                     nativeRequestAnimationFrame((timestamp) => {{
-                      virtualTimestamp =
-                        virtualTimestamp === null
-                          ? timestamp
-                          : virtualTimestamp + frameInterval;
+                      if (
+                        previousNativeTimestamp === null ||
+                        timestamp !== previousNativeTimestamp
+                      ) {{
+                        previousNativeTimestamp = timestamp;
+                        virtualTimestamp += frameInterval;
+                      }}
                       callback(virtualTimestamp);
                     }});
                 }})();
+                """
+            )
+
+        if controllable_animation_frames:
+            context.add_init_script(
+                """
+                (() => {
+                  const nativeRequestAnimationFrame =
+                    window.requestAnimationFrame.bind(window);
+                  let animationFramesPaused = false;
+                  let queuedCallbacks = [];
+
+                  window.__mutaTestSetAnimationFramesPaused = (paused) => {
+                    animationFramesPaused = Boolean(paused);
+                    if (animationFramesPaused || queuedCallbacks.length === 0) {
+                      return;
+                    }
+
+                    const callbacks = queuedCallbacks;
+                    queuedCallbacks = [];
+                    for (const callback of callbacks) {
+                      nativeRequestAnimationFrame(callback);
+                    }
+                  };
+
+                  window.requestAnimationFrame = (callback) =>
+                    nativeRequestAnimationFrame((timestamp) => {
+                      if (animationFramesPaused) {
+                        queuedCallbacks.push(callback);
+                        return;
+                      }
+                      callback(timestamp);
+                    });
+                })();
                 """
             )
 

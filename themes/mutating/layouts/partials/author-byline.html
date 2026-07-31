@@ -1,0 +1,14 @@
+{{- $author := .author -}}
+{{- $status := lower (default "human" $author.Params.status) -}}
+{{- $prefix := default "" .prefix -}}
+<span
+  class="author-byline{{ with .class }} {{ . }}{{ end }}"
+  data-author-status="{{ $status }}"
+>
+  <i class="author-status__light" aria-hidden="true"></i>
+  {{- if .link }}
+    <a class="author-byline__name post__author" href="{{ $author.RelPermalink }}" rel="author">{{ $prefix }}{{ $author.Title }}</a>
+  {{- else }}
+    <span class="author-byline__name">{{ $prefix }}{{ $author.Title }}</span>
+  {{- end }}
+</span>

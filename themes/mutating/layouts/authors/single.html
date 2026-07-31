@@ -1,0 +1,96 @@
+{{ define "main" }}
+{{- $authorSlug := .File.ContentBaseName -}}
+{{- $status := lower (default "human" .Params.status) -}}
+{{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
+{{- $posts = $posts.ByDate.Reverse -}}
+{{- $archive := site.GetPage (printf "/author-posts/%s" $authorSlug) -}}
+{{- $tagScratch := newScratch -}}
+{{- $tagScratch.Set "counts" dict -}}
+{{- range $posts -}}
+  {{- range .Params.tags -}}
+    {{- $tag := lower (printf "%v" .) -}}
+    {{- $currentCount := default 0 (index ($tagScratch.Get "counts") $tag) -}}
+    {{- $tagScratch.SetInMap "counts" $tag (add $currentCount 1) -}}
+  {{- end -}}
+{{- end -}}
+{{- $tagItems := slice -}}
+{{- range $tag, $count := ($tagScratch.Get "counts") -}}
+  {{- $tagItems = $tagItems | append (dict "name" $tag "count" $count) -}}
+{{- end -}}
+{{- $tagItems = sort $tagItems "count" "desc" -}}
+
+<article class="author-profile section-shell">
+  <header class="author-profile__hero">
+    <div class="author-profile__intro">
+      <a class="section-index" href="{{ "/authors/" | relURL }}">AUTHORS / {{ upper $authorSlug }}</a>
+      {{ partial "author-status.html" (dict "author" . "variant" "profile" "class" "author-profile__status") }}
+      <h1>{{ .Title }}</h1>
+      {{ with .Params.links }}
+        <nav class="author-profile__links" aria-label="{{ $.Title }} external links">
+          {{ range . }}
+            <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ .label }} <span aria-hidden="true">↗</span></a>
+          {{ end }}
+        </nav>
+      {{ end }}
+    </div>
+    {{ with .Params.photo }}
+      <figure class="author-profile__portrait mascot-card" data-author-status="{{ $status }}">
+        <div class="mascot-card__halo" aria-hidden="true"></div>
+        <img
+          class="mascot-card__art"
+          src="{{ . | relURL }}"
+          {{- with $.Params.photo2x }} srcset="{{ $.Params.photo | relURL }} 1x, {{ . | relURL }} 2x"{{ end }}
+          alt="{{ $.Title }}"
+        >
+      </figure>
+    {{ end }}
+  </header>
+
+  <div class="author-profile__details{{ if not $posts }} author-profile__details--centered{{ end }}">
+    <section class="author-profile__bio" aria-labelledby="author-about-heading">
+      <p class="author-profile__label" id="author-about-heading">ABOUT / {{ upper .Title }}</p>
+      <div class="post__content author-profile__content">{{ .Content }}</div>
+    </section>
+    {{ if and (gt (len $posts) 0) (gt (len $tagItems) 0) }}
+      <aside class="author-profile__tags" aria-labelledby="author-tags-heading">
+        <p class="author-profile__label" id="author-tags-heading">FREQUENT SIGNALS</p>
+        <ol>
+          {{ range first 5 $tagItems }}
+            <li>
+              <a href="{{ printf "/tags/%s/" (.name | urlize) | relURL }}">
+                <span>#{{ .name }}</span><small>{{ .count }}</small>
+              </a>
+            </li>
+          {{ end }}
+        </ol>
+      </aside>
+    {{ end }}
+  </div>
+
+  {{ if $posts }}
+  <section class="author-posts" aria-labelledby="author-posts-heading">
+    <header>
+      <h2 id="author-posts-heading">Authored signals.</h2>
+      {{ with $archive }}
+        <a class="author-posts__archive" href="{{ .RelPermalink }}" aria-label="View every post by {{ $.Title }}">
+          <span>All field notes</span><b aria-hidden="true">↗</b>
+        </a>
+      {{ end }}
+    </header>
+    <div class="author-posts__grid">
+      {{ range first 2 $posts }}
+        <a class="author-post-card" href="{{ .RelPermalink }}">
+          <div>
+            <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
+            <span>{{ .ReadingTime }} min read</span>
+          </div>
+          <h3>{{ .Title }}</h3>
+          <p>{{ .Description | default .Summary }}</p>
+          <b aria-hidden="true">↗</b>
+        </a>
+      {{ end }}
+    </div>
+  </section>
+  {{ end }}
+</article>
+{{ end }}

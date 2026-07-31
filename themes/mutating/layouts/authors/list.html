@@ -1,0 +1,27 @@
+{{ define "main" }}
+<section class="authors-index section-shell">
+  <header class="authors-index__header">
+    <a class="section-index" href="#authors">AUTHORS / DIRECTORY</a>
+    <h1>{{ .Title }}</h1>
+    {{ with .Content }}<div>{{ . }}</div>{{ end }}
+  </header>
+  <div class="authors-index__grid" id="authors">
+    {{ range .Pages.ByTitle }}
+      {{- $status := lower (default "human" .Params.status) -}}
+      <a class="author-directory-card" href="{{ .RelPermalink }}">
+        {{ with .Params.photo }}
+          <img src="{{ . | relURL }}" alt="">
+        {{ end }}
+        <div>
+          <span class="author-status author-status--directory" data-author-status="{{ $status }}">
+            <i class="author-status__light" aria-hidden="true"></i>
+            <span class="author-status__label">{{ upper $status }}</span>
+          </span>
+          <h2>{{ .Title }}</h2>
+          <p>{{ .Plain | truncate 150 }}</p>
+        </div>
+      </a>
+    {{ end }}
+  </div>
+</section>
+{{ end }}
