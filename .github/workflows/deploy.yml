@@ -18,6 +18,8 @@ jobs:
     name: Build and deploy over SSH
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      DEPLOY_PATH: /var/www/mutating.tech
 
     steps:
       - name: Check out the repository
@@ -29,7 +31,6 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
           set -euo pipefail
@@ -40,7 +41,6 @@ jobs:
             DEPLOY_HOST \
             DEPLOY_PORT \
             DEPLOY_USER \
-            DEPLOY_PATH \
             DEPLOY_PASSWORD; do
             if [[ -z "${!secret_name:-}" ]]; then
               echo "::error title=Missing deployment secret::${secret_name} is empty or unavailable to this workflow."
@@ -83,7 +83,6 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
           set -euo pipefail

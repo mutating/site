@@ -263,11 +263,338 @@ server with `rsync --delete-delay`. Files no longer present in the current Hugo
 build are removed from the server, so the remote directory becomes an exact
 copy of the generated site without deleting it before a successful transfer.
 
+### Prepare a fresh Debian server
+
+The following procedure targets Debian 13, nginx, the domain
+`mutating.tech`, the unprivileged deployment account `user`, and the deployment
+directory `/var/www/mutating.tech`. Run the system-administration commands as
+`root` or through an account with `sudo`. GitHub Actions later connects only as
+`user`; that account does not need `sudo`.
+
+#### 1. Confirm that the server is publicly reachable
+
+The server needs a public IPv4 address. In the hosting-provider firewall or
+security-group UI, permit incoming TCP connections to:
+
+- the SSH port, normally `22`;
+- port `80` for HTTP and certificate validation;
+- port `443` for HTTPS.
+
+Do not restrict SSH exclusively to a home or office IP if a standard
+GitHub-hosted runner must deploy to the server. Those runners use changing
+source addresses. A private address, VPN-only host, or IPv6-only SSH endpoint is
+not reachable by the current workflow.
+
+Connect through SSH or the provider's browser console:
+
+```bash
+ssh root@SERVER_IPV4
+```
+
+If direct root login is unavailable, connect through the provider's
+administrator account and prefix the remaining administrative commands with
+`sudo`.
+
+#### 2. Update Debian and install the runtime packages
+
+The production server does not need Hugo, Node.js, Python, or the repository.
+Hugo runs inside GitHub Actions and only the generated static files reach the
+server. Install nginx for HTTP serving and rsync for deployment:
+
+```bash
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y nginx rsync curl
+```
+
+Confirm the installed services and tools:
+
+```bash
+nginx -v
+rsync --version | head -n 1
+systemctl is-enabled nginx
+```
+
+If Debian itself uses UFW, allow the ports before enabling it. Replace `22`
+with the actual SSH port first; enabling a firewall with the wrong SSH rule can
+lock out the server:
+
+```bash
+apt-get install -y ufw
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+ufw status verbose
+```
+
+Provider-level and operating-system firewalls are independent. Opening a port
+in UFW does not open a blocked security-group rule in the hosting panel, and
+vice versa.
+
+#### 3. Create the unprivileged deployment account
+
+Check whether `user` already exists:
+
+```bash
+id user
+```
+
+If it does not exist, create it and assign a strong, unique password:
+
+```bash
+adduser user
+```
+
+The password entered here becomes the value of the GitHub secret
+`DEPLOY_PASSWORD`. Do not add `user` to `sudo`: the account only needs to write
+the site directory. Test the credentials in a second terminal before closing
+the administrative session:
+
+```bash
+ssh -4 user@SERVER_IPV4
+```
+
+The workflow currently uses password authentication. Check the effective SSH
+server setting:
+
+```bash
+sshd -T | grep '^passwordauthentication'
+```
+
+If the result is not `passwordauthentication yes`, enable it in a dedicated
+drop-in, validate the SSH configuration, and reload SSH without interrupting
+existing sessions:
+
+```bash
+printf '%s\n' 'PasswordAuthentication yes' \
+  > /etc/ssh/sshd_config.d/60-mutating-deploy.conf
+sshd -t
+systemctl reload ssh
+```
+
+Keep the original administrative session open until a fresh login as `user`
+has succeeded. This prevents an SSH configuration mistake from locking all
+access to the server.
+
+#### 4. Create the deployment directory
+
+Create the exact directory hard-coded in the deployment workflow and give only
+the deployment account ownership:
+
+```bash
+install -d -o user -g user -m 0755 /var/www/mutating.tech
+```
+
+nginx only reads this directory. GitHub Actions writes it as `user` and applies
+mode `0755` to directories and `0644` to files. Verify the ownership:
+
+```bash
+stat -c '%U:%G %a %n' /var/www/mutating.tech
+```
+
+The expected result begins with:
+
+```text
+user:user 755 /var/www/mutating.tech
+```
+
+#### 5. Configure nginx
+
+Create `/etc/nginx/sites-available/mutating.tech` with this configuration:
+
+```nginx
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    server_name mutating.tech www.mutating.tech SERVER_IPV4 _;
+
+    root /var/www/mutating.tech;
+    index index.html;
+    charset utf-8;
+    server_tokens off;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        try_files $uri $uri/ $uri/index.html =404;
+    }
+
+    location ~* \.(?:css|js|mjs|json|jpg|jpeg|png|gif|webp|avif|svg|ico|woff|woff2|ttf|otf)$ {
+        try_files $uri =404;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location ~ /\.(?!well-known/) {
+        deny all;
+    }
+}
+```
+
+Replace `SERVER_IPV4` with the server's public IPv4 address. Then enable the
+site and disable Debian's placeholder site:
+
+```bash
+ln -sfn /etc/nginx/sites-available/mutating.tech \
+  /etc/nginx/sites-enabled/mutating.tech
+
+if [ -L /etc/nginx/sites-enabled/default ]; then
+  unlink /etc/nginx/sites-enabled/default
+fi
+```
+
+Always validate nginx before applying a change:
+
+```bash
+nginx -t
+systemctl enable --now nginx
+systemctl reload nginx
+systemctl is-active nginx
+```
+
+For a pre-deployment HTTP check, create a temporary placeholder owned by the
+deployment account:
+
+```bash
+printf '%s\n' 'Deployment target ready.' \
+  > /var/www/mutating.tech/index.html
+chown user:user /var/www/mutating.tech/index.html
+chmod 0644 /var/www/mutating.tech/index.html
+
+curl -I -H 'Host: mutating.tech' http://127.0.0.1/
+curl -I -H 'Host: mutating.tech' http://SERVER_IPV4/
+```
+
+The loopback request runs on the server. Run the public-IP request from another
+machine to verify the complete external network path. Both should return
+`HTTP/1.1 200 OK`. The first successful GitHub deployment replaces the
+placeholder.
+
+#### 6. Point DNS to the server and enable HTTPS
+
+Set the `A` records for `mutating.tech` and, if used, `www.mutating.tech` to the
+server's public IPv4 address. If the records are proxied by Cloudflare, update
+their origin address in Cloudflare; a public DNS lookup will continue to show
+Cloudflare addresses while proxying is enabled.
+
+After DNS traffic reaches the new nginx server, install Certbot and request a
+certificate:
+
+```bash
+apt-get install -y certbot python3-certbot-nginx
+certbot --nginx \
+  -d mutating.tech \
+  -d www.mutating.tech \
+  --redirect
+```
+
+Omit `-d www.mutating.tech` if that hostname is not configured in DNS.
+
+If Cloudflare prevents the HTTP challenge from reaching this server, temporarily
+switch the relevant records to **DNS only**, issue the certificate, verify
+HTTPS, and then enable the proxy again. With Cloudflare proxying enabled, use
+**Full (strict)** SSL mode after the origin certificate is valid.
+
+Verify nginx and certificate renewal:
+
+```bash
+nginx -t
+systemctl status certbot.timer --no-pager
+certbot renew --dry-run
+curl -I https://mutating.tech/
+```
+
+#### 7. Add the GitHub deployment secrets
+
+Follow the repository-secret instructions in the next section. For this server
+configuration, use:
+
+| Secret | Server value |
+| --- | --- |
+| `SITE_BASE_URL` | `https://mutating.tech/` |
+| `DEPLOY_HOST` | The server's public IPv4 address, without `https://` or a port |
+| `DEPLOY_PORT` | `22`, unless SSH was explicitly moved |
+| `DEPLOY_USER` | `user` |
+| `DEPLOY_PASSWORD` | The password assigned to `user` |
+
+`DEPLOY_PATH` is deliberately not a secret. The workflow and nginx both use
+`/var/www/mutating.tech`; if that path ever changes, update both configurations
+together.
+
+#### 8. Run and verify the first deployment
+
+Either push a commit to `main`, or open **Actions → Deploy production → Run
+workflow**. The workflow performs these operations in order:
+
+1. validates every required secret;
+2. installs Hugo Extended on the disposable runner;
+3. builds a clean, minified production site into `public/`;
+4. checks that the SSH destination exists, is writable, and has `rsync`;
+5. uploads the build as `user` with directory mode `0755` and file mode `0644`;
+6. removes files that are no longer present in the Hugo build after a successful
+   transfer.
+
+After the job succeeds, verify the deployed server:
+
+```bash
+curl -I https://mutating.tech/
+curl -I https://mutating.tech/blog/
+ssh user@SERVER_IPV4 \
+  "find /var/www/mutating.tech -type f | wc -l"
+```
+
+Every later push to `main` repeats this process automatically. Pushes to other
+branches run the test workflow but do not publish production.
+
+#### 9. Troubleshoot deployment and nginx
+
+Use the exact SSH values locally before debugging GitHub Actions:
+
+```bash
+ssh -4 -p 22 user@SERVER_IPV4
+```
+
+Common failures:
+
+- `Network is unreachable`: the configured host is private or IPv6-only.
+- `Connection timed out`: the address exists, but a provider firewall,
+  server firewall, NAT rule, or closed SSH port is dropping connections.
+- `Permission denied`: verify `DEPLOY_USER`, `DEPLOY_PASSWORD`, SSH password
+  authentication, and any intrusion-prevention blocklist.
+- `Remote DEPLOY_PATH does not exist`: create `/var/www/mutating.tech` as shown
+  above.
+- `Remote DEPLOY_PATH is not writable`: restore ownership with
+  `chown -R user:user /var/www/mutating.tech`.
+- `rsync is not installed`: run `apt-get install -y rsync` on the server.
+- nginx returns `403`: directories normally need mode `0755`, files need mode
+  `0644`, and nginx needs traversal permission through every parent directory.
+- nginx returns `404`: confirm that `/var/www/mutating.tech/index.html` exists
+  and that the enabled nginx site's `root` matches the workflow path.
+
+Server-side diagnostics:
+
+```bash
+nginx -t
+systemctl status nginx --no-pager
+ss -ltnp | grep -E ':(22|80|443)[[:space:]]'
+stat -c '%U:%G %a %n' /var/www/mutating.tech
+tail -n 100 /var/log/nginx/error.log
+journalctl -u nginx -n 100 --no-pager
+```
+
+The deployment keeps no server-side release history. To roll back, revert the
+problematic commit on `main` or manually rerun the workflow for a corrective
+commit. Do not edit generated files directly on the server: the next deployment
+will intentionally replace them with the Hugo build.
+
 ### Add the deployment secrets to GitHub
 
-The deployment workflow reads every value through the GitHub Actions
-`secrets` context. Add them as repository **Secrets**, not repository
-**Variables**:
+The deployment workflow reads its configurable connection and production-URL
+values through the GitHub Actions `secrets` context. Add them as repository
+**Secrets**, not repository **Variables**:
 
 1. Open the repository on GitHub.
 2. Select **Settings**.
@@ -277,7 +604,7 @@ The deployment workflow reads every value through the GitHub Actions
 6. Enter the exact secret name and its value, then select **Add secret**.
 7. Repeat the process for every secret in the following table.
 
-The repository needs these six secrets:
+The repository needs these five secrets:
 
 | Secret | Purpose |
 | --- | --- |
@@ -285,7 +612,6 @@ The repository needs these six secrets:
 | `DEPLOY_HOST` | Public SSH hostname or IPv4 address of the production server. The standard GitHub-hosted runner deploys over IPv4. |
 | `DEPLOY_PORT` | Numeric SSH port, normally `22`. |
 | `DEPLOY_USER` | Dedicated SSH user that owns or can write the deployment directory. |
-| `DEPLOY_PATH` | Existing absolute server directory containing only this site, for example `/var/www/mutating.tech`. Broad paths such as `/`, `/var`, and `/var/www` are rejected. |
 | `DEPLOY_PASSWORD` | SSH login password for `DEPLOY_USER`. Use a strong, unique password belonging to the dedicated deploy account. This is not a `sudo` password. |
 
 Enter `DEPLOY_HOST` without `https://` or the SSH port. Enter
@@ -300,13 +626,13 @@ accept connections to `DEPLOY_PORT` from GitHub-hosted runners. An IPv6-only
 address, an address from a private network, or an SSH service restricted to a
 local/VPN network is not reachable from the standard `ubuntu-latest` runner.
 
-The server must have `rsync` installed, and `DEPLOY_PATH` must already exist and
-be writable by `DEPLOY_USER`. The SSH server must allow password authentication
-for that account. Use a dedicated unprivileged deploy account whose permissions
-are limited to that directory. No checked-in password or server address is
-required.
+The workflow always deploys to `/var/www/mutating.tech`. The server must have
+`rsync` installed, and that directory must already exist and be writable by
+`DEPLOY_USER`. The SSH server must allow password authentication for that
+account. Use a dedicated unprivileged deploy account whose permissions are
+limited to that directory. No checked-in password or server address is required.
 
-The workflow validates all six secrets before installing dependencies or
+The workflow validates all five secrets before installing dependencies or
 building the site. A missing secret is reported by name, and an SSH preflight
 runs before uploading. SSH host-key verification is intentionally disabled for
 the disposable GitHub runner, so no separate host-key secret is required. This
