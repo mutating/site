@@ -277,7 +277,7 @@ The deployment workflow reads every value through the GitHub Actions
 6. Enter the exact secret name and its value, then select **Add secret**.
 7. Repeat the process for every secret in the following table.
 
-The repository needs these seven secrets:
+The repository needs these six secrets:
 
 | Secret | Purpose |
 | --- | --- |
@@ -287,7 +287,6 @@ The repository needs these seven secrets:
 | `DEPLOY_USER` | Dedicated SSH user that owns or can write the deployment directory. |
 | `DEPLOY_PATH` | Existing absolute server directory containing only this site, for example `/var/www/mutating.tech`. Broad paths such as `/`, `/var`, and `/var/www` are rejected. |
 | `DEPLOY_PASSWORD` | SSH login password for `DEPLOY_USER`. Use a strong, unique password belonging to the dedicated deploy account. This is not a `sudo` password. |
-| `DEPLOY_KNOWN_HOSTS` | Verified SSH host-key line for the server. Generate it with `ssh-keyscan -p <port> <host>`, verify its fingerprint out of band, and then save the complete output as the secret. |
 
 Enter `DEPLOY_HOST` without `https://` or the SSH port. Enter
 `SITE_BASE_URL` as a complete public URL, including `https://` and preferably a
@@ -302,12 +301,14 @@ for that account. Use a dedicated unprivileged deploy account whose permissions
 are limited to that directory. No checked-in password or server address is
 required.
 
-The workflow validates all seven secrets before installing dependencies or
-building the site. A missing secret is reported by name. It also validates the
-format of `DEPLOY_KNOWN_HOSTS`, verifies that the file contains an entry matching
-the configured host and port, and runs an SSH preflight before uploading. If a
-deployment fails, use the named `::error` message together with the SSH or rsync
-output immediately above it; the workflow never prints secret values.
+The workflow validates all six secrets before installing dependencies or
+building the site. A missing secret is reported by name, and an SSH preflight
+runs before uploading. SSH host-key verification is intentionally disabled for
+the disposable GitHub runner, so no separate host-key secret is required. This
+makes setup simpler, but means the workflow does not protect the SSH connection
+from server impersonation. If a deployment fails, use the named `::error`
+message together with the SSH or rsync output immediately above it; the workflow
+never prints secret values.
 
 ## Writing tests
 
