@@ -322,7 +322,7 @@ def test_robot_profile_reuses_the_home_mascot_surface(
 def test_human_profile_uses_the_shared_surface_without_colored_halo(
     driver: DriverFactory,
 ) -> None:
-    """Keep the shared mascot geometry for humans while removing colored light."""
+    """Keep shared portrait geometry while removing every human-profile glow."""
 
     page = driver(
         stored_theme="light",
@@ -342,10 +342,12 @@ def test_human_profile_uses_the_shared_surface_without_colored_halo(
         "none",
     )
     expect(portrait).to_have_css("border-color", "rgb(229, 217, 223)")
-    expect(portrait).to_have_css(
-        "box-shadow",
-        "rgba(0, 0, 0, 0.12) 0px 28px 90px 0px",
+    expect(portrait).to_have_css("background-image", "none")
+    expect(portrait).to_have_css("box-shadow", "none")
+    art_filter = portrait.locator(".mascot-card__art").evaluate(
+        "element => getComputedStyle(element).filter"
     )
+    assert "drop-shadow" not in art_filter
 
 
 def test_author_without_external_links_omits_the_links_region(
