@@ -215,10 +215,27 @@ Run the complete suite:
 python -m pytest
 ```
 
-The session fixture first performs a clean Hugo build, then launches a temporary
-Hugo server on an available nonstandard port. Each test receives its browser
-page through the `driver` fixture. At the end of the session the server process
-is terminated and its temporary build directories are removed by pytest.
+The default command uses `pytest-xdist` with `-n auto`, so pytest selects one
+worker per available logical CPU. Override the degree of parallelism freely for
+local diagnostics or CI capacity planning:
+
+```bash
+python -m pytest -n 16
+python -m pytest -n 1
+```
+
+Each xdist worker performs its own clean Hugo build, cache, content copy,
+nonstandard port selection, server process, and browser lifecycle. Nothing is
+shared between worker filesystems or server processes. A successful validation
+build is removed immediately and the development server renders to memory, so
+raising `-n` does not multiply full static-site copies on disk. Tests that
+require the real WebGL tentacle or tokamak renderers opt in with the
+`interactive_visuals` marker; `--dist loadgroup` keeps each renderer's tests on
+one resource group so changing `-n` does not create competing GPU contexts.
+All other browser tests intercept those heavyweight iframe resources while
+still exercising the real page DOM and application code. At the end of the
+session every worker terminates its complete Hugo process group and pytest
+removes its temporary build directories.
 
 An explicitly configured already-running URL remains available for focused
 diagnostics:
@@ -285,6 +302,13 @@ for that account. Use a dedicated unprivileged deploy account whose permissions
 are limited to that directory. No checked-in password or server address is
 required.
 
+The workflow validates all seven secrets before installing dependencies or
+building the site. A missing secret is reported by name. It also validates the
+format of `DEPLOY_KNOWN_HOSTS`, verifies that the file contains an entry matching
+the configured host and port, and runs an SSH preflight before uploading. If a
+deployment fails, use the named `::error` message together with the SSH or rsync
+output immediately above it; the workflow never prints secret values.
+
 ## Writing tests
 
 - Put tests in `tests/` and name files `test_*.py`.
@@ -298,5 +322,9 @@ required.
   theme, reduced-motion preference, or isolated browser capability.
 - Keep tests independent; the fixture creates and closes a separate browser
   context for each test.
+- Add `@pytest.mark.interactive_visuals` only when a test directly inspects or
+  interacts with a real WebGL iframe. Add the matching `xdist_group` marker
+  (`tentacle-webgl` or `tokamak-webgl`) so GPU-heavy tests remain robust at any
+  requested worker count.
 - Add new Python dependencies to `requirements_dev.txt` and install them only
   after activating `venv`.
