@@ -29,6 +29,11 @@ jobs:
           hugo-version: "0.164.0"
           extended: true
 
+      - name: Install password-based SSH support
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes rsync sshpass
+
       - name: Build the production site
         env:
           SITE_BASE_URL: ${{ secrets.SITE_BASE_URL }}
@@ -44,19 +49,15 @@ jobs:
             --minify \
             --baseURL "$SITE_BASE_URL"
 
-      - name: Configure the SSH identity
+      - name: Configure SSH host verification
         env:
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          test -n "$DEPLOY_SSH_PRIVATE_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
-          install -m 600 /dev/null "$HOME/.ssh/deploy_key"
-          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          install -m 600 /dev/null "$HOME/.ssh/known_hosts"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
 
       - name: Replace the deployed site
         env:
@@ -64,6 +65,7 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -71,7 +73,8 @@ jobs:
             "$DEPLOY_HOST" \
             "$DEPLOY_PORT" \
             "$DEPLOY_USER" \
-            "$DEPLOY_PATH"; do
+            "$DEPLOY_PATH" \
+            "$SSHPASS"; do
             test -n "$required_value"
           done
 
@@ -101,23 +104,25 @@ jobs:
           esac
 
           ssh_options=(
-            -i "$HOME/.ssh/deploy_key"
             -p "$DEPLOY_PORT"
-            -o IdentitiesOnly=yes
+            -o PreferredAuthentications=password
+            -o PubkeyAuthentication=no
+            -o NumberOfPasswordPrompts=1
             -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
           )
 
-          ssh "${ssh_options[@]}" \
+          sshpass -e ssh "${ssh_options[@]}" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "test -d '$target_path' && test -w '$target_path'"
 
-          rsync \
+          sshpass -e rsync \
             --archive \
             --compress \
             --checksum \
             --delete-delay \
             --delay-updates \
             --chmod=D755,F644 \
-            -e "ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
+            -e "ssh -p $DEPLOY_PORT -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" \
             public/ \
             "$DEPLOY_USER@$DEPLOY_HOST:$target_path/"
