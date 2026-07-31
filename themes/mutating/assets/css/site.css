@@ -3978,6 +3978,16 @@ a.section-index:focus-visible {
   padding: clamp(75px, 10vw, 140px) 0;
 }
 
+.author-profile__details--centered {
+  grid-template-columns: minmax(0, 780px);
+  justify-content: center;
+}
+
+.author-profile__details--centered .author-profile__bio {
+  width: 100%;
+  margin-inline: auto;
+}
+
 .author-profile__bio {
   max-width: 780px;
 }
