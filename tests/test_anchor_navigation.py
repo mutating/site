@@ -318,6 +318,15 @@ def _click_brand_variant(page: Page, variant: str) -> None:
         ).click()
         return
 
+    if variant == "intermediate":
+        page.add_style_tag(
+            content="""
+            .brand__word-reveal {
+              transition-duration: 60s !important;
+            }
+            """
+        )
+
     wordmark = page.locator(".brand__wordmark")
     wordmark.hover()
 
@@ -340,35 +349,31 @@ def _click_brand_variant(page: Page, variant: str) -> None:
         raise AssertionError(f"Unknown brand click variant: {variant}")
 
     reveal = page.locator('.brand__word-reveal[data-text="utating"]')
-    page.wait_for_function(
+    intermediate_state = reveal.evaluate(
         """
-        () => {
-          const element = document.querySelector(
-            '.brand__word-reveal[data-text="utating"]',
+        async (reveal) => {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+
+          const transitions = reveal.getAnimations().filter(
+            (animation) =>
+              animation instanceof CSSTransition &&
+              ["inline-size", "width", "opacity"].includes(
+                animation.transitionProperty,
+              ),
           );
-          const opacity = Number.parseFloat(getComputedStyle(element).opacity);
-          return element.getBoundingClientRect().width > 2 &&
-            opacity > 0 &&
-            opacity < 1;
-        }
-        """
-    )
-    intermediate_state = page.locator(".brand").evaluate(
-        """
-        (brand) => {
-          for (const animation of brand.getAnimations({subtree: true})) {
-            const duration = Number(animation.effect?.getTiming().duration);
-            if (Number.isFinite(duration) && duration > 0) {
-              animation.currentTime = duration / 2;
-              animation.pause();
+          for (const transition of transitions) {
+            const timing = transition.effect?.getComputedTiming();
+            const activeDuration = Number(timing?.activeDuration);
+            if (Number.isFinite(activeDuration) && activeDuration > 0) {
+              transition.pause();
+              transition.currentTime = activeDuration / 2;
             }
           }
 
-          const reveal = brand.querySelector(
-            '.brand__word-reveal[data-text="utating"]',
-          );
+          await new Promise((resolve) => requestAnimationFrame(resolve));
           const rect = reveal.getBoundingClientRect();
           return {
+            transitionCount: transitions.length,
             width: rect.width,
             fullWidth: reveal.scrollWidth,
             opacity: Number.parseFloat(getComputedStyle(reveal).opacity),
@@ -376,9 +381,15 @@ def _click_brand_variant(page: Page, variant: str) -> None:
         }
         """
     )
+    assert intermediate_state["transitionCount"] >= 2
     assert 0 < intermediate_state["width"] < intermediate_state["fullWidth"]
     assert 0 < intermediate_state["opacity"] < 1
-    reveal.click()
+    reveal_box = reveal.bounding_box()
+    assert reveal_box is not None
+    page.mouse.click(
+        reveal_box["x"] + reveal_box["width"] / 2,
+        reveal_box["y"] + reveal_box["height"] / 2,
+    )
 
 
 @pytest.mark.parametrize(

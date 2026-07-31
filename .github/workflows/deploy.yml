@@ -23,6 +23,35 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      - name: Validate deployment secrets
+        env:
+          SITE_BASE_URL: ${{ secrets.SITE_BASE_URL }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for secret_name in \
+            SITE_BASE_URL \
+            DEPLOY_HOST \
+            DEPLOY_PORT \
+            DEPLOY_USER \
+            DEPLOY_PATH \
+            DEPLOY_PASSWORD; do
+            if [[ -z "${!secret_name:-}" ]]; then
+              echo "::error title=Missing deployment secret::${secret_name} is empty or unavailable to this workflow."
+              missing=1
+            fi
+          done
+
+          if (( missing != 0 )); then
+            exit 1
+          fi
+
       - name: Install Hugo Extended
         uses: peaceiris/actions-hugo@v3.2.0
         with:
@@ -49,16 +78,6 @@ jobs:
             --minify \
             --baseURL "$SITE_BASE_URL"
 
-      - name: Configure SSH host verification
-        env:
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          test -n "$DEPLOY_KNOWN_HOSTS"
-          install -m 700 -d "$HOME/.ssh"
-          install -m 600 /dev/null "$HOME/.ssh/known_hosts"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-
       - name: Replace the deployed site
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -68,15 +87,6 @@ jobs:
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
           set -euo pipefail
-
-          for required_value in \
-            "$DEPLOY_HOST" \
-            "$DEPLOY_PORT" \
-            "$DEPLOY_USER" \
-            "$DEPLOY_PATH" \
-            "$SSHPASS"; do
-            test -n "$required_value"
-          done
 
           if [[ ! "$DEPLOY_PORT" =~ ^[0-9]+$ ]]; then
             echo "DEPLOY_PORT must contain only digits." >&2
@@ -108,21 +118,43 @@ jobs:
             -o PreferredAuthentications=password
             -o PubkeyAuthentication=no
             -o NumberOfPasswordPrompts=1
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o StrictHostKeyChecking=no
+            -o UserKnownHostsFile=/dev/null
           )
 
-          sshpass -e ssh "${ssh_options[@]}" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "test -d '$target_path' && test -w '$target_path'"
+          remote_preflight="
+            set -eu
+            if [ ! -d '$target_path' ]; then
+              echo 'Remote DEPLOY_PATH does not exist: $target_path' >&2
+              exit 20
+            fi
+            if [ ! -w '$target_path' ]; then
+              echo 'Remote DEPLOY_PATH is not writable by DEPLOY_USER: $target_path' >&2
+              exit 21
+            fi
+            if ! command -v rsync >/dev/null 2>&1; then
+              echo 'rsync is not installed on the remote server.' >&2
+              exit 22
+            fi
+          "
 
-          sshpass -e rsync \
+          if ! sshpass -e ssh "${ssh_options[@]}" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$remote_preflight"; then
+            echo "::error title=SSH preflight failed::Check DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER, DEPLOY_PASSWORD, remote rsync, and DEPLOY_PATH permissions."
+            exit 1
+          fi
+
+          if ! sshpass -e rsync \
             --archive \
             --compress \
             --checksum \
             --delete-delay \
             --delay-updates \
             --chmod=D755,F644 \
-            -e "ssh -p $DEPLOY_PORT -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" \
+            -e "ssh -p $DEPLOY_PORT -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
             public/ \
-            "$DEPLOY_USER@$DEPLOY_HOST:$target_path/"
+            "$DEPLOY_USER@$DEPLOY_HOST:$target_path/"; then
+            echo "::error title=Upload failed::SSH succeeded, but rsync could not synchronize public/ to DEPLOY_PATH. Review the rsync output above."
+            exit 1
+          fi

@@ -1158,7 +1158,6 @@
     initCurrentYear();
     initCodeCopyButtons();
     initTheme();
-    initAnchorAlignment();
     initTicker();
     initAnimatedWordmark();
     initBrandControl();
@@ -1171,6 +1170,11 @@
     initMobileMenus();
     document.documentElement.dataset.themeReady = "true";
   }
+
+  // A deferred script runs after the document is parsed and before
+  // DOMContentLoaded. Align fragments synchronously in that phase so deep links
+  // are already at their final position when DOMContentLoaded is observable.
+  initAnchorAlignment();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init, { once: true });

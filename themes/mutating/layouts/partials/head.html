@@ -2,6 +2,14 @@
 {{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" .Title) -}}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  if (
+    window.location.hash &&
+    "scrollRestoration" in window.history
+  ) {
+    window.history.scrollRestoration = "manual";
+  }
+</script>
 <title>{{ $title }}</title>
 <meta name="description" content="{{ $description }}">
 <meta name="theme-color" content="#ff3e9d">

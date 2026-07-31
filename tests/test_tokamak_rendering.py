@@ -8,10 +8,15 @@ from pathlib import Path
 import re
 
 from PIL import Image, ImageChops, ImageStat
+import pytest
 from playwright.sync_api import Locator, Page, expect
 
 
 DriverFactory = Callable[..., Page]
+pytestmark = [
+    pytest.mark.interactive_visuals,
+    pytest.mark.xdist_group(name="tokamak-webgl"),
+]
 
 TOKAMAK_RESPONSIVE_WIDTHS = tuple(
     sorted(

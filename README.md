@@ -215,10 +215,27 @@ Run the complete suite:
 python -m pytest
 ```
 
-The session fixture first performs a clean Hugo build, then launches a temporary
-Hugo server on an available nonstandard port. Each test receives its browser
-page through the `driver` fixture. At the end of the session the server process
-is terminated and its temporary build directories are removed by pytest.
+The default command uses `pytest-xdist` with `-n auto`, so pytest selects one
+worker per available logical CPU. Override the degree of parallelism freely for
+local diagnostics or CI capacity planning:
+
+```bash
+python -m pytest -n 16
+python -m pytest -n 1
+```
+
+Each xdist worker performs its own clean Hugo build, cache, content copy,
+nonstandard port selection, server process, and browser lifecycle. Nothing is
+shared between worker filesystems or server processes. A successful validation
+build is removed immediately and the development server renders to memory, so
+raising `-n` does not multiply full static-site copies on disk. Tests that
+require the real WebGL tentacle or tokamak renderers opt in with the
+`interactive_visuals` marker; `--dist loadgroup` keeps each renderer's tests on
+one resource group so changing `-n` does not create competing GPU contexts.
+All other browser tests intercept those heavyweight iframe resources while
+still exercising the real page DOM and application code. At the end of the
+session every worker terminates its complete Hugo process group and pytest
+removes its temporary build directories.
 
 An explicitly configured already-running URL remains available for focused
 diagnostics:
@@ -260,7 +277,7 @@ The deployment workflow reads every value through the GitHub Actions
 6. Enter the exact secret name and its value, then select **Add secret**.
 7. Repeat the process for every secret in the following table.
 
-The repository needs these seven secrets:
+The repository needs these six secrets:
 
 | Secret | Purpose |
 | --- | --- |
@@ -270,7 +287,6 @@ The repository needs these seven secrets:
 | `DEPLOY_USER` | Dedicated SSH user that owns or can write the deployment directory. |
 | `DEPLOY_PATH` | Existing absolute server directory containing only this site, for example `/var/www/mutating.tech`. Broad paths such as `/`, `/var`, and `/var/www` are rejected. |
 | `DEPLOY_PASSWORD` | SSH login password for `DEPLOY_USER`. Use a strong, unique password belonging to the dedicated deploy account. This is not a `sudo` password. |
-| `DEPLOY_KNOWN_HOSTS` | Verified SSH host-key line for the server. Generate it with `ssh-keyscan -p <port> <host>`, verify its fingerprint out of band, and then save the complete output as the secret. |
 
 Enter `DEPLOY_HOST` without `https://` or the SSH port. Enter
 `SITE_BASE_URL` as a complete public URL, including `https://` and preferably a
@@ -285,6 +301,15 @@ for that account. Use a dedicated unprivileged deploy account whose permissions
 are limited to that directory. No checked-in password or server address is
 required.
 
+The workflow validates all six secrets before installing dependencies or
+building the site. A missing secret is reported by name, and an SSH preflight
+runs before uploading. SSH host-key verification is intentionally disabled for
+the disposable GitHub runner, so no separate host-key secret is required. This
+makes setup simpler, but means the workflow does not protect the SSH connection
+from server impersonation. If a deployment fails, use the named `::error`
+message together with the SSH or rsync output immediately above it; the workflow
+never prints secret values.
+
 ## Writing tests
 
 - Put tests in `tests/` and name files `test_*.py`.
@@ -298,5 +323,9 @@ required.
   theme, reduced-motion preference, or isolated browser capability.
 - Keep tests independent; the fixture creates and closes a separate browser
   context for each test.
+- Add `@pytest.mark.interactive_visuals` only when a test directly inspects or
+  interacts with a real WebGL iframe. Add the matching `xdist_group` marker
+  (`tentacle-webgl` or `tokamak-webgl`) so GPU-heavy tests remain robust at any
+  requested worker count.
 - Add new Python dependencies to `requirements_dev.txt` and install them only
   after activating `venv`.

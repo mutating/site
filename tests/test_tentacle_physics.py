@@ -19,6 +19,10 @@ DIAGNOSTIC_QUERY = (
     "&manual-animation-frame=1&interaction-diagnostics=1"
     "&generation-seed=12345"
 )
+pytestmark = [
+    pytest.mark.interactive_visuals,
+    pytest.mark.xdist_group(name="tentacle-webgl"),
+]
 
 
 def test_dense_surface_uses_the_bounded_spatial_shader(
@@ -108,7 +112,7 @@ def test_spatial_overflow_preserves_every_tentacle_via_full_fallback(
         "1",
     )
     expect(canvas).to_have_attribute(
-        "data-fps",
+        "data-rendered-frame-id",
         re.compile(r"^[1-9][0-9]*$"),
     )
 
@@ -185,7 +189,7 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
         timeout=30_000,
     )
     expect(canvas).to_have_attribute(
-        "data-fps",
+        "data-rendered-frame-id",
         re.compile(r"^[1-9][0-9]*$"),
         timeout=30_000,
     )
@@ -650,18 +654,16 @@ def _open_contact_with_active_tentacle_runtime(
         viewport=viewport,
         load_interactive_visuals=True,
     )
-    page.evaluate(
-        """
-        () => {
-          document.documentElement.style.scrollBehavior = "auto";
-          window.scrollTo({
-            top: document.querySelector("#contact").offsetTop - 90,
-            behavior: "auto",
-          });
-        }
-        """
+    frame = page.locator(".contact__tentacles")
+    frame.evaluate(
+        "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
     )
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    expect(canvas).to_be_visible()
+    frame.evaluate(
+        "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
+    )
+    expect(frame).to_be_in_viewport()
     expect(canvas).to_have_attribute(
         "data-runtime-visible",
         "true",
