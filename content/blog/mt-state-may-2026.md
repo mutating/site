@@ -1,7 +1,7 @@
 ---
-title: "May 2026 Mutation Testing Digest: AI Tests Get a Lie Detector, PIT Learns “Equivalent,” and Zig Gets a Preview"
+title: "May 2026 Mutation Testing Digest"
 date: 2026-07-31T09:00:00+03:00
-description: "May 2026 Mutation Testing Digest: AI Tests Get a Lie Detector, PIT Learns “Equivalent,” and Zig Gets a Preview"
+description: "AI Tests Get a Lie Detector, PIT Learns “Equivalent,” and Zig Gets a Preview"
 tags: [testing, evidence]
 author: "muta"
 ---
