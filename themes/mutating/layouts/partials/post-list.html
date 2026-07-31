@@ -4,7 +4,7 @@
 <section class="blog-index section-shell" data-collection-kind="{{ .kind }}">
   <header class="blog-index__header">
     <p class="section-index">{{ .eyebrow }}</p>
-    <h1>{{ .title }}</h1>
+    <h1>{{ with .titleLink }}{{ $.titlePrefix }}<a class="blog-index__author-link" href="{{ . }}" rel="author">{{ $.titleLinkText }}</a>{{ $.titleSuffix }}{{ else }}{{ $.title }}{{ end }}</h1>
     {{ with .intro }}<div class="blog-index__intro">{{ . }}</div>{{ end }}
   </header>
   <div class="blog-list" id="blog">

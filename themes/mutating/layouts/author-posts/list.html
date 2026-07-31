@@ -8,6 +8,10 @@
     "kind" "author"
     "eyebrow" (printf "AUTHORS / %s / FIELD NOTES" (upper $authorSlug))
     "title" (printf "Signals from %s." $author.Title)
+    "titlePrefix" "Signals from "
+    "titleLink" $author.RelPermalink
+    "titleLinkText" $author.Title
+    "titleSuffix" "."
     "intro" .Content
     "paginationLabel" (printf "Posts by %s pagination" $author.Title)
   ) }}
