@@ -7,7 +7,7 @@ artwork, WebGL tentacles, and tokamak renderer all ship with the custom
 
 ## Requirements
 
-- Hugo Extended `0.120.0` or newer
+- Hugo Extended `0.164.0` (the version used by local development and CI)
 - Python `3.11` or newer for the browser test suite
 
 On macOS, Hugo can be installed with:
@@ -33,10 +33,18 @@ hugo server
 Open [http://localhost:1313](http://localhost:1313). Hugo watches the content,
 theme templates, CSS, JavaScript, and static assets and rebuilds after changes.
 
-Build the production site:
+Build the static site with the URL configured in `hugo.toml`:
 
 ```bash
 hugo --cleanDestinationDir --minify
+```
+
+For a deployable production build, override the local `baseURL` with the real
+public URL:
+
+```bash
+hugo --cleanDestinationDir --environment production --minify \
+  --baseURL https://mutating.tech/
 ```
 
 The generated site is written to `public/`. That directory is build output and
@@ -51,6 +59,8 @@ Every authored page lives in `content/`:
 - `content/blog/*.md` contains individual posts.
 - `content/authors/_index.md` contains the author-directory introduction.
 - `content/authors/*.md` contains author profiles.
+- `content/author-posts/<author-slug>/_index.md` configures the paginated post
+  archive for an author.
 
 Everything that defines presentation or behavior lives in `themes/mutating/`:
 
@@ -59,12 +69,18 @@ Everything that defines presentation or behavior lives in `themes/mutating/`:
 - `layouts/index.html` renders the landing page.
 - `layouts/blog/list.html` and `single.html` render the blog entry points.
 - `layouts/_default/term.html` renders filtered tag collections.
+- `layouts/author-posts/list.html` renders author-specific post archives.
 - `layouts/partials/post-list.html` provides the shared post cards and
-  pagination used by both the blog and tag pages.
+  pagination used by blog, tag, and author archive pages.
 - `layouts/authors/list.html` and `single.html` render author pages.
-- `assets/css/site.css` contains both themes and responsive styles and is fingerprinted by Hugo.
-- `assets/js/site.js` contains the landing-page interactions and is fingerprinted by Hugo.
-- Author archives live under `content/author-posts/<author-slug>/_index.md`; set `author` to the matching file slug from `content/authors` and `url` to `/authors/<author-slug>/posts/`.
+- `layouts/_default/_markup/render-heading.html` adds self-links to Markdown
+  headings in blog posts.
+- `layouts/partials/title-with-period.html` and `author-byline.html` provide
+  shared post-title and author metadata behavior.
+- `assets/css/site.css` contains both themes and responsive styles and is
+  fingerprinted by Hugo.
+- `assets/js/site.js` contains the site interactions and is fingerprinted by
+  Hugo.
 - `static/` also contains every local image, font, SVG, and standalone
   interactive HTML asset.
 
@@ -107,6 +123,12 @@ hugo server --buildDrafts
 Post URLs use `/blog/<slug>/`. The slug defaults to the filename; add
 `slug: "custom-slug"` to front matter when a different URL is required.
 
+Post titles are displayed with exactly one trailing period on list and single
+pages; the source title in front matter is not modified. Markdown headings in
+the post body receive hover-revealed anchor links. Fenced code blocks use the
+language declared after the opening fence for syntax highlighting and reveal a
+copy button on hover.
+
 The optional `author` value is the filename of a profile in `content/authors/`
 without the `.md` extension. For example, `author: "muta"` resolves
 `content/authors/muta.md`, adds a `By Muta` link to the post metadata, and
@@ -148,6 +170,26 @@ region is omitted when the list is absent. The profile automatically collects
 all posts whose `author` value matches its filename and derives up to five of
 the most frequent tags across those posts.
 
+If the author has posts, also create
+`content/author-posts/<author-slug>/_index.md` so the profile can link to a
+paginated archive of all their posts:
+
+```markdown
+---
+title: "Jane Doe's field notes"
+description: "Every field note published by Jane Doe, newest first."
+author: "jane-doe"
+type: "author-posts"
+url: "/authors/jane-doe/posts/"
+bodyClass: "blog-page"
+---
+
+Notes by Jane Doe, ordered from the newest signal to the oldest.
+```
+
+The `author` value must match the profile filename without `.md`, and `url`
+must follow `/authors/<author-slug>/posts/`.
+
 ## Python test environment
 
 All Python packages must be installed into the repository-local `venv`; do not
@@ -188,10 +230,11 @@ TEST_BASE_URL=http://127.0.0.1:1313 python -m pytest tests/test_blog.py
 ## Continuous integration
 
 `.github/workflows/tests.yml` runs on every push to every branch. The GitHub
-runner installs the pinned Hugo Extended and Python versions, creates the same
-repository-local `venv` used for local development, installs Chromium through
-Playwright, and runs the complete pytest suite. The tests perform their own
-temporary Hugo build and server lifecycle through `tests/conftest.py`.
+runner installs Hugo Extended `0.164.0` and Python `3.11`, creates the same
+repository-local `venv` used for local development, installs Chromium and its
+system dependencies through Playwright, and runs the complete pytest suite.
+The tests perform their own temporary Hugo build and server lifecycle through
+`tests/conftest.py`.
 
 ## Production deployment
 
