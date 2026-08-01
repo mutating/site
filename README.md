@@ -417,6 +417,12 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri $uri/ $uri/index.html =404;
     }
@@ -480,23 +486,164 @@ server's public IPv4 address. If the records are proxied by Cloudflare, update
 their origin address in Cloudflare; a public DNS lookup will continue to show
 Cloudflare addresses while proxying is enabled.
 
-After DNS traffic reaches the new nginx server, install Certbot and request a
-certificate:
+Install Certbot and its nginx integration:
 
 ```bash
 apt-get install -y certbot python3-certbot-nginx
-certbot --nginx \
-  -d mutating.tech \
-  -d www.mutating.tech \
-  --redirect
 ```
 
-Omit `-d www.mutating.tech` if that hostname is not configured in DNS.
+Create an ACME webroot outside the Hugo deployment directory. This is important:
+the production rsync intentionally deletes anything under
+`/var/www/mutating.tech` that is absent from the Hugo build.
+
+```bash
+install -d -o root -g root -m 0755 \
+  /var/www/letsencrypt/.well-known/acme-challenge
+
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))' \
+  > /var/www/letsencrypt/.well-known/acme-challenge/mutating-origin-check
+
+chmod 0644 \
+  /var/www/letsencrypt/.well-known/acme-challenge/mutating-origin-check
+```
+
+After adding the ACME location shown in the nginx configuration above, validate
+and reload nginx:
+
+```bash
+nginx -t
+systemctl reload nginx
+
+curl -fsS \
+  -H 'Host: mutating.tech' \
+  http://127.0.0.1/.well-known/acme-challenge/mutating-origin-check
+```
+
+The bootstrap script below waits until the same marker is visible through the
+public domain. Therefore it does not repeatedly send failing certificate
+requests while DNS still points elsewhere. Create
+`/usr/local/sbin/mutating-cert-bootstrap`:
+
+```sh
+#!/bin/sh
+set -eu
+
+domain="mutating.tech"
+certificate="/etc/letsencrypt/live/${domain}/fullchain.pem"
+marker="/var/www/letsencrypt/.well-known/acme-challenge/mutating-origin-check"
+probe="http://${domain}/.well-known/acme-challenge/mutating-origin-check"
+
+if [ -s "$certificate" ]; then
+    exit 0
+fi
+
+expected="$(cat "$marker")"
+observed="$(curl --fail --silent --show-error --location --max-time 20 \
+  "$probe" 2>/dev/null || true)"
+
+if [ "$observed" != "$expected" ]; then
+    echo "${domain} is not routed to this nginx origin yet; certificate issuance postponed."
+    exit 0
+fi
+
+certbot --nginx \
+    --non-interactive \
+    --agree-tos \
+    --email contact@mutating.tech \
+    --redirect \
+    -d "$domain"
+
+nginx -t
+systemctl reload nginx
+```
+
+Use a monitored address instead of `contact@mutating.tech` if certificate
+notices should go elsewhere. Make the script root-owned and executable:
+
+```bash
+chown root:root /usr/local/sbin/mutating-cert-bootstrap
+chmod 0755 /usr/local/sbin/mutating-cert-bootstrap
+```
+
+Create `/etc/systemd/system/mutating-cert-bootstrap.service`:
+
+```ini
+[Unit]
+Description=Issue the initial TLS certificate for mutating.tech when DNS is ready
+After=network-online.target nginx.service
+Wants=network-online.target
+ConditionPathExists=!/etc/letsencrypt/live/mutating.tech/fullchain.pem
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mutating-cert-bootstrap
+```
+
+Create `/etc/systemd/system/mutating-cert-bootstrap.timer`:
+
+```ini
+[Unit]
+Description=Retry initial TLS certificate issuance for mutating.tech
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=mutating-cert-bootstrap.service
+
+[Install]
+WantedBy=timers.target
+```
+
+Certbot's Debian package supplies `certbot.timer`, which runs renewal checks
+regularly. Add an explicit deploy hook so nginx is validated and reloaded after
+every successful renewal. Create
+`/etc/letsencrypt/renewal-hooks/deploy/reload-nginx`:
+
+```sh
+#!/bin/sh
+set -eu
+
+nginx -t
+systemctl reload nginx
+```
+
+Set the hook permissions and enable both timers:
+
+```bash
+chown root:root /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+
+systemd-analyze verify \
+  /etc/systemd/system/mutating-cert-bootstrap.service \
+  /etc/systemd/system/mutating-cert-bootstrap.timer
+
+systemctl daemon-reload
+systemctl enable --now certbot.timer mutating-cert-bootstrap.timer
+systemctl start mutating-cert-bootstrap.service
+```
+
+Before DNS is ready, the bootstrap journal should say that issuance was
+postponed. Once the public marker reaches this server, the next timer execution
+requests the initial certificate, lets Certbot add HTTPS and the HTTP-to-HTTPS
+redirect to nginx, and then stops doing work because the certificate file
+exists. `certbot.timer` handles all subsequent renewals.
+
+Inspect the state at any time:
+
+```bash
+systemctl list-timers certbot.timer mutating-cert-bootstrap.timer --all
+journalctl -u mutating-cert-bootstrap.service -n 50 --no-pager
+certbot certificates
+```
 
 If Cloudflare prevents the HTTP challenge from reaching this server, temporarily
 switch the relevant records to **DNS only**, issue the certificate, verify
-HTTPS, and then enable the proxy again. With Cloudflare proxying enabled, use
-**Full (strict)** SSL mode after the origin certificate is valid.
+HTTPS, and then enable the proxy again. In particular, Cloudflare **Full
+(strict)** cannot reach a new origin over HTTPS before that origin has a valid
+certificate. Use **DNS only** for the initial issuance, then enable the proxy and
+select **Full (strict)** after the certificate exists.
 
 Verify nginx and certificate renewal:
 
