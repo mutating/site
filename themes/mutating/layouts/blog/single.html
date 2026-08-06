@@ -6,8 +6,10 @@
     <p class="post__description">{{ .Description }}</p>
     <div class="post__meta">
       <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 January 2006" }}</time>
-      <span>{{ .ReadingTime }} min read</span>
-      <span>{{ .WordCount }} words</span>
+      <span class="post-reading-time" tabindex="0" aria-describedby="post-word-count">
+        <span>{{ .ReadingTime }} min read</span>
+        <span class="meta-tooltip post-reading-time__tooltip" id="post-word-count" role="tooltip">{{ .WordCount }} words</span>
+      </span>
       {{ with .Params.author }}
         {{ $author := site.GetPage (printf "/authors/%s" .) }}
         {{ with $author }}
@@ -18,7 +20,7 @@
   </header>
   <div class="post__layout">
     {{ if gt (len .TableOfContents) 100 }}
-    <details class="post__toc">
+    <details class="post__toc" open>
       <summary>On this page</summary>
       {{ .TableOfContents }}
     </details>

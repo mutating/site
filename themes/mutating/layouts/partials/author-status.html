@@ -15,7 +15,7 @@
     <i class="author-status__light" aria-hidden="true"></i>
     <span class="author-status__label">{{ upper $status }}</span>
   {{- end }}
-  <span class="author-status__tooltip" id="{{ $tooltipID }}" role="tooltip">
+  <span class="meta-tooltip author-status__tooltip" id="{{ $tooltipID }}" role="tooltip">
     The Mutating Company identifies every author as human or automated.
     {{ $author.Title }} is {{ if eq $status "robot" }}an automated author{{ else }}a human author{{ end }}.
   </span>

@@ -1,6 +1,6 @@
 <h{{ .Level }} id="{{ .Anchor }}">
   {{- if eq .Page.Section "blog" -}}
-  <a class="post__heading-anchor" href="#{{ .Anchor }}">{{ .Text | safeHTML }}<span class="post__heading-chain" aria-hidden="true">🔗</span></a>
+  <a class="post__heading-anchor" href="#{{ .Anchor }}">{{ .Text | safeHTML }}<span class="post__heading-chain-slot" aria-hidden="true"><span class="post__heading-chain" aria-hidden="true">🔗</span></span></a>
   {{- else -}}
   {{ .Text | safeHTML }}
   {{- end -}}

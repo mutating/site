@@ -20,8 +20,27 @@
 <meta property="og:image" content="{{ "og.png" | absURL }}">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:,">
+<link rel="preload" href="{{ "/fonts/science-gothic-wordmark.woff2" | relURL }}" as="font" type="font/woff2" crossorigin>
 {{- $siteStyles := resources.Get "css/site.css" | fingerprint -}}
 <link rel="stylesheet" href="{{ $siteStyles.RelPermalink }}" integrity="{{ $siteStyles.Data.Integrity }}" crossorigin="anonymous">
+<script>
+  (function () {
+    var root = document.documentElement;
+    root.dataset.wordmarkFontReady = "false";
+    if (!document.fonts || typeof document.fonts.load !== "function") {
+      root.dataset.wordmarkFontReady = "fallback";
+      return;
+    }
+    document.fonts
+      .load('780 35px "Science Gothic"', "TMC")
+      .then(function (faces) {
+        root.dataset.wordmarkFontReady = faces.length ? "true" : "fallback";
+      })
+      .catch(function () {
+        root.dataset.wordmarkFontReady = "fallback";
+      });
+  })();
+</script>
 <script>
   (function () {
     var theme = "dark";

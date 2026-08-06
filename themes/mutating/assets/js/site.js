@@ -1211,6 +1211,23 @@
     });
   }
 
+  function initPostToc() {
+    const toc = document.querySelector(".post__toc");
+    if (!toc) return;
+
+    const desktopMedia = matchMedia("(min-width: 1101px)");
+    const syncTocState = () => {
+      if (desktopMedia.matches) toc.setAttribute("open", "");
+      else toc.removeAttribute("open");
+    };
+
+    syncTocState();
+    desktopMedia.addEventListener("change", syncTocState);
+    toc.addEventListener("toggle", () => {
+      if (desktopMedia.matches && !toc.open) toc.setAttribute("open", "");
+    });
+  }
+
   function init() {
     initCurrentYear();
     initCodeCopyButtons();
@@ -1225,6 +1242,7 @@
     initTokamak();
     initTentacles();
     initMobileMenus();
+    initPostToc();
     document.documentElement.dataset.themeReady = "true";
   }
 
