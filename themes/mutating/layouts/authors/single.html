@@ -67,10 +67,9 @@
   </header>
 
   <div class="author-profile__details{{ if not $posts }} author-profile__details--centered{{ end }}">
-    <section class="author-profile__bio" aria-labelledby="author-about-heading">
-      <p class="author-profile__label" id="author-about-heading">ABOUT</p>
+    <div class="author-profile__bio">
       <div class="post__content author-profile__content">{{ .Content }}</div>
-    </section>
+    </div>
   </div>
 
   {{ if $posts }}

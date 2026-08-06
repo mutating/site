@@ -1228,6 +1228,34 @@
     });
   }
 
+  function initUnpaginatedBlogTail() {
+    const index = document.querySelector(
+      '.blog-index[data-has-pagination="false"]',
+    );
+    const lastCard = index?.querySelector(".blog-card:last-child");
+    if (!index || !lastCard) return;
+
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        index.dataset.pageOverflows = "false";
+        const borderWidth = Number.parseFloat(
+          getComputedStyle(lastCard).borderBottomWidth,
+        );
+        const heightWithoutTailBorder =
+          document.documentElement.scrollHeight - borderWidth;
+        index.dataset.pageOverflows = String(
+          heightWithoutTailBorder > innerHeight + 0.5,
+        );
+      });
+    };
+
+    update();
+    addEventListener("resize", update, { passive: true });
+    document.fonts?.ready.then(update);
+  }
+
   function init() {
     initCurrentYear();
     initCodeCopyButtons();
@@ -1243,6 +1271,7 @@
     initTentacles();
     initMobileMenus();
     initPostToc();
+    initUnpaginatedBlogTail();
     document.documentElement.dataset.themeReady = "true";
   }
 
