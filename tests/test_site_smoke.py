@@ -2973,6 +2973,97 @@ def test_mobile_menu_closes_after_clicking_outside_it(
     expect(navigation).to_be_hidden()
 
 
+def test_tmc_wordmark_waits_for_science_gothic_before_becoming_visible(
+    driver: DriverFactory,
+) -> None:
+    """Never paint the compact wordmark with a temporary fallback font.
+
+    A slow network used to expose ``TMC`` immediately through
+    ``font-display: swap`` and then replace the visibly narrower fallback once
+    Science Gothic arrived. This test holds the head bootstrap's explicit font
+    readiness request while leaving the rest of the page free to initialize.
+    The fixed-size stage must remain reserved, but the lettering itself stays
+    transparent until the gate is released. Once the real local font is ready,
+    the final wordmark appears immediately without an opacity transition.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeLoad = document.fonts.load.bind(document.fonts);
+              let releaseGate;
+              const gate = new Promise((resolve) => {
+                releaseGate = resolve;
+              });
+              let released = false;
+              let held = false;
+
+              document.fonts.load = (font, text) => {
+                if (
+                  !released &&
+                  String(font).includes("Science Gothic")
+                ) {
+                  held = true;
+                  return gate.then(() => nativeLoad(font, text));
+                }
+                return nativeLoad(font, text);
+              };
+
+              window.__tmcWordmarkFontLoadHeld = () => held;
+              window.__tmcReleaseWordmarkFont = () => {
+                released = true;
+                releaseGate();
+              };
+            })();
+            """,
+        ),
+    )
+    root = page.locator("html")
+    wordmark = page.locator(".brand__wordmark")
+    stage = page.locator(".brand__wordmark-stage")
+    preload = page.locator(
+        'link[rel="preload"][as="font"]'
+        '[href="/fonts/science-gothic-wordmark.woff2"]'
+    )
+
+    expect(preload).to_have_attribute("type", "font/woff2")
+    expect(preload).to_have_attribute("crossorigin", "")
+    expect(root).to_have_attribute("data-wordmark-font-ready", "false")
+    assert page.evaluate("window.__tmcWordmarkFontLoadHeld()") is True
+
+    pending = wordmark.evaluate(
+        """
+        (element) => ({
+          opacity: getComputedStyle(element).opacity,
+          transitionProperty: getComputedStyle(element).transitionProperty,
+          transitionDuration: getComputedStyle(element).transitionDuration,
+          stageWidth: element.closest(
+            ".brand__wordmark-stage",
+          ).getBoundingClientRect().width,
+        })
+        """
+    )
+    assert pending["opacity"] == "0"
+    assert pending["transitionProperty"] == "all"
+    assert pending["transitionDuration"] == "0s"
+    assert pending["stageWidth"] > 0
+
+    page.evaluate("window.__tmcReleaseWordmarkFont()")
+    expect(root).to_have_attribute("data-wordmark-font-ready", "true")
+    expect(wordmark).to_have_css("opacity", "1")
+    assert page.evaluate(
+        """() => document.fonts.check(
+          '780 35px "Science Gothic"',
+          "TMC",
+        )"""
+    ) is True
+    expect(stage).to_be_visible()
+
+
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
     driver: DriverFactory,
@@ -3817,11 +3908,12 @@ def test_header_eye_remains_circular_at_every_responsive_width(
 
     This regression spans desktop, both sides of the responsive breakpoints,
     and the minimum supported phone width. It requires the outer brand slot,
-    animated logo, and color surface to remain exact 48 px squares, while the
-    outline keeps its intentional equal 2.5% overscan and the mask stretches
-    to the square instead of letterboxing the source canvas. Reintroducing
-    ``height: auto``, a source-ratio ``aspect-ratio``, ``mask-size: contain``,
-    or a mobile-only shape override makes the relevant width fail
+    animated logo, color surface, and outline to remain exact 48 px squares.
+    The outline must be a native one-pixel circle without transforms or
+    shadows, while the surface mask stretches to the square instead of
+    letterboxing the source canvas. Reintroducing ``height: auto``, a
+    source-ratio ``aspect-ratio``, ``mask-size: contain``, fractional outline
+    scaling, or a mobile-only shape override makes the relevant width fail
     deterministically.
     """
 
@@ -3841,6 +3933,7 @@ def test_header_eye_remains_circular_at_every_responsive_width(
           const surface = eye.querySelector(".animated-eye-logo__surface");
           const outline = eye.querySelector(".animated-eye-logo__outline");
           const surfaceStyle = getComputedStyle(surface);
+          const outlineStyle = getComputedStyle(outline);
           return {
             mark: rectangle(mark),
             eye: rectangle(eye),
@@ -3849,6 +3942,15 @@ def test_header_eye_remains_circular_at_every_responsive_width(
             maskSize:
               surfaceStyle.maskSize ||
               surfaceStyle.webkitMaskSize,
+            outlineBorderWidths: [
+              outlineStyle.borderTopWidth,
+              outlineStyle.borderRightWidth,
+              outlineStyle.borderBottomWidth,
+              outlineStyle.borderLeftWidth,
+            ],
+            outlineBorderRadius: outlineStyle.borderRadius,
+            outlineBoxShadow: outlineStyle.boxShadow,
+            outlineTransform: outlineStyle.transform,
           };
         }
         """
@@ -3862,15 +3964,13 @@ def test_header_eye_remains_circular_at_every_responsive_width(
     for part in ("mark", "eye", "surface"):
         assert geometry[part]["width"] == pytest.approx(48, abs=0.5)
         assert geometry[part]["height"] == pytest.approx(48, abs=0.5)
-    assert geometry["outline"]["width"] == pytest.approx(
-        48 * 1.025,
-        abs=0.1,
-    )
-    assert geometry["outline"]["height"] == pytest.approx(
-        48 * 1.025,
-        abs=0.1,
-    )
+    assert geometry["outline"]["width"] == pytest.approx(48, abs=0.5)
+    assert geometry["outline"]["height"] == pytest.approx(48, abs=0.5)
     assert geometry["maskSize"] == "100% 100%"
+    assert geometry["outlineBorderWidths"] == ["1px"] * 4
+    assert geometry["outlineBorderRadius"] == "50%"
+    assert geometry["outlineBoxShadow"] == "none"
+    assert geometry["outlineTransform"] == "none"
 
 
 @pytest.mark.parametrize("viewport_width", [390, 320, 280])
@@ -4075,9 +4175,32 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
     )
 
     assert eye.evaluate("(element) => getComputedStyle(element).filter") == "none"
-    assert outline.evaluate(
-        "(element) => getComputedStyle(element).backgroundColor"
-    ) == "rgb(0, 0, 0)"
+    outline_presentation = outline.evaluate(
+        """
+        (element) => {
+          const style = getComputedStyle(element);
+          return {
+            background: style.backgroundColor,
+            borderColor: style.borderTopColor,
+            borderWidths: [
+              style.borderTopWidth,
+              style.borderRightWidth,
+              style.borderBottomWidth,
+              style.borderLeftWidth,
+            ],
+            boxShadow: style.boxShadow,
+            transform: style.transform,
+          };
+        }
+        """
+    )
+    assert outline_presentation == {
+        "background": "rgba(0, 0, 0, 0)",
+        "borderColor": "rgb(0, 0, 0)",
+        "borderWidths": ["1px"] * 4,
+        "boxShadow": "none",
+        "transform": "none",
+    }
     assert pupil.evaluate(
         "(element) => getComputedStyle(element).backgroundColor"
     ) == initial_pupil_color

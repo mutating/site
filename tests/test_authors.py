@@ -7,6 +7,7 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import expect
 
 from conftest import DriverFactory
@@ -568,10 +569,28 @@ def test_author_without_posts_omits_signals_and_post_sections(
     expect(page.locator(".author-posts")).to_have_count(0)
 
 
+def test_author_description_has_no_redundant_about_label(
+    driver: DriverFactory,
+) -> None:
+    """Render the author description directly without a visible About heading."""
+
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path="/authors/test-author/",
+    )
+
+    bio = page.locator(".author-profile__bio")
+    description = bio.locator(".author-profile__content")
+    expect(bio.locator(":scope > .author-profile__label")).to_have_count(0)
+    expect(page.locator("#author-about-heading")).to_have_count(0)
+    expect(description).to_be_visible()
+    expect(description).to_have_css("margin-top", "0px")
+
+
 def test_author_without_posts_centers_the_description_column(
     driver: DriverFactory,
 ) -> None:
-    """Center the About copy only when no authored-post region can follow it."""
+    """Center the description only when no authored-post region can follow it."""
 
     page = driver(
         viewport=(1600, 900),
@@ -831,6 +850,49 @@ def test_author_profile_reflows_without_overlap_on_a_narrow_screen(
     assert geometry["overflows"] is False
     assert geometry["heroOverlaps"] is False
     assert geometry["widestCard"] <= geometry["viewportWidth"]
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [(900, 900), (600, 844), (390, 844)],
+    ids=["medium", "narrow", "phone"],
+)
+def test_author_profile_divider_has_compact_symmetric_spacing(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep equal, compact gaps on both sides of the responsive divider."""
+
+    page = driver(
+        viewport=viewport,
+        load_interactive_visuals=False,
+        initial_path="/authors/test-author/",
+    )
+    spacing = page.evaluate(
+        """
+        () => {
+          const intro = document.querySelector(".author-profile__intro");
+          const links = document.querySelector(".author-profile__links");
+          const firstParagraph = document.querySelector(
+            ".author-profile__content > :first-child",
+          );
+          const introRect = intro.getBoundingClientRect();
+          const linksRect = links.getBoundingClientRect();
+          const paragraphRect = firstParagraph.getBoundingClientRect();
+          const borderWidth = Number.parseFloat(
+            getComputedStyle(intro).borderBottomWidth,
+          );
+          return {
+            above: introRect.bottom - borderWidth - linksRect.bottom,
+            below: paragraphRect.top - introRect.bottom,
+          };
+        }
+        """
+    )
+
+    assert 23 <= spacing["above"] <= 31
+    assert 23 <= spacing["below"] <= 31
+    assert abs(spacing["above"] - spacing["below"]) <= 0.5
 
 
 def test_author_profile_aligns_with_the_shared_left_edge(
