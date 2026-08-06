@@ -51,7 +51,7 @@
       block.dataset.copyHover = "false";
       block.addEventListener("pointerenter", () => {
         block.dataset.copyHover = "true";
-      });
+    });
       block.addEventListener("pointerleave", () => {
         block.dataset.copyHover = "false";
       });
@@ -86,7 +86,7 @@
           label.textContent = "Try again";
         }
       });
-    });
+      });
   }
 
   function initTheme() {
@@ -991,6 +991,15 @@
   function initTentacles() {
     const frame = document.querySelector(".contact__tentacles");
     if (!frame) return;
+    const contact = frame.closest(".contact");
+    const copy = contact?.querySelector(".contact__copy");
+    copy?.querySelectorAll("h2, p:not(.section-index)").forEach((textBlock) => {
+      if (textBlock.querySelector(":scope > .contact__selectable-text")) return;
+      const selectableText = document.createElement("span");
+      selectableText.className = "contact__selectable-text";
+      selectableText.append(...textBlock.childNodes);
+      textBlock.append(selectableText);
+    });
     let contactIsNearViewport = false;
     let scrollIsActive = false;
     let scrollIdleTimer = 0;
@@ -1025,6 +1034,31 @@
     const releaseTentacles = () => {
       frame.contentWindow?.postMessage(
         { type: "muta-tentacles-release" },
+        location.origin,
+      );
+    };
+    const relayPassivePointer = (event) => {
+      const rect = frame.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      frame.contentWindow?.postMessage(
+        {
+          type: "muta-tentacles-pointer-hover",
+          x: Math.max(
+            0,
+            Math.min(1, (event.clientX - rect.left) / rect.width),
+          ),
+          y: Math.max(
+            0,
+            Math.min(1, (event.clientY - rect.top) / rect.height),
+          ),
+          inside: true,
+        },
+        location.origin,
+      );
+    };
+    const clearRelayedPointer = () => {
+      frame.contentWindow?.postMessage(
+        { type: "muta-tentacles-pointer-hover", inside: false },
         location.origin,
       );
     };
@@ -1131,6 +1165,12 @@
       { rootMargin: "200px 0px" },
     ).observe(frame);
     frame.addEventListener("load", sendTheme);
+    copy?.addEventListener("pointermove", relayPassivePointer, {
+      passive: true,
+    });
+    contact?.addEventListener("pointerleave", clearRelayedPointer, {
+      passive: true,
+    });
     addEventListener("message", handleMessage);
     addEventListener("scroll", handleScroll, { passive: true });
     addEventListener("scrollend", finishScroll, { passive: true });
@@ -1147,9 +1187,26 @@
   }
 
   function initMobileMenus() {
-    document.querySelectorAll(".mobile-menu nav a").forEach((link) => {
-      link.addEventListener("click", () => {
-        link.closest("details")?.removeAttribute("open");
+    const menus = [...document.querySelectorAll(".mobile-menu")];
+
+    menus.forEach((menu) => {
+      menu.querySelectorAll("nav a").forEach((link) => {
+        link.addEventListener("click", () => {
+          menu.removeAttribute("open");
+        });
+      });
+    });
+
+    document.addEventListener("pointerdown", (event) => {
+      const clickedMenu =
+        event.target instanceof Element
+          ? event.target.closest(".mobile-menu")
+          : null;
+
+      menus.forEach((menu) => {
+        if (menu.open && menu !== clickedMenu) {
+          menu.removeAttribute("open");
+        }
       });
     });
   }

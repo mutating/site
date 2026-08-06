@@ -1,6 +1,6 @@
 {{ define "main" }}
 {{- $authorSlug := .File.ContentBaseName -}}
-{{- $status := lower (default "human" .Params.status) -}}
+{{- $status := partial "author-kind.html" . -}}
 {{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
 {{- $posts = $posts.ByDate.Reverse -}}
 {{- $archive := site.GetPage (printf "/author-posts/%s" $authorSlug) -}}
@@ -22,7 +22,11 @@
 <article class="author-profile section-shell">
   <header class="author-profile__hero">
     <div class="author-profile__intro">
-      <a class="section-index" href="{{ "/authors/" | relURL }}">AUTHORS / {{ upper $authorSlug }}</a>
+      <nav class="section-index author-profile__breadcrumb" aria-label="Author breadcrumb">
+        <a href="{{ "/authors/" | relURL }}">AUTHORS</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ .RelPermalink }}" aria-current="page">{{ upper $authorSlug }}</a>
+      </nav>
       {{ partial "author-status.html" (dict "author" . "variant" "profile" "class" "author-profile__status") }}
       <h1>{{ .Title }}</h1>
       {{ with .Params.links }}

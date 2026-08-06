@@ -1,5 +1,5 @@
 {{- $author := .author -}}
-{{- $status := lower (default "human" $author.Params.status) -}}
+{{- $status := partial "author-kind.html" $author -}}
 {{- $prefix := default "" .prefix -}}
 <span
   class="author-byline{{ with .class }} {{ . }}{{ end }}"
