@@ -34,3 +34,10 @@ def require_evidence(result: dict) -> None:
     if not result.get("evidence"):
         raise ValueError("Evidence is required.")
 ```
+
+```javascript
+const evidence = { verified: true };
+if (!evidence.verified) {
+  throw new Error("Evidence is required.");
+}
+```

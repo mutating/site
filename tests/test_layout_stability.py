@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -10,6 +11,8 @@ from playwright.sync_api import Page, expect
 
 DriverFactory = Callable[..., Page]
 Rect = dict[str, float]
+FooterSnapshot = dict[str, Any]
+FooterAssertion = Callable[[FooterSnapshot], None]
 
 LAYOUT_SELECTORS = (
     ".site-header",
@@ -73,7 +76,6 @@ def _click_theme_toggle(page: Page, expected_theme: str) -> None:
         bounds["y"] + bounds["height"] / 2,
     )
     expect(page.locator("html")).to_have_attribute("data-theme", expected_theme)
-    page.wait_for_timeout(50)
 
 
 def _assert_layout_matches(
@@ -108,14 +110,23 @@ def test_primary_layout_does_not_move_after_repeated_theme_switches(
     viewport: tuple[int, int],
     scroll_fraction: float,
 ) -> None:
-    """Verify stable section coordinates across themes, viewports, and scroll levels."""
+    """Verify stable section coordinates across themes, viewports, and scroll levels.
+
+    The baseline is captured only after the browser's local fonts have settled
+    and two animation frames have delivered any font-dependent wordmark/media
+    layout work. Theme changes themselves update only colors and transforms, so
+    the former fixed 50 ms sleeps after each toggle added wall time without
+    synchronizing a geometry-affecting operation; the synchronous theme
+    attribute assertion is the stronger readiness signal for this contract.
+    """
 
     page = driver(
         stored_theme="light",
         viewport=viewport,
         load_interactive_visuals=False,
     )
-    page.evaluate(
+    page.evaluate("() => document.fonts.ready")
+    expected_scroll = page.evaluate(
         """
         (fraction) => {
           const maximum = document.documentElement.scrollHeight - innerHeight;
@@ -123,11 +134,22 @@ def test_primary_layout_does_not_move_after_repeated_theme_switches(
             top: maximum * fraction,
             behavior: "instant",
           });
+          return maximum * fraction;
         }
         """,
         scroll_fraction,
     )
-    page.wait_for_timeout(100)
+    page.wait_for_function(
+        "expected => Math.abs(window.scrollY - expected) <= 0.5",
+        arg=expected_scroll,
+    )
+    page.evaluate(
+        """
+        () => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })
+        """
+    )
 
     initial_scroll = page.evaluate("window.scrollY")
     initial_layout = _read_layout(page)
@@ -139,131 +161,10 @@ def test_primary_layout_does_not_move_after_repeated_theme_switches(
         assert abs(page.evaluate("window.scrollY") - initial_scroll) <= 0.5
 
 
-@pytest.mark.parametrize(
-    "viewport",
-    [(1440, 900), (1121, 900)],
-    ids=["wide", "desktop-boundary"],
-)
-def test_footer_row_is_vertically_centered_below_its_divider(
-    driver: DriverFactory,
-    viewport: tuple[int, int],
-) -> None:
-    """Keep the desktop footer labels centered in the space below the rule.
+def _read_footer_snapshot(page: Page) -> FooterSnapshot:
+    """Read every footer contract from one immutable rendered state."""
 
-    The footer previously used 26 pixels of padding above its single row and
-    50 pixels below it. Although all three label groups shared a baseline, the
-    whole row therefore sat 12 pixels above the vertical center of the area
-    beneath the divider. This test measures the rendered row and the usable
-    footer box and guards their centers with subpixel tolerance. It runs both
-    on a wide viewport and one pixel above the medium-layout boundary, proving
-    the requested compact footer does not leak into the unchanged desktop
-    presentation.
-    """
-
-    page = driver(
-        stored_theme="light",
-        viewport=viewport,
-        load_interactive_visuals=False,
-    )
-    geometry = page.locator(".site-footer").evaluate(
-        """
-        (footer) => {
-          const footerRect = footer.getBoundingClientRect();
-          const borderTop = parseFloat(
-            getComputedStyle(footer).borderTopWidth,
-          );
-          const itemRects = Array.from(footer.children, (item) =>
-            item.getBoundingClientRect(),
-          );
-          const rowTop = Math.min(...itemRects.map((rect) => rect.top));
-          const rowBottom = Math.max(...itemRects.map((rect) => rect.bottom));
-
-          return {
-            availableCenter:
-              (footerRect.top + borderTop + footerRect.bottom) / 2,
-            rowCenter: (rowTop + rowBottom) / 2,
-            columnCount:
-              getComputedStyle(footer).gridTemplateColumns.split(" ").length,
-            legalRight:
-              footer.querySelector(".site-footer__legal")
-                .getBoundingClientRect().right,
-            taglineLeft:
-              footer.querySelector(".site-footer__tagline")
-                .getBoundingClientRect().left,
-            taglineRight:
-              footer.querySelector(".site-footer__tagline")
-                .getBoundingClientRect().right,
-            linksLeft:
-              footer.querySelector(".site-footer__links")
-                .getBoundingClientRect().left,
-            linksDisplay: getComputedStyle(
-              footer.querySelector(".site-footer__links"),
-            ).display,
-          };
-        }
-        """
-    )
-
-    assert abs(
-        geometry["availableCenter"] - geometry["rowCenter"]
-    ) <= 0.5
-    assert geometry["columnCount"] == 3
-    assert geometry["linksDisplay"] == "flex"
-    assert geometry["legalRight"] < geometry["taglineLeft"]
-    assert geometry["taglineRight"] < geometry["linksLeft"]
-
-
-@pytest.mark.parametrize(
-    "viewport",
-    [
-        (1120, 900),
-        (1024, 900),
-        (900, 900),
-        (861, 900),
-        (800, 900),
-        (580, 900),
-        (390, 844),
-        (280, 700),
-    ],
-    ids=[
-        "medium-boundary",
-        "medium-wide",
-        "medium",
-        "medium-compact-boundary",
-        "compact",
-        "mobile-wide",
-        "phone",
-        "minimum",
-    ],
-)
-def test_medium_and_narrow_footer_hide_navigation_and_center_legal_copy(
-    driver: DriverFactory,
-    viewport: tuple[int, int],
-) -> None:
-    """Use a centered two-line footer when the header already owns navigation.
-
-    The wide desktop footer intentionally remains a single three-column row
-    with copyright, tagline, and navigation. On medium and narrow screens,
-    repeating ``Sources``, ``Blog``, and ``Contact`` below an always-sticky
-    header wastes vertical space and leaves the two remaining messages visually
-    unbalanced. The requested compact order is therefore copyright first,
-    tagline second, with both lines centered across the footer.
-
-    This regression measures the complete compact range from the exact 1120 px
-    medium boundary down to the 280 px minimum, including both sides of the
-    site's 860 px content breakpoint. It requires one grid column, hidden
-    duplicate links, copyright above the tagline, and the horizontal center of
-    both visible lines to match the footer center. Reintroducing the former
-    links row, reversing the two messages, left-aligning either line, or limiting
-    the rule to only phones makes at least one viewport fail.
-    """
-
-    page = driver(
-        stored_theme="light",
-        viewport=viewport,
-        load_interactive_visuals=False,
-    )
-    geometry = page.locator(".site-footer").evaluate(
+    return page.locator(".site-footer").evaluate(
         """
         (footer) => {
           const rectangle = (element) => {
@@ -271,146 +172,25 @@ def test_medium_and_narrow_footer_hide_navigation_and_center_legal_copy(
             return {
               top: rect.top,
               bottom: rect.bottom,
+              left: rect.left,
+              right: rect.right,
               centerX: rect.left + rect.width / 2,
             };
           };
           const footerRect = footer.getBoundingClientRect();
+          const footerStyle = getComputedStyle(footer);
+          const borderTop = parseFloat(footerStyle.borderTopWidth);
           const legal = footer.querySelector(".site-footer__legal");
           const tagline = footer.querySelector(".site-footer__tagline");
           const links = footer.querySelector(".site-footer__links");
-          return {
-            footerCenterX: footerRect.left + footerRect.width / 2,
-            columnCount:
-              getComputedStyle(footer).gridTemplateColumns.split(" ").length,
-            textAlign: getComputedStyle(footer).textAlign,
-            legal: rectangle(legal),
-            tagline: rectangle(tagline),
-            legalJustifySelf: getComputedStyle(legal).justifySelf,
-            taglineJustifySelf: getComputedStyle(tagline).justifySelf,
-            linksDisplay: getComputedStyle(links).display,
-          };
-        }
-        """
-    )
-
-    assert geometry["columnCount"] == 1
-    assert geometry["linksDisplay"] == "none"
-    assert geometry["textAlign"] == "center"
-    assert geometry["legal"]["bottom"] < geometry["tagline"]["top"]
-    assert geometry["legal"]["centerX"] == pytest.approx(
-        geometry["footerCenterX"],
-        abs=0.5,
-    )
-    assert geometry["tagline"]["centerX"] == pytest.approx(
-        geometry["footerCenterX"],
-        abs=0.5,
-    )
-    assert geometry["legalJustifySelf"] == "center"
-    assert geometry["taglineJustifySelf"] == "center"
-
-
-@pytest.mark.parametrize(
-    "viewport",
-    [(580, 900), (390, 844), (280, 700)],
-    ids=["mobile-boundary", "phone", "minimum"],
-)
-def test_narrow_footer_copy_group_is_vertically_centered(
-    driver: DriverFactory,
-    viewport: tuple[int, int],
-) -> None:
-    """Keep the two visible footer lines centered below the divider on phones.
-
-    The narrow footer used to override only its top padding to 24 pixels while
-    retaining the desktop 38-pixel bottom padding. That asymmetric box placed
-    the copyright/tagline group seven pixels above the visual center even
-    though both individual lines were horizontally centered. This regression
-    measures the center of the complete two-line group against the center of
-    the footer area below its one-pixel divider at the mobile breakpoint, a
-    representative phone width, and the supported minimum width. Restoring
-    unequal vertical padding or shifting either row independently makes the
-    measured centers diverge and fails the test.
-    """
-
-    page = driver(
-        stored_theme="light",
-        viewport=viewport,
-        load_interactive_visuals=False,
-    )
-    geometry = page.locator(".site-footer").evaluate(
-        """
-        (footer) => {
-          const footerRect = footer.getBoundingClientRect();
-          const borderTop = parseFloat(
-            getComputedStyle(footer).borderTopWidth,
+          const legalRect = legal.getBoundingClientRect();
+          const taglineRect = tagline.getBoundingClientRect();
+          const linksRect = links.getBoundingClientRect();
+          const itemRects = Array.from(footer.children, (item) =>
+            item.getBoundingClientRect(),
           );
-          const legalRect = footer
-            .querySelector(".site-footer__legal")
-            .getBoundingClientRect();
-          const taglineRect = footer
-            .querySelector(".site-footer__tagline")
-            .getBoundingClientRect();
-
-          return {
-            availableCenter:
-              (footerRect.top + borderTop + footerRect.bottom) / 2,
-            copyCenter: (legalRect.top + taglineRect.bottom) / 2,
-          };
-        }
-        """
-    )
-
-    assert geometry["copyCenter"] == pytest.approx(
-        geometry["availableCenter"],
-        abs=0.5,
-    )
-
-
-@pytest.mark.parametrize(
-    "viewport",
-    [
-        (1440, 900),
-        (1121, 900),
-        (1120, 900),
-        (861, 900),
-        (580, 900),
-        (390, 844),
-        (280, 700),
-    ],
-    ids=[
-        "wide",
-        "desktop-boundary",
-        "medium-boundary",
-        "compact-boundary",
-        "mobile-boundary",
-        "phone",
-        "minimum",
-    ],
-)
-def test_footer_copy_lines_share_identical_typography_at_every_width(
-    driver: DriverFactory,
-    viewport: tuple[int, int],
-) -> None:
-    """Give the copyright and tagline exactly the same rendered text styling.
-
-    These are the footer's two persistent text lines: they appear beside one
-    another on desktop and as a centered stack on medium and narrow screens.
-    Separate selectors previously made it easy for their font size, weight,
-    spacing, color, opacity, shadow, or filter to drift at one responsive
-    breakpoint while remaining superficially similar elsewhere. The test
-    samples both sides of every relevant layout boundary and compares the
-    complete set of computed typographic and visual-effect properties. A
-    future rule that changes either line alone therefore fails at the exact
-    width where the inconsistency is introduced.
-    """
-
-    page = driver(
-        stored_theme="light",
-        viewport=viewport,
-        load_interactive_visuals=False,
-    )
-    typography = page.locator(".site-footer").evaluate(
-        """
-        (footer) => {
+          const rowTop = Math.min(...itemRects.map((rect) => rect.top));
+          const rowBottom = Math.max(...itemRects.map((rect) => rect.bottom));
           const properties = [
             "color",
             "font-family",
@@ -427,8 +207,8 @@ def test_footer_copy_lines_share_identical_typography_at_every_width(
             "filter",
             "opacity",
           ];
-          const read = (selector) => {
-            const style = getComputedStyle(footer.querySelector(selector));
+          const typography = (element) => {
+            const style = getComputedStyle(element);
             return Object.fromEntries(
               properties.map((property) => [
                 property,
@@ -438,37 +218,155 @@ def test_footer_copy_lines_share_identical_typography_at_every_width(
           };
 
           return {
-            legal: read(".site-footer__legal"),
-            tagline: read(".site-footer__tagline"),
+            availableCenter:
+              (footerRect.top + borderTop + footerRect.bottom) / 2,
+            rowCenter: (rowTop + rowBottom) / 2,
+            copyCenter: (legalRect.top + taglineRect.bottom) / 2,
+            footerCenterX: footerRect.left + footerRect.width / 2,
+            columnCount:
+              footerStyle.gridTemplateColumns.split(" ").length,
+            textAlign: footerStyle.textAlign,
+            legal: rectangle(legal),
+            tagline: rectangle(tagline),
+            legalJustifySelf: getComputedStyle(legal).justifySelf,
+            taglineJustifySelf: getComputedStyle(tagline).justifySelf,
+            linksDisplay: getComputedStyle(links).display,
+            linksLeft: linksRect.left,
+            legalTypography: typography(legal),
+            taglineTypography: typography(tagline),
           };
         }
         """
     )
 
-    assert typography["legal"] == typography["tagline"]
+
+def _assert_footer_desktop(snapshot: FooterSnapshot) -> None:
+    """Assert the unchanged three-column desktop footer contract."""
+
+    assert abs(snapshot["availableCenter"] - snapshot["rowCenter"]) <= 0.5
+    assert snapshot["columnCount"] == 3
+    assert snapshot["linksDisplay"] == "flex"
+    assert snapshot["legal"]["right"] < snapshot["tagline"]["left"]
+    assert snapshot["tagline"]["right"] < snapshot["linksLeft"]
+
+
+def _assert_footer_compact(snapshot: FooterSnapshot) -> None:
+    """Assert compact order, hidden navigation, and horizontal centering."""
+
+    assert snapshot["columnCount"] == 1
+    assert snapshot["linksDisplay"] == "none"
+    assert snapshot["textAlign"] == "center"
+    assert snapshot["legal"]["bottom"] < snapshot["tagline"]["top"]
+    assert snapshot["legal"]["centerX"] == pytest.approx(
+        snapshot["footerCenterX"],
+        abs=0.5,
+    )
+    assert snapshot["tagline"]["centerX"] == pytest.approx(
+        snapshot["footerCenterX"],
+        abs=0.5,
+    )
+    assert snapshot["legalJustifySelf"] == "center"
+    assert snapshot["taglineJustifySelf"] == "center"
+
+
+def _assert_footer_narrow_center(snapshot: FooterSnapshot) -> None:
+    """Assert the phone copy group is vertically centered below its divider."""
+
+    assert snapshot["copyCenter"] == pytest.approx(
+        snapshot["availableCenter"],
+        abs=0.5,
+    )
+
+
+def _assert_footer_typography(snapshot: FooterSnapshot) -> None:
+    """Assert both persistent footer lines share all rendered text effects."""
+
+    assert snapshot["legalTypography"] == snapshot["taglineTypography"]
 
 
 @pytest.mark.parametrize(
-    ("viewport", "expected_overflow"),
+    ("viewport", "assertions"),
     [
-        ((580, 900), "visible"),
-        ((390, 844), "visible"),
-        ((280, 700), "visible"),
-        ((581, 900), "hidden"),
-        ((1440, 900), "hidden"),
+        ((1440, 900), (_assert_footer_desktop, _assert_footer_typography)),
+        ((1121, 900), (_assert_footer_desktop, _assert_footer_typography)),
+        ((1120, 900), (_assert_footer_compact, _assert_footer_typography)),
+        ((1024, 900), (_assert_footer_compact, _assert_footer_typography)),
+        ((900, 900), (_assert_footer_compact, _assert_footer_typography)),
+        ((861, 900), (_assert_footer_compact, _assert_footer_typography)),
+        ((800, 900), (_assert_footer_compact, _assert_footer_typography)),
+        (
+            (580, 900),
+            (
+                _assert_footer_compact,
+                _assert_footer_narrow_center,
+                _assert_footer_typography,
+            ),
+        ),
+        (
+            (390, 844),
+            (
+                _assert_footer_compact,
+                _assert_footer_narrow_center,
+                _assert_footer_typography,
+            ),
+        ),
+        (
+            (280, 700),
+            (
+                _assert_footer_compact,
+                _assert_footer_narrow_center,
+                _assert_footer_typography,
+            ),
+        ),
     ],
     ids=[
-        "mobile-boundary",
-        "phone",
-        "minimum",
-        "one-pixel-above-mobile",
-        "desktop",
+        "wide-desktop-typography",
+        "desktop-boundary-desktop-typography",
+        "medium-boundary-compact-typography",
+        "medium-wide-compact-typography",
+        "medium-compact-typography",
+        "compact-boundary-compact-typography",
+        "compact-typography",
+        "mobile-boundary-compact-narrow-typography",
+        "phone-compact-narrow-typography",
+        "minimum-compact-narrow-typography",
     ],
 )
-def test_coexistence_shadow_is_not_clipped_only_on_narrow_screens(
+def test_footer_layout_and_typography_contracts_at_every_width(
     driver: DriverFactory,
     viewport: tuple[int, int],
-    expected_overflow: str,
+    assertions: tuple[FooterAssertion, ...],
+) -> None:
+    """Preserve every footer contract with one browser state per viewport.
+
+    Four former parameterized tests loaded the same light-theme footer twenty
+    times even though their matrices contained only ten unique viewports. This
+    explicit matrix retains the original desktop, compact, narrow-centering,
+    and typography intersections while reading one superset snapshot from each
+    immutable page. Named linear assertion helpers preserve contract-specific
+    tracebacks and keep cyclomatic complexity at two instead of replacing the
+    old tests with breakpoint branches.
+
+    Typography is also compared at 1024, 900, and 800 pixels, strengthening the
+    original seven-width sampling at no additional browser cost. Regressions in
+    desktop vertical balance, compact ordering/navigation, phone vertical
+    centering, or any of fourteen text effects still fail at the precise
+    viewport and named helper responsible.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    snapshot = _read_footer_snapshot(page)
+
+    for assertion in assertions:
+        assertion(snapshot)
+
+
+def test_coexistence_shadow_is_not_clipped_only_on_narrow_screens(
+    driver: DriverFactory,
 ) -> None:
     """Let the HUMAN/ROBOT card cast its full side shadow on narrow screens.
 
@@ -490,47 +388,71 @@ def test_coexistence_shadow_is_not_clipped_only_on_narrow_screens(
     the photographed side-clipping defect.
     """
 
+    cases = [
+        ((580, 900), "visible"),
+        ((390, 844), "visible"),
+        ((280, 700), "visible"),
+        ((581, 900), "hidden"),
+        ((1440, 900), "hidden"),
+    ]
     page = driver(
         stored_theme="light",
-        viewport=viewport,
+        viewport=cases[0][0],
         load_interactive_visuals=False,
     )
-    geometry = page.locator("#the-deal").evaluate(
-        """
-        (section) => {
-          const card = section.querySelector(".coexistence__pair");
-          const face = card.querySelector(".coexistence__pair-face");
-          const sectionRect = section.getBoundingClientRect();
-          const cardRect = card.getBoundingClientRect();
-          const sectionStyle = getComputedStyle(section);
-          const faceStyle = getComputedStyle(face);
+    page.evaluate("() => document.fonts.ready")
 
-          return {
-            sectionOverflow: sectionStyle.overflow,
-            sectionOverflowX: sectionStyle.overflowX,
-            sectionWidth: sectionRect.width,
-            cardWidth: cardRect.width,
-            cardLeft: cardRect.left,
-            sectionLeft: sectionRect.left,
-            boxShadow: faceStyle.boxShadow,
-          };
-        }
-        """
-    )
-
-    assert geometry["sectionOverflow"] == expected_overflow
-    assert geometry["sectionOverflowX"] == expected_overflow
-    assert geometry["boxShadow"] != "none"
-
-    if viewport[0] <= 580:
-        assert geometry["cardWidth"] == pytest.approx(
-            geometry["sectionWidth"],
-            abs=0.5,
+    for viewport, expected_overflow in cases:
+        width, height = viewport
+        page.set_viewport_size({"width": width, "height": height})
+        page.wait_for_function(
+            "size => innerWidth === size.width && innerHeight === size.height",
+            arg={"width": width, "height": height},
         )
-        assert geometry["cardLeft"] == pytest.approx(
-            geometry["sectionLeft"],
-            abs=0.5,
+        page.evaluate(
+            """
+            () => new Promise((resolve) => requestAnimationFrame(
+              () => requestAnimationFrame(resolve),
+            ))
+            """
         )
+        geometry = page.locator("#the-deal").evaluate(
+            """
+            (section) => {
+              const card = section.querySelector(".coexistence__pair");
+              const face = card.querySelector(".coexistence__pair-face");
+              const sectionRect = section.getBoundingClientRect();
+              const cardRect = card.getBoundingClientRect();
+              const sectionStyle = getComputedStyle(section);
+              const faceStyle = getComputedStyle(face);
+
+              return {
+                sectionOverflow: sectionStyle.overflow,
+                sectionOverflowX: sectionStyle.overflowX,
+                sectionWidth: sectionRect.width,
+                cardWidth: cardRect.width,
+                cardLeft: cardRect.left,
+                sectionLeft: sectionRect.left,
+                boxShadow: faceStyle.boxShadow,
+              };
+            }
+            """
+        )
+        diagnostic = f"coexistence at {width}x{height}: {expected_overflow}"
+
+        assert geometry["sectionOverflow"] == expected_overflow, diagnostic
+        assert geometry["sectionOverflowX"] == expected_overflow, diagnostic
+        assert geometry["boxShadow"] != "none", diagnostic
+
+        if width <= 580:
+            assert geometry["cardWidth"] == pytest.approx(
+                geometry["sectionWidth"],
+                abs=0.5,
+            ), diagnostic
+            assert geometry["cardLeft"] == pytest.approx(
+                geometry["sectionLeft"],
+                abs=0.5,
+            ), diagnostic
 
 
 @pytest.mark.interactive_visuals

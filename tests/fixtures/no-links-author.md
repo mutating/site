@@ -1,6 +1,6 @@
 ---
 title: "Controlled Robot"
-status: "robot"
+robot: true
 photo: "/muta-v2-transparent-v10.webp"
 ---
 

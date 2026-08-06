@@ -9,6 +9,7 @@ import socket
 import subprocess
 import time
 import tomllib
+import fcntl
 from collections.abc import Callable, Iterator
 from datetime import date, timedelta
 from pathlib import Path
@@ -63,24 +64,7 @@ def _write_paginated_author_posts(temporary_content: Path) -> None:
     config = tomllib.loads((PROJECT_ROOT / "hugo.toml").read_text())
     pager_size = int(config["pagination"]["pagerSize"])
     blog_directory = temporary_content / "blog"
-    archive_directory = temporary_content / "author-posts" / "test-author"
-    archive_directory.mkdir(parents=True)
-    (archive_directory / "_index.md").write_text(
-        "\n".join(
-            (
-                "---",
-                'title: "Controlled author archive"',
-                'author: "test-author"',
-                'type: "author-posts"',
-                'url: "/authors/test-author/posts/"',
-                "---",
-                "",
-                "Controlled archive content.",
-                "",
-            )
-        ),
-        encoding="utf-8",
-    )
+    _write_author_archive(temporary_content, "test-author")
 
     for index in range(pager_size + 2):
         post_number = index + 1
@@ -105,6 +89,29 @@ def _write_paginated_author_posts(temporary_content: Path) -> None:
         )
 
 
+def _write_author_archive(temporary_content: Path, author_slug: str) -> None:
+    """Create the content node that renders one controlled author archive."""
+
+    archive_directory = temporary_content / "author-posts" / author_slug
+    archive_directory.mkdir(parents=True)
+    (archive_directory / "_index.md").write_text(
+        "\n".join(
+            (
+                "---",
+                'title: "Controlled author archive"',
+                f'author: "{author_slug}"',
+                'type: "author-posts"',
+                f'url: "/authors/{author_slug}/posts/"',
+                "---",
+                "",
+                "Controlled archive content.",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+
 def _find_available_port() -> int:
     """Return a currently available local TCP port."""
 
@@ -117,6 +124,7 @@ def _wait_for_site(base_url: str, process: subprocess.Popen[bytes]) -> bool:
     """Return when Hugo answers, or report an early process exit."""
 
     deadline = time.monotonic() + 60
+    retry_delay = 0.01
 
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -125,10 +133,12 @@ def _wait_for_site(base_url: str, process: subprocess.Popen[bytes]) -> bool:
         try:
             with urlopen(base_url, timeout=1) as response:
                 if response.status < 500:
-                    time.sleep(0.05)
                     return process.poll() is None
         except (URLError, TimeoutError, ConnectionError):
-            time.sleep(0.2)
+            pass
+
+        time.sleep(retry_delay)
+        retry_delay = min(0.1, retry_delay * 2)
 
     raise RuntimeError(f"The site did not become available at {base_url}.")
 
@@ -158,7 +168,15 @@ def _start_hugo_server(
     temporary_content: Path,
     cache_directory: Path,
 ) -> tuple[subprocess.Popen[bytes], str]:
-    """Start Hugo on a live unique port, retrying transient bind races."""
+    """Start a deterministic Hugo test server on an available local port.
+
+    Hugo's development server injects a LiveReload client by default. That
+    client is useful while editing, but a reconnect or rebuild can navigate a
+    browser page in the middle of a long Playwright assertion and erase the
+    DOM being inspected. Browser tests exercise the generated site, not this
+    development-only transport, so the server keeps file watching/building but
+    disables browser reload injection.
+    """
 
     for _attempt in range(10):
         port = _find_available_port()
@@ -177,6 +195,7 @@ def _start_hugo_server(
             "--cacheDir",
             str(cache_directory),
             "--disableFastRender",
+            "--disableLiveReload",
             "--noBuildLock",
             "--renderToMemory",
         ]
@@ -200,6 +219,65 @@ def _start_hugo_server(
     raise RuntimeError("Hugo could not acquire a live port after 10 attempts.")
 
 
+def _validate_hugo_build_once(
+    temporary_content: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Validate one disk build per pytest run, shared by every xdist worker.
+
+    Every worker needs its own live Hugo process because pytest may distribute
+    browser sessions arbitrarily, but the preflight disk build is immutable and
+    identical for all of them. Building it once avoids multiplying the complete
+    static tree by the worker count at peak usage while retaining the same Hugo
+    compilation check before any browser test starts.
+    """
+
+    worker_base = tmp_path_factory.getbasetemp()
+    shared_base = (
+        worker_base.parent
+        if os.environ.get("PYTEST_XDIST_WORKER")
+        else worker_base
+    )
+    coordination_directory = shared_base / "mutating-hugo-preflight"
+    coordination_directory.mkdir(exist_ok=True)
+    lock_path = coordination_directory / "build.lock"
+    success_marker = coordination_directory / "build.complete"
+
+    with lock_path.open("w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        if success_marker.exists():
+            return
+
+        build_destination = coordination_directory / "build"
+        cache_directory = coordination_directory / "cache"
+        try:
+            build = subprocess.run(
+                [
+                    "hugo",
+                    "--cleanDestinationDir",
+                    "--contentDir",
+                    str(temporary_content),
+                    "--destination",
+                    str(build_destination),
+                    "--cacheDir",
+                    str(cache_directory),
+                    "--noBuildLock",
+                ],
+                cwd=PROJECT_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            if build.returncode != 0:
+                output = build.stdout.decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"Hugo build failed before tests started:\n{output}"
+                )
+            success_marker.write_text("ok\n", encoding="utf-8")
+        finally:
+            shutil.rmtree(build_destination, ignore_errors=True)
+
+
 @pytest.fixture(scope="session")
 def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     """Build Hugo, run it on a temporary nonstandard port, then stop it."""
@@ -211,7 +289,6 @@ def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 
     temporary_root = tmp_path_factory.mktemp("mutating-hugo")
     temporary_content = temporary_root / "content"
-    build_destination = temporary_root / "build"
     cache_directory = temporary_root / "cache"
     shutil.copytree(PROJECT_ROOT / "content", temporary_content)
     for fixture_post in (
@@ -230,28 +307,9 @@ def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         )
     _write_paginated_tag_posts(temporary_content)
     _write_paginated_author_posts(temporary_content)
+    _write_author_archive(temporary_content, "test-robot-author")
 
-    build = subprocess.run(
-        [
-            "hugo",
-            "--cleanDestinationDir",
-            "--contentDir",
-            str(temporary_content),
-            "--destination",
-            str(build_destination),
-            "--cacheDir",
-            str(cache_directory),
-            "--noBuildLock",
-        ],
-        cwd=PROJECT_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
-    if build.returncode != 0:
-        output = build.stdout.decode("utf-8", errors="replace")
-        raise RuntimeError(f"Hugo build failed before tests started:\n{output}")
-    shutil.rmtree(build_destination)
+    _validate_hugo_build_once(temporary_content, tmp_path_factory)
 
     process, local_url = _start_hugo_server(
         temporary_content,
@@ -296,7 +354,11 @@ def driver(
         load_interactive_visuals: bool | None = None,
         animation_frame_interval_ms: float | None = None,
         controllable_animation_frames: bool = False,
+        initial_path: str = "",
+        wait_for_theme_ready: bool = True,
+        init_scripts: tuple[str, ...] = (),
     ) -> Page:
+        assert not initial_path or initial_path.startswith("/")
         storage_state = {"cookies": [], "origins": []}
 
         if stored_theme is not None:
@@ -320,6 +382,14 @@ def driver(
             device_scale_factor=device_scale_factor,
             reduced_motion=reduced_motion,
         )
+
+        # Context init scripts run before the first document's page scripts.
+        # Callers must provide self-contained scripts: Playwright does not
+        # define ordering between multiple context/page init scripts.
+        for script in init_scripts:
+            if not isinstance(script, str):
+                raise TypeError("init_scripts entries must be strings")
+            context.add_init_script(script)
 
         if not storage_available:
             context.add_init_script(
@@ -436,8 +506,11 @@ def driver(
 
         contexts.append(context)
         page = context.new_page()
-        page.goto(base_url, wait_until="domcontentloaded")
-        page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
+        page.goto(f"{base_url}{initial_path}", wait_until="domcontentloaded")
+        if wait_for_theme_ready:
+            page.locator(
+                'html[data-theme-ready="true"]'
+            ).wait_for(state="attached")
         return page
 
     yield create_driver

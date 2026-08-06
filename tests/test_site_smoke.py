@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageFilter, ImageStat
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Locator, Page, expect
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +49,52 @@ def test_home_page_renders_core_content(driver: DriverFactory) -> None:
         "href",
         "https://en.wikipedia.org/wiki/Tokamak",
     )
+
+
+def test_pillar_illustration_assets_preserve_transparent_alpha_channels() -> None:
+    """Keep every local pillar PNG transparent before browser integration.
+
+    The browser cases below validate theme selection, loading, containment, and
+    animation at six responsive states.  The underlying byte-level guarantees
+    are independent of all six states, however: each source must be RGBA, span
+    the full alpha range, and keep all four canvas corners transparent.  The
+    light-theme rotor additionally relies on a broad, low-alpha feathered
+    field.  Keeping these deterministic Pillow checks in one focused test
+    preserves every original assertion without reopening the same four files
+    before every browser context.
+    """
+
+    expected_asset_sources = [
+        "/pillar-verifiability-v1.png",
+        "/pillar-interpretability-v1.png",
+        "/pillar-testing-speed-rotor-v2.png",
+        "/pillar-testing-speed-rotor-v4.png",
+    ]
+
+    for source in expected_asset_sources:
+        with Image.open(THEME_STATIC_ROOT / source.removeprefix("/")) as image:
+            assert image.mode == "RGBA"
+            alpha = image.getchannel("A")
+            assert alpha.getextrema() == (0, 255)
+            assert all(
+                alpha.getpixel(corner) == 0
+                for corner in [
+                    (0, 0),
+                    (image.width - 1, 0),
+                    (0, image.height - 1),
+                    (image.width - 1, image.height - 1),
+                ]
+            )
+            if source == "/pillar-testing-speed-rotor-v4.png":
+                histogram = alpha.histogram()
+                partially_transparent_pixels = sum(histogram[1:255])
+                partial_values = [
+                    value
+                    for value, count in enumerate(histogram[1:255], start=1)
+                    for _ in range(count)
+                ]
+                assert partially_transparent_pixels > image.width * image.height * 0.25
+                assert partial_values[len(partial_values) // 2] <= 20
 
 
 @pytest.mark.parametrize(
@@ -594,11 +640,11 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_pantograph_handle_and_fasteners_match_hero_button_pink(
+def test_pantograph_controls_and_active_gradient_use_site_pink(
     driver: DriverFactory,
     theme: str,
 ) -> None:
-    """Keep every formerly coral detail synchronized with the site's pink.
+    """Keep every formerly coral control and gradient synchronized with pink.
 
     The supplied SVG used several subtly different coral source colors for
     the pantograph handle, joint screws, rail-mount screws, active drawing
@@ -612,6 +658,14 @@ def test_pantograph_handle_and_fasteners_match_hero_button_pink(
     in both themes. Restoring any original coral shade, missing an
     oscilloscope/card/control family, or letting the SVG drift from a future
     brand-color update makes the test fail.
+
+    The same mounted SVG also exposes the active-card gradient. Its highlight
+    must inherit the site's bright pink, its middle stop must exactly equal the
+    primary hero-button pink, and its shadow must remain a darker shade of the
+    same magenta hue. These assertions used to live in a second test with an
+    identical page and SVG setup. Keeping both independent DOM reads and every
+    original assertion here removes that duplicate browser load without
+    coupling either contract to animation timing or pixel antialiasing.
     """
 
     page = driver(stored_theme=theme, viewport=(1440, 900))
@@ -663,32 +717,7 @@ def test_pantograph_handle_and_fasteners_match_hero_button_pink(
         for control in palette["controls"]
     )
 
-
-@pytest.mark.parametrize("theme", ["light", "dark"])
-def test_pantograph_active_gradient_uses_site_pink_family(
-    driver: DriverFactory,
-    theme: str,
-) -> None:
-    """Prevent the active card gradient from reverting to coral-red stops.
-
-    The active oscilloscope circle is the largest saturated area in the
-    pantograph. Its original three-stop gradient used independent red-coral
-    literals, so recoloring only screws and strokes left a conspicuous
-    off-brand patch. This test reads the rendered stop colors in both themes:
-    the highlight must inherit the site's bright pink, the middle stop must
-    exactly equal the primary hero-button pink, and the shadow must remain a
-    darker shade of that same magenta hue. It deliberately avoids screenshot
-    pixels and animation timing, while still failing if any legacy gradient
-    stop becomes visible again.
-    """
-
-    page = driver(stored_theme=theme, viewport=(1440, 900))
-    embedded_svg = page.locator(
-        ".pantograph-visual__object #pantographArtwork"
-    )
-    expect(embedded_svg).to_have_count(1)
-
-    palette = embedded_svg.evaluate(
+    gradient_palette = embedded_svg.evaluate(
         """
         (svg) => {
           const stops = [...svg.querySelectorAll("#activePink stop")].map(
@@ -712,13 +741,13 @@ def test_pantograph_active_gradient_uses_site_pink_family(
         """
     )
 
-    assert len(palette["stops"]) == 3
-    assert palette["stops"][0] == palette["hotBright"]
-    assert palette["stops"][1] == palette["hot"]
-    assert palette["stops"][2] not in {
+    assert len(gradient_palette["stops"]) == 3
+    assert gradient_palette["stops"][0] == gradient_palette["hotBright"]
+    assert gradient_palette["stops"][1] == gradient_palette["hot"]
+    assert gradient_palette["stops"][2] not in {
         "rgb(245, 22, 89)",
-        palette["stops"][0],
-        palette["stops"][1],
+        gradient_palette["stops"][0],
+        gradient_palette["stops"][1],
     }
 
 
@@ -1418,20 +1447,15 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     """Render the three new pillar illustrations safely in every theme.
 
     Each What We Build card must use its intended local PNG rather than the old
-    text glyph or a temporary clipboard path. The PNGs must retain a real alpha
-    channel with transparent corners, load successfully in Chromium, and remain
-    fully contained by their cards on both desktop and phone layouts. Running
-    the same geometry checks in light and dark themes protects against a
-    theme-specific background, filter, or sizing rule that could reintroduce a
-    rectangular matte, crop an illustration, or let it cover the card copy.
+    text glyph or a temporary clipboard path. The assets must load successfully
+    in Chromium and remain fully contained by their cards on both desktop and
+    phone layouts. Running the same geometry checks in light and dark themes
+    protects against a theme-specific background, filter, or sizing rule that
+    could reintroduce a rectangular matte, crop an illustration, or let it
+    cover the card copy. Byte-level alpha integrity is checked once in the
+    adjacent pure asset test because it cannot vary by browser state.
     """
 
-    expected_asset_sources = [
-        "/pillar-verifiability-v1.png",
-        "/pillar-interpretability-v1.png",
-        "/pillar-testing-speed-rotor-v2.png",
-        "/pillar-testing-speed-rotor-v4.png",
-    ]
     expected_visible_sources = [
         "/pillar-verifiability-v1.png",
         "/pillar-interpretability-v1.png",
@@ -1441,31 +1465,6 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
             else "/pillar-testing-speed-rotor-v2.png"
         ),
     ]
-
-    for source in expected_asset_sources:
-        with Image.open(THEME_STATIC_ROOT / source.removeprefix("/")) as image:
-            assert image.mode == "RGBA"
-            alpha = image.getchannel("A")
-            assert alpha.getextrema() == (0, 255)
-            assert all(
-                alpha.getpixel(corner) == 0
-                for corner in [
-                    (0, 0),
-                    (image.width - 1, 0),
-                    (0, image.height - 1),
-                    (image.width - 1, image.height - 1),
-                ]
-            )
-            if source == "/pillar-testing-speed-rotor-v4.png":
-                histogram = alpha.histogram()
-                partially_transparent_pixels = sum(histogram[1:255])
-                partial_values = [
-                    value
-                    for value, count in enumerate(histogram[1:255], start=1)
-                    for _ in range(count)
-                ]
-                assert partially_transparent_pixels > image.width * image.height * 0.25
-                assert partial_values[len(partial_values) // 2] <= 20
 
     page = driver(
         stored_theme=theme,
@@ -1767,6 +1766,73 @@ def test_mobile_pantograph_has_reduced_symmetric_visible_spacing(
     assert max(geometry["topGap"], geometry["bottomGap"]) <= maximum_gap
 
 
+def _finish_coexistence_flip(
+    inner: Locator,
+    *,
+    expected_flipped: bool,
+) -> None:
+    """Finish the real card transition without waiting 800 ms of wall time.
+
+    The flip contract includes a single 720 ms CSS ``transform`` transition.
+    Finishing that exact Web Animation preserves the transition's existence,
+    property, timing, direction, and end-state checks while making the test
+    deterministic.  Strict validation prevents this shortcut from hiding a
+    missing, paused, delayed, slowed, or unrelated animation.
+    """
+
+    inner.evaluate(
+        """
+        async (element, expectedFlipped) => {
+          const animations = element.getAnimations();
+          if (animations.length !== 1) {
+            throw new Error(
+              `Expected one card transition, got ${animations.length}`,
+            );
+          }
+
+          const transition = animations[0];
+          if (
+            !(transition instanceof CSSTransition) ||
+            transition.transitionProperty !== "transform"
+          ) {
+            throw new Error("Expected one CSS transform transition");
+          }
+
+          const timing = transition.effect?.getTiming();
+          if (
+            Number(timing?.duration) !== 720 ||
+            Number(timing?.delay) !== 0
+          ) {
+            throw new Error(
+              `Unexpected flip timing: ${String(timing?.duration)}ms, ` +
+              `${String(timing?.delay)}ms delay`,
+            );
+          }
+          if (
+            transition.playState !== "running" ||
+            transition.playbackRate !== 1
+          ) {
+            throw new Error(
+              `Unexpected flip state: ${transition.playState} at ` +
+              `${transition.playbackRate}x`,
+            );
+          }
+
+          const finished = transition.finished;
+          transition.finish();
+          await finished;
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+
+          const transform = getComputedStyle(element).transform;
+          if ((transform !== "none") !== expectedFlipped) {
+            throw new Error(`Unexpected completed transform: ${transform}`);
+          }
+        }
+        """,
+        expected_flipped,
+    )
+
+
 def test_coexistence_card_flips_to_an_identical_reversed_face(
     driver: DriverFactory,
 ) -> None:
@@ -1830,14 +1896,15 @@ def test_coexistence_card_flips_to_an_identical_reversed_face(
     assert front["caption"] == "SHARED GROUND: EVIDENCE"
     assert front["transitionDuration"] == "0.72s"
 
+    inner = page.locator(".coexistence__pair-inner")
     card.click()
+    _finish_coexistence_flip(inner, expected_flipped=True)
     reversed_card = page.get_by_role(
         "button",
         name="ROBOT and HUMAN. Flip to place HUMAN first.",
         exact=True,
     )
     expect(reversed_card).to_have_attribute("aria-pressed", "true")
-    page.wait_for_timeout(800)
     back = reversed_card.evaluate(read_card)
 
     assert back["words"] == ["ROBOT", "HUMAN"]
@@ -1849,13 +1916,13 @@ def test_coexistence_card_flips_to_an_identical_reversed_face(
     assert back["innerTransform"] != "none"
 
     reversed_card.click()
+    _finish_coexistence_flip(inner, expected_flipped=False)
     original_card = page.get_by_role(
         "button",
         name="HUMAN and ROBOT. Flip to place ROBOT first.",
         exact=True,
     )
     expect(original_card).to_have_attribute("aria-pressed", "false")
-    page.wait_for_timeout(800)
     restored = original_card.evaluate(read_card)
 
     assert restored["words"] == front["words"]
@@ -1865,14 +1932,8 @@ def test_coexistence_card_flips_to_an_identical_reversed_face(
     assert restored["innerTransform"] == "none"
 
 
-@pytest.mark.parametrize(
-    "viewport",
-    [(800, 1000), (580, 900), (390, 844), (280, 700)],
-    ids=["single-column", "mobile-wide", "phone", "minimum"],
-)
 def test_mobile_feedback_quote_follows_the_animated_diagram(
     driver: DriverFactory,
-    viewport: tuple[int, int],
 ) -> None:
     """Place the feedback quote after the diagram only in narrow layouts.
 
@@ -1894,72 +1955,95 @@ def test_mobile_feedback_quote_follows_the_animated_diagram(
     composition from these mobile-only rules.
     """
 
-    page = driver(stored_theme="light", viewport=viewport)
-    layout = page.locator("#feedback").evaluate(
-        """
-        (section) => {
-          const copy = section.querySelector(".feedback__copy");
-          const index = copy.querySelector(".section-index");
-          const heading = copy.querySelector("h2");
-          const paragraphs = [
-            ...copy.querySelectorAll(":scope > p:not(.section-index)"),
-          ];
-          const visual = section.querySelector(".feedback__visual");
-          const quote = copy.querySelector("blockquote");
-          const rect = (element) => {
-            const bounds = element.getBoundingClientRect();
-            return {top: bounds.top, bottom: bounds.bottom};
-          };
+    viewports = [(800, 1000), (580, 900), (390, 844), (280, 700)]
+    page = driver(stored_theme="light", viewport=viewports[0])
+    page.evaluate("() => document.fonts.ready")
 
-          return {
-            copyDisplay: getComputedStyle(copy).display,
-            gridColumns: getComputedStyle(section).gridTemplateColumns,
-            orders: {
-              index: getComputedStyle(index).order,
-              heading: getComputedStyle(heading).order,
-              firstParagraph: getComputedStyle(paragraphs[0]).order,
-              secondParagraph: getComputedStyle(paragraphs[1]).order,
-              visual: getComputedStyle(visual).order,
-              quote: getComputedStyle(quote).order,
-            },
-            index: rect(index),
-            heading: rect(heading),
-            firstParagraph: rect(paragraphs[0]),
-            secondParagraph: rect(paragraphs[1]),
-            visual: rect(visual),
-            quote: rect(quote),
-          };
-        }
-        """
-    )
+    def resize_and_settle(viewport: tuple[int, int]) -> None:
+        width, height = viewport
+        page.set_viewport_size({"width": width, "height": height})
+        page.wait_for_function(
+            "size => innerWidth === size.width && innerHeight === size.height",
+            arg={"width": width, "height": height},
+        )
+        page.evaluate(
+            """
+            () => new Promise((resolve) => requestAnimationFrame(
+              () => requestAnimationFrame(resolve),
+            ))
+            """
+        )
 
-    assert layout["copyDisplay"] == "contents"
-    assert len(layout["gridColumns"].split(" ")) == 1
-    assert layout["orders"] == {
-        "index": "1",
-        "heading": "2",
-        "firstParagraph": "3",
-        "secondParagraph": "4",
-        "visual": "5",
-        "quote": "6",
-    }
-    sequence = [
-        layout["index"],
-        layout["heading"],
-        layout["firstParagraph"],
-        layout["secondParagraph"],
-        layout["visual"],
-        layout["quote"],
-    ]
-    for current, following in zip(
-        sequence[:-1],
-        sequence[1:],
-        strict=True,
-    ):
-        assert current["bottom"] <= following["top"]
+    def read_mobile_layout() -> dict[str, object]:
+        return page.locator("#feedback").evaluate(
+            """
+            (section) => {
+              const copy = section.querySelector(".feedback__copy");
+              const index = copy.querySelector(".section-index");
+              const heading = copy.querySelector("h2");
+              const paragraphs = [
+                ...copy.querySelectorAll(":scope > p:not(.section-index)"),
+              ];
+              const visual = section.querySelector(".feedback__visual");
+              const quote = copy.querySelector("blockquote");
+              const rect = (element) => {
+                const bounds = element.getBoundingClientRect();
+                return {top: bounds.top, bottom: bounds.bottom};
+              };
 
-    desktop = driver(stored_theme="light", viewport=(1440, 900))
-    desktop_layout = desktop.locator("#feedback").evaluate(
+              return {
+                copyDisplay: getComputedStyle(copy).display,
+                gridColumns: getComputedStyle(section).gridTemplateColumns,
+                orders: {
+                  index: getComputedStyle(index).order,
+                  heading: getComputedStyle(heading).order,
+                  firstParagraph: getComputedStyle(paragraphs[0]).order,
+                  secondParagraph: getComputedStyle(paragraphs[1]).order,
+                  visual: getComputedStyle(visual).order,
+                  quote: getComputedStyle(quote).order,
+                },
+                index: rect(index),
+                heading: rect(heading),
+                firstParagraph: rect(paragraphs[0]),
+                secondParagraph: rect(paragraphs[1]),
+                visual: rect(visual),
+                quote: rect(quote),
+              };
+            }
+            """
+        )
+
+    for viewport in viewports:
+        resize_and_settle(viewport)
+        layout = read_mobile_layout()
+        diagnostic = f"feedback layout at {viewport[0]}x{viewport[1]}"
+        assert layout["copyDisplay"] == "contents", diagnostic
+        assert len(str(layout["gridColumns"]).split(" ")) == 1, diagnostic
+        assert layout["orders"] == {
+            "index": "1",
+            "heading": "2",
+            "firstParagraph": "3",
+            "secondParagraph": "4",
+            "visual": "5",
+            "quote": "6",
+        }, diagnostic
+        sequence = [
+            layout["index"],
+            layout["heading"],
+            layout["firstParagraph"],
+            layout["secondParagraph"],
+            layout["visual"],
+            layout["quote"],
+        ]
+        for current, following in zip(
+            sequence[:-1],
+            sequence[1:],
+            strict=True,
+        ):
+            assert current["bottom"] <= following["top"], diagnostic
+
+    resize_and_settle((1440, 900))
+    desktop_layout = page.locator("#feedback").evaluate(
         """
         (section) => {
           const copy = section.querySelector(".feedback__copy");
@@ -1976,9 +2060,11 @@ def test_mobile_feedback_quote_follows_the_animated_diagram(
         }
         """
     )
-    assert desktop_layout["copyDisplay"] != "contents"
-    assert desktop_layout["columnCount"] == 2
-    assert desktop_layout["visualRight"] < desktop_layout["copyLeft"]
+    assert desktop_layout["copyDisplay"] != "contents", "desktop feedback"
+    assert desktop_layout["columnCount"] == 2, "desktop feedback"
+    assert desktop_layout["visualRight"] < desktop_layout["copyLeft"], (
+        "desktop feedback"
+    )
 
 
 def test_feedback_orbits_share_one_continuous_rotation_and_centered_cards(
@@ -2256,6 +2342,47 @@ def test_feedback_geometry_uses_two_dashed_rings_and_one_shared_middle_orbit(
     assert "A 39 39" in geometry["arrows"][0]["shaft"]
 
 
+def _alpha_composite_difference_mean(
+    first: Image.Image,
+    second: Image.Image,
+    background_color: tuple[int, int, int, int],
+) -> tuple[float, float, float]:
+    """Return full-canvas RGB means while processing only alpha support.
+
+    Outside the union of both alpha channels, compositing either image over the
+    same opaque background produces identical pixels.  The cropped difference
+    therefore has the full numerator, while division by the uncropped canvas
+    area preserves ImageStat's original full-image denominator exactly.
+    """
+
+    alpha_union = ImageChops.lighter(
+        first.getchannel("A"),
+        second.getchannel("A"),
+    ).getbbox()
+    if alpha_union is None:
+        return (0.0, 0.0, 0.0)
+
+    crop_size = (
+        alpha_union[2] - alpha_union[0],
+        alpha_union[3] - alpha_union[1],
+    )
+    background = Image.new("RGBA", crop_size, background_color)
+    first_composite = Image.alpha_composite(
+        background,
+        first.crop(alpha_union),
+    ).convert("RGB")
+    second_composite = Image.alpha_composite(
+        background,
+        second.crop(alpha_union),
+    ).convert("RGB")
+    difference = ImageChops.difference(first_composite, second_composite)
+    full_pixel_count = first.width * first.height
+    return tuple(
+        channel_sum / full_pixel_count
+        for channel_sum in ImageStat.Stat(difference).sum
+    )
+
+
 def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     driver: DriverFactory,
 ) -> None:
@@ -2317,14 +2444,25 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
             for coordinate in original.getchannel("A").getbbox()
         )
         upscaled_alpha = upscaled.getchannel("A")
-        opaque_alpha_core = upscaled_alpha.point(
+        alpha_bbox = upscaled_alpha.getbbox()
+        assert alpha_bbox is not None
+        filter_radius = 13 // 2
+        padded_alpha_bbox = (
+            max(0, alpha_bbox[0] - filter_radius),
+            max(0, alpha_bbox[1] - filter_radius),
+            min(upscaled.width, alpha_bbox[2] + filter_radius),
+            min(upscaled.height, alpha_bbox[3] + filter_radius),
+        )
+        supported_alpha = upscaled_alpha.crop(padded_alpha_bbox)
+        opaque_alpha_core = supported_alpha.point(
             lambda value: 255 if value >= 64 else 0,
         )
+        # Nonzero 13x13 box support equals MaxFilter(13) on this binary mask.
         valid_antialias_neighborhood = opaque_alpha_core.filter(
-            ImageFilter.MaxFilter(13),
-        )
+            ImageFilter.BoxBlur(filter_radius),
+        ).point(lambda value: 255 if value else 0)
         isolated_alpha = ImageChops.multiply(
-            upscaled_alpha,
+            supported_alpha,
             ImageChops.invert(valid_antialias_neighborhood),
         )
         assert isolated_alpha.getbbox() is None
@@ -2342,45 +2480,21 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
             (9, 6, 8, 255),
             (255, 250, 251, 255),
         ):
-            background = Image.new(
-                "RGBA",
-                original.size,
-                background_color,
-            )
-            original_composite = Image.alpha_composite(
-                background,
+            difference_mean = _alpha_composite_difference_mean(
                 original,
-            ).convert("RGB")
-            normalized_composite = Image.alpha_composite(
-                background,
                 standard,
-            ).convert("RGB")
-            difference = ImageChops.difference(
-                original_composite,
-                normalized_composite,
-            )
-            assert max(ImageStat.Stat(difference).mean) < 1.1
-
-            high_density_background = Image.new(
-                "RGBA",
-                upscaled.size,
                 background_color,
             )
-            upscaled_composite = Image.alpha_composite(
-                high_density_background,
-                upscaled,
-            ).convert("RGB")
-            naive_composite = Image.alpha_composite(
-                high_density_background,
-                naive_upscale,
-            ).convert("RGB")
-            reconstruction_difference = ImageChops.difference(
-                upscaled_composite,
-                naive_composite,
+            assert max(difference_mean) < 1.1
+
+            reconstruction_difference_mean = (
+                _alpha_composite_difference_mean(
+                    upscaled,
+                    naive_upscale,
+                    background_color,
+                )
             )
-            assert min(
-                ImageStat.Stat(reconstruction_difference).mean
-            ) > 0.8
+            assert min(reconstruction_difference_mean) > 0.8
 
     page = driver(
         stored_theme="dark",
@@ -2463,6 +2577,147 @@ def test_tentacle_iframe_revision_matches_its_current_file_contents() -> None:
         f'/muta-tentacles.html?v={revision}&amp;embedded=1"'
         in page_source
     )
+
+
+def test_contact_text_is_selectable_without_disabling_tentacle_hover(
+    driver: DriverFactory,
+) -> None:
+    """Separate passive copy interaction from active tentacle input.
+
+    The tentacle iframe deliberately owns the contact surface so mouse presses
+    can attract or repel its simulation. On a touch screen that same layer must
+    not sit above the heading and paragraph: a gesture starting directly on
+    their letters needs to remain a normal page gesture, and their text needs
+    to be selectable. The narrow inline wrappers therefore expose only the
+    rendered text fragments, opt those fragments into selection, and leave the
+    rest of the card to the iframe.
+
+    This regression replaces the expensive WebGL child with a same-origin
+    message recorder, proves hit testing distinguishes a heading fragment from
+    untouched background, and checks the heading's vertical-pan contract. It
+    then moves a real pointer over the heading and requires a normalized
+    passive-hover message in the child—so making the copy selectable cannot
+    freeze the tentacles. Finally it performs a real mouse drag across the first
+    rendered line and requires a non-empty browser selection. Expanding the
+    protected area to the whole copy panel, disabling the iframe globally,
+    forwarding an active press, or reverting to unselectable text makes one of
+    these independent assertions fail.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    contact = page.locator(".contact")
+    frame = page.locator(".contact__tentacles")
+    heading_text = page.locator(".contact h2 > .contact__selectable-text")
+
+    contact.evaluate(
+        "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
+    )
+    frame.evaluate(
+        r"""
+        element => {
+          element.srcdoc = `<!doctype html><html><body><script>
+            window.receivedHostMessages = [];
+            window.receivedPointerDowns = 0;
+            addEventListener("message", event => {
+              window.receivedHostMessages.push(event.data);
+            });
+            addEventListener("pointerdown", () => {
+              window.receivedPointerDowns += 1;
+            });
+          <\/script></body></html>`;
+        }
+        """
+    )
+    page.frame_locator(".contact__tentacles").locator("body").wait_for(
+        state="attached"
+    )
+    expect(heading_text).to_be_visible()
+
+    hit_contract = page.evaluate(
+        """
+        () => {
+          const contact = document.querySelector(".contact");
+          const frame = document.querySelector(".contact__tentacles");
+          const heading = document.querySelector(".contact h2");
+          const text = heading.querySelector(".contact__selectable-text");
+          const textRect = text.getClientRects()[0];
+          const frameRect = frame.getBoundingClientRect();
+          const textHit = document.elementFromPoint(
+            textRect.left + Math.min(8, textRect.width / 2),
+            textRect.top + textRect.height / 2,
+          );
+          const surfaceHit = document.elementFromPoint(
+            frameRect.right - 48,
+            frameRect.bottom - 48,
+          );
+          return {
+            contactContainsFrame: contact.contains(frame),
+            iframeOwnsFreeSurface: surfaceHit === frame,
+            iframePointerEvents: getComputedStyle(frame).pointerEvents,
+            headingTouchAction: getComputedStyle(heading).touchAction,
+            textOwnsItsLetters: textHit === text,
+            textPointerEvents: getComputedStyle(text).pointerEvents,
+            textUserSelect: getComputedStyle(text).userSelect,
+            firstLine: {
+              x: textRect.x,
+              y: textRect.y,
+              width: textRect.width,
+              height: textRect.height,
+            },
+          };
+        }
+        """
+    )
+    first_line = hit_contract.pop("firstLine")
+    assert hit_contract == {
+        "contactContainsFrame": True,
+        "iframeOwnsFreeSurface": True,
+        "iframePointerEvents": "auto",
+        "headingTouchAction": "pan-y",
+        "textOwnsItsLetters": True,
+        "textPointerEvents": "auto",
+        "textUserSelect": "text",
+    }
+
+    pointer_x = first_line["x"] + min(12, first_line["width"] / 2)
+    pointer_y = first_line["y"] + first_line["height"] / 2
+    page.mouse.move(pointer_x, pointer_y)
+    relayed_hover = page.wait_for_function(
+        """
+        () => {
+          const messages =
+            document.querySelector(".contact__tentacles")
+              .contentWindow.receivedHostMessages || [];
+          return messages.find(
+            message => message?.type === "muta-tentacles-pointer-hover" &&
+              message.inside === true,
+          ) || false;
+        }
+        """
+    ).json_value()
+    assert 0 <= relayed_hover["x"] <= 1
+    assert 0 <= relayed_hover["y"] <= 1
+
+    page.mouse.down(button="left")
+    pointer_downs = frame.evaluate(
+        "element => element.contentWindow.receivedPointerDowns"
+    )
+    page.mouse.up(button="left")
+    assert pointer_downs == 0
+
+    page.mouse.move(
+        first_line["x"] + first_line["width"] - 4,
+        pointer_y,
+    )
+    page.mouse.down(button="left")
+    page.mouse.move(first_line["x"] + 4, pointer_y, steps=8)
+    page.mouse.up(button="left")
+    selected_text = page.evaluate("() => getSelection().toString()")
+    assert len(selected_text.strip()) >= 3
 
 
 def test_ticker_selection_inverts_only_its_own_colors(
@@ -2681,6 +2936,41 @@ def test_header_is_english_only_without_a_language_control(
         == 1
     )
     assert header.locator(".mobile-menu").count() == 1
+
+
+def test_mobile_menu_closes_after_clicking_outside_it(
+    driver: DriverFactory,
+) -> None:
+    """Close the responsive navigation after a real pointer click elsewhere.
+
+    The compact header uses a native ``details`` element, whose open state is
+    not dismissed by the browser when the visitor clicks outside it. This
+    regression opens that control at phone width, proves its navigation is
+    visible, and then performs an ordinary Playwright click on the hero copy—a
+    page element outside the menu. Both the boolean ``open`` property and the
+    rendered dropdown must be cleared. Removing the document-level outside
+    click behavior while leaving link-click closing intact therefore still
+    makes this test fail.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    menu = page.locator(".mobile-menu")
+    navigation = menu.get_by_role("navigation", name="Mobile navigation")
+
+    menu.locator("summary").click()
+    assert menu.evaluate("(element) => element.open") is True
+    expect(navigation).to_be_visible()
+
+    hero_copy = page.locator(".hero__lede")
+    expect(hero_copy).to_be_visible()
+    hero_copy.click(position={"x": 4, "y": 4})
+
+    assert menu.evaluate("(element) => element.open") is False
+    expect(navigation).to_be_hidden()
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -3931,6 +4221,13 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
     translation, or the eye's relayed-event listener makes the pupil remain
     stationary and causes this test to fail.
 
+    The child uses its existing manual-frame diagnostic mode here because this
+    contract ends at the real pointer event and cross-document message; the
+    header eye still advances on the parent's native animation frames.  Waiting
+    atomically for the final aspect document and runtime handshake prevents the
+    iframe's unrelated continuous WebGL loop from dominating the relay test
+    without replacing any event, message, or pupil-motion assertion.
+
     The assertions compare direction and relative movement rather than exact
     frame timings, so GPU speed, display refresh rate, and WebGL rendering cost
     cannot change the expected result.
@@ -3941,11 +4238,38 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
         viewport=viewport,
     )
     frame = page.locator(".contact__tentacles")
-    canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    expect(frame).to_be_attached(timeout=30_000)
+    frame.evaluate(
+        """
+        (element) => {
+          const source = new URL(element.src);
+          source.searchParams.set("manual-animation-frame", "1");
+          element.src = source.href;
+        }
+        """
+    )
 
     frame.evaluate(
         "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
     )
+    page.wait_for_function(
+        """
+        (selector) => {
+          const child = document.querySelector(selector)?.contentWindow;
+          const canvas = child?.document?.querySelector("#muta");
+          if (!child || !canvas) return false;
+          const source = new URL(child.location.href);
+          return source.searchParams.get("manual-animation-frame") === "1" &&
+            typeof child.__mutaTentaclesDebugFrameAfter === "function" &&
+            canvas.dataset.aspectReady === "true" &&
+            canvas.dataset.aspectReloading === "false" &&
+            canvas.dataset.runtimeVisible === "true";
+        }
+        """,
+        arg=".contact__tentacles",
+        timeout=30_000,
+    )
+    canvas = page.frame_locator(".contact__tentacles").locator("#muta")
     expect(canvas).to_be_visible()
 
     def move_tentacle_pointer(normalized_x: float) -> None:

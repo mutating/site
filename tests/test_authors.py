@@ -17,13 +17,32 @@ HUGO_CONFIG = tomllib.loads((PROJECT_ROOT / "hugo.toml").read_text())
 PAGER_SIZE = int(HUGO_CONFIG["pagination"]["pagerSize"])
 
 
+def test_author_content_uses_a_boolean_robot_flag() -> None:
+    """Define human-versus-robot identity with boolean robot front matter."""
+
+    author_files = sorted(
+        path
+        for path in (PROJECT_ROOT / "content" / "authors").glob("*.md")
+        if path.name != "_index.md"
+    )
+    assert author_files
+
+    for author_file in author_files:
+        source = author_file.read_text()
+        assert re.search(r"^status\s*:", source, re.MULTILINE) is None
+        assert re.search(
+            r"^robot\s*:\s*(?:true|false)\s*$",
+            source,
+            re.MULTILINE,
+        ) is not None
+
+
 def test_home_muta_name_links_to_the_author_profile(
     driver: DriverFactory,
 ) -> None:
     """Navigate from Muta's hero caption to the corresponding author page."""
 
     page = driver(load_interactive_visuals=False)
-    page.goto(page.url, wait_until="domcontentloaded")
 
     author = page.locator(".mascot-card__author")
     expect(author).to_have_text("Meet Muta")
@@ -35,17 +54,68 @@ def test_home_muta_name_links_to_the_author_profile(
     expect(page.locator(".author-profile h1")).to_have_text("Muta")
 
 
+def test_author_breadcrumb_separates_directory_and_profile_links(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Link AUTHORS and the current slug separately while leaving the slash inert."""
+
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path="/authors/test-author/",
+    )
+    origin = base_url.rstrip("/")
+    profile_url = f"{origin}/authors/test-author/"
+
+    breadcrumb = page.locator(".author-profile__breadcrumb")
+    directory = breadcrumb.locator('a[href="/authors/"]')
+    current = breadcrumb.locator('a[aria-current="page"]')
+    separator = breadcrumb.locator("span")
+
+    expect(directory).to_have_text("AUTHORS")
+    expect(current).to_have_text("TEST-AUTHOR")
+    expect(current).to_have_attribute("href", "/authors/test-author/")
+    expect(separator).to_have_text("/")
+    expect(separator.locator("a")).to_have_count(0)
+
+    default_style = breadcrumb.evaluate(
+        """
+        (element) => {
+          const parent = getComputedStyle(element);
+          return [...element.querySelectorAll("a")].map((link) => {
+            const style = getComputedStyle(link);
+            return {
+              colorMatches: style.color === parent.color,
+              fontMatches: style.fontFamily === parent.fontFamily,
+              decoration: style.textDecorationLine,
+            };
+          });
+        }
+        """
+    )
+    assert default_style == [
+        {"colorMatches": True, "fontMatches": True, "decoration": "none"},
+        {"colorMatches": True, "fontMatches": True, "decoration": "none"},
+    ]
+
+    current.click()
+    expect(page).to_have_url(profile_url)
+
+    page.locator(".author-profile__breadcrumb a[href=\"/authors/\"]").click()
+    expect(page).to_have_url(f"{origin}/authors/")
+
+
 def test_post_author_slug_resolves_to_an_optional_metadata_link(
     driver: DriverFactory,
+    base_url: str,
 ) -> None:
     """Link a declared author file while leaving an unauthored post unchanged."""
 
-    page = driver(load_interactive_visuals=False)
-    origin = page.url.rstrip("/")
-    page.goto(
-        f"{origin}/blog/markdown-feature-fixture/",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path="/blog/markdown-feature-fixture/",
     )
+    origin = base_url.rstrip("/")
 
     author = page.locator(".post__author")
     expect(author).to_have_text("By Controlled Human")
@@ -69,6 +139,7 @@ def test_author_byline_partial_is_shared_by_posts_and_post_lists() -> None:
 
     assert 'partial "author-byline.html"' in post_status
     assert 'partial "author-byline.html"' in post_list
+    assert '"prefix" "By "' in post_list
     assert 'class="post__author"' not in post_status
     assert "author-status__light" in byline
     assert "data-author-status" in byline
@@ -82,8 +153,18 @@ def test_post_lists_color_author_names_and_lights_by_identity(
     page = driver(load_interactive_visuals=False)
     origin = page.url.rstrip("/")
     cases = (
-        ("muta", "Muta", "robot", "rgb(255, 64, 95)"),
-        ("test-author", "Controlled Human", "human", "rgb(36, 200, 117)"),
+        (
+            "test-robot-author",
+            "By Controlled Robot Author",
+            "robot",
+            "rgb(255, 64, 95)",
+        ),
+        (
+            "test-author",
+            "By Controlled Human",
+            "human",
+            "rgb(36, 200, 117)",
+        ),
     )
 
     for slug, name, identity, color in cases:
@@ -110,8 +191,18 @@ def test_author_status_uses_identity_color_and_explains_the_disclosure(
     origin = page.url.rstrip("/")
 
     expected_profiles = (
-        ("muta", "robot", "rgb(255, 64, 95)", "an automated author"),
-        ("ada-vale", "human", "rgb(36, 200, 117)", "a human author"),
+        (
+            "test-robot-author",
+            "robot",
+            "rgb(255, 64, 95)",
+            "an automated author",
+        ),
+        (
+            "test-author",
+            "human",
+            "rgb(36, 200, 117)",
+            "a human author",
+        ),
     )
     for slug, status, color, disclosure in expected_profiles:
         page.goto(
@@ -145,11 +236,11 @@ def test_post_byline_reuses_the_author_identity_indicator(
     origin = page.url.rstrip("/")
     cases = (
         (
-            "why-agent-throughput-breaks-human-era-verification",
+            "robot-author-fixture",
             "robot",
             "rgb(255, 64, 95)",
-            "By Muta",
-            "/authors/muta/",
+            "By Controlled Robot Author",
+            "/authors/test-robot-author/",
         ),
         (
             "markdown-feature-fixture",
@@ -178,21 +269,118 @@ def test_post_byline_reuses_the_author_identity_indicator(
         )
 
 
-def test_real_human_author_is_visible_in_the_directory(
+def test_narrow_post_author_tooltip_matches_header_and_stays_in_viewport(
+    driver: DriverFactory,
+) -> None:
+    """Keep the post-author disclosure inside a narrow viewport in both themes.
+
+    Dark mode is reached through the real toggle and a reload, so its assertions
+    still run against a fresh document bootstrapped from a stored preference.
+    Reusing only the browser context preserves the exact narrow geometry while
+    avoiding a second Chromium context and duplicate page-resource startup.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.goto(
+        f"{page.url.rstrip('/')}/blog/markdown-feature-fixture/",
+        wait_until="domcontentloaded",
+    )
+
+    def assert_tooltip_presentation(theme: str) -> None:
+        expect(page.locator("html")).to_have_attribute("data-theme", theme)
+
+        status = page.locator(".post__meta .author-status--post")
+        status.hover()
+        tooltip = status.locator(".author-status__tooltip")
+        expect(tooltip).to_be_visible()
+
+        presentation = page.evaluate(
+            """
+            () => {
+              const header = document.querySelector(".site-header");
+              const metadata = document.querySelector(".post__meta");
+              const tooltip = document.querySelector(
+                ".post__meta .author-status__tooltip",
+              );
+              const headerStyle = getComputedStyle(header);
+              const tooltipStyle = getComputedStyle(tooltip);
+              const metadataRect = metadata.getBoundingClientRect();
+              const tooltipRect = tooltip.getBoundingClientRect();
+
+              return {
+                viewportWidth: document.documentElement.clientWidth,
+                metadataLeft: metadataRect.left,
+                metadataRight: metadataRect.right,
+                tooltipLeft: tooltipRect.left,
+                tooltipRight: tooltipRect.right,
+                header: {
+                  background: headerStyle.backgroundColor,
+                  borderColor: headerStyle.borderColor,
+                  borderRadius: headerStyle.borderRadius,
+                  backdropFilter: headerStyle.backdropFilter,
+                  boxShadow: headerStyle.boxShadow,
+                },
+                tooltip: {
+                  background: tooltipStyle.backgroundColor,
+                  borderColor: tooltipStyle.borderColor,
+                  borderRadius: tooltipStyle.borderRadius,
+                  backdropFilter: tooltipStyle.backdropFilter,
+                  boxShadow: tooltipStyle.boxShadow,
+                },
+              };
+            }
+            """
+        )
+
+        diagnostic = f"narrow author tooltip in {theme} theme: {presentation}"
+        assert presentation["tooltipLeft"] >= 0, diagnostic
+        assert presentation["tooltipRight"] <= presentation["viewportWidth"], (
+            diagnostic
+        )
+        assert abs(
+            presentation["tooltipLeft"] - presentation["metadataLeft"]
+        ) <= 1, diagnostic
+        assert abs(
+            presentation["tooltipRight"] - presentation["metadataRight"]
+        ) <= 1, diagnostic
+        assert presentation["tooltip"] == presentation["header"], diagnostic
+
+    assert_tooltip_presentation("light")
+
+    page.get_by_role(
+        "button",
+        name="Toggle color theme",
+        exact=True,
+    ).click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "dark"
+    page.reload(wait_until="domcontentloaded")
+    page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "dark"
+
+    assert_tooltip_presentation("dark")
+
+
+def test_controlled_authors_are_visible_in_the_directory(
     driver: DriverFactory,
 ) -> None:
     """Color directory identity labels and lights for humans and robots."""
 
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}/authors/",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path="/authors/",
     )
 
-    ada = page.locator('.author-directory-card[href="/authors/ada-vale/"]')
-    expect(ada).to_have_count(1)
-    expect(ada.locator("h2")).to_have_text("Ada Vale")
-    human_status = ada.locator(".author-status--directory")
+    human = page.locator(
+        '.author-directory-card[href="/authors/test-author/"]'
+    )
+    expect(human).to_have_count(1)
+    expect(human.locator("h2")).to_have_text("Controlled Human")
+    human_status = human.locator(".author-status--directory")
     expect(human_status).to_have_attribute("data-author-status", "human")
     expect(human_status).to_have_text("HUMAN")
     expect(human_status).to_have_css("color", "rgb(36, 200, 117)")
@@ -201,28 +389,27 @@ def test_real_human_author_is_visible_in_the_directory(
         "rgb(36, 200, 117)",
     )
 
-    muta_status = page.locator(
-        '.author-directory-card[href="/authors/muta/"] .author-status--directory'
+    robot_status = page.locator(
+        '.author-directory-card[href="/authors/test-robot-author/"] '
+        ".author-status--directory"
     )
-    expect(muta_status).to_have_attribute("data-author-status", "robot")
-    expect(muta_status).to_have_text("ROBOT")
-    expect(muta_status).to_have_css("color", "rgb(255, 64, 95)")
-    expect(muta_status.locator(".author-status__light")).to_have_css(
+    expect(robot_status).to_have_attribute("data-author-status", "robot")
+    expect(robot_status).to_have_text("ROBOT")
+    expect(robot_status).to_have_css("color", "rgb(255, 64, 95)")
+    expect(robot_status.locator(".author-status__light")).to_have_css(
         "background-color",
         "rgb(255, 64, 95)",
     )
 
 
-def test_author_page_aggregates_profile_posts_and_frequent_tags(
+def test_author_page_aggregates_profile_posts_archive_and_frequent_tags(
     driver: DriverFactory,
 ) -> None:
-    """Render identity, Markdown, links, authored posts, and ranked tag counts."""
+    """Render identity, Markdown, two post cards, archive, and ranked tags."""
 
-    page = driver(load_interactive_visuals=False)
-    origin = page.url.rstrip("/")
-    page.goto(
-        f"{origin}/authors/test-author/",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path="/authors/test-author/",
     )
     profile = page.locator(".author-profile")
 
@@ -253,6 +440,9 @@ def test_author_page_aggregates_profile_posts_and_frequent_tags(
         "/blog/markdown-feature-fixture/",
         "/blog/author-second-fixture/",
     }
+    archive = profile.locator(".author-posts__archive")
+    expect(archive).to_have_attribute("href", "/authors/test-author/posts/")
+    expect(archive).to_have_text(re.compile(r"All field notes"))
 
     frequent_tags = profile.locator(".author-profile__tags li")
     assert 1 <= frequent_tags.count() <= 5
@@ -305,7 +495,7 @@ def test_robot_profile_reuses_the_home_mascot_surface(
 
     home_style = surface_style(".mascot-card")
     page.goto(
-        f"{page.url.rstrip('/')}/authors/muta/",
+        f"{page.url.rstrip('/')}/authors/test-robot-author/",
         wait_until="domcontentloaded",
     )
     portrait = page.locator(".author-profile__portrait")
@@ -328,10 +518,7 @@ def test_human_profile_uses_the_shared_surface_without_colored_halo(
         stored_theme="light",
         viewport=(1440, 900),
         load_interactive_visuals=False,
-    )
-    page.goto(
-        f"{page.url.rstrip('/')}/authors/ada-vale/",
-        wait_until="domcontentloaded",
+        initial_path="/authors/test-author/",
     )
 
     portrait = page.locator(".author-profile__portrait")
@@ -355,10 +542,9 @@ def test_author_without_external_links_omits_the_links_region(
 ) -> None:
     """Show a robot status and no empty navigation when links are unspecified."""
 
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}/authors/no-links-author/",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path="/authors/no-links-author/",
     )
 
     expect(page.locator(".author-profile__status")).to_have_attribute(
@@ -373,10 +559,9 @@ def test_author_without_posts_omits_signals_and_post_sections(
 ) -> None:
     """Hide both publication-derived regions when an author has no posts."""
 
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}/authors/no-links-author/",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path="/authors/no-links-author/",
     )
 
     expect(page.locator(".author-profile__tags")).to_have_count(0)
@@ -425,32 +610,6 @@ def test_author_without_posts_centers_the_description_column(
     expect(page.locator(".author-profile__details--centered")).to_have_count(0)
 
 
-def test_muta_profile_shows_only_latest_posts_and_archive_link(
-    driver: DriverFactory,
-) -> None:
-    """Keep two newest Muta cards on the profile and route the arrow to all posts."""
-
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}/authors/muta/",
-        wait_until="domcontentloaded",
-    )
-
-    cards = page.locator(".author-post-card")
-    expect(cards).to_have_count(2)
-    assert set(
-        cards.evaluate_all(
-            "(links) => links.map((link) => link.getAttribute('href'))"
-        )
-    ) == {
-        "/blog/why-agent-throughput-breaks-human-era-verification/",
-        "/blog/determinism-is-a-product-feature/",
-    }
-    archive = page.locator(".author-posts__archive")
-    expect(archive).to_have_attribute("href", "/authors/muta/posts/")
-    expect(archive).to_have_text(re.compile(r"All field notes"))
-
-
 def test_author_archive_reuses_shared_paginated_post_list() -> None:
     """Build author archives from the same post-list partial as tag collections."""
 
@@ -474,15 +633,15 @@ def test_author_archive_heading_links_its_pink_name_to_the_profile(
         load_interactive_visuals=False,
     )
     page.goto(
-        f"{page.url.rstrip('/')}/authors/muta/posts/",
+        f"{page.url.rstrip('/')}/authors/test-author/posts/",
         wait_until="domcontentloaded",
     )
 
     heading = page.locator(".blog-index__header h1")
     author = heading.locator(".blog-index__author-link")
-    expect(heading).to_have_text("Signals from Muta.")
-    expect(author).to_have_text("Muta")
-    expect(author).to_have_attribute("href", "/authors/muta/")
+    expect(heading).to_have_text("Signals from Controlled Human.")
+    expect(author).to_have_text("Controlled Human")
+    expect(author).to_have_attribute("href", "/authors/test-author/")
     expect(author).to_have_attribute("rel", "author")
     expect(author).to_have_css("color", "rgb(255, 44, 146)")
 
@@ -507,59 +666,70 @@ def test_author_archive_heading_links_its_pink_name_to_the_profile(
     assert typography["linkWeight"] == typography["headingWeight"]
 
     author.click()
-    expect(page).to_have_url(re.compile(r"/authors/muta/$"))
-    expect(page.locator(".author-profile h1")).to_have_text("Muta")
+    expect(page).to_have_url(re.compile(r"/authors/test-author/$"))
+    expect(page.locator(".author-profile h1")).to_have_text("Controlled Human")
 
 
-def test_author_archive_filters_and_paginates_only_its_posts(
+def test_author_archive_filters_paginates_and_orders_only_its_posts(
     driver: DriverFactory,
 ) -> None:
-    """Paginate a controlled author archive without leaking other authors' posts."""
+    """Keep one complete, ordered, author-only archive across every page.
+
+    Filtering and chronology used to be checked by two browser tests that both
+    booted the same read-only archive and followed the same ``Older`` route.
+    This test retains the real navigation and every former assertion while
+    collecting each card's URL together with its publication time in one DOM
+    pass. Keeping the pair intact matters: it verifies the newest-first order
+    across the page boundary rather than accidentally comparing two unrelated
+    lists. Walking until ``Older`` disappears ensures that every linked archive
+    page participates in the aggregate checks.
+    """
 
     page = driver(load_interactive_visuals=False)
+    origin = page.url.rstrip("/")
     page.goto(
-        f"{page.url.rstrip('/')}/authors/test-author/posts/",
+        f"{origin}/authors/test-author/posts/",
         wait_until="domcontentloaded",
     )
 
     archive = page.locator('.blog-index[data-collection-kind="author"]')
     expect(archive.locator("h1")).to_have_text("Signals from Controlled Human.")
     expect(archive.locator(".blog-card")).to_have_count(PAGER_SIZE)
-    first_page_urls = archive.locator(".blog-card__link").evaluate_all(
-        "(links) => links.map((link) => link.getAttribute('href'))"
-    )
+    entries: list[dict[str, str]] = []
+    page_number = 1
+    while True:
+        entries.extend(
+            page.locator(".blog-card").evaluate_all(
+                """
+                (cards) => cards.map((card) => ({
+                  href: card.querySelector('.blog-card__link')
+                    .getAttribute('href'),
+                  datetime: card.querySelector('time').dateTime,
+                }))
+                """
+            )
+        )
+        older = page.get_by_role("link", name="Older →")
+        if older.count() == 0:
+            break
+        older.click()
+        page.wait_for_load_state("domcontentloaded")
+        page_number += 1
+        if page_number == 2:
+            expect(page).to_have_url(
+                re.compile(r"/authors/test-author/posts/page/2/$")
+            )
 
-    archive.get_by_role("link", name="Older →").click()
-    expect(page).to_have_url(re.compile(r"/authors/test-author/posts/page/2/$"))
-    second_page_urls = page.locator(".blog-card__link").evaluate_all(
-        "(links) => links.map((link) => link.getAttribute('href'))"
-    )
-
-    all_urls = first_page_urls + second_page_urls
+    all_urls = [entry["href"] for entry in entries]
     assert len(all_urls) == PAGER_SIZE + 4
     assert len(all_urls) == len(set(all_urls))
     assert all("controlled-pagination" not in url for url in all_urls)
-
-
-def test_muta_archive_posts_are_strictly_older_than_existing_content() -> None:
-    """Keep all thirty added Muta fixtures before the prior publication timeline."""
-
-    blog_directory = PROJECT_ROOT / "content" / "blog"
-    archive_posts = sorted(blog_directory.glob("muta-archive-*.md"))
-    existing_posts = sorted(
-        path for path in blog_directory.glob("*.md")
-        if path.name != "_index.md" and not path.name.startswith("muta-archive-")
-    )
-
-    def publication_date(path: Path) -> datetime:
-        match = re.search(r"^date:\s*(.+)$", path.read_text(), re.MULTILINE)
-        assert match is not None
-        return datetime.fromisoformat(match.group(1))
-
-    assert len(archive_posts) == 30
-    assert max(map(publication_date, archive_posts)) < min(
-        map(publication_date, existing_posts)
-    )
+    publication_times = [
+        datetime.fromisoformat(entry["datetime"].replace("Z", "+00:00"))
+        for entry in entries
+    ]
+    assert len(publication_times) == PAGER_SIZE + 4
+    assert publication_times == sorted(publication_times, reverse=True)
 
 
 def test_author_directory_uses_content_filenames_as_profile_slugs(

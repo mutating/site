@@ -198,10 +198,10 @@ def _interrupt_anchor_alignment_at_top(
     return previous_scroll_behavior
 
 
-def test_every_internal_fragment_link_has_one_real_target(
+def test_fragment_inventory_is_complete_and_top_fragment_is_absent(
     driver: DriverFactory,
 ) -> None:
-    """Keep every internal link connected to one unambiguous element.
+    """Keep every internal link valid while forbidding the retired ``#top``.
 
     A fragment click can still update the address bar even when its target was
     renamed, deleted, or accidentally duplicated. In that broken state the
@@ -215,6 +215,14 @@ def test_every_internal_fragment_link_has_one_real_target(
     also compares the discovered target set with the complete intentional list,
     so adding or removing an anchor requires an explicit test update instead of
     silently reducing coverage.
+
+    The former logo was an anchor with ``href="#top"`` and the root ``main``
+    owned ``id="top"``. Merely fixing its click handler would not prevent a
+    stale attribute elsewhere from reviving that fragment, so the same fresh,
+    unmodified home document is also scanned attribute-by-attribute. The logo
+    must remain a hashless, link-semantic ``div``. Keeping both read-only
+    inventories in one browser scenario avoids loading the identical page
+    twice without combining or weakening either structural contract.
     """
 
     page = driver(load_interactive_visuals=False)
@@ -255,28 +263,6 @@ def test_every_internal_fragment_link_has_one_real_target(
         assert item["id"]
         assert item["targetCount"] == 1, item
 
-
-def test_top_fragment_is_completely_absent_from_rendered_elements(
-    driver: DriverFactory,
-) -> None:
-    """Forbid the retired ``#top`` fragment everywhere in the rendered page.
-
-    The former logo was an anchor with ``href="#top"`` and the root ``main``
-    owned ``id="top"``. That made even an ordinary home-logo click create a
-    fragment entry instead of performing the newly required hashless reload.
-    Merely changing the click handler is insufficient: a stale ``href``, ID,
-    data attribute, or nested element could still expose the retired fragment
-    to the browser's default navigation.
-
-    This structural regression scans every attribute on every rendered
-    element, rejects both an exact ``#top`` value and any ``id="top"`` owner,
-    verifies that the unified logo control is a ``div`` rather than an anchor,
-    and confirms that it has no ``href`` at all. It therefore fails if any
-    future refactor reintroduces the old fragment independently of the reload
-    implementation.
-    """
-
-    page = driver(load_interactive_visuals=False)
     violations = page.evaluate(
         """
         () =>
