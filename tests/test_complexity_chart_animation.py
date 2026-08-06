@@ -54,6 +54,48 @@ def _center_chart_panel(page: Page) -> None:
     )
 
 
+def _assert_chart_axis_label_typography(page: Page) -> None:
+    """Require both chart axis labels to share one resolved DOM text style.
+
+    Keeping this assertion block separate from the bitmap checks lets the
+    responsive/theme matrix exercise the typography before animation
+    completion can hide a more useful failure. Both labels must remain real
+    spans with identical family, size, weight, line-height, color, spacing,
+    style, and capitalization; moving one back into canvas text or styling it
+    independently therefore remains a failing regression.
+    """
+
+    labels = page.locator(".chart-panel__axis-label")
+    expect(labels).to_have_count(2)
+    expect(page.locator(".chart-panel__cost")).to_have_text("↑ CHANGE COST")
+    expect(page.locator(".chart-panel__scale")).to_have_text(
+        "SYSTEM SCALE →",
+    )
+
+    resolved = labels.evaluate_all(
+        """
+        (elements) => elements.map((element) => {
+          const style = getComputedStyle(element);
+          return {
+            tagName: element.tagName,
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            lineHeight: style.lineHeight,
+            color: style.color,
+            letterSpacing: style.letterSpacing,
+            fontStyle: style.fontStyle,
+            textTransform: style.textTransform,
+          };
+        })
+        """
+    )
+
+    assert resolved[0]["tagName"] == "SPAN"
+    assert resolved[1]["tagName"] == "SPAN"
+    assert resolved[0] == resolved[1]
+
+
 def _settle_view_observation(page: Page) -> None:
     """Yield three painted frames so IntersectionObserver can report geometry."""
 
@@ -390,6 +432,7 @@ def test_finished_curves_fill_the_chart_in_every_theme_and_layout(
         "data-curves-revealed",
         "true",
     )
+    _assert_chart_axis_label_typography(page)
     _finish_curve_animation(page)
 
     state = page.locator(".complexity-chart").evaluate(
@@ -856,72 +899,8 @@ def test_redundant_copy_column_legend_stays_removed(
     )
 
 
-@pytest.mark.parametrize("theme", ["light", "dark"])
-def test_chart_axis_labels_share_one_dom_typography_in_every_theme(
-    driver: DriverFactory,
-    theme: str,
-) -> None:
-    """Render both axis labels with exactly the same text pipeline and style.
-
-    ``CHANGE COST`` used to be painted into the static canvas while
-    ``SYSTEM SCALE →`` became a DOM label so it could participate in the new
-    hover transition. Although both implementations requested an 11px
-    semibold mono font and ``--ink-muted``, canvas text used a different
-    antialiasing path and could silently fall back when its CSS font variable
-    was not resolved. The result was a visible mismatch in glyph shape,
-    thickness, and apparent color.
-
-    The corrected chart keeps both labels as DOM spans with one shared class.
-    This regression checks light and dark themes and compares every typography
-    property that affects their appearance: resolved family, size, weight,
-    line height, color, letter spacing, style, and capitalization. It also
-    requires two real span elements, so moving ``CHANGE COST`` back into the
-    canvas or styling either axis independently makes the test fail instead of
-    allowing the subtle mismatch to return.
-    """
-
-    page = driver(
-        stored_theme=theme,
-        viewport=(1440, 900),
-        load_interactive_visuals=False,
-    )
-    _center_chart_panel(page)
-
-    labels = page.locator(".chart-panel__axis-label")
-    expect(labels).to_have_count(2)
-    expect(page.locator(".chart-panel__cost")).to_have_text("↑ CHANGE COST")
-    expect(page.locator(".chart-panel__scale")).to_have_text(
-        "SYSTEM SCALE →",
-    )
-
-    resolved = labels.evaluate_all(
-        """
-        (elements) => elements.map((element) => {
-          const style = getComputedStyle(element);
-          return {
-            tagName: element.tagName,
-            fontFamily: style.fontFamily,
-            fontSize: style.fontSize,
-            fontWeight: style.fontWeight,
-            lineHeight: style.lineHeight,
-            color: style.color,
-            letterSpacing: style.letterSpacing,
-            fontStyle: style.fontStyle,
-            textTransform: style.textTransform,
-          };
-        })
-        """
-    )
-
-    assert resolved[0]["tagName"] == "SPAN"
-    assert resolved[1]["tagName"] == "SPAN"
-    assert resolved[0] == resolved[1]
-
-
-@pytest.mark.parametrize("viewport", [(1440, 900), (390, 844)])
 def test_change_cost_label_and_curves_align_with_the_dotted_working_area(
     driver: DriverFactory,
-    viewport: tuple[int, int],
 ) -> None:
     """Align the curves and upper axis label with the expanded dotted grid.
 
@@ -932,73 +911,104 @@ def test_change_cost_label_and_curves_align_with_the_dotted_working_area(
     solid header divider instead of being centered in the band between that
     divider and the first dotted guide.
 
-    This regression exercises both desktop and phone widths. It requires the
-    complete selectable label to share the dotted zone's exact left edge and
-    to have its vertical center equidistant from the header divider and first
-    dotted guide. It also samples the rendered curve canvas and requires a
-    non-transparent curve pixel at the same left edge. Restoring the legacy
-    42 px plot padding, applying a breakpoint-specific offset, or moving only
-    the text while leaving the curves behind makes the test fail.
+    This regression exercises both desktop and phone widths. The phone pass
+    reloads the document after changing the viewport, so canvas allocation,
+    media queries, observers, and chart initialization all start at the narrow
+    width just as they did when these were separate browser cases; only the
+    unchanged browser context is reused. It requires the complete selectable
+    label to share the dotted zone's exact left edge and to have its vertical
+    center equidistant from the header divider and first dotted guide. It also
+    samples the rendered curve canvas and requires a non-transparent curve
+    pixel at the same left edge. Restoring the legacy 42 px plot padding,
+    applying a breakpoint-specific offset, or moving only the text while
+    leaving the curves behind makes the test fail.
     """
 
     page = driver(
         stored_theme="light",
-        viewport=viewport,
+        viewport=(1440, 900),
         load_interactive_visuals=False,
     )
-    _center_chart_panel(page)
-    _finish_curve_animation(page)
+    geometries: list[tuple[tuple[int, int], dict[str, object]]] = []
 
-    geometry = page.locator(".complexity-chart").evaluate(
-        """
-        (chart) => {
-          const chartRect = chart.getBoundingClientRect();
-          const label = chart.querySelector(".chart-panel__cost");
-          const labelRect = label.getBoundingClientRect();
-          const canvas = chart.querySelector(".complexity-chart__curves");
-          const context = canvas.getContext("2d");
-          const dpr = canvas.width / chartRect.width;
-          let firstCurveColumn = null;
+    for index, viewport in enumerate(((1440, 900), (390, 844))):
+        if index:
+            page.set_viewport_size(
+                {"width": viewport[0], "height": viewport[1]}
+            )
+            page.reload(wait_until="domcontentloaded")
+            page.locator(
+                'html[data-theme-ready="true"]'
+            ).wait_for(state="attached")
 
-          for (let x = 0; x < canvas.width && firstCurveColumn === null; x += 1) {
-            const pixels = context.getImageData(x, 0, 1, canvas.height).data;
-            for (let index = 3; index < pixels.length; index += 4) {
-              if (pixels[index] !== 0) {
-                firstCurveColumn = x / dpr;
-                break;
+        _center_chart_panel(page)
+        _finish_curve_animation(page)
+
+        geometry = page.locator(".complexity-chart").evaluate(
+            """
+            (chart) => {
+              const chartRect = chart.getBoundingClientRect();
+              const label = chart.querySelector(".chart-panel__cost");
+              const labelRect = label.getBoundingClientRect();
+              const canvas = chart.querySelector(".complexity-chart__curves");
+              const context = canvas.getContext("2d");
+              const dpr = canvas.width / chartRect.width;
+              let firstCurveColumn = null;
+
+              for (
+                let x = 0;
+                x < canvas.width && firstCurveColumn === null;
+                x += 1
+              ) {
+                const pixels = context.getImageData(
+                  x,
+                  0,
+                  1,
+                  canvas.height,
+                ).data;
+                for (let index = 3; index < pixels.length; index += 4) {
+                  if (pixels[index] !== 0) {
+                    firstCurveColumn = x / dpr;
+                    break;
+                  }
+                }
               }
+
+              const plotHeight = 330 - 30 - 48;
+              const firstGuideY = 30 + plotHeight / 12;
+              const labelCenterY =
+                labelRect.top - chartRect.top + labelRect.height / 2;
+              return {
+                text: label.textContent.trim(),
+                leftOffset: labelRect.left - chartRect.left,
+                labelCenterY,
+                firstGuideY,
+                distanceFromDivider: labelCenterY,
+                distanceFromFirstGuide: firstGuideY - labelCenterY,
+                firstCurveColumn,
+              };
             }
-          }
+            """
+        )
+        geometries.append((viewport, geometry))
 
-          const plotHeight = 330 - 30 - 48;
-          const firstGuideY = 30 + plotHeight / 12;
-          const labelCenterY =
-            labelRect.top - chartRect.top + labelRect.height / 2;
-          return {
-            text: label.textContent.trim(),
-            leftOffset: labelRect.left - chartRect.left,
-            labelCenterY,
-            firstGuideY,
-            distanceFromDivider: labelCenterY,
-            distanceFromFirstGuide: firstGuideY - labelCenterY,
-            firstCurveColumn,
-          };
-        }
-        """
-    )
-
-    assert geometry["text"] == "↑ CHANGE COST"
-    assert geometry["leftOffset"] == pytest.approx(0, abs=0.5)
-    assert geometry["labelCenterY"] == pytest.approx(
-        geometry["firstGuideY"] / 2,
-        abs=0.5,
-    )
-    assert geometry["distanceFromDivider"] == pytest.approx(
-        geometry["distanceFromFirstGuide"],
-        abs=0.5,
-    )
-    assert geometry["firstCurveColumn"] is not None
-    assert geometry["firstCurveColumn"] <= 1
+    for viewport, geometry in geometries:
+        diagnostic = f"chart alignment at {viewport}: {geometry}"
+        assert geometry["text"] == "↑ CHANGE COST", diagnostic
+        assert geometry["leftOffset"] == pytest.approx(
+            0,
+            abs=0.5,
+        ), diagnostic
+        assert geometry["labelCenterY"] == pytest.approx(
+            geometry["firstGuideY"] / 2,
+            abs=0.5,
+        ), diagnostic
+        assert geometry["distanceFromDivider"] == pytest.approx(
+            geometry["distanceFromFirstGuide"],
+            abs=0.5,
+        ), diagnostic
+        assert geometry["firstCurveColumn"] is not None, diagnostic
+        assert geometry["firstCurveColumn"] <= 1, diagnostic
 
 
 @pytest.mark.parametrize("viewport", [(1440, 900), (390, 844)])
@@ -1385,43 +1395,55 @@ def test_every_chart_text_is_real_user_selectable_dom_content(
         ),
     }
 
-    for selector, expected_text in labels.items():
-        label = page.locator(selector)
-        expect(label).to_have_count(1)
-        expect(label).to_have_text(expected_text)
-        selection = label.evaluate(
-            """
-            (element) => {
-              const style = getComputedStyle(element);
-              const rect = element.getBoundingClientRect();
-              const hit = document.elementFromPoint(
-                rect.left + rect.width / 2,
-                rect.top + rect.height / 2,
-              );
-              const range = document.createRange();
-              range.selectNodeContents(element);
-              const selection = window.getSelection();
-              selection.removeAllRanges();
-              selection.addRange(range);
-              const selectedText = selection.toString();
-              selection.removeAllRanges();
-
-              return {
-                selectedText,
-                userSelect: style.userSelect,
-                pointerEvents: style.pointerEvents,
-                hitTarget:
-                  hit === element ||
-                  element.contains(hit),
-              };
+    selections = panel.evaluate(
+        """
+        (panel, labels) => Object.fromEntries(
+          Object.entries(labels).map(([selector]) => {
+            const matches = [...panel.querySelectorAll(selector)];
+            if (matches.length !== 1) {
+              return [selector, {count: matches.length}];
             }
-            """
-        )
 
-        assert selection["selectedText"].casefold() == expected_text.casefold()
-        assert selection["userSelect"] == "text"
-        assert selection["pointerEvents"] != "none"
-        assert selection["hitTarget"] is True, selector
+            const [element] = matches;
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2,
+            );
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            const selectedText = selection.toString();
+            selection.removeAllRanges();
+
+            return [selector, {
+              count: 1,
+              normalizedText: element.textContent.replace(/\\s+/g, " ").trim(),
+              selectedText,
+              userSelect: style.userSelect,
+              pointerEvents: style.pointerEvents,
+              hitTarget: hit === element || element.contains(hit),
+            }];
+          }),
+        )
+        """,
+        labels,
+    )
+
+    for selector, expected_text in labels.items():
+        selection = selections[selector]
+        diagnostic = f"selectable chart label {selector}: {selection}"
+        assert selection["count"] == 1, diagnostic
+        assert selection["normalizedText"] == expected_text, diagnostic
+        assert selection["selectedText"].casefold() == expected_text.casefold(), (
+            diagnostic
+        )
+        assert selection["userSelect"] == "text", diagnostic
+        assert selection["pointerEvents"] != "none", diagnostic
+        assert selection["hitTarget"] is True, diagnostic
 
     page.evaluate(
         """

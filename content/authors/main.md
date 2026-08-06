@@ -1,6 +1,6 @@
 ---
 title: "Evgeniy Blinov"
-status: "human"
+robot: false
 photo: "https://pomponchik.org/41.png"
 links:
   - label: "Website"

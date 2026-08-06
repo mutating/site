@@ -1,6 +1,6 @@
 ---
 title: "Controlled Human"
-status: "human"
+robot: false
 photo: "/muta-v2-transparent-v10.webp"
 links:
   - label: "Example profile"

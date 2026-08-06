@@ -335,9 +335,11 @@ def test_full_density_surface_never_queues_a_deadline_render(
     that the initial attraction appeared not to end.
 
     At phone and desktop sizes this regression uses the unmodified production
-    density and rendering resolution. Normal animation is manually clocked so
-    any unexpected frame can only come from an input/deadline callback. After
-    one real press, the initially submitted frame id and measured input latency
+    density and rendering resolution. One explicit full-density frame primes
+    the complete render pipeline before input; further idle frames would only
+    repeat that workload. Normal animation is manually clocked so any
+    unexpected frame can only come from an input/deadline callback. After one
+    real press, the initially submitted frame id and measured input latency
     must remain unchanged for 120 ms—almost three complete impulse windows.
     It then advances the first non-redundant physics frame by nine milliseconds and
     verifies that the peak was not applied a second time. Release must then be
@@ -356,18 +358,11 @@ def test_full_density_surface_never_queues_a_deadline_render(
     )
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 3; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(16);
-          }
-        }
-        """
-    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(16)")
     baseline_frame = int(
         canvas.get_attribute("data-rendered-frame-id") or "0"
     )
+    assert baseline_frame == 1
     box = canvas.bounding_box()
     assert box is not None
     page.mouse.move(
@@ -441,6 +436,9 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     This test supplies 100 ms animation-frame timestamps and verifies that the
     embedded production surface performs exactly one 33 ms physics update,
     fixing both the number of force applications and their simulated duration.
+    Only scene density and backing resolution are reduced here; the authored
+    iframe URL, embedded visibility lifecycle, real animation-frame path, and
+    clock remain intact. Separate tests exercise the full-density workload.
     """
 
     page = driver(
@@ -448,13 +446,47 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
         viewport=(1440, 900),
         animation_frame_interval_ms=100,
     )
-    page.evaluate(
+    contact = page.locator("#contact")
+    expect(contact).to_be_attached()
+    frame = page.locator(".contact__tentacles")
+    expect(frame).to_be_attached()
+    frame.evaluate(
         """
-        () => scrollTo({
-          top: document.querySelector("#contact").offsetTop,
+        (element) => {
+          const source = new URL(element.src);
+          if (source.searchParams.get("embedded") !== "1") {
+            throw new Error("Expected the contact's embedded runtime");
+          }
+          source.searchParams.set("max-tentacles", "64");
+          source.searchParams.set("render-supersample", "0.5");
+          element.src = source.href;
+        }
+        """
+    )
+    contact.evaluate(
+        """
+        element => scrollTo({
+          top: element.offsetTop,
           behavior: "instant",
         })
         """
+    )
+    page.wait_for_function(
+        """
+        (selector) => {
+          const child = document.querySelector(selector)?.contentWindow;
+          const source = child && new URL(child.location.href);
+          const canvas = child?.document?.querySelector("#muta");
+          return source?.searchParams.get("embedded") === "1" &&
+            source.searchParams.get("max-tentacles") === "64" &&
+            source.searchParams.get("render-supersample") === "0.5" &&
+            canvas?.dataset.aspectReady === "true" &&
+            canvas.dataset.aspectReloading === "false" &&
+            canvas.dataset.runtimeVisible === "true";
+        }
+        """,
+        arg=".contact__tentacles",
+        timeout=30_000,
     )
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
 
@@ -647,7 +679,25 @@ def _open_contact_with_active_tentacle_runtime(
     driver: DriverFactory,
     viewport: tuple[int, int],
 ) -> tuple[Page, Locator]:
-    """Open the contact block and return its active, real WebGL canvas."""
+    """Return the active manual-frame canvas after its aspect document is ready.
+
+    The embedded runtime intentionally reloads itself when its first measured
+    rectangle differs from the aspect used to allocate the WebGL simulation.
+    A visible canvas can therefore belong to a short-lived document whose
+    replacement has already been scheduled. Waiting for ``aspectReady`` makes
+    callers synchronize with the runtime's geometry decision instead of an
+    arbitrary quiet delay. This is especially important before Playwright's
+    virtual clock is installed: freezing timers while that zero-delay reload is
+    pending can strand a frame locator between the old and new documents.
+
+    These callers test the scroll protocol and its production timers, not the
+    renderer's frame cadence.  The helper therefore preserves the iframe's
+    authored URL and adds only its existing manual-frame diagnostic flag before
+    bringing the offscreen iframe into view.  Real wheel events, postMessage
+    traffic, and setTimeout deadlines continue to run, while unrelated
+    continuous WebGL frames cannot dominate the deterministic timer assertions.
+    Separate tests keep the real frame and physics-counter lifecycle covered.
+    """
 
     page = driver(
         stored_theme="dark",
@@ -655,11 +705,47 @@ def _open_contact_with_active_tentacle_runtime(
         load_interactive_visuals=True,
     )
     frame = page.locator(".contact__tentacles")
+    expect(frame).to_be_attached(timeout=30_000)
+    frame.evaluate(
+        """
+        (element) => {
+          const source = new URL(element.src);
+          source.searchParams.set("manual-animation-frame", "1");
+          element.src = source.href;
+        }
+        """
+    )
     frame.evaluate(
         "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
     )
+    page.wait_for_function(
+        """
+        (selector) => {
+          const child = document.querySelector(selector)?.contentWindow;
+          const canvas = child?.document?.querySelector("#muta");
+          if (!child || !canvas) return false;
+          const source = new URL(child.location.href);
+          return source.searchParams.get("manual-animation-frame") === "1" &&
+            typeof child.__mutaTentaclesDebugFrameAfter === "function" &&
+            canvas.dataset.aspectReady === "true" &&
+            canvas.dataset.aspectReloading === "false";
+        }
+        """,
+        arg=".contact__tentacles",
+        timeout=30_000,
+    )
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
     expect(canvas).to_be_visible()
+    expect(canvas).to_have_attribute(
+        "data-aspect-ready",
+        "true",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-aspect-reloading",
+        "false",
+        timeout=30_000,
+    )
     frame.evaluate(
         "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
     )
@@ -860,7 +946,11 @@ def test_scrollend_and_iframe_wheel_share_the_scroll_lifecycle(
     proves that native ``scrollend`` resumes rendering immediately without
     advancing the 320 ms fallback clock. It then dispatches a wheel event on the
     real child canvas and requires the same immediate suppression, the same
-    319 ms protected interval, and the same fallback release at 320 ms.
+    319 ms protected interval, and the same fallback release at 320 ms. Both
+    halves also inspect the parent iframe's ``data-scroll-active`` state. That
+    parent-side assertion is essential: the child has its own defensive idle
+    timer, so observing only the canvas could pass even if its ``postMessage``
+    relay had silently stopped reaching the page.
 
     Desktop and narrow layouts are both exercised because iframe geometry and
     event routing change responsively. The test observes explicit runtime state
@@ -874,13 +964,16 @@ def test_scrollend_and_iframe_wheel_share_the_scroll_lifecycle(
         driver,
         viewport,
     )
+    frame = page.locator(".contact__tentacles")
     page.evaluate(
         "() => window.dispatchEvent(new Event('scroll'))"
     )
+    expect(frame).to_have_attribute("data-scroll-active", "true")
     assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
     page.evaluate(
         "() => window.dispatchEvent(new Event('scrollend'))"
     )
+    expect(frame).to_have_attribute("data-scroll-active", "false")
     assert canvas.get_attribute("data-scroll-rendering") == "active"
 
     wheel_baseline = int(
@@ -894,13 +987,16 @@ def test_scrollend_and_iframe_wheel_share_the_scroll_lifecycle(
         }))
         """
     )
+    expect(frame).to_have_attribute("data-scroll-active", "true")
     expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
     assert int(
         canvas.get_attribute("data-scroll-suppression-count") or "0"
     ) > wheel_baseline
     page.clock.fast_forward(319)
+    assert frame.get_attribute("data-scroll-active") == "true"
     assert canvas.get_attribute("data-scroll-rendering") == "suppressed"
     page.clock.fast_forward(1)
+    assert frame.get_attribute("data-scroll-active") == "false"
     assert canvas.get_attribute("data-scroll-rendering") == "active"
 
 
@@ -1268,23 +1364,41 @@ def _open_diagnostic_surface(
     base_url: str,
     *,
     path: str = "muta-tentacles.html",
+    warmup_frames: int = 8,
+    navigate: bool = True,
 ) -> Page:
-    """Open a deterministic, manually clocked copy of the WebGL surface."""
+    """Open a deterministic manual surface and optionally warm its geometry.
 
-    page.goto(
-        f"{base_url}/{path}{DIAGNOSTIC_QUERY}",
-        wait_until="domcontentloaded",
-    )
+    Geometry and release contracts keep the original eight-frame warm-up.
+    Pure force-envelope contracts call a source-derived debug function that is
+    initialized at DOM load and does not read rendered or physics state, so
+    they explicitly request zero frames instead of paying for unrelated WebGL
+    work. They may also ask the shared driver to open this standalone document
+    directly and disable only this helper's redundant navigation. Keeping both
+    existing behaviors as defaults makes those optimizations explicit opt-ins.
+    """
+
+    assert warmup_frames >= 0
+
+    if navigate:
+        page.goto(
+            f"{base_url}/{path}{DIAGNOSTIC_QUERY}",
+            wait_until="domcontentloaded",
+        )
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugInteractionAt === 'function'"
+    )
     page.evaluate(
         """
-        () => {
-          for (let frame = 0; frame < 8; frame += 1) {
+        (warmupFrames) => {
+          for (let frame = 0; frame < warmupFrames; frame += 1) {
             window.__mutaTentaclesDebugFrameAfter(16);
           }
         }
-        """
+        """,
+        warmup_frames,
     )
     return canvas
 
@@ -1515,8 +1629,18 @@ def test_impulse_uses_the_exact_original_41_5_ms_envelope(
     envelope rather than merely checking a copied label in ``dataset``.
     """
 
-    page = driver(stored_theme="dark", viewport=(390, 610))
-    _open_diagnostic_surface(page, base_url)
+    page = driver(
+        stored_theme="dark",
+        viewport=(390, 610),
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    _open_diagnostic_surface(
+        page,
+        base_url,
+        warmup_frames=0,
+        navigate=False,
+    )
     _assert_exact_impulse_envelope(page)
 
 
@@ -1946,6 +2070,7 @@ def test_timing_regressions_are_detected_by_eleven_independent_mutations(
         page,
         base_url,
         path="muta-tentacles-mutated.html",
+        warmup_frames=0 if contract == "envelope" else 8,
     )
 
     with pytest.raises(AssertionError):

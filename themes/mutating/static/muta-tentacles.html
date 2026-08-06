@@ -2117,18 +2117,23 @@
               rect.width / Math.max(1, rect.height),
             ),
           );
+          if (canvas.dataset.aspectReloading === "true") {
+            return;
+          }
           if (
             renderTargets &&
             (
               Math.abs(currentAspect - surfaceAspect) > 0.08 ||
               compactMedia.matches !== isCompact
-            ) &&
-            canvas.dataset.aspectReloading !== "true"
+            )
           ) {
+            canvas.dataset.aspectReady = "false";
             canvas.dataset.aspectReloading = "true";
             setTimeout(() => location.reload(), 0);
             return;
           }
+          canvas.dataset.aspectReady = "true";
+          canvas.dataset.aspectReloading = "false";
           const nativeRatio = Math.min(
             devicePixelRatio || 1,
             isCompact ? 1.65 : 1.8,
@@ -2250,6 +2255,7 @@
             event.clientX <= rect.right &&
             event.clientY >= rect.top &&
             event.clientY <= rect.bottom;
+          canvas.dataset.pointerInputSource = "canvas";
           if (window.parent !== window) {
             window.parent.postMessage(
               {
@@ -2457,7 +2463,21 @@
           }
         });
         addEventListener("message", (event) => {
-          if (event.data?.type === "muta-tentacles-release") {
+          if (event.data?.type === "muta-tentacles-pointer-hover") {
+            if (event.data.inside === false) {
+              pointer.inside = false;
+              return;
+            }
+            const relayedX = Number(event.data.x);
+            const relayedY = Number(event.data.y);
+            if (!Number.isFinite(relayedX) || !Number.isFinite(relayedY)) {
+              return;
+            }
+            pointer.targetX = clamp(relayedX, 0, 1);
+            pointer.targetY = clamp(relayedY, 0, 1);
+            pointer.inside = true;
+            canvas.dataset.pointerInputSource = "host-overlay";
+          } else if (event.data?.type === "muta-tentacles-release") {
             releaseFromOutsideCanvas();
           }
         });

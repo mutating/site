@@ -149,7 +149,7 @@ display name:
 ```markdown
 ---
 title: "Jane Doe"
-status: "human"
+robot: false
 photo: "/authors/jane-doe.webp"
 links:
   - label: "GitHub"
@@ -165,10 +165,11 @@ Jane builds verification systems for distributed software agents.
 This body supports the same Markdown features as a blog post.
 ```
 
-`status` should be `human` or `robot`. `links` is optional and its entire
-region is omitted when the list is absent. The profile automatically collects
-all posts whose `author` value matches its filename and derives up to five of
-the most frequent tags across those posts.
+`robot` is a boolean: use `true` for an automated author and `false` for a
+human. `links` is optional and its entire region is omitted when the list is
+absent. The profile automatically collects all posts whose `author` value
+matches its filename and derives up to five of the most frequent tags across
+those posts.
 
 If the author has posts, also create
 `content/author-posts/<author-slug>/_index.md` so the profile can link to a
@@ -262,6 +263,65 @@ workflow**. The workflow creates a clean, minified Hugo production build in
 server with `rsync --delete-delay`. Files no longer present in the current Hugo
 build are removed from the server, so the remote directory becomes an exact
 copy of the generated site without deleting it before a successful transfer.
+
+### Provision a fresh server with Ansible
+
+The repository includes `infra/playbooks/setup-server.yml`. Run it from a
+local checkout. The playbook copies that checkout to the server, installs Git,
+Hugo, nginx, and Certbot, performs the first Hugo build, and configures nginx
+and certificate renewal. The VPS does not need access to the private GitHub
+repository.
+
+#### 1. Clone the repository locally
+
+```bash
+git clone https://github.com/pomponchik/site.git
+cd site
+```
+
+#### 2. Check that Ansible is installed
+
+```bash
+ansible-playbook --version
+```
+
+On macOS, install it with `brew install ansible`. On Debian or Ubuntu, use:
+
+```bash
+sudo apt-get update && sudo apt-get install -y ansible sshpass
+```
+
+`sshpass` is required when the initial SSH login uses a password.
+
+#### 3. Run the setup playbook
+
+Replace the three values with the server's public IPv4 address, initial SSH
+username, and password:
+
+```bash
+ansible-playbook \
+  -i 'SERVER_IP,' \
+  infra/playbooks/setup-server.yml \
+  -e "ansible_host=SERVER_IP ansible_user=SERVER_USER ansible_password=SERVER_PASSWORD"
+```
+
+For example:
+
+```bash
+ansible-playbook \
+  -i '203.0.113.10,' \
+  infra/playbooks/setup-server.yml \
+  -e "ansible_host=203.0.113.10 ansible_user=root ansible_password='change-me'"
+```
+
+The password is visible in shell history and process arguments while the
+command runs. For a safer interactive alternative, omit `ansible_password`
+and add `--ask-pass`.
+
+The defaults use `/opt/mutating.tech` for the copied source checkout and
+`/var/www/mutating.tech` for the generated site served by nginx and updated
+by CI. They target `mutating.tech` and the deployment account `user`.
+Override these values with additional `-e` options for a different site.
 
 ### Prepare a fresh Debian server
 

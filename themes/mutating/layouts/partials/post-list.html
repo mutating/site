@@ -16,7 +16,7 @@
           <span>{{ .ReadingTime }} min read</span>
           {{ with .Params.author }}
             {{ with site.GetPage (printf "/authors/%s" .) }}
-              {{ partial "author-byline.html" (dict "author" .) }}
+              {{ partial "author-byline.html" (dict "author" . "prefix" "By ") }}
             {{ end }}
           {{ end }}
         </div>

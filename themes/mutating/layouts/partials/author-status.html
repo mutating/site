@@ -1,6 +1,6 @@
 {{- $author := .author -}}
 {{- $variant := default "profile" .variant -}}
-{{- $status := lower (default "human" $author.Params.status) -}}
+{{- $status := partial "author-kind.html" $author -}}
 {{- $authorSlug := $author.File.ContentBaseName -}}
 {{- $tooltipID := printf "author-status-%s-%s" $authorSlug $variant -}}
 <div

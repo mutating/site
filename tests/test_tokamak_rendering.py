@@ -101,6 +101,22 @@ def _pink_content_bounds(image_bytes: bytes) -> tuple[int, int, int, int]:
     )
 
 
+def _image_difference_statistics(
+    expected: Image.Image,
+    actual: Image.Image,
+) -> tuple[float, float, float]:
+    """Return the unchanged mean/high/extreme visual-reference metrics."""
+
+    difference = ImageChops.difference(expected, actual)
+    pixels = list(difference.getdata())
+    total_pixels = len(pixels)
+    return (
+        max(ImageStat.Stat(difference).mean),
+        sum(max(pixel) > 8 for pixel in pixels) / total_pixels,
+        sum(max(pixel) > 24 for pixel in pixels) / total_pixels,
+    )
+
+
 def test_light_tokamak_uses_invisible_depth_occluders(
     driver: DriverFactory,
 ) -> None:
@@ -211,12 +227,26 @@ def test_tokamak_scale_reserves_clearance_across_responsive_widths(
 
     for viewport_width in TOKAMAK_RESPONSIVE_WIDTHS:
         page.set_viewport_size({"width": viewport_width, "height": 738})
-        page.evaluate(
+        page.wait_for_function(
             """
-            () => new Promise((resolve) => {
-              requestAnimationFrame(() => requestAnimationFrame(resolve));
-            })
-            """
+            (selector) => {
+              const element = document.querySelector(selector);
+              if (!element) return false;
+              const rect = element.getBoundingClientRect();
+              const renderedHeight = Math.min(600, Math.max(1, rect.height));
+              const heightScale =
+                1 / (1 + (600 - renderedHeight) * 0.00125);
+              const aspectScale = Math.min(
+                1,
+                (Math.max(1, rect.width) / renderedHeight) * 1.1,
+              );
+              const expected = Math.min(heightScale, aspectScale);
+              const actual = Number(element.dataset.modelScale);
+              return Number.isFinite(actual) &&
+                Math.abs(actual - expected) <= 0.002;
+            }
+            """,
+            arg=".tokamak-model",
         )
         geometry = model.evaluate(
             """
@@ -462,68 +492,10 @@ def test_tokamak_wireframe_uses_theme_specific_site_pink_palettes(
     )
 
 
-def test_light_tokamak_composited_pixels_stay_pink_instead_of_violet(
-    driver: DriverFactory,
-    base_url: str,
-) -> None:
-    """Guard the final light-theme pixels, not merely the material constant.
-
-    A literal ``#ff2c92`` material can look correct in source diagnostics while
-    the transparent WebGL canvas turns it purple after additive compositing on
-    the nearly white page. That was the exact defect reported by the user, so a
-    test that inspects only ``material.color`` would pass while the visible bug
-    remained. This test renders the standalone reactor at the stable reference
-    angle, samples all saturated non-background pixels, and checks their
-    aggregate channel balance. The approved warm-pink result keeps blue less
-    than 55 levels above green and red at least 45 levels above blue. Restoring
-    either of the former violet inputs produces a substantially larger
-    blue/green gap and a smaller red/blue gap, and therefore fails without
-    depending on animation timing or individual antialiased edge pixels.
-    """
-
-    page = driver(
-        stored_theme="light",
-        viewport=(480, 420),
-        load_interactive_visuals=True,
-    )
-    page.goto(f"{base_url}/tokamak-reactor.html")
-    canvas = page.locator("canvas")
-    expect(canvas).to_be_visible()
-    page.evaluate(
-        """
-        () => window.postMessage({
-          type: "tokamak-state",
-          theme: "light",
-          rotationX: -0.3,
-          modelScale: 1,
-          visible: true,
-        }, "*")
-        """
-    )
-    expect(canvas).to_have_attribute("data-reactor-theme", "light")
-    page.wait_for_timeout(100)
-
-    image = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
-    saturated_pixels = [
-        pixel
-        for pixel in image.getdata()
-        if pixel[0] > 120 and max(pixel) - min(pixel) > 30
-    ]
-    assert len(saturated_pixels) > 20_000
-
-    red, green, blue = (
-        sum(pixel[channel] for pixel in saturated_pixels)
-        / len(saturated_pixels)
-        for channel in range(3)
-    )
-    assert blue - green < 55
-    assert red - blue > 45
-
-
-def test_tokamak_stops_rendering_when_the_scene_is_idle(
+def test_tokamak_demand_render_lifecycle_stays_idle_active_and_offscreen(
     driver: DriverFactory,
 ) -> None:
-    """Render one settled frame instead of running an endless animation loop.
+    """Preserve the complete demand-render lifecycle in one ordered scene.
 
     The reactor has no autonomous motion: its angle changes only when scrolling,
     resizing, or switching theme. The former implementation nevertheless called
@@ -534,6 +506,14 @@ def test_tokamak_stops_rendering_when_the_scene_is_idle(
     interval. It then scrolls the page slightly and requires one new frame,
     guarding both halves of the contract: no waste while static and no frozen
     visual when the scroll-linked angle really changes.
+
+    Once active, the same scene must keep benchmark-only GPU timer polling
+    disabled throughout several scroll-linked renders.  Finally, the test
+    recenters the reactor before moving it fully offscreen and proves that both
+    its paused state and frame counter remain unchanged for the original 400 ms
+    observation window.  Each phase records its own frame baseline and restores
+    a visible precondition, so sharing one WebGL compilation removes setup work
+    without carrying an ambiguous state into the next lifecycle contract.
     """
 
     page = driver(
@@ -555,6 +535,34 @@ def test_tokamak_stops_rendering_when_the_scene_is_idle(
         page.wait_for_timeout(25)
 
     assert int(canvas.get_attribute("data-render-frames") or "0") > settled_frames
+
+    canvas = _show_reactor(page)
+    scrolling_baseline = int(
+        canvas.get_attribute("data-render-frames") or "0"
+    )
+    for offset in (80, -35, 110, -60):
+        page.mouse.wheel(0, offset)
+        page.wait_for_timeout(50)
+
+    expect(canvas).to_have_attribute("data-gpu-timer", "disabled")
+    assert canvas.get_attribute("data-gpu-frame-ms") is None
+    expect(canvas).to_have_attribute(
+        "data-last-frame-ms",
+        re.compile(r"^\d+\.\d{3}$"),
+    )
+    assert int(
+        canvas.get_attribute("data-render-frames") or "0"
+    ) > scrolling_baseline
+
+    canvas = _show_reactor(page)
+    page.evaluate(
+        "() => window.scrollTo({top: 0, behavior: 'instant'})"
+    )
+    expect(canvas).to_have_attribute("data-render-visible", "false")
+    expect(canvas).to_have_attribute("data-render-paused", "true")
+    paused_frames = int(canvas.get_attribute("data-render-frames") or "0")
+    page.wait_for_timeout(400)
+    assert int(canvas.get_attribute("data-render-frames") or "0") == paused_frames
 
 
 def test_scroll_state_reaches_tokamak_without_a_second_host_animation_frame(
@@ -620,10 +628,10 @@ def test_scroll_state_reaches_tokamak_without_a_second_host_animation_frame(
         page.evaluate("window.__mutaTestSetAnimationFramesPaused(false)")
 
 
-def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
+def test_tokamak_pipeline_preserves_msaa_batching_and_whole_frame_work(
     driver: DriverFactory,
 ) -> None:
-    """Keep geometric edge quality while removing redundant multisampling.
+    """Keep geometric edge quality and static batching in one fresh scene.
 
     Four-sample MSAA is still required for the wireframe scene, but applying it
     again to fullscreen bloom, SMAA, and final-output triangles cannot improve
@@ -633,6 +641,12 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     canvas MSAA, single-sample postprocessing, and the fused sixteen-pass
     fullscreen chain. Reintroducing the former multisampled composer buffers or
     accidentally dropping scene MSAA will therefore fail explicitly.
+
+    The same immutable diagnostics also prove that the source's 171 static line
+    objects are baked into far fewer live buffers without deleting vertices and
+    that complete-frame draw calls stay below the former high-cost pipeline.
+    Reading both contracts from the same dark 1280 x 720 scene removes a second
+    identical WebGL compilation; no event or state mutation separates them.
     """
 
     page = driver(
@@ -657,70 +671,6 @@ def test_tokamak_uses_msaa_only_for_geometry_and_single_sample_postprocessing(
     expect(canvas).to_have_attribute("data-gpu-timer", "disabled")
     assert canvas.get_attribute("data-gpu-frame-ms") is None
 
-
-def test_tokamak_does_not_poll_gpu_timer_queries_during_normal_scrolling(
-    driver: DriverFactory,
-) -> None:
-    """Keep benchmark-only GPU synchronization out of production scrolling.
-
-    The optimization benchmark originally left
-    ``EXT_disjoint_timer_query_webgl2`` enabled in the shipped reactor. Every
-    state-driven render created a GPU query and polled its completion every
-    16 milliseconds. On the affected machine those reads competed with
-    compositor work and sometimes forced driver synchronization precisely while
-    the user was scrolling through the reactor, turning an otherwise cheap
-    demand-rendered update into a visibly jerky section.
-
-    The production canvas must explicitly report that this diagnostic is
-    disabled and must never publish a GPU-frame result, even after several
-    scroll-linked renders. Restoring the old query creation/polling loop changes
-    ``data-gpu-timer`` to ``supported`` or ``unavailable`` and, on supported
-    hardware, creates ``data-gpu-frame-ms``; either regression fails here.
-    CPU-side frame diagnostics remain available and are verified separately.
-    """
-
-    page = driver(
-        stored_theme="dark",
-        viewport=(1280, 720),
-        load_interactive_visuals=True,
-    )
-    canvas = _show_reactor(page)
-
-    for offset in (80, -35, 110, -60):
-        page.mouse.wheel(0, offset)
-        page.wait_for_timeout(50)
-
-    expect(canvas).to_have_attribute("data-gpu-timer", "disabled")
-    assert canvas.get_attribute("data-gpu-frame-ms") is None
-    expect(canvas).to_have_attribute(
-        "data-last-frame-ms",
-        re.compile(r"^\d+\.\d{3}$"),
-    )
-
-
-def test_tokamak_batches_static_wireframes_and_reports_whole_frame_work(
-    driver: DriverFactory,
-) -> None:
-    """Collapse identical static line submissions without deleting geometry.
-
-    The source model contains 171 LineSegments objects, many of which use the
-    same material and render order. Sending every object separately was a large
-    CPU and driver overhead even though their vertices never move relative to
-    each other. The optimized renderer bakes those transforms into combined
-    buffers while preserving the original source count for diagnostics. This
-    test requires a substantial reduction in live line objects, retains a
-    nonzero line-vertex count, and caps complete-frame draw calls high enough to
-    allow platform variation but low enough to detect a return to the former
-    roughly 400-call dark-theme pipeline, where double-sided transparent meshes
-    required separate back- and front-face submissions.
-    """
-
-    page = driver(
-        stored_theme="dark",
-        viewport=(1280, 720),
-        load_interactive_visuals=True,
-    )
-    canvas = _show_reactor(page)
     diagnostics = canvas.evaluate(
         """
         (element) => ({
@@ -739,53 +689,29 @@ def test_tokamak_batches_static_wireframes_and_reports_whole_frame_work(
     assert diagnostics["renderedLines"] > 30_000
 
 
-def test_tokamak_pauses_when_it_leaves_the_viewport(
-    driver: DriverFactory,
-) -> None:
-    """Stop all reactor GPU work after the containing section leaves view.
-
-    Demand rendering alone prevents idle redraws, but an offscreen resize or
-    theme event could still schedule expensive frames for content the user
-    cannot see. The parent page now tracks the reactor with IntersectionObserver
-    and sends an explicit visibility state to the iframe. This regression first
-    activates the model, then moves it well outside the pre-render margin and
-    proves both that the renderer enters its paused state and that its frame
-    counter cannot advance while offscreen.
-    """
-
-    page = driver(
-        stored_theme="dark",
-        viewport=(1280, 720),
-        load_interactive_visuals=True,
-    )
-    canvas = _show_reactor(page)
-
-    page.evaluate(
-        "() => window.scrollTo({top: 0, behavior: 'instant'})"
-    )
-    expect(canvas).to_have_attribute("data-render-visible", "false")
-    expect(canvas).to_have_attribute("data-render-paused", "true")
-    paused_frames = int(canvas.get_attribute("data-render-frames") or "0")
-    page.wait_for_timeout(400)
-    assert int(canvas.get_attribute("data-render-frames") or "0") == paused_frames
-
-
 def test_tokamak_matches_intended_visual_reference(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """Protect the reactor image while allowing only subpixel GPU rounding.
+    """Protect all three approved reactor pixel contracts in one renderer.
 
     Performance changes in this renderer touch batching, transparent face
     submission, MSAA target routing, and bloom sampling. Each one can improve
     frame time while silently changing line density, occlusion, glow, or color.
-    The checked-in references capture the approved renderer at the same
-    viewport, device scale, model angle, and both themes. This test renders the
-    standalone scene and compares every RGB pixel. It permits tiny interpolation
-    and floating-point differences that are invisible at normal scale, but
-    rejects broad or high-amplitude changes; a missing wire group, altered
-    bloom, black light-theme surface, reduced resolution, or different camera
-    framing exceeds these limits by orders of magnitude.
+    The checked-in references capture both themes at the stable front angle and
+    the light renderer at its oblique scroll angle. Every scene sends a complete
+    state, waits for a new demand-rendered frame, and keeps its own screenshot.
+    The light front image additionally retains the aggregate channel contract
+    that catches violet compositing even when source material constants look
+    pink. The oblique crop retains the dedicated regression against a broad
+    translucent bloom washing over the vessel.
+
+    Sharing only the standalone WebGL compilation removes repeated setup; it
+    does not share pixels or tolerances between scenes. Tiny interpolation and
+    floating-point differences remain allowed, while missing wire groups,
+    violet output, altered bloom, black light surfaces, reduced resolution, or
+    stale camera framing still exceed the unchanged limits by orders of
+    magnitude.
     """
 
     page = driver(
@@ -797,8 +723,12 @@ def test_tokamak_matches_intended_visual_reference(
     canvas = page.locator("canvas")
     expect(canvas).to_be_visible()
     baselines = Path(__file__).with_name("visual_baselines")
+    light_front: Image.Image | None = None
 
     for theme in ("dark", "light"):
+        prior_frames = int(
+            canvas.get_attribute("data-render-frames") or "0"
+        )
         page.evaluate(
             """
             (selectedTheme) => window.postMessage({
@@ -812,63 +742,49 @@ def test_tokamak_matches_intended_visual_reference(
             theme,
         )
         expect(canvas).to_have_attribute("data-reactor-theme", theme)
+        page.wait_for_function(
+            """
+            (baseline) => Number(
+              document.querySelector("canvas").dataset.renderFrames
+            ) > baseline
+            """,
+            arg=prior_frames,
+        )
         page.wait_for_timeout(100)
 
         actual = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
         expected = Image.open(
             baselines / f"tokamak-{theme}.png"
         ).convert("RGB")
-        difference = ImageChops.difference(expected, actual)
-        channel_means = ImageStat.Stat(difference).mean
-        pixels = list(difference.getdata())
-        total_pixels = len(pixels)
-        high_delta_fraction = (
-            sum(max(pixel) > 8 for pixel in pixels) / total_pixels
-        )
-        extreme_delta_fraction = (
-            sum(max(pixel) > 24 for pixel in pixels) / total_pixels
-        )
+        (
+            maximum_channel_mean,
+            high_delta_fraction,
+            extreme_delta_fraction,
+        ) = _image_difference_statistics(expected, actual)
 
-        assert max(channel_means) < 0.6
-        assert high_delta_fraction < 0.012
-        assert extreme_delta_fraction < 0.003
+        assert maximum_channel_mean < 0.6, theme
+        assert high_delta_fraction < 0.012, theme
+        assert extreme_delta_fraction < 0.003, theme
 
+        if theme == "light":
+            light_front = actual
 
-def test_light_plasma_glow_stays_local_at_an_oblique_scroll_angle(
-    driver: DriverFactory,
-    base_url: str,
-) -> None:
-    """Keep light-theme plasma luminous without shading the reactor body.
-
-    The reactor rotates around its horizontal axis as its section passes through
-    the viewport. At the approximately -0.52-radian side-on transition, the
-    earlier light-theme treatment sent an overbright white core through the
-    fullscreen bloom chain. Its wide pink-white wash covered the vessel around
-    the plasma and looked like translucent shading rather than emitted light.
-    The corrected light profile feeds a dedicated compact bloom setting and
-    builds the glow from a narrow white center, saturated pink core, and tightly
-    feathered rim. Its radius and strength are intentionally much lower than the
-    dark-theme bloom. The broad flat energy disk is dark-theme-only, and the
-    dark renderer deliberately keeps its established material unchanged.
-
-    This test reproduces that exact light-theme angle in the standalone renderer
-    and compares the plasma plus the surrounding vessel with a checked-in
-    reference. The crop is intentionally taller than the luminous ring: this
-    makes the test fail if a future shader or bloom change again paints a broad
-    translucent band over the wireframe, even when the ring itself still looks
-    bright. Reverting to the rejected wide bloom, the old constant-opacity
-    toruses, or the contour-like single halo changes this crop far beyond the
-    small cross-GPU tolerance below and must fail the test.
-    """
-
-    page = driver(
-        stored_theme="light",
-        viewport=(480, 420),
-        load_interactive_visuals=True,
+    assert light_front is not None
+    saturated_pixels = [
+        pixel
+        for pixel in light_front.getdata()
+        if pixel[0] > 120 and max(pixel) - min(pixel) > 30
+    ]
+    assert len(saturated_pixels) > 20_000
+    red, green, blue = (
+        sum(pixel[channel] for pixel in saturated_pixels)
+        / len(saturated_pixels)
+        for channel in range(3)
     )
-    page.goto(f"{base_url}/tokamak-reactor.html")
-    canvas = page.locator("canvas")
-    expect(canvas).to_be_visible()
+    assert blue - green < 55
+    assert red - blue > 45
+
+    prior_frames = int(canvas.get_attribute("data-render-frames") or "0")
     page.evaluate(
         """
         () => window.postMessage({
@@ -885,27 +801,30 @@ def test_light_plasma_glow_stays_local_at_an_oblique_scroll_angle(
         "data-plasma-halo",
         "theme-aware-light-v3",
     )
+    page.wait_for_function(
+        """
+        (baseline) => Number(
+          document.querySelector("canvas").dataset.renderFrames
+        ) > baseline
+        """,
+        arg=prior_frames,
+    )
     page.wait_for_timeout(100)
 
-    actual = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
-    expected = Image.open(
-        Path(__file__).with_name("visual_baselines")
-        / "tokamak-light-oblique.png"
+    oblique = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+    expected_oblique = Image.open(
+        baselines / "tokamak-light-oblique.png"
     ).convert("RGB")
     plasma_crop = (70, 105, 410, 280)
-    difference = ImageChops.difference(
-        expected.crop(plasma_crop),
-        actual.crop(plasma_crop),
-    )
-    pixels = list(difference.getdata())
-    total_pixels = len(pixels)
-    high_delta_fraction = (
-        sum(max(pixel) > 8 for pixel in pixels) / total_pixels
-    )
-    extreme_delta_fraction = (
-        sum(max(pixel) > 24 for pixel in pixels) / total_pixels
+    (
+        maximum_channel_mean,
+        high_delta_fraction,
+        extreme_delta_fraction,
+    ) = _image_difference_statistics(
+        expected_oblique.crop(plasma_crop),
+        oblique.crop(plasma_crop),
     )
 
-    assert max(ImageStat.Stat(difference).mean) < 1.0
-    assert high_delta_fraction < 0.02
-    assert extreme_delta_fraction < 0.005
+    assert maximum_channel_mean < 1.0, "light-oblique"
+    assert high_delta_fraction < 0.02, "light-oblique"
+    assert extreme_delta_fraction < 0.005, "light-oblique"

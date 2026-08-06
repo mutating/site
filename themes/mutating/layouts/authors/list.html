@@ -7,7 +7,7 @@
   </header>
   <div class="authors-index__grid" id="authors">
     {{ range .Pages.ByTitle }}
-      {{- $status := lower (default "human" .Params.status) -}}
+      {{- $status := partial "author-kind.html" . -}}
       <a class="author-directory-card" href="{{ .RelPermalink }}">
         {{ with .Params.photo }}
           <img src="{{ . | relURL }}" alt="">

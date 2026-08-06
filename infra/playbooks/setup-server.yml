@@ -1,0 +1,253 @@
+---
+# Bootstrap a fresh Debian VPS from a local machine:
+#   ansible-playbook -i 'SERVER_IP,' infra/playbooks/setup-server.yml \
+#     -u root -e ansible_host=SERVER_IP
+#
+# By default the local checkout containing this playbook is copied to the VPS.
+# Override local_site_path, site_domain, certbot_email or deploy_path with -e.
+
+- name: Set up the web server
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    site_domain: mutating.tech
+    site_aliases:
+      - www.mutating.tech
+    certbot_email: contact@mutating.tech
+    deploy_user: user
+    deploy_group: user
+    local_site_path: "{{ playbook_dir }}/../.."
+    source_path: /opt/mutating.tech
+    deploy_path: /var/www/mutating.tech
+    acme_webroot: /var/www/letsencrypt
+    nginx_site_name: mutating.tech
+
+  handlers:
+    - name: Test nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      listen: nginx configuration changed
+
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      listen: nginx configuration changed
+
+  tasks:
+    - name: Require Debian
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == 'Debian'
+        fail_msg: This playbook currently supports Debian-based systems only.
+
+    - name: Install server packages
+      ansible.builtin.apt:
+        name:
+          - git
+          - hugo
+          - nginx
+          - certbot
+          - python3-certbot-nginx
+          - curl
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create deployment group
+      ansible.builtin.group:
+        name: "{{ deploy_group }}"
+        state: present
+
+    - name: Create deployment account
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        create_home: true
+        shell: /bin/bash
+        state: present
+
+    - name: Create source, site and ACME directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ source_path }}", owner: "{{ deploy_user }}", group: "{{ deploy_group }}", mode: '0755' }
+        - { path: "{{ deploy_path }}", owner: "{{ deploy_user }}", group: "{{ deploy_group }}", mode: '0755' }
+        - { path: "{{ acme_webroot }}/.well-known/acme-challenge", owner: root, group: root, mode: '0755' }
+        - { path: /etc/letsencrypt/renewal-hooks/deploy, owner: root, group: root, mode: '0755' }
+
+    - name: Copy the local site checkout to the server
+      ansible.builtin.copy:
+        src: "{{ local_site_path }}/"
+        dest: "{{ source_path }}/"
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        mode: preserve
+
+    - name: Install nginx site configuration
+      ansible.builtin.copy:
+        dest: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          server {
+              listen 80 default_server;
+              listen [::]:80 default_server;
+              server_name {{ site_domain }} {{ site_aliases | join(' ') }} _;
+
+              root {{ deploy_path }};
+              index index.html;
+              charset utf-8;
+              server_tokens off;
+
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+              location ^~ /.well-known/acme-challenge/ {
+                  root {{ acme_webroot }};
+                  default_type text/plain;
+                  try_files $uri =404;
+              }
+
+              location / {
+                  try_files $uri $uri/ $uri/index.html =404;
+              }
+
+              location ~* \.(?:css|js|mjs|json|jpg|jpeg|png|gif|webp|avif|svg|ico|woff|woff2|ttf|otf)$ {
+                  try_files $uri =404;
+                  expires 7d;
+                  add_header Cache-Control "public, max-age=604800";
+                  add_header X-Content-Type-Options "nosniff" always;
+              }
+
+              location ~ /\.(?!well-known/) {
+                  deny all;
+              }
+          }
+      notify: nginx configuration changed
+
+    - name: Enable site and disable default site
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ nginx_site_name }}"
+        state: link
+        force: true
+      notify: nginx configuration changed
+
+    - name: Remove Debian default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: nginx configuration changed
+
+    - name: Apply nginx configuration before using it
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure nginx starts and remains running
+      ansible.builtin.service:
+        name: nginx
+        enabled: true
+        state: started
+
+    - name: Build the site for the first time
+      become_user: "{{ deploy_user }}"
+      ansible.builtin.command: hugo --gc --minify --destination "{{ deploy_path }}"
+      args:
+        chdir: "{{ source_path }}"
+      changed_when: true
+
+    - name: Install initial certificate bootstrap script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/mutating-cert-bootstrap
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          set -eu
+          domain="{{ site_domain }}"
+          certificate="/etc/letsencrypt/live/${domain}/fullchain.pem"
+          marker="{{ acme_webroot }}/.well-known/acme-challenge/${domain}"
+          probe="http://${domain}/.well-known/acme-challenge/${domain}"
+          [ -s "$certificate" ] && exit 0
+          if [ ! -s "$marker" ]; then exit 0; fi
+          expected="$(cat "$marker")"
+          observed="$(curl --fail --silent --show-error --location --max-time 20 "$probe" 2>/dev/null || true)"
+          [ "$observed" = "$expected" ] || exit 0
+          certbot --nginx --non-interactive --agree-tos --email "{{ certbot_email }}" --redirect -d "$domain"
+          nginx -t
+          systemctl reload nginx
+
+    - name: Create ACME DNS-readiness marker
+      ansible.builtin.copy:
+        dest: "{{ acme_webroot }}/.well-known/acme-challenge/{{ site_domain }}"
+        content: "{{ ansible_facts.default_ipv4.address }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install certificate bootstrap service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mutating-cert-bootstrap.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Issue the initial TLS certificate for {{ site_domain }}
+          After=network-online.target nginx.service
+          Wants=network-online.target
+          ConditionPathExists=!/etc/letsencrypt/live/{{ site_domain }}/fullchain.pem
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/mutating-cert-bootstrap
+
+    - name: Install certificate bootstrap timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mutating-cert-bootstrap.timer
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Retry initial TLS certificate issuance for {{ site_domain }}
+          [Timer]
+          OnBootSec=2min
+          OnUnitActiveSec=15min
+          RandomizedDelaySec=2min
+          Persistent=true
+          Unit=mutating-cert-bootstrap.service
+          [Install]
+          WantedBy=timers.target
+
+    - name: Install certificate renewal nginx hook
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          set -eu
+          nginx -t
+          systemctl reload nginx
+
+    - name: Enable nginx and certificate timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop:
+        - nginx
+        - certbot.timer
+        - mutating-cert-bootstrap.timer
+
+    - name: Try initial certificate issuance
+      ansible.builtin.systemd:
+        name: mutating-cert-bootstrap.service
+        state: started
+      changed_when: false

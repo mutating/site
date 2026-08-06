@@ -18,10 +18,10 @@
   </header>
   <div class="post__layout">
     {{ if gt (len .TableOfContents) 100 }}
-    <aside class="post__toc" aria-label="Table of contents">
-      <span>On this page</span>
+    <details class="post__toc">
+      <summary>On this page</summary>
       {{ .TableOfContents }}
-    </aside>
+    </details>
     {{ end }}
     <div class="post__content">{{ .Content }}</div>
   </div>

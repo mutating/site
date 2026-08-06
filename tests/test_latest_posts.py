@@ -21,12 +21,21 @@ def _render_home_with_posts(
     tmp_path: Path,
     post_count: int,
 ) -> str:
-    """Build a temporary content tree with a controlled number of fake posts."""
+    """Build controlled HTML without copying unrelated pass-through assets."""
 
     content_dir = tmp_path / "content"
     blog_dir = content_dir / "blog"
     destination = tmp_path / "public"
+    source_theme = PROJECT_ROOT / "themes" / "mutating"
+    themes_dir = tmp_path / "themes"
     blog_dir.mkdir(parents=True)
+    shutil.copytree(
+        source_theme,
+        themes_dir / "mutating",
+        ignore=lambda directory, _names: (
+            {"static"} if Path(directory) == source_theme else set()
+        ),
+    )
     shutil.copy2(CONTENT_ROOT / "_index.md", content_dir / "_index.md")
     shutil.copy2(CONTENT_ROOT / "blog" / "_index.md", blog_dir / "_index.md")
     for post_index in range(post_count):
@@ -53,6 +62,8 @@ def _render_home_with_posts(
             str(content_dir),
             "--destination",
             str(destination),
+            "--themesDir",
+            str(themes_dir),
             "--cleanDestinationDir",
             "--noBuildLock",
         ],

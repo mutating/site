@@ -17,17 +17,23 @@ PAGER_SIZE = int(HUGO_CONFIG["pagination"]["pagerSize"])
 MARKDOWN_FIXTURE_PATH = "/blog/markdown-feature-fixture/"
 UNTAGGED_FIXTURE_PATH = "/blog/unauthored-fixture/"
 CONTROLLED_TAG_PATH = "/tags/controlled-pagination/"
-REAL_CODE_POST_PATHS = (
-    "/blog/why-agent-throughput-breaks-human-era-verification/",
-    "/blog/determinism-is-a-product-feature/",
-)
+CLIPBOARD_INIT_SCRIPT = """
+window.__copiedCode = null;
+Object.defineProperty(navigator, "clipboard", {
+  configurable: true,
+  value: {
+    writeText: async (text) => {
+      window.__copiedCode = text;
+    },
+  },
+});
+"""
 
 
 def test_blog_index_uses_shared_chrome(driver: DriverFactory) -> None:
     """Keep the blog index inside the site's shared navigation and theme chrome."""
 
-    page = driver()
-    page.goto(f"{page.url.rstrip('/')}/blog/", wait_until="domcontentloaded")
+    page = driver(initial_path="/blog/")
 
     expect(page.locator(".site-header")).to_be_visible()
     expect(page.locator(".site-footer")).to_be_visible()
@@ -79,9 +85,7 @@ def test_shared_blog_links_open_the_hugo_index(driver: DriverFactory) -> None:
 def test_blog_cards_open_individual_posts(driver: DriverFactory) -> None:
     """Open a card while keeping list-only title punctuation out of the article."""
 
-    page = driver()
-    origin = page.url.rstrip("/")
-    page.goto(f"{origin}/blog/", wait_until="domcontentloaded")
+    page = driver(initial_path="/blog/")
     first_title = page.locator(".blog-card h2").first.inner_text()
     page.locator(".blog-card__link").first.click()
 
@@ -119,16 +123,14 @@ def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
 def test_post_renders_full_markdown_features(driver: DriverFactory) -> None:
     """Render every supported Markdown structure from the controlled test post."""
 
-    page = driver()
-    origin = page.url.rstrip("/")
-    page.goto(f"{origin}{MARKDOWN_FIXTURE_PATH}", wait_until="domcontentloaded")
+    page = driver(initial_path=MARKDOWN_FIXTURE_PATH)
 
     article = page.locator(".post__content")
     expect(article.locator("h2")).to_have_count(3)
     expect(article.locator("ol")).to_have_count(1)
     expect(article.locator("blockquote")).to_have_count(1)
     expect(article.locator("table")).to_have_count(1)
-    expect(article.locator("pre code")).to_have_count(1)
+    expect(article.locator("pre code")).to_have_count(2)
 
 
 def test_post_heading_links_stay_visually_quiet_until_hover(
@@ -136,10 +138,10 @@ def test_post_heading_links_stay_visually_quiet_until_hover(
 ) -> None:
     """Keep headings unchanged at rest, then reveal their underline and chain."""
 
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}{MARKDOWN_FIXTURE_PATH}",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        reduced_motion="reduce",
+        initial_path=MARKDOWN_FIXTURE_PATH,
     )
 
     headings = page.locator(".post__content h2")
@@ -174,10 +176,9 @@ def test_post_heading_link_navigates_to_its_fragment(
 ) -> None:
     """Update the URL hash when a reader clicks a Markdown heading."""
 
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}{MARKDOWN_FIXTURE_PATH}",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path=MARKDOWN_FIXTURE_PATH,
     )
 
     target = page.locator("#structured-signals")
@@ -195,15 +196,15 @@ def test_code_copy_button_appears_only_on_block_hover(
 ) -> None:
     """Reveal the code-copy control on hover and hide it again afterward."""
 
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}{MARKDOWN_FIXTURE_PATH}",
-        wait_until="domcontentloaded",
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path=MARKDOWN_FIXTURE_PATH,
     )
 
-    block = page.locator(".post__content .code-block")
+    blocks = page.locator(".post__content .code-block")
+    block = blocks.first
     button = block.get_by_role("button", name="Copy code to clipboard")
-    expect(block).to_have_count(1)
+    expect(blocks).to_have_count(2)
     expect(button).to_be_hidden()
     expect(block).to_have_attribute("data-copy-hover", "false")
 
@@ -219,53 +220,51 @@ def test_code_copy_button_appears_only_on_block_hover(
     expect(button).to_be_hidden()
 
 
-def test_real_posts_receive_copy_controls_for_every_fenced_block(
+def test_every_fenced_block_receives_its_own_copy_control(
     driver: DriverFactory,
 ) -> None:
-    """Enhance every real Markdown code block, not only the test fixture."""
+    """Enhance every fenced block in a controlled multi-block Markdown post."""
 
-    page = driver(load_interactive_visuals=False)
-    origin = page.url.rstrip("/")
+    page = driver(
+        load_interactive_visuals=False,
+        initial_path=MARKDOWN_FIXTURE_PATH,
+    )
+    fenced_blocks = page.locator(".post__content pre:has(code)")
+    enhanced_blocks = page.locator(".post__content .code-block")
+    buttons = page.locator(".post__content .code-copy-button")
 
-    for post_path in REAL_CODE_POST_PATHS:
-        page.goto(f"{origin}{post_path}", wait_until="domcontentloaded")
-        fenced_blocks = page.locator(".post__content pre:has(code)")
-        enhanced_blocks = page.locator(".post__content .code-block")
-        buttons = page.locator(".post__content .code-copy-button")
+    expect(fenced_blocks).to_have_count(2)
+    expect(enhanced_blocks).to_have_count(2)
+    expect(buttons).to_have_count(2)
 
-        assert fenced_blocks.count() > 0
-        expect(enhanced_blocks).to_have_count(fenced_blocks.count())
-        expect(buttons).to_have_count(fenced_blocks.count())
-
-        enhanced_blocks.first.hover()
-        expect(buttons.first).to_be_visible()
+    for index in range(2):
+        block = enhanced_blocks.nth(index)
+        own_button = block.locator(":scope > .code-copy-button")
+        expect(own_button).to_have_count(1)
+        block.hover()
+        expect(own_button).to_be_visible()
+        expect(buttons.nth(1 - index)).to_be_hidden()
 
 
 def test_code_copy_button_writes_the_rendered_source(
     driver: DriverFactory,
 ) -> None:
-    """Copy one fenced source block and expose brief success feedback."""
+    """Copy one fenced source block and expose brief success feedback.
 
-    page = driver(load_interactive_visuals=False)
-    page.add_init_script(
-        """
-        window.__copiedCode = null;
-        Object.defineProperty(navigator, "clipboard", {
-          configurable: true,
-          value: {
-            writeText: async (text) => {
-              window.__copiedCode = text;
-            },
-          },
-        });
-        """
-    )
-    page.goto(
-        f"{page.url.rstrip('/')}{MARKDOWN_FIXTURE_PATH}",
-        wait_until="domcontentloaded",
+    The clipboard shim is installed as a context init script so the fixture
+    can open the Markdown fixture directly.  This preserves the important
+    ordering (the shim exists before site JavaScript binds the copy handler)
+    while avoiding an otherwise discarded homepage navigation.
+    """
+
+    page = driver(
+        load_interactive_visuals=False,
+        reduced_motion="reduce",
+        initial_path=MARKDOWN_FIXTURE_PATH,
+        init_scripts=(CLIPBOARD_INIT_SCRIPT,),
     )
 
-    block = page.locator(".post__content .code-block")
+    block = page.locator(".post__content .code-block").first
     expected_source = block.locator("code").text_content()
     block.scroll_into_view_if_needed()
     block.hover()
@@ -349,14 +348,22 @@ def test_tag_link_opens_a_distinct_filtered_collection(
     assert UNTAGGED_FIXTURE_PATH not in post_urls
 
 
-def test_tag_collection_reuses_full_pagination(
+def test_tag_collection_paginates_and_punctuates_titles_once(
     driver: DriverFactory,
 ) -> None:
-    """Paginate a controlled tag independently from the repository post pool."""
+    """Paginate the controlled tag and give every list title one final period."""
 
     page = driver(load_interactive_visuals=False)
     origin = page.url.rstrip("/")
     page.goto(f"{origin}{CONTROLLED_TAG_PATH}", wait_until="domcontentloaded")
+
+    titles = page.locator(".blog-card h2").all_text_contents()
+    authored_period = f"Controlled tag signal {PAGER_SIZE + 2:02d}."
+    automatic_period = f"Controlled tag signal {PAGER_SIZE + 1:02d}."
+    assert authored_period in titles
+    assert automatic_period in titles
+    assert all(title.endswith(".") for title in titles)
+    assert all(not title.endswith("..") for title in titles)
 
     expect(page.locator(".blog-card")).to_have_count(PAGER_SIZE)
     expect(page.locator(".blog-pagination__page")).to_have_count(2)
@@ -380,27 +387,6 @@ def test_tag_collection_reuses_full_pagination(
     all_urls = first_page_urls + second_page_urls
     assert len(all_urls) == PAGER_SIZE + 2
     assert len(all_urls) == len(set(all_urls))
-
-
-def test_post_list_titles_receive_exactly_one_final_period(
-    driver: DriverFactory,
-) -> None:
-    """Append a period to list titles without duplicating an existing one."""
-
-    page = driver(load_interactive_visuals=False)
-    page.goto(
-        f"{page.url.rstrip('/')}{CONTROLLED_TAG_PATH}",
-        wait_until="domcontentloaded",
-    )
-
-    titles = page.locator(".blog-card h2").all_text_contents()
-    authored_period = f"Controlled tag signal {PAGER_SIZE + 2:02d}."
-    automatic_period = f"Controlled tag signal {PAGER_SIZE + 1:02d}."
-
-    assert authored_period in titles
-    assert automatic_period in titles
-    assert all(title.endswith(".") for title in titles)
-    assert all(not title.endswith("..") for title in titles)
 
 
 def test_post_page_title_receives_exactly_one_final_period(
@@ -525,39 +511,73 @@ def test_desktop_post_centers_copy_and_moves_toc_to_the_left(
     assert geometry["tocRight"] <= geometry["copyLeft"]
 
 
+def test_post_table_of_contents_is_collapsed_until_requested(
+    driver: DriverFactory,
+) -> None:
+    """Hide a long post outline by default and reveal its anchor links on demand."""
+
+    page = driver(
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+    page.goto(
+        f"{page.url.rstrip('/')}{MARKDOWN_FIXTURE_PATH}",
+        wait_until="domcontentloaded",
+    )
+
+    toc = page.locator("details.post__toc")
+    summary = toc.locator("summary")
+    navigation = toc.locator("#TableOfContents")
+
+    expect(toc).not_to_have_attribute("open", "")
+    expect(summary).to_have_text("On this page")
+    expect(summary).to_be_visible()
+    expect(navigation).to_be_hidden()
+
+    collapsed_content_top = page.locator(".post__content").evaluate(
+        "element => element.getBoundingClientRect().top"
+    )
+    summary.click()
+
+    expect(toc).to_have_attribute("open", "")
+    expect(navigation).to_be_visible()
+    expect(navigation.locator('a[href^="#"]')).not_to_have_count(0)
+    expanded_content_top = page.locator(".post__content").evaluate(
+        "element => element.getBoundingClientRect().top"
+    )
+    assert expanded_content_top > collapsed_content_top
+
+
 def test_single_edge_recommendation_spans_the_post_navigation(
     driver: DriverFactory,
 ) -> None:
-    """Expand lone Previous and Next recommendations across the full nav width."""
+    """Expand lone Previous and Next recommendations across the full nav width.
+
+    The temporary test site contains many posts with tied dates, so deriving
+    an "edge" from whichever cards happen to appear first on the paginated
+    index is not a stable contract: Hugo's tie ordering can legitimately put a
+    middle post first. Two dedicated fixtures pin one post far beyond each
+    end of the collection, making the one-link navigation invariant explicit
+    while still exercising the real rendered post template and CSS.
+    """
 
     page = driver(
         viewport=(1440, 900),
         load_interactive_visuals=False,
     )
     origin = page.url.rstrip("/")
-    page.goto(f"{origin}/blog/", wait_until="domcontentloaded")
 
-    first_post_url = page.locator(".blog-card__link").first.get_attribute("href")
-    page_links = page.locator(".blog-pagination__page")
-    last_page = (
-        max(int(value) for value in page_links.all_text_contents())
-        if page_links.count()
-        else 1
-    )
-    if last_page > 1:
-        page.goto(
-            f"{origin}/blog/page/{last_page}/",
+    edge_expectations = {
+        "/blog/newest-navigation-edge-fixture/": "post__nav-link--previous",
+        "/blog/oldest-navigation-edge-fixture/": "post__nav-link--next",
+    }
+    directions: set[str] = set()
+    for post_url, expected_direction in edge_expectations.items():
+        response = page.goto(
+            f"{origin}{post_url}",
             wait_until="domcontentloaded",
         )
-    last_post_url = page.locator(".blog-card__link").last.get_attribute("href")
-
-    assert first_post_url is not None
-    assert last_post_url is not None
-    assert first_post_url != last_post_url
-
-    directions: set[str] = set()
-    for post_url in (first_post_url, last_post_url):
-        page.goto(f"{origin}{post_url}", wait_until="domcontentloaded")
+        assert response is not None and response.ok
         navigation = page.locator(".post__nav")
         link = navigation.locator(".post__nav-link")
         expect(link).to_have_count(1)
@@ -569,10 +589,8 @@ def test_single_edge_recommendation_spans_the_post_navigation(
         assert abs(link_box["width"] - navigation_box["width"]) <= 1
 
         classes = link.get_attribute("class") or ""
-        if "post__nav-link--previous" in classes:
-            directions.add("previous")
-        if "post__nav-link--next" in classes:
-            directions.add("next")
+        assert expected_direction in classes
+        directions.add(expected_direction.removeprefix("post__nav-link--"))
 
     assert directions == {"previous", "next"}
 
@@ -614,85 +632,88 @@ def test_post_navigation_has_equal_space_above_and_below(
     assert abs(spacing["above"] - spacing["below"]) <= 1
 
 
-def test_blog_pagination_covers_every_post_once(driver: DriverFactory) -> None:
-    """Walk every page with configured sizes and no duplicate post URLs."""
+def test_blog_pagination_covers_posts_and_both_directional_edges(
+    driver: DriverFactory,
+) -> None:
+    """Cover every direct page route plus the real links at both edges.
+
+    Two former tests repeated the initial blog load: one directly loaded every
+    numbered route to audit card coverage, while the other followed the first
+    ``Older`` link and inspected the outward controls. The merged flow keeps
+    both navigation modes deliberately. It first clicks the real link and
+    verifies page two, then directly reloads each numbered URL (including page
+    two) so a working link cannot hide a broken cold route. The apparently
+    redundant reload therefore preserves the original test semantics while
+    removing only the duplicated browser context and page-one bootstrap.
+    """
 
     page = driver(load_interactive_visuals=False)
     origin = page.url.rstrip("/")
     page.goto(f"{origin}/blog/", wait_until="domcontentloaded")
     page_links = page.locator(".blog-pagination__page")
-    total_pages = (
-        max(int(value) for value in page_links.all_text_contents())
-        if page_links.count()
-        else 1
-    )
     collected_urls: list[str] = []
     page_counts: list[int] = []
-
-    for page_number in range(1, total_pages + 1):
-        path = "/blog/" if page_number == 1 else f"/blog/page/{page_number}/"
-        page.goto(f"{origin}{path}", wait_until="domcontentloaded")
+    if page_links.count() == 0:
+        expect(page.locator(".blog-pagination")).to_have_count(0)
         cards = page.locator(".blog-card")
         page_counts.append(cards.count())
-
-        if total_pages > 1:
-            expect(
-                page.locator('.blog-pagination__page[aria-current="page"]')
-            ).to_have_text(str(page_number))
         collected_urls.extend(
             cards.locator(".blog-card__link").evaluate_all(
                 "(links) => links.map((link) => link.getAttribute('href'))"
             )
         )
+    else:
+        total_pages = max(int(value) for value in page_links.all_text_contents())
+        expect(
+            page.locator('.blog-pagination__page[aria-current="page"]')
+        ).to_have_text("1")
+        expect(
+            page.locator('.blog-pagination__direction[aria-disabled="true"]')
+        ).to_have_text("← Newer")
+        older = page.get_by_role("link", name="Older →")
+        expect(older).to_have_attribute("href", "/blog/page/2/")
+
+        page_one_cards = page.locator(".blog-card")
+        page_counts.append(page_one_cards.count())
+        collected_urls.extend(
+            page_one_cards.locator(".blog-card__link").evaluate_all(
+                "(links) => links.map((link) => link.getAttribute('href'))"
+            )
+        )
+
+        older.click()
+        expect(page).to_have_url(re.compile(r"/blog/page/2/$"))
+
+        for page_number in range(2, total_pages + 1):
+            path = f"/blog/page/{page_number}/"
+            page.goto(f"{origin}{path}", wait_until="domcontentloaded")
+            expect(
+                page.locator('.blog-pagination__page[aria-current="page"]')
+            ).to_have_text(str(page_number))
+            cards = page.locator(".blog-card")
+            page_counts.append(cards.count())
+            collected_urls.extend(
+                cards.locator(".blog-card__link").evaluate_all(
+                    "(links) => links.map((link) => link.getAttribute('href'))"
+                )
+            )
+
+        newer_url = (
+            "/blog/"
+            if total_pages == 2
+            else f"/blog/page/{total_pages - 1}/"
+        )
+        expect(page.get_by_role("link", name="← Newer")).to_have_attribute(
+            "href",
+            newer_url,
+        )
+        expect(
+            page.locator('.blog-pagination__direction[aria-disabled="true"]')
+        ).to_have_text("Older →")
 
     assert len(collected_urls) == len(set(collected_urls))
     assert all(count == PAGER_SIZE for count in page_counts[:-1])
     assert 1 <= page_counts[-1] <= PAGER_SIZE
-
-
-def test_blog_pagination_directions_reach_both_edges(
-    driver: DriverFactory,
-) -> None:
-    """Link adjacent pages and disable outward controls at both collection edges."""
-
-    page = driver(load_interactive_visuals=False)
-    origin = page.url.rstrip("/")
-    page.goto(f"{origin}/blog/", wait_until="domcontentloaded")
-    page_links = page.locator(".blog-pagination__page")
-
-    if page_links.count() == 0:
-        expect(page.locator(".blog-pagination")).to_have_count(0)
-        assert page.locator(".blog-card").count() <= PAGER_SIZE
-        return
-
-    total_pages = max(int(value) for value in page_links.all_text_contents())
-
-    expect(
-        page.locator('.blog-pagination__direction[aria-disabled="true"]')
-    ).to_have_text("← Newer")
-    expect(page.get_by_role("link", name="Older →")).to_have_attribute(
-        "href",
-        "/blog/page/2/",
-    )
-    page.get_by_role("link", name="Older →").click()
-    expect(page).to_have_url(re.compile(r"/blog/page/2/$"))
-
-    page.goto(
-        f"{origin}/blog/page/{total_pages}/",
-        wait_until="domcontentloaded",
-    )
-    newer_url = (
-        "/blog/"
-        if total_pages == 2
-        else f"/blog/page/{total_pages - 1}/"
-    )
-    expect(page.get_by_role("link", name="← Newer")).to_have_attribute(
-        "href",
-        newer_url,
-    )
-    expect(
-        page.locator('.blog-pagination__direction[aria-disabled="true"]')
-    ).to_have_text("Older →")
 
 
 def test_blog_pagination_stays_inside_a_narrow_viewport(

@@ -2360,6 +2360,18 @@ a.section-index:focus-visible {
   pointer-events: auto;
 }
 
+.contact h2,
+.contact__copy > p:not(.section-index) {
+  touch-action: pan-y;
+}
+
+.contact__selectable-text {
+  pointer-events: auto;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
 .contact .button--dark {
   background: #0b0709;
   color: #fff;
@@ -3306,15 +3318,45 @@ a.section-index:focus-visible {
   line-height: 1.5;
 }
 
-.post__toc > span {
-  display: block;
+.post__toc > summary {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 18px;
   color: var(--hot);
   font-family: var(--font-geist-mono), monospace;
   font-size: 10px;
   font-weight: 750;
   letter-spacing: 0.1em;
+  list-style: none;
   text-transform: uppercase;
+  cursor: pointer;
+}
+
+.post__toc > summary::-webkit-details-marker {
+  display: none;
+}
+
+.post__toc > summary::after {
+  content: "+";
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.post__toc[open] > summary::after {
+  content: "\2212";
+}
+
+.post__toc > summary:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.22em;
 }
 
 .post__toc ul {
@@ -3718,6 +3760,25 @@ a.section-index:focus-visible {
   margin-top: 0;
 }
 
+.author-profile__breadcrumb {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.55em;
+}
+
+.author-profile__breadcrumb a {
+  color: inherit;
+  text-decoration: none;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.24em;
+}
+
+.author-profile__breadcrumb a:hover,
+.author-profile__breadcrumb a:focus-visible {
+  text-decoration: underline;
+}
+
 .authors-index__header {
   max-width: 880px;
   margin-bottom: clamp(55px, 8vw, 100px);
@@ -3885,10 +3946,11 @@ a.section-index:focus-visible {
   left: 0;
   width: min(340px, calc(100vw - 40px));
   padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--author-status-color) 55%, var(--line));
-  border-radius: 12px;
-  background: var(--surface-raised);
-  box-shadow: var(--shadow);
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--ink) 5%, transparent);
   color: var(--ink);
   font-family: var(--font-geist), sans-serif;
   font-size: 13px;
@@ -4257,6 +4319,22 @@ a.section-index:focus-visible {
 
   .post__content {
     font-size: 17px;
+  }
+
+  .post__meta {
+    position: relative;
+  }
+
+  .post__meta .author-status--post {
+    position: static;
+  }
+
+  .post__meta .author-status--post .author-status__tooltip {
+    right: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    background: color-mix(in srgb, var(--bg) 93%, transparent);
   }
 
   .post__nav {

@@ -37,18 +37,28 @@ def test_defaults_to_dark_without_system_preference(
 
 
 @pytest.mark.parametrize(
-    ("stored_theme", "system_theme"),
+    ("stored_theme", "system_theme", "expected_contact_color"),
     [
-        ("dark", "light"),
-        ("light", "dark"),
+        ("dark", "light", "rgb(255, 247, 251)"),
+        ("light", "dark", "rgb(22, 13, 19)"),
     ],
 )
-def test_saved_theme_overrides_system_preference(
+def test_saved_theme_controls_initial_theme_and_contact_copy(
     driver: DriverFactory,
     stored_theme: str,
     system_theme: str,
+    expected_contact_color: str,
 ) -> None:
-    """Verify that a valid saved choice always wins over the system setting."""
+    """Keep saved-theme precedence and contact colors across bootstrap states.
+
+    A valid saved choice must first beat an explicitly opposite system theme.
+    The old contact-color regression used a separate browser context whose
+    system preference was ``no-preference``. To retain that exact initial-load
+    contract without a second context, this test changes the context media,
+    reloads the document so the inline theme bootstrap runs again, and waits
+    for the same readiness marker as the driver. The stored choice must still
+    win and the contact heading must use its exact theme text color.
+    """
 
     page = driver(
         color_scheme=system_theme,
@@ -56,6 +66,16 @@ def test_saved_theme_overrides_system_preference(
     )
 
     expect(page.locator("html")).to_have_attribute("data-theme", stored_theme)
+
+    page.emulate_media(color_scheme="no-preference")
+    page.reload(wait_until="domcontentloaded")
+    page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
+
+    expect(page.locator("html")).to_have_attribute("data-theme", stored_theme)
+    expect(page.locator("#contact h2")).to_have_css(
+        "color",
+        expected_contact_color,
+    )
 
 
 def test_invalid_saved_theme_is_ignored(driver: DriverFactory) -> None:
@@ -69,59 +89,79 @@ def test_invalid_saved_theme_is_ignored(driver: DriverFactory) -> None:
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")
 
 
-def test_manual_theme_choice_survives_reload(driver: DriverFactory) -> None:
-    """Verify that clicking the toggle stores the choice and restores it on reload."""
+def test_theme_state_machine_follows_system_then_locks_manual_choices(
+    driver: DriverFactory,
+) -> None:
+    """Follow live system changes, then persist and lock both manual themes.
+
+    One fresh page begins without a saved preference and must follow every
+    light/dark media change without writing storage.  A real toggle then stores
+    dark, ignores later system changes, and survives a document reload.  The
+    test then clears that preference and reloads under a dark system before the
+    opposite real toggle stores light; both later media events must leave that
+    first-time manual light choice untouched.
+    Keeping every intermediate assertion preserves the three former contracts
+    while avoiding three independent browser contexts.
+    """
 
     page = driver(color_scheme="light")
+    root = page.locator("html")
+    expect(root).to_have_attribute("data-theme", "light")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") is None
+
+    page.emulate_media(color_scheme="dark")
+    expect(root).to_have_attribute("data-theme", "dark")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") is None
+
+    page.emulate_media(color_scheme="light")
+    expect(root).to_have_attribute("data-theme", "light")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") is None
+
     theme_toggle = page.get_by_role(
         "button",
         name="Toggle color theme",
         exact=True,
     )
-
     theme_toggle.click()
-    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    expect(root).to_have_attribute("data-theme", "dark")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "dark"
+
+    page.emulate_media(color_scheme="dark")
+    expect(root).to_have_attribute("data-theme", "dark")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "dark"
+    page.emulate_media(color_scheme="light")
+    expect(root).to_have_attribute("data-theme", "dark")
     assert page.evaluate("localStorage.getItem('tmc-theme')") == "dark"
 
     page.reload(wait_until="domcontentloaded")
-
-    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
-
-
-def test_system_theme_changes_are_followed_without_manual_choice(
-    driver: DriverFactory,
-) -> None:
-    """Verify that live system-theme changes update a page with no saved choice."""
-
-    page = driver(color_scheme="light")
-    expect(page.locator("html")).to_have_attribute("data-theme", "light")
+    page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
+    expect(root).to_have_attribute("data-theme", "dark")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "dark"
 
     page.emulate_media(color_scheme="dark")
-    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    expect(root).to_have_attribute("data-theme", "dark")
 
-    page.emulate_media(color_scheme="light")
-    expect(page.locator("html")).to_have_attribute("data-theme", "light")
+    page.evaluate("localStorage.removeItem('tmc-theme')")
+    page.reload(wait_until="domcontentloaded")
+    page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
+    expect(root).to_have_attribute("data-theme", "dark")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") is None
 
-
-def test_manual_choice_ignores_later_system_theme_changes(
-    driver: DriverFactory,
-) -> None:
-    """Verify that system changes cannot replace a user's manual selection."""
-
-    page = driver(color_scheme="dark")
     theme_toggle = page.get_by_role(
         "button",
         name="Toggle color theme",
         exact=True,
     )
-
     theme_toggle.click()
-    expect(page.locator("html")).to_have_attribute("data-theme", "light")
+    expect(root).to_have_attribute("data-theme", "light")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "light"
 
     page.emulate_media(color_scheme="light")
+    expect(root).to_have_attribute("data-theme", "light")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "light"
     page.emulate_media(color_scheme="dark")
-
-    expect(page.locator("html")).to_have_attribute("data-theme", "light")
+    expect(root).to_have_attribute("data-theme", "light")
+    assert page.evaluate("localStorage.getItem('tmc-theme')") == "light"
 
 
 def test_system_theme_still_works_when_storage_is_unavailable(
@@ -138,23 +178,3 @@ def test_system_theme_still_works_when_storage_is_unavailable(
     page.emulate_media(color_scheme="dark")
 
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")
-
-
-@pytest.mark.parametrize(
-    ("theme", "expected_color"),
-    [
-        ("light", "rgb(22, 13, 19)"),
-        ("dark", "rgb(255, 247, 251)"),
-    ],
-)
-def test_contact_copy_uses_theme_text_color(
-    driver: DriverFactory,
-    theme: str,
-    expected_color: str,
-) -> None:
-    """Verify that contact copy is dark in light mode and light in dark mode."""
-
-    page = driver(stored_theme=theme)
-    contact_heading = page.locator("#contact h2")
-
-    expect(contact_heading).to_have_css("color", expected_color)
