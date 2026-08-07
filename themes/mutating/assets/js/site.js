@@ -124,6 +124,71 @@
     });
   }
 
+  function initThemeImages() {
+    const images = [
+      ...document.querySelectorAll(
+        "img[data-theme-src-light][data-theme-src-dark]",
+      ),
+    ];
+    if (!images.length) return;
+
+    const synchronize = () => {
+      const theme =
+        document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      images.forEach((image) => {
+        const source = image.dataset[
+          theme === "light" ? "themeSrcLight" : "themeSrcDark"
+        ];
+        if (!source) return;
+        if (
+          image.hasAttribute("data-deferred-src") ||
+          !image.hasAttribute("src")
+        ) {
+          image.dataset.deferredSrc = source;
+        } else if (image.getAttribute("src") !== source) {
+          image.setAttribute("src", source);
+        }
+      });
+    };
+
+    new MutationObserver(synchronize).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    synchronize();
+  }
+
+  function initDeferredMedia() {
+    const media = [
+      ...document.querySelectorAll("[data-deferred-src]"),
+    ];
+    if (!media.length) return;
+
+    const load = (element) => {
+      const source = element.dataset.deferredSrc;
+      if (!source || element.getAttribute("src") === source) return;
+      element.setAttribute("src", source);
+      delete element.dataset.deferredSrc;
+    };
+
+    if (typeof IntersectionObserver !== "function") {
+      media.forEach(load);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          observer.unobserve(entry.target);
+          load(entry.target);
+        });
+      },
+      { rootMargin: "600px 0px" },
+    );
+    media.forEach((element) => observer.observe(element));
+  }
+
   function initAnchorAlignment() {
     let cancelled = false;
     let firstFrameRequest = 0;
@@ -1260,6 +1325,8 @@
     initCurrentYear();
     initCodeCopyButtons();
     initTheme();
+    initThemeImages();
+    initDeferredMedia();
     initTicker();
     initAnimatedWordmark();
     initBrandControl();

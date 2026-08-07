@@ -21,7 +21,8 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:,">
 <link rel="preload" href="{{ "/fonts/science-gothic-wordmark.woff2" | relURL }}" as="font" type="font/woff2" crossorigin>
-{{- $siteStyles := resources.Get "css/site.css" | fingerprint -}}
+<link rel="preload" href="{{ "/fonts/geist/geist-98bbbccb.woff2" | relURL }}" as="font" type="font/woff2" crossorigin>
+{{- $siteStyles := resources.Get "css/site.css" | minify | fingerprint -}}
 <link rel="stylesheet" href="{{ $siteStyles.RelPermalink }}" integrity="{{ $siteStyles.Data.Integrity }}" crossorigin="anonymous">
 <script>
   (function () {

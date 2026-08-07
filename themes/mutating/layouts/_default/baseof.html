@@ -9,7 +9,7 @@
       {{ block "main" . }}{{ end }}
       {{ partial "footer.html" . }}
     </main>
-    {{- $siteScript := resources.Get "js/site.js" | fingerprint -}}
+    {{- $siteScript := resources.Get "js/site.js" | minify | fingerprint -}}
     <script src="{{ $siteScript.RelPermalink }}" integrity="{{ $siteScript.Data.Integrity }}" crossorigin="anonymous" defer></script>
   </body>
 </html>
