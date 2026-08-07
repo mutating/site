@@ -124,6 +124,71 @@
     });
   }
 
+  function initThemeImages() {
+    const images = [
+      ...document.querySelectorAll(
+        "img[data-theme-src-light][data-theme-src-dark]",
+      ),
+    ];
+    if (!images.length) return;
+
+    const synchronize = () => {
+      const theme =
+        document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      images.forEach((image) => {
+        const source = image.dataset[
+          theme === "light" ? "themeSrcLight" : "themeSrcDark"
+        ];
+        if (!source) return;
+        if (
+          image.hasAttribute("data-deferred-src") ||
+          !image.hasAttribute("src")
+        ) {
+          image.dataset.deferredSrc = source;
+        } else if (image.getAttribute("src") !== source) {
+          image.setAttribute("src", source);
+        }
+      });
+    };
+
+    new MutationObserver(synchronize).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    synchronize();
+  }
+
+  function initDeferredMedia() {
+    const media = [
+      ...document.querySelectorAll("[data-deferred-src]"),
+    ];
+    if (!media.length) return;
+
+    const load = (element) => {
+      const source = element.dataset.deferredSrc;
+      if (!source || element.getAttribute("src") === source) return;
+      element.setAttribute("src", source);
+      delete element.dataset.deferredSrc;
+    };
+
+    if (typeof IntersectionObserver !== "function") {
+      media.forEach(load);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          observer.unobserve(entry.target);
+          load(entry.target);
+        });
+      },
+      { rootMargin: "600px 0px" },
+    );
+    media.forEach((element) => observer.observe(element));
+  }
+
   function initAnchorAlignment() {
     let cancelled = false;
     let firstFrameRequest = 0;
@@ -1211,10 +1276,57 @@
     });
   }
 
+  function initPostToc() {
+    const toc = document.querySelector(".post__toc");
+    if (!toc) return;
+
+    const desktopMedia = matchMedia("(min-width: 1101px)");
+    const syncTocState = () => {
+      if (desktopMedia.matches) toc.setAttribute("open", "");
+      else toc.removeAttribute("open");
+    };
+
+    syncTocState();
+    desktopMedia.addEventListener("change", syncTocState);
+    toc.addEventListener("toggle", () => {
+      if (desktopMedia.matches && !toc.open) toc.setAttribute("open", "");
+    });
+  }
+
+  function initUnpaginatedBlogTail() {
+    const index = document.querySelector(
+      '.blog-index[data-has-pagination="false"]',
+    );
+    const lastCard = index?.querySelector(".blog-card:last-child");
+    if (!index || !lastCard) return;
+
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        index.dataset.pageOverflows = "false";
+        const borderWidth = Number.parseFloat(
+          getComputedStyle(lastCard).borderBottomWidth,
+        );
+        const heightWithoutTailBorder =
+          document.documentElement.scrollHeight - borderWidth;
+        index.dataset.pageOverflows = String(
+          heightWithoutTailBorder > innerHeight + 0.5,
+        );
+      });
+    };
+
+    update();
+    addEventListener("resize", update, { passive: true });
+    document.fonts?.ready.then(update);
+  }
+
   function init() {
     initCurrentYear();
     initCodeCopyButtons();
     initTheme();
+    initThemeImages();
+    initDeferredMedia();
     initTicker();
     initAnimatedWordmark();
     initBrandControl();
@@ -1225,6 +1337,8 @@
     initTokamak();
     initTentacles();
     initMobileMenus();
+    initPostToc();
+    initUnpaginatedBlogTail();
     document.documentElement.dataset.themeReady = "true";
   }
 

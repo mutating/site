@@ -353,7 +353,7 @@ def test_tokamak_bloom_radius_does_not_reveal_frame_edges(
         viewport=(1440, 900),
         load_interactive_visuals=True,
     )
-    canvas = _reactor_canvas(page)
+    canvas = _show_reactor(page)
 
     expect(canvas).to_have_attribute("data-bloom-radius", "0.025")
     expect(canvas).to_have_attribute("data-bloom-strength", "0.11")
@@ -384,7 +384,7 @@ def test_theme_switches_do_not_add_wireframe_geometry(
         viewport=(1440, 900),
         load_interactive_visuals=True,
     )
-    canvas = _reactor_canvas(page)
+    canvas = _show_reactor(page)
     toggle = page.get_by_role(
         "button",
         name="Toggle color theme",
@@ -450,7 +450,7 @@ def test_tokamak_wireframe_uses_theme_specific_site_pink_palettes(
         viewport=(1440, 900),
         load_interactive_visuals=True,
     )
-    canvas = _reactor_canvas(page)
+    canvas = _show_reactor(page)
     toggle = page.get_by_role(
         "button",
         name="Toggle color theme",

@@ -1,7 +1,8 @@
 {{- $context := .context -}}
 {{- $pages := .pages.ByDate.Reverse -}}
 {{- $paginator := $context.Paginate $pages -}}
-<section class="blog-index section-shell" data-collection-kind="{{ .kind }}">
+{{- $hasPagination := gt $paginator.TotalPages 1 -}}
+<section class="blog-index section-shell" data-collection-kind="{{ .kind }}" data-has-pagination="{{ $hasPagination }}">
   <header class="blog-index__header">
     <p class="section-index">{{ .eyebrow }}</p>
     <h1>{{ with .titleLink }}{{ $.titlePrefix }}<a class="blog-index__author-link" href="{{ . }}" rel="author">{{ $.titleLinkText }}</a>{{ $.titleSuffix }}{{ else }}{{ $.title }}{{ end }}</h1>
@@ -26,7 +27,7 @@
     </article>
     {{ end }}
   </div>
-  {{ if gt $paginator.TotalPages 1 }}
+  {{ if $hasPagination }}
   <nav class="blog-pagination" aria-label="{{ .paginationLabel }}">
     {{ if $paginator.HasPrev }}
       <a class="blog-pagination__direction" href="{{ $paginator.Prev.URL }}">← Newer</a>

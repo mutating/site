@@ -19,7 +19,7 @@
 {{- end -}}
 {{- $tagItems = sort $tagItems "count" "desc" -}}
 
-<article class="author-profile section-shell">
+<article class="author-profile{{ if $posts }} author-profile--with-posts{{ end }} section-shell">
   <header class="author-profile__hero">
     <div class="author-profile__intro">
       <nav class="section-index author-profile__breadcrumb" aria-label="Author breadcrumb">
@@ -37,38 +37,39 @@
         </nav>
       {{ end }}
     </div>
-    {{ with .Params.photo }}
-      <figure class="author-profile__portrait mascot-card" data-author-status="{{ $status }}">
-        <div class="mascot-card__halo" aria-hidden="true"></div>
-        <img
-          class="mascot-card__art"
-          src="{{ . | relURL }}"
-          {{- with $.Params.photo2x }} srcset="{{ $.Params.photo | relURL }} 1x, {{ . | relURL }} 2x"{{ end }}
-          alt="{{ $.Title }}"
-        >
-      </figure>
-    {{ end }}
+    <div class="author-profile__side">
+      {{ with .Params.photo }}
+        <figure class="author-profile__portrait mascot-card" data-author-status="{{ $status }}">
+          <div class="mascot-card__halo" aria-hidden="true"></div>
+          <img
+            class="mascot-card__art"
+            src="{{ . | relURL }}"
+            {{- with $.Params.photo2x }} srcset="{{ $.Params.photo | relURL }} 1x, {{ . | relURL }} 2x"{{ end }}
+            alt="{{ $.Title }}"
+          >
+        </figure>
+      {{ end }}
+      {{ if and (gt (len $posts) 0) (gt (len $tagItems) 0) }}
+        <aside class="author-profile__tags" aria-labelledby="author-tags-heading">
+          <p class="author-profile__label" id="author-tags-heading">FREQUENT SIGNALS</p>
+          <ol>
+            {{ range first 5 $tagItems }}
+              <li>
+                <a href="{{ printf "/tags/%s/" (.name | urlize) | relURL }}">
+                  <span>#{{ .name }}</span><small>{{ .count }}</small>
+                </a>
+              </li>
+            {{ end }}
+          </ol>
+        </aside>
+      {{ end }}
+    </div>
   </header>
 
   <div class="author-profile__details{{ if not $posts }} author-profile__details--centered{{ end }}">
-    <section class="author-profile__bio" aria-labelledby="author-about-heading">
-      <p class="author-profile__label" id="author-about-heading">ABOUT / {{ upper .Title }}</p>
+    <div class="author-profile__bio">
       <div class="post__content author-profile__content">{{ .Content }}</div>
-    </section>
-    {{ if and (gt (len $posts) 0) (gt (len $tagItems) 0) }}
-      <aside class="author-profile__tags" aria-labelledby="author-tags-heading">
-        <p class="author-profile__label" id="author-tags-heading">FREQUENT SIGNALS</p>
-        <ol>
-          {{ range first 5 $tagItems }}
-            <li>
-              <a href="{{ printf "/tags/%s/" (.name | urlize) | relURL }}">
-                <span>#{{ .name }}</span><small>{{ .count }}</small>
-              </a>
-            </li>
-          {{ end }}
-        </ol>
-      </aside>
-    {{ end }}
+    </div>
   </div>
 
   {{ if $posts }}

@@ -6,8 +6,10 @@
     <p class="post__description">{{ .Description }}</p>
     <div class="post__meta">
       <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 January 2006" }}</time>
-      <span>{{ .ReadingTime }} min read</span>
-      <span>{{ .WordCount }} words</span>
+      <span class="post-reading-time" tabindex="0" aria-describedby="post-word-count">
+        <span>{{ .ReadingTime }} min read</span>
+        <span class="meta-tooltip post-reading-time__tooltip" id="post-word-count" role="tooltip">{{ .WordCount }} words</span>
+      </span>
       {{ with .Params.author }}
         {{ $author := site.GetPage (printf "/authors/%s" .) }}
         {{ with $author }}
@@ -17,20 +19,31 @@
     </div>
   </header>
   <div class="post__layout">
-    {{ if gt (len .TableOfContents) 100 }}
-    <details class="post__toc">
-      <summary>On this page</summary>
-      {{ .TableOfContents }}
+    {{ $tableOfContents := .TableOfContents }}
+    {{ if gt (len $tableOfContents) 100 }}
+    {{ $sectionCount := len (findRE "<li>" $tableOfContents) }}
+    {{ $sectionLabel := "sections" }}
+    {{ if eq $sectionCount 1 }}{{ $sectionLabel = "section" }}{{ end }}
+    <details class="post__toc" open>
+      <summary>
+        <span class="post__toc-label post__toc-label--desktop">On this page</span>
+        <span class="post__toc-label post__toc-label--mobile">{{ $sectionCount }} {{ $sectionLabel }}</span>
+        <span class="post__toc-toggle" aria-hidden="true"></span>
+      </summary>
+      {{ $tableOfContents }}
     </details>
     {{ end }}
     <div class="post__content">{{ .Content }}</div>
   </div>
   {{ with .GetTerms "tags" }}
-  <aside class="post__tags" aria-labelledby="post-tags-heading">
-    <h2 id="post-tags-heading">Signals in this field note</h2>
+  <aside class="post__tags" aria-label="Signals in this field note">
     <ul>
       {{ range . }}
-      <li><a href="{{ .RelPermalink }}">#{{ .LinkTitle }}</a></li>
+      <li>
+        <a href="{{ .RelPermalink }}" aria-label="#{{ .LinkTitle }}">
+          <span class="post__tag-bracket" aria-hidden="true">[#</span><span class="post__tag-label">{{ .LinkTitle }}</span><span class="post__tag-bracket" aria-hidden="true">]</span>
+        </a>
+      </li>
       {{ end }}
     </ul>
   </aside>

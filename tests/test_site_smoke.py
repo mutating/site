@@ -51,8 +51,8 @@ def test_home_page_renders_core_content(driver: DriverFactory) -> None:
     )
 
 
-def test_pillar_illustration_assets_preserve_transparent_alpha_channels() -> None:
-    """Keep every local pillar PNG transparent before browser integration.
+def test_lossless_webp_assets_preserve_every_source_pixel() -> None:
+    """Keep optimized browser assets pixel-identical to their PNG sources.
 
     The browser cases below validate theme selection, loading, containment, and
     animation at six responsive states.  The underlying byte-level guarantees
@@ -64,17 +64,28 @@ def test_pillar_illustration_assets_preserve_transparent_alpha_channels() -> Non
     before every browser context.
     """
 
-    expected_asset_sources = [
-        "/pillar-verifiability-v1.png",
-        "/pillar-interpretability-v1.png",
-        "/pillar-testing-speed-rotor-v2.png",
-        "/pillar-testing-speed-rotor-v4.png",
-    ]
+    expected_asset_sources = {
+        "/pillar-verifiability-v1.png": (
+            "/pillar-verifiability-v1-lossless.webp"
+        ),
+        "/pillar-interpretability-v1.png": (
+            "/pillar-interpretability-v1-lossless.webp"
+        ),
+        "/pillar-testing-speed-rotor-v2.png": (
+            "/pillar-testing-speed-rotor-v2-lossless.webp"
+        ),
+        "/pillar-testing-speed-rotor-v4.png": (
+            "/pillar-testing-speed-rotor-v4-lossless.webp"
+        ),
+        "/thesis-resistance-field-pink.png": (
+            "/thesis-resistance-field-pink-v1-lossless.webp"
+        ),
+    }
 
-    for source in expected_asset_sources:
+    for source, optimized_source in expected_asset_sources.items():
         with Image.open(THEME_STATIC_ROOT / source.removeprefix("/")) as image:
-            assert image.mode == "RGBA"
-            alpha = image.getchannel("A")
+            expected = image.convert("RGBA")
+            alpha = expected.getchannel("A")
             assert alpha.getextrema() == (0, 255)
             assert all(
                 alpha.getpixel(corner) == 0
@@ -95,6 +106,41 @@ def test_pillar_illustration_assets_preserve_transparent_alpha_channels() -> Non
                 ]
                 assert partially_transparent_pixels > image.width * image.height * 0.25
                 assert partial_values[len(partial_values) // 2] <= 20
+        with Image.open(
+            THEME_STATIC_ROOT / optimized_source.removeprefix("/"),
+        ) as optimized:
+            assert optimized.format == "WEBP"
+            assert ImageChops.difference(
+                expected,
+                optimized.convert("RGBA"),
+            ).getbbox() is None
+
+    with Image.open(THEME_STATIC_ROOT / "muta-eye-surface.webp") as source:
+        expected_alpha = source.convert("RGBA").getchannel("A")
+    with Image.open(
+        THEME_STATIC_ROOT / "muta-eye-surface-alpha-v1.webp",
+    ) as optimized:
+        assert ImageChops.difference(
+            expected_alpha,
+            optimized.convert("RGBA").getchannel("A"),
+        ).getbbox() is None
+
+    for source_name, optimized_name in {
+        "muta-v2-transparent-v10.webp": (
+            "muta-v2-transparent-v10-lossless.avif"
+        ),
+        "muta-v2-transparent-2x-v10.webp": (
+            "muta-v2-transparent-2x-v10-lossless.avif"
+        ),
+    }.items():
+        with Image.open(THEME_STATIC_ROOT / source_name) as source:
+            expected = source.convert("RGBA")
+        with Image.open(THEME_STATIC_ROOT / optimized_name) as optimized:
+            assert optimized.format == "AVIF"
+            assert ImageChops.difference(
+                expected,
+                optimized.convert("RGBA"),
+            ).getbbox() is None
 
 
 @pytest.mark.parametrize(
@@ -1457,12 +1503,12 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     """
 
     expected_visible_sources = [
-        "/pillar-verifiability-v1.png",
-        "/pillar-interpretability-v1.png",
+        "/pillar-verifiability-v1-lossless.webp",
+        "/pillar-interpretability-v1-lossless.webp",
         (
-            "/pillar-testing-speed-rotor-v4.png"
+            "/pillar-testing-speed-rotor-v4-lossless.webp"
             if theme == "light"
-            else "/pillar-testing-speed-rotor-v2.png"
+            else "/pillar-testing-speed-rotor-v2-lossless.webp"
         ),
     ]
 
@@ -1471,7 +1517,16 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
         viewport=viewport,
         load_interactive_visuals=False,
     )
-    rendered = page.locator("#what-we-build").evaluate(
+    section = page.locator("#what-we-build")
+    section.scroll_into_view_if_needed()
+    page.wait_for_function(
+        """
+        () => [...document.querySelectorAll(
+          "#what-we-build .pillar-card__visual img",
+        )].every((image) => image.complete && image.naturalWidth > 0)
+        """
+    )
+    rendered = section.evaluate(
         """
         (section) => ({
           theme: document.documentElement.dataset.theme,
@@ -1518,8 +1573,7 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     assert rendered["theme"] == theme
     assert [card["source"] for card in rendered["cards"]] == expected_visible_sources
     assert rendered["cards"][2]["allSources"] == [
-        "/pillar-testing-speed-rotor-v4.png",
-        "/pillar-testing-speed-rotor-v2.png",
+        expected_visible_sources[2],
     ]
     assert all(card["complete"] for card in rendered["cards"])
     assert all(card["naturalWidth"] > 0 for card in rendered["cards"])
@@ -2509,7 +2563,11 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     )
     expect(mascot).to_have_attribute(
         "srcset",
-        "/muta-v2-transparent-v10.webp 1x, /muta-v2-transparent-2x-v10.webp 2x",
+        "/muta-v2-transparent-v10.webp 1254w, /muta-v2-transparent-2x-v10.webp 2508w",
+    )
+    expect(page.locator(".mascot-card__picture source")).to_have_attribute(
+        "srcset",
+        "/muta-v2-transparent-v10-lossless.avif 1254w, /muta-v2-transparent-2x-v10-lossless.avif 2508w",
     )
     rendered = mascot.evaluate(
         """
@@ -2528,12 +2586,12 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
         """
     )
     assert rendered["currentSource"].endswith(
-        "/muta-v2-transparent-2x-v10.webp",
+        "/muta-v2-transparent-v10-lossless.avif",
     )
-    assert rendered["naturalWidth"] == 1254
-    assert rendered["naturalHeight"] == 1254
+    assert rendered["naturalWidth"] >= rendered["renderedWidth"]
+    assert rendered["naturalHeight"] == rendered["naturalWidth"]
     assert rendered["renderedWidth"] <= 650.5
-    assert 2508 >= rendered["renderedWidth"] * 3
+    assert 1254 >= rendered["renderedWidth"] * 2
     assert rendered["objectFit"] == "contain"
     assert rendered["objectPosition"] == "50% 46%"
 
@@ -2547,7 +2605,7 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
         ".mascot-card__art",
     ).evaluate("(element) => element.currentSrc")
     assert standard_density_source.endswith(
-        "/muta-v2-transparent-v10.webp",
+        "/muta-v2-transparent-v10-lossless.avif",
     )
 
 
@@ -2973,6 +3031,97 @@ def test_mobile_menu_closes_after_clicking_outside_it(
     expect(navigation).to_be_hidden()
 
 
+def test_tmc_wordmark_waits_for_science_gothic_before_becoming_visible(
+    driver: DriverFactory,
+) -> None:
+    """Never paint the compact wordmark with a temporary fallback font.
+
+    A slow network used to expose ``TMC`` immediately through
+    ``font-display: swap`` and then replace the visibly narrower fallback once
+    Science Gothic arrived. This test holds the head bootstrap's explicit font
+    readiness request while leaving the rest of the page free to initialize.
+    The fixed-size stage must remain reserved, but the lettering itself stays
+    transparent until the gate is released. Once the real local font is ready,
+    the final wordmark appears immediately without an opacity transition.
+    """
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeLoad = document.fonts.load.bind(document.fonts);
+              let releaseGate;
+              const gate = new Promise((resolve) => {
+                releaseGate = resolve;
+              });
+              let released = false;
+              let held = false;
+
+              document.fonts.load = (font, text) => {
+                if (
+                  !released &&
+                  String(font).includes("Science Gothic")
+                ) {
+                  held = true;
+                  return gate.then(() => nativeLoad(font, text));
+                }
+                return nativeLoad(font, text);
+              };
+
+              window.__tmcWordmarkFontLoadHeld = () => held;
+              window.__tmcReleaseWordmarkFont = () => {
+                released = true;
+                releaseGate();
+              };
+            })();
+            """,
+        ),
+    )
+    root = page.locator("html")
+    wordmark = page.locator(".brand__wordmark")
+    stage = page.locator(".brand__wordmark-stage")
+    preload = page.locator(
+        'link[rel="preload"][as="font"]'
+        '[href="/fonts/science-gothic-wordmark.woff2"]'
+    )
+
+    expect(preload).to_have_attribute("type", "font/woff2")
+    expect(preload).to_have_attribute("crossorigin", "")
+    expect(root).to_have_attribute("data-wordmark-font-ready", "false")
+    assert page.evaluate("window.__tmcWordmarkFontLoadHeld()") is True
+
+    pending = wordmark.evaluate(
+        """
+        (element) => ({
+          opacity: getComputedStyle(element).opacity,
+          transitionProperty: getComputedStyle(element).transitionProperty,
+          transitionDuration: getComputedStyle(element).transitionDuration,
+          stageWidth: element.closest(
+            ".brand__wordmark-stage",
+          ).getBoundingClientRect().width,
+        })
+        """
+    )
+    assert pending["opacity"] == "0"
+    assert pending["transitionProperty"] == "all"
+    assert pending["transitionDuration"] == "0s"
+    assert pending["stageWidth"] > 0
+
+    page.evaluate("window.__tmcReleaseWordmarkFont()")
+    expect(root).to_have_attribute("data-wordmark-font-ready", "true")
+    expect(wordmark).to_have_css("opacity", "1")
+    assert page.evaluate(
+        """() => document.fonts.check(
+          '780 35px "Science Gothic"',
+          "TMC",
+        )"""
+    ) is True
+    expect(stage).to_be_visible()
+
+
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
     driver: DriverFactory,
@@ -3055,7 +3204,10 @@ def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
     )
 
     assert initial["fontLoaded"] is True
-    assert initial["family"].startswith('"Science Gothic"')
+    # Hugo's production minifier may lowercase quoted font-family names. CSS
+    # family matching is ASCII case-insensitive, so compare the computed value
+    # with the same semantics instead of pinning minifier output casing.
+    assert initial["family"].casefold().startswith('"science gothic"')
     assert initial["anchorWeights"] == ["780", "780", "780"]
     assert initial["anchorAxes"] == [
         {"CTRS": 34, "wdth": 128},
@@ -3817,11 +3969,12 @@ def test_header_eye_remains_circular_at_every_responsive_width(
 
     This regression spans desktop, both sides of the responsive breakpoints,
     and the minimum supported phone width. It requires the outer brand slot,
-    animated logo, and color surface to remain exact 48 px squares, while the
-    outline keeps its intentional equal 2.5% overscan and the mask stretches
-    to the square instead of letterboxing the source canvas. Reintroducing
-    ``height: auto``, a source-ratio ``aspect-ratio``, ``mask-size: contain``,
-    or a mobile-only shape override makes the relevant width fail
+    animated logo, color surface, and outline to remain exact 48 px squares.
+    The outline must be a native one-pixel circle without transforms or
+    shadows, while the surface mask stretches to the square instead of
+    letterboxing the source canvas. Reintroducing ``height: auto``, a
+    source-ratio ``aspect-ratio``, ``mask-size: contain``, fractional outline
+    scaling, or a mobile-only shape override makes the relevant width fail
     deterministically.
     """
 
@@ -3841,6 +3994,7 @@ def test_header_eye_remains_circular_at_every_responsive_width(
           const surface = eye.querySelector(".animated-eye-logo__surface");
           const outline = eye.querySelector(".animated-eye-logo__outline");
           const surfaceStyle = getComputedStyle(surface);
+          const outlineStyle = getComputedStyle(outline);
           return {
             mark: rectangle(mark),
             eye: rectangle(eye),
@@ -3849,6 +4003,15 @@ def test_header_eye_remains_circular_at_every_responsive_width(
             maskSize:
               surfaceStyle.maskSize ||
               surfaceStyle.webkitMaskSize,
+            outlineBorderWidths: [
+              outlineStyle.borderTopWidth,
+              outlineStyle.borderRightWidth,
+              outlineStyle.borderBottomWidth,
+              outlineStyle.borderLeftWidth,
+            ],
+            outlineBorderRadius: outlineStyle.borderRadius,
+            outlineBoxShadow: outlineStyle.boxShadow,
+            outlineTransform: outlineStyle.transform,
           };
         }
         """
@@ -3862,15 +4025,13 @@ def test_header_eye_remains_circular_at_every_responsive_width(
     for part in ("mark", "eye", "surface"):
         assert geometry[part]["width"] == pytest.approx(48, abs=0.5)
         assert geometry[part]["height"] == pytest.approx(48, abs=0.5)
-    assert geometry["outline"]["width"] == pytest.approx(
-        48 * 1.025,
-        abs=0.1,
-    )
-    assert geometry["outline"]["height"] == pytest.approx(
-        48 * 1.025,
-        abs=0.1,
-    )
+    assert geometry["outline"]["width"] == pytest.approx(48, abs=0.5)
+    assert geometry["outline"]["height"] == pytest.approx(48, abs=0.5)
     assert geometry["maskSize"] == "100% 100%"
+    assert geometry["outlineBorderWidths"] == ["1px"] * 4
+    assert geometry["outlineBorderRadius"] == "50%"
+    assert geometry["outlineBoxShadow"] == "none"
+    assert geometry["outlineTransform"] == "none"
 
 
 @pytest.mark.parametrize("viewport_width", [390, 320, 280])
@@ -4075,9 +4236,32 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
     )
 
     assert eye.evaluate("(element) => getComputedStyle(element).filter") == "none"
-    assert outline.evaluate(
-        "(element) => getComputedStyle(element).backgroundColor"
-    ) == "rgb(0, 0, 0)"
+    outline_presentation = outline.evaluate(
+        """
+        (element) => {
+          const style = getComputedStyle(element);
+          return {
+            background: style.backgroundColor,
+            borderColor: style.borderTopColor,
+            borderWidths: [
+              style.borderTopWidth,
+              style.borderRightWidth,
+              style.borderBottomWidth,
+              style.borderLeftWidth,
+            ],
+            boxShadow: style.boxShadow,
+            transform: style.transform,
+          };
+        }
+        """
+    )
+    assert outline_presentation == {
+        "background": "rgba(0, 0, 0, 0)",
+        "borderColor": "rgb(0, 0, 0)",
+        "borderWidths": ["1px"] * 4,
+        "boxShadow": "none",
+        "transform": "none",
+    }
     assert pupil.evaluate(
         "(element) => getComputedStyle(element).backgroundColor"
     ) == initial_pupil_color

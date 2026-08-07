@@ -6,6 +6,7 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import expect
 
 from conftest import DriverFactory
@@ -27,6 +28,31 @@ Object.defineProperty(navigator, "clipboard", {
     },
   },
 });
+"""
+HEADING_CHAIN_GEOMETRY_SCRIPT = """
+heading => {
+  const anchor = heading.querySelector(".post__heading-anchor");
+  const chain = heading.querySelector(".post__heading-chain");
+  const textRange = document.createRange();
+  textRange.selectNodeContents(anchor.firstChild);
+
+  const lines = Array.from(textRange.getClientRects());
+  const lastLine = lines.at(-1);
+  const chainRect = chain.getBoundingClientRect();
+  const contentRect = heading.closest(".post__content").getBoundingClientRect();
+  const fontSize = Number.parseFloat(getComputedStyle(heading).fontSize);
+
+  return {
+    lineCount: lines.length,
+    fontSize,
+    horizontalGap: chainRect.left - lastLine.right,
+    verticalDelta:
+      chainRect.top + chainRect.height / 2
+      - (lastLine.top + lastLine.height / 2),
+    chainRight: chainRect.right,
+    contentRight: contentRect.right,
+  };
+}
 """
 
 
@@ -60,11 +86,11 @@ def test_browser_assets_use_content_fingerprinted_urls(
 
     expect(stylesheet).to_have_attribute(
         "href",
-        re.compile(r"/css/site\.[0-9a-f]{64}\.css$"),
+        re.compile(r"/css/site(?:\.min)?\.[0-9a-f]{64}\.css$"),
     )
     expect(script).to_have_attribute(
         "src",
-        re.compile(r"/js/site\.[0-9a-f]{64}\.js$"),
+        re.compile(r"/js/site(?:\.min)?\.[0-9a-f]{64}\.js$"),
     )
     expect(stylesheet).to_have_attribute("integrity", re.compile(r"^sha256-"))
     expect(script).to_have_attribute("integrity", re.compile(r"^sha256-"))
@@ -118,6 +144,38 @@ def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
     assert "blog-card" not in tag_template
     assert 'class="blog-card"' in shared_partial
     assert 'class="blog-pagination"' in shared_partial
+    assert 'data-has-pagination="{{ $hasPagination }}"' in shared_partial
+
+
+@pytest.mark.parametrize(
+    ("viewport", "page_overflows", "border_width"),
+    [
+        ((390, 600), "true", "0px"),
+        ((1440, 1600), "false", "1px"),
+    ],
+    ids=["scrolling-page", "short-page"],
+)
+def test_unpaginated_list_keeps_tail_line_only_to_fill_a_short_page(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+    page_overflows: str,
+    border_width: str,
+) -> None:
+    """Drop the redundant final rule unless it helps fill the viewport."""
+
+    page = driver(
+        viewport=viewport,
+        load_interactive_visuals=False,
+        initial_path="/tags/verification/",
+    )
+    index = page.locator('.blog-index[data-has-pagination="false"]')
+    expect(index).to_be_visible()
+    expect(page.locator(".blog-pagination")).to_have_count(0)
+    expect(index).to_have_attribute("data-page-overflows", page_overflows)
+    expect(page.locator(".blog-card:last-child")).to_have_css(
+        "border-bottom-width",
+        border_width,
+    )
 
 
 def test_post_renders_full_markdown_features(driver: DriverFactory) -> None:
@@ -131,6 +189,127 @@ def test_post_renders_full_markdown_features(driver: DriverFactory) -> None:
     expect(article.locator("blockquote")).to_have_count(1)
     expect(article.locator("table")).to_have_count(1)
     expect(article.locator("pre code")).to_have_count(2)
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [(1280, 720), (390, 844)],
+    ids=["desktop", "phone"],
+)
+def test_post_word_count_moves_into_the_reading_time_tooltip(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep only reading time visible and disclose words on hover or focus."""
+
+    page = driver(
+        viewport=viewport,
+        load_interactive_visuals=False,
+        initial_path=MARKDOWN_FIXTURE_PATH,
+    )
+    metadata = page.locator(".post__meta")
+    reading_time = metadata.locator(".post-reading-time")
+    visible_reading_time = reading_time.locator(":scope > span").first
+    tooltip = reading_time.locator(".post-reading-time__tooltip")
+
+    expect(reading_time).to_have_attribute("tabindex", "0")
+    expect(reading_time).to_have_attribute(
+        "aria-describedby",
+        "post-word-count",
+    )
+    expect(visible_reading_time).to_have_text(re.compile(r"^\d+ min read$"))
+    expect(metadata.locator(":scope > span:not(.post-reading-time)")).to_have_count(0)
+    expect(tooltip).to_have_text(re.compile(r"^\d+ words$"))
+    expect(tooltip).to_be_hidden()
+
+    reading_time.hover()
+    expect(tooltip).to_be_visible()
+    presentation = tooltip.evaluate(
+        """
+        (element) => {
+          const authorTooltip = document.querySelector(
+            ".post__meta .author-status__tooltip",
+          );
+          const read = (tooltip) => {
+            const style = getComputedStyle(tooltip);
+            const rect = tooltip.getBoundingClientRect();
+            return {
+              background: style.backgroundColor,
+              borderColor: style.borderColor,
+              borderRadius: style.borderRadius,
+              backdropFilter: style.backdropFilter,
+              boxShadow: style.boxShadow,
+              fontFamily: style.fontFamily,
+              fontSize: style.fontSize,
+              width: rect.width,
+              height: rect.height,
+              clientWidth: tooltip.clientWidth,
+              scrollWidth: tooltip.scrollWidth,
+              left: rect.left,
+              right: rect.right,
+            };
+          };
+          return {
+            reading: read(element),
+            author: read(authorTooltip),
+            viewportWidth: document.documentElement.clientWidth,
+          };
+        }
+        """
+    )
+    for property_name in (
+        "background",
+        "borderColor",
+        "borderRadius",
+        "backdropFilter",
+        "boxShadow",
+        "fontFamily",
+        "fontSize",
+    ):
+        assert presentation["reading"][property_name] == (
+            presentation["author"][property_name]
+        )
+    assert presentation["reading"]["left"] >= 0
+    assert presentation["reading"]["right"] <= presentation["viewportWidth"]
+    assert presentation["reading"]["width"] < presentation["author"]["width"]
+    assert presentation["reading"]["width"] <= (
+        presentation["reading"]["scrollWidth"] + 3
+    )
+
+    tooltip.evaluate(
+        """
+        element => {
+          element.textContent =
+            "1234567890123456789012345678901234567890123456789012345678901234567890 words";
+        }
+        """
+    )
+    long_value = tooltip.evaluate(
+        """
+        element => {
+          const rect = element.getBoundingClientRect();
+          return {
+            width: rect.width,
+            height: rect.height,
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth,
+            left: rect.left,
+            right: rect.right,
+            viewportWidth: document.documentElement.clientWidth,
+          };
+        }
+        """
+    )
+    assert long_value["width"] <= 340
+    assert long_value["height"] > presentation["reading"]["height"]
+    assert long_value["scrollWidth"] <= long_value["clientWidth"]
+    assert long_value["left"] >= 0
+    assert long_value["right"] <= long_value["viewportWidth"]
+
+    page.mouse.move(viewport[0] - 1, viewport[1] - 1)
+    expect(tooltip).to_be_hidden()
+    reading_time.evaluate("element => element.focus()")
+    expect(tooltip).to_be_visible()
 
 
 def test_post_heading_links_stay_visually_quiet_until_hover(
@@ -169,6 +348,40 @@ def test_post_heading_links_stay_visually_quiet_until_hover(
     assert heading_box_after is not None
     assert heading_box_after["width"] == heading_box_before["width"]
     assert heading_box_after["height"] == heading_box_before["height"]
+
+    geometry = first_heading.evaluate(HEADING_CHAIN_GEOMETRY_SCRIPT)
+    assert geometry["lineCount"] == 1
+    assert geometry["horizontalGap"] >= geometry["fontSize"] * 0.27
+    assert abs(geometry["verticalDelta"]) <= geometry["fontSize"] * 0.12
+
+
+@pytest.mark.parametrize("viewport", [(1600, 1000), (900, 900), (390, 844)])
+def test_multiline_post_heading_chain_follows_the_last_line(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep the chain beside the final line across desktop and mobile widths."""
+
+    page = driver(
+        viewport=viewport,
+        load_interactive_visuals=False,
+        reduced_motion="reduce",
+        initial_path="/blog/the-mutation-testing-digest-for-june-2026/",
+    )
+
+    heading = page.locator(
+        "#new-tools-widened-the-map-established-tools-smoothed-the-workflow"
+    )
+    link = heading.locator(":scope > .post__heading-anchor")
+    chain = link.locator(".post__heading-chain")
+    link.hover()
+    expect(chain).to_have_css("opacity", "1")
+
+    geometry = heading.evaluate(HEADING_CHAIN_GEOMETRY_SCRIPT)
+    assert geometry["lineCount"] >= 2
+    assert geometry["horizontalGap"] >= geometry["fontSize"] * 0.27
+    assert abs(geometry["verticalDelta"]) <= geometry["fontSize"] * 0.12
+    assert geometry["chainRight"] <= geometry["contentRight"] + 0.5
 
 
 def test_post_heading_link_navigates_to_its_fragment(
@@ -294,18 +507,62 @@ def test_post_tags_render_only_when_present_and_link_to_terms(
 
     tag_region = page.locator(".post__tags")
     expect(tag_region).to_be_visible()
+    expect(tag_region).to_have_attribute(
+        "aria-label",
+        "Signals in this field note",
+    )
+    expect(tag_region.locator("h2")).to_have_count(0)
     expect(tag_region.locator("a")).to_have_count(2)
-    assert set(tag_region.locator("a").all_text_contents()) == {
-        "#Testing",
-        "#Verification",
+    assert {
+        text.strip() for text in tag_region.locator("a").all_text_contents()
+    } == {
+        "[#Testing]",
+        "[#Verification]",
     }
-    expect(tag_region.get_by_role("link", name="#Verification")).to_have_attribute(
+    verification = tag_region.get_by_role("link", name="#Verification")
+    expect(verification).to_have_attribute(
         "href",
         "/tags/verification/",
+    )
+    expect(verification.locator(".post__tag-bracket")).to_have_count(2)
+    expect(verification.locator(".post__tag-bracket").first).to_have_text("[#")
+    expect(verification.locator(".post__tag-bracket").last).to_have_text("]")
+    expect(verification.locator(".post__tag-label")).to_have_text("Verification")
+    expect(verification).to_have_css("border-top-width", "0px")
+    verification.hover()
+    expect(verification.locator(".post__tag-label")).to_have_css(
+        "text-decoration-line",
+        "underline",
     )
 
     page.goto(f"{origin}{UNTAGGED_FIXTURE_PATH}", wait_until="domcontentloaded")
     expect(page.locator(".post__tags")).to_have_count(0)
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [(1280, 720), (390, 844)],
+    ids=["desktop", "phone"],
+)
+def test_post_tags_match_article_copy_size(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Keep tag links at the article copy size across responsive widths."""
+
+    page = driver(
+        viewport=viewport,
+        load_interactive_visuals=False,
+        initial_path=MARKDOWN_FIXTURE_PATH,
+    )
+    article_size = page.locator(".post__content").evaluate(
+        "element => getComputedStyle(element).fontSize"
+    )
+    tag_size = page.locator(".post__tags a").first.evaluate(
+        "element => getComputedStyle(element).fontSize"
+    )
+
+    assert tag_size == article_size
 
 
 def test_tag_link_opens_a_distinct_filtered_collection(
@@ -510,14 +767,27 @@ def test_desktop_post_centers_copy_and_moves_toc_to_the_left(
     assert geometry["tocLeft"] < geometry["copyLeft"]
     assert geometry["tocRight"] <= geometry["copyLeft"]
 
+    toc = page.locator("details.post__toc")
+    expect(toc).to_have_attribute("open", "")
+    expect(toc.locator(".post__toc-label--desktop")).to_be_visible()
+    expect(toc.locator(".post__toc-label--desktop")).to_have_text("On this page")
+    expect(toc.locator(".post__toc-label--mobile")).to_be_hidden()
+    expect(toc.locator(".post__toc-toggle")).to_be_hidden()
 
-def test_post_table_of_contents_is_collapsed_until_requested(
+
+@pytest.mark.parametrize(
+    "viewport",
+    [(900, 900), (390, 844)],
+    ids=["medium", "phone"],
+)
+def test_responsive_post_table_of_contents_expands_on_request(
     driver: DriverFactory,
+    viewport: tuple[int, int],
 ) -> None:
-    """Hide a long post outline by default and reveal its anchor links on demand."""
+    """Share one compact, expandable outline across medium and phone widths."""
 
     page = driver(
-        viewport=(390, 844),
+        viewport=viewport,
         load_interactive_visuals=False,
     )
     page.goto(
@@ -528,11 +798,68 @@ def test_post_table_of_contents_is_collapsed_until_requested(
     toc = page.locator("details.post__toc")
     summary = toc.locator("summary")
     navigation = toc.locator("#TableOfContents")
+    desktop_label = toc.locator(".post__toc-label--desktop")
+    mobile_label = toc.locator(".post__toc-label--mobile")
+    toggle = toc.locator(".post__toc-toggle")
 
     expect(toc).not_to_have_attribute("open", "")
-    expect(summary).to_have_text("On this page")
     expect(summary).to_be_visible()
+    expect(desktop_label).to_be_hidden()
+    expect(mobile_label).to_be_visible()
+    expect(mobile_label).to_have_text("3 sections")
+    expect(toggle).to_be_visible()
     expect(navigation).to_be_hidden()
+
+    summary.hover()
+    expect(summary).to_have_css("text-decoration-line", "none")
+    expect(mobile_label).to_have_css("text-decoration-line", "underline")
+    expect(toggle).to_have_css("text-decoration-line", "none")
+
+    collapsed_geometry = toc.evaluate(
+        """
+        element => {
+          const summary = element.querySelector("summary");
+          const label = element.querySelector(".post__toc-label--mobile");
+          const toggle = element.querySelector(".post__toc-toggle");
+          const header = document.querySelector(".post__header");
+          const metadata = document.querySelector(".post__meta");
+          const firstContent = document.querySelector(
+            ".post__content > :first-child",
+          );
+          const tocRect = element.getBoundingClientRect();
+          const summaryRect = summary.getBoundingClientRect();
+          const labelRect = label.getBoundingClientRect();
+          const toggleRect = toggle.getBoundingClientRect();
+          const headerRect = header.getBoundingClientRect();
+          const metadataRect = metadata.getBoundingClientRect();
+          const firstContentRect = firstContent.getBoundingClientRect();
+          const center = (headerRect.bottom + tocRect.bottom) / 2;
+
+          return {
+            height: tocRect.height,
+            gapFromHeader: tocRect.top - headerRect.bottom,
+            gapFromMetadata: headerRect.bottom - metadataRect.bottom,
+            gapToFirstContent: firstContentRect.top - tocRect.bottom,
+            summaryHeight: summaryRect.height,
+            labelDelta: labelRect.top + labelRect.height / 2 - center,
+            toggleDelta: toggleRect.top + toggleRect.height / 2 - center,
+            toggleContent: getComputedStyle(toggle, "::before").content,
+          };
+        }
+        """
+    )
+    assert collapsed_geometry["height"] <= 44
+    assert abs(collapsed_geometry["gapFromHeader"]) <= 1
+    assert 26 <= collapsed_geometry["gapFromMetadata"] <= 28
+    assert 26 <= collapsed_geometry["gapToFirstContent"] <= 28
+    assert abs(
+        collapsed_geometry["gapFromMetadata"]
+        - collapsed_geometry["gapToFirstContent"]
+    ) <= 0.5
+    assert collapsed_geometry["summaryHeight"] >= 40
+    assert abs(collapsed_geometry["labelDelta"]) <= 1
+    assert abs(collapsed_geometry["toggleDelta"]) <= 1
+    assert collapsed_geometry["toggleContent"] == '"+"'
 
     collapsed_content_top = page.locator(".post__content").evaluate(
         "element => element.getBoundingClientRect().top"
@@ -542,10 +869,53 @@ def test_post_table_of_contents_is_collapsed_until_requested(
     expect(toc).to_have_attribute("open", "")
     expect(navigation).to_be_visible()
     expect(navigation.locator('a[href^="#"]')).not_to_have_count(0)
+    summary.hover()
+    expect(summary).to_have_css("text-decoration-line", "none")
+    expect(mobile_label).to_have_css("text-decoration-line", "underline")
+    expect(toggle).to_have_css("text-decoration-line", "none")
+    assert toggle.evaluate(
+        'element => getComputedStyle(element, "::before").content'
+    ) == '"−"'
+    open_outline_spacing = toc.evaluate(
+        """
+        element => {
+          const summary = element.querySelector("summary");
+          const links = Array.from(
+            element.querySelectorAll('#TableOfContents a[href^="#"]'),
+          );
+          const tocRect = element.getBoundingClientRect();
+          const summaryRect = summary.getBoundingClientRect();
+          const firstLinkRect = links[0].getBoundingClientRect();
+          const lastLinkRect = links.at(-1).getBoundingClientRect();
+          return {
+            top: firstLinkRect.top - summaryRect.bottom,
+            bottom: tocRect.bottom - lastLinkRect.bottom,
+          };
+        }
+        """
+    )
+    assert 26 <= open_outline_spacing["top"] <= 28
+    assert 26 <= open_outline_spacing["bottom"] <= 28
+    assert abs(
+        open_outline_spacing["top"] - open_outline_spacing["bottom"]
+    ) <= 1
     expanded_content_top = page.locator(".post__content").evaluate(
         "element => element.getBoundingClientRect().top"
     )
+    expanded_content_gap = page.evaluate(
+        """
+        () => {
+          const toc = document.querySelector(".post__toc");
+          const firstContent = document.querySelector(
+            ".post__content > :first-child",
+          );
+          return firstContent.getBoundingClientRect().top
+            - toc.getBoundingClientRect().bottom;
+        }
+        """
+    )
     assert expanded_content_top > collapsed_content_top
+    assert 26 <= expanded_content_gap <= 28
 
 
 def test_single_edge_recommendation_spans_the_post_navigation(
