@@ -86,11 +86,11 @@ def test_browser_assets_use_content_fingerprinted_urls(
 
     expect(stylesheet).to_have_attribute(
         "href",
-        re.compile(r"/css/site\.[0-9a-f]{64}\.css$"),
+        re.compile(r"/css/site(?:\.min)?\.[0-9a-f]{64}\.css$"),
     )
     expect(script).to_have_attribute(
         "src",
-        re.compile(r"/js/site\.[0-9a-f]{64}\.js$"),
+        re.compile(r"/js/site(?:\.min)?\.[0-9a-f]{64}\.js$"),
     )
     expect(stylesheet).to_have_attribute("integrity", re.compile(r"^sha256-"))
     expect(script).to_have_attribute("integrity", re.compile(r"^sha256-"))

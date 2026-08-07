@@ -51,8 +51,8 @@ def test_home_page_renders_core_content(driver: DriverFactory) -> None:
     )
 
 
-def test_pillar_illustration_assets_preserve_transparent_alpha_channels() -> None:
-    """Keep every local pillar PNG transparent before browser integration.
+def test_lossless_webp_assets_preserve_every_source_pixel() -> None:
+    """Keep optimized browser assets pixel-identical to their PNG sources.
 
     The browser cases below validate theme selection, loading, containment, and
     animation at six responsive states.  The underlying byte-level guarantees
@@ -64,17 +64,28 @@ def test_pillar_illustration_assets_preserve_transparent_alpha_channels() -> Non
     before every browser context.
     """
 
-    expected_asset_sources = [
-        "/pillar-verifiability-v1.png",
-        "/pillar-interpretability-v1.png",
-        "/pillar-testing-speed-rotor-v2.png",
-        "/pillar-testing-speed-rotor-v4.png",
-    ]
+    expected_asset_sources = {
+        "/pillar-verifiability-v1.png": (
+            "/pillar-verifiability-v1-lossless.webp"
+        ),
+        "/pillar-interpretability-v1.png": (
+            "/pillar-interpretability-v1-lossless.webp"
+        ),
+        "/pillar-testing-speed-rotor-v2.png": (
+            "/pillar-testing-speed-rotor-v2-lossless.webp"
+        ),
+        "/pillar-testing-speed-rotor-v4.png": (
+            "/pillar-testing-speed-rotor-v4-lossless.webp"
+        ),
+        "/thesis-resistance-field-pink.png": (
+            "/thesis-resistance-field-pink-v1-lossless.webp"
+        ),
+    }
 
-    for source in expected_asset_sources:
+    for source, optimized_source in expected_asset_sources.items():
         with Image.open(THEME_STATIC_ROOT / source.removeprefix("/")) as image:
-            assert image.mode == "RGBA"
-            alpha = image.getchannel("A")
+            expected = image.convert("RGBA")
+            alpha = expected.getchannel("A")
             assert alpha.getextrema() == (0, 255)
             assert all(
                 alpha.getpixel(corner) == 0
@@ -95,6 +106,41 @@ def test_pillar_illustration_assets_preserve_transparent_alpha_channels() -> Non
                 ]
                 assert partially_transparent_pixels > image.width * image.height * 0.25
                 assert partial_values[len(partial_values) // 2] <= 20
+        with Image.open(
+            THEME_STATIC_ROOT / optimized_source.removeprefix("/"),
+        ) as optimized:
+            assert optimized.format == "WEBP"
+            assert ImageChops.difference(
+                expected,
+                optimized.convert("RGBA"),
+            ).getbbox() is None
+
+    with Image.open(THEME_STATIC_ROOT / "muta-eye-surface.webp") as source:
+        expected_alpha = source.convert("RGBA").getchannel("A")
+    with Image.open(
+        THEME_STATIC_ROOT / "muta-eye-surface-alpha-v1.webp",
+    ) as optimized:
+        assert ImageChops.difference(
+            expected_alpha,
+            optimized.convert("RGBA").getchannel("A"),
+        ).getbbox() is None
+
+    for source_name, optimized_name in {
+        "muta-v2-transparent-v10.webp": (
+            "muta-v2-transparent-v10-lossless.avif"
+        ),
+        "muta-v2-transparent-2x-v10.webp": (
+            "muta-v2-transparent-2x-v10-lossless.avif"
+        ),
+    }.items():
+        with Image.open(THEME_STATIC_ROOT / source_name) as source:
+            expected = source.convert("RGBA")
+        with Image.open(THEME_STATIC_ROOT / optimized_name) as optimized:
+            assert optimized.format == "AVIF"
+            assert ImageChops.difference(
+                expected,
+                optimized.convert("RGBA"),
+            ).getbbox() is None
 
 
 @pytest.mark.parametrize(
@@ -1457,12 +1503,12 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     """
 
     expected_visible_sources = [
-        "/pillar-verifiability-v1.png",
-        "/pillar-interpretability-v1.png",
+        "/pillar-verifiability-v1-lossless.webp",
+        "/pillar-interpretability-v1-lossless.webp",
         (
-            "/pillar-testing-speed-rotor-v4.png"
+            "/pillar-testing-speed-rotor-v4-lossless.webp"
             if theme == "light"
-            else "/pillar-testing-speed-rotor-v2.png"
+            else "/pillar-testing-speed-rotor-v2-lossless.webp"
         ),
     ]
 
@@ -1471,7 +1517,16 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
         viewport=viewport,
         load_interactive_visuals=False,
     )
-    rendered = page.locator("#what-we-build").evaluate(
+    section = page.locator("#what-we-build")
+    section.scroll_into_view_if_needed()
+    page.wait_for_function(
+        """
+        () => [...document.querySelectorAll(
+          "#what-we-build .pillar-card__visual img",
+        )].every((image) => image.complete && image.naturalWidth > 0)
+        """
+    )
+    rendered = section.evaluate(
         """
         (section) => ({
           theme: document.documentElement.dataset.theme,
@@ -1518,8 +1573,7 @@ def test_pillar_illustrations_are_transparent_local_assets_that_fit_cards(
     assert rendered["theme"] == theme
     assert [card["source"] for card in rendered["cards"]] == expected_visible_sources
     assert rendered["cards"][2]["allSources"] == [
-        "/pillar-testing-speed-rotor-v4.png",
-        "/pillar-testing-speed-rotor-v2.png",
+        expected_visible_sources[2],
     ]
     assert all(card["complete"] for card in rendered["cards"])
     assert all(card["naturalWidth"] > 0 for card in rendered["cards"])
@@ -2509,7 +2563,11 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     )
     expect(mascot).to_have_attribute(
         "srcset",
-        "/muta-v2-transparent-v10.webp 1x, /muta-v2-transparent-2x-v10.webp 2x",
+        "/muta-v2-transparent-v10.webp 1254w, /muta-v2-transparent-2x-v10.webp 2508w",
+    )
+    expect(page.locator(".mascot-card__picture source")).to_have_attribute(
+        "srcset",
+        "/muta-v2-transparent-v10-lossless.avif 1254w, /muta-v2-transparent-2x-v10-lossless.avif 2508w",
     )
     rendered = mascot.evaluate(
         """
@@ -2528,12 +2586,12 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
         """
     )
     assert rendered["currentSource"].endswith(
-        "/muta-v2-transparent-2x-v10.webp",
+        "/muta-v2-transparent-v10-lossless.avif",
     )
-    assert rendered["naturalWidth"] == 1254
-    assert rendered["naturalHeight"] == 1254
+    assert rendered["naturalWidth"] >= rendered["renderedWidth"]
+    assert rendered["naturalHeight"] == rendered["naturalWidth"]
     assert rendered["renderedWidth"] <= 650.5
-    assert 2508 >= rendered["renderedWidth"] * 3
+    assert 1254 >= rendered["renderedWidth"] * 2
     assert rendered["objectFit"] == "contain"
     assert rendered["objectPosition"] == "50% 46%"
 
@@ -2547,7 +2605,7 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
         ".mascot-card__art",
     ).evaluate("(element) => element.currentSrc")
     assert standard_density_source.endswith(
-        "/muta-v2-transparent-v10.webp",
+        "/muta-v2-transparent-v10-lossless.avif",
     )
 
 
@@ -3146,7 +3204,10 @@ def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
     )
 
     assert initial["fontLoaded"] is True
-    assert initial["family"].startswith('"Science Gothic"')
+    # Hugo's production minifier may lowercase quoted font-family names. CSS
+    # family matching is ASCII case-insensitive, so compare the computed value
+    # with the same semantics instead of pinning minifier output casing.
+    assert initial["family"].casefold().startswith('"science gothic"')
     assert initial["anchorWeights"] == ["780", "780", "780"]
     assert initial["anchorAxes"] == [
         {"CTRS": 34, "wdth": 128},
