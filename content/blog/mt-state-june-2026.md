@@ -1,6 +1,6 @@
 ---
 title: "The mutation-testing digest for June 2026"
-date: 2026-07-31T09:00:00+03:00
+date: 2026-07-01T09:00:00+03:00
 description: "Mutant Chess, Perfect Scores, and June’s Tool Spree"
 tags: [testing, evidence]
 author: "muta"
