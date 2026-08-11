@@ -2988,40 +2988,100 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     )
 
 
-@pytest.mark.parametrize(
-    "viewport",
-    [(1280, 720), (580, 844), (390, 844), (280, 700)],
-    ids=["desktop", "mobile-boundary", "phone", "minimum"],
-)
-def test_header_is_english_only_without_a_language_control(
+def test_desktop_language_list_opens_on_hover(
     driver: DriverFactory,
-    viewport: tuple[int, int],
 ) -> None:
-    """Keep the header free of a premature language selector.
-
-    The site currently ships only English content, so the former ``EN ↘``
-    control suggested an unavailable interaction and consumed valuable header
-    width. This regression covers the desktop layout, the exact mobile
-    breakpoint, a normal phone, and the supported minimum width. It requires
-    the obsolete language element and its accessible label to be absent—not
-    merely hidden with CSS—while preserving the document's English language
-    metadata and the two real header controls: theme switching and the mobile
-    navigation container. Reintroducing the old selector, leaving an invisible
-    focusable copy behind, or accidentally removing ``lang="en"`` makes this
-    test fail.
-    """
+    """Expose every language on hover while retaining the compact control."""
 
     page = driver(
+        stored_language="en",
         stored_theme="light",
-        viewport=viewport,
+        viewport=(1280, 720),
         load_interactive_visuals=False,
     )
     header = page.locator(".site-header")
+    switcher = header.locator(".language-switcher--desktop")
+    summary = switcher.locator(":scope > summary")
+    language_list = switcher.locator(":scope > .language-switcher__list")
 
     expect(page.locator("html")).to_have_attribute("lang", "en")
-    assert header.locator(".language").count() == 0
-    assert header.get_by_text("EN", exact=True).count() == 0
-    assert page.get_by_label("Current language: English", exact=True).count() == 0
+    expect(switcher).to_be_visible()
+    expect(summary.locator("span").nth(0)).to_have_text("EN")
+    assert summary.locator("span").count() == 1
+    expect(language_list).to_be_hidden()
+    geometry = summary.evaluate(
+        """
+        (element) => {
+          const style = getComputedStyle(element);
+          return {
+            width: element.getBoundingClientRect().width,
+            height: element.getBoundingClientRect().height,
+            paddingInline: [style.paddingLeft, style.paddingRight],
+            borderRadius: style.borderRadius,
+            columnGap: style.columnGap,
+            justifyContent: style.justifyContent,
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+          };
+        }
+        """
+    )
+    assert geometry["width"] == pytest.approx(48, abs=0.5)
+    assert geometry["height"] == pytest.approx(42, abs=0.5)
+    assert geometry["paddingInline"] == ["12px", "12px"]
+    assert geometry["borderRadius"] == "12px"
+    assert geometry["columnGap"] == "7px"
+    assert geometry["justifyContent"] == "center"
+    assert "Geist Mono" in geometry["fontFamily"]
+    assert geometry["fontSize"] == "11px"
+    assert geometry["fontWeight"] == "700"
+
+    switcher.hover()
+    assert switcher.evaluate("(element) => element.open") is True
+    expect(language_list).to_be_visible()
+    options = language_list.locator(".language-switcher__option")
+    assert options.all_inner_texts() == ["EN", "RU"]
+    expect(options.nth(0)).to_have_attribute("aria-current", "page")
+    expect(options.nth(1)).to_have_attribute("href", "/ru/")
+    attachment = switcher.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+          const summary = element.querySelector(":scope > summary");
+          const list = element.querySelector(
+            ":scope > .language-switcher__list",
+          );
+          const summaryRect = summary.getBoundingClientRect();
+          const listRect = list.getBoundingClientRect();
+          const listStyle = getComputedStyle(list);
+          return {
+            summaryBottom: summaryRect.bottom,
+            summaryWidth: summaryRect.width,
+            listTop: listRect.top,
+            listWidth: listRect.width,
+            listTopLeftRadius: listStyle.borderTopLeftRadius,
+            listShadow: listStyle.boxShadow,
+          };
+        }
+        """
+    )
+    assert attachment["listTop"] == pytest.approx(
+        attachment["summaryBottom"] - 1,
+        abs=0.5,
+    )
+    assert attachment["listWidth"] == pytest.approx(
+        attachment["summaryWidth"],
+        abs=0.5,
+    )
+    assert attachment["listTopLeftRadius"] == "0px"
+    assert attachment["listShadow"] == "none"
+
+    page.mouse.move(0, 700)
+    assert switcher.evaluate("(element) => element.open") is False
+    expect(language_list).to_be_hidden()
     assert (
         header.get_by_role(
             "button",
@@ -3031,6 +3091,115 @@ def test_header_is_english_only_without_a_language_control(
         == 1
     )
     assert header.locator(".mobile-menu").count() == 1
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [(580, 844), (390, 844), (280, 700)],
+    ids=["mobile-boundary", "phone", "minimum"],
+)
+def test_mobile_language_list_is_the_first_separated_menu_section(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+) -> None:
+    """Put the tap-controlled language list above the mobile navigation."""
+
+    page = driver(
+        stored_language="en",
+        stored_theme="light",
+        viewport=viewport,
+        load_interactive_visuals=False,
+    )
+    header = page.locator(".site-header")
+    menu = header.locator(".mobile-menu")
+    desktop_switcher = header.locator(".language-switcher--desktop")
+
+    expect(desktop_switcher).to_be_hidden()
+    menu.locator(":scope > summary").click()
+    expect(menu.get_by_role("navigation", name="Mobile navigation")).to_be_visible()
+
+    language_section = menu.locator(".mobile-menu__language")
+    links_section = menu.locator(".mobile-menu__links")
+    switcher = language_section.locator(".language-switcher--mobile")
+    summary = switcher.locator(":scope > summary")
+    language_list = switcher.locator(":scope > .language-switcher__list")
+
+    expect(switcher).to_be_visible()
+    expect(summary.locator("span").nth(0)).to_have_text("EN")
+    expect(language_list).to_be_hidden()
+    assert language_section.evaluate(
+        "(element) => getComputedStyle(element).borderBottomWidth"
+    ) == "1px"
+    assert language_section.bounding_box()["y"] < links_section.bounding_box()["y"]
+
+    summary.click()
+    assert switcher.evaluate("(element) => element.open") is True
+    expect(language_list).to_be_visible()
+    options = language_list.locator(".language-switcher__option")
+    assert options.all_inner_texts() == ["EN", "RU"]
+    expect(options.nth(0)).to_have_attribute("aria-current", "page")
+    expect(options.nth(1)).to_have_attribute("href", "/ru/")
+    attachment = switcher.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+          const summaryRect = element.querySelector(
+            ":scope > summary",
+          ).getBoundingClientRect();
+          const listRect = element.querySelector(
+            ":scope > .language-switcher__list",
+          ).getBoundingClientRect();
+          return {
+            summaryBottom: summaryRect.bottom,
+            summaryWidth: summaryRect.width,
+            listTop: listRect.top,
+            listWidth: listRect.width,
+          };
+        }
+        """
+    )
+    assert attachment["listTop"] == pytest.approx(
+        attachment["summaryBottom"] - 1,
+        abs=0.5,
+    )
+    assert attachment["listWidth"] == pytest.approx(
+        attachment["summaryWidth"],
+        abs=0.5,
+    )
+
+
+def test_russian_device_language_and_manual_choice_control_routing(
+    driver: DriverFactory,
+) -> None:
+    """Detect Russian once, then persist each explicit language choice."""
+
+    page = driver(
+        stored_language=None,
+        device_locale="ru-RU",
+        stored_theme="light",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+    )
+
+    expect(page).to_have_url(re.compile(r"/ru/$"))
+    expect(page.locator("html")).to_have_attribute("lang", "ru")
+    desktop_switcher = page.locator(".language-switcher--desktop")
+    desktop_switcher.hover()
+    desktop_switcher.locator('[data-language-option="en"]').click()
+    expect(page).to_have_url(re.compile(r"/$"))
+    page.reload(wait_until="domcontentloaded")
+    expect(page).to_have_url(re.compile(r"/$"))
+    expect(page.locator("html")).to_have_attribute("lang", "en")
+
+    desktop_switcher = page.locator(".language-switcher--desktop")
+    desktop_switcher.hover()
+    desktop_switcher.locator('[data-language-option="ru"]').click()
+    expect(page).to_have_url(re.compile(r"/ru/$"))
+    page.reload(wait_until="domcontentloaded")
+    expect(page).to_have_url(re.compile(r"/ru/$"))
+    expect(page.locator("html")).to_have_attribute("lang", "ru")
 
 
 def test_theme_toggle_stays_inside_header_at_navigation_breakpoint(
@@ -3047,7 +3216,7 @@ def test_theme_toggle_stays_inside_header_at_navigation_breakpoint(
     silently push this control off-screen again.
     """
 
-    widths = (860, 861, 900, 920, 921)
+    widths = (920, 921, 1000, 1040, 1041)
     page = driver(
         stored_theme="dark",
         viewport=(widths[0], 844),
@@ -3107,7 +3276,7 @@ def test_mobile_menu_closes_after_clicking_outside_it(
     menu = page.locator(".mobile-menu")
     navigation = menu.get_by_role("navigation", name="Mobile navigation")
 
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     assert menu.evaluate("(element) => element.open") is True
     expect(navigation).to_be_visible()
 
@@ -3916,8 +4085,8 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
 
     The component therefore measures the horizontal interval from the brand's
     left edge to the action group's left edge after fonts and responsive styles
-    settle. This parameterized regression exercises five widths where the full
-    reservation cannot fit and two where it can. It independently recomputes
+    settle. This parameterized regression exercises four widths where the full
+    reservation cannot fit and three where it can. It independently recomputes
     the same physical requirement from rendered geometry, checks the published
     ``data-can-expand`` decision, then deterministically finishes CSS
     animations after hover. Blocked cases must keep every reveal at zero width

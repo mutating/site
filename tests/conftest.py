@@ -101,7 +101,6 @@ def _write_author_archive(temporary_content: Path, author_slug: str) -> None:
                 'title: "Controlled author archive"',
                 f'author: "{author_slug}"',
                 'type: "author-posts"',
-                f'url: "/authors/{author_slug}/posts/"',
                 "---",
                 "",
                 "Controlled archive content.",
@@ -346,6 +345,8 @@ def driver(
         *,
         color_scheme: ColorScheme = "no-preference",
         stored_theme: str | None = None,
+        stored_language: str | None = "en",
+        device_locale: str | None = None,
         storage_available: bool = True,
         system_theme_available: bool = True,
         viewport: tuple[int, int] | None = None,
@@ -361,18 +362,28 @@ def driver(
         assert not initial_path or initial_path.startswith("/")
         storage_state = {"cookies": [], "origins": []}
 
+        local_storage: list[dict[str, str]] = []
         if stored_theme is not None:
+            local_storage.append(
+                {"name": "tmc-theme", "value": stored_theme}
+            )
+        if stored_language is not None:
+            if stored_language not in {"en", "ru"}:
+                raise ValueError("stored_language must be 'en', 'ru', or None")
+            local_storage.append(
+                {"name": "tmc-language", "value": stored_language}
+            )
+        if local_storage:
             storage_state["origins"].append(
                 {
                     "origin": base_url,
-                    "localStorage": [
-                        {"name": "tmc-theme", "value": stored_theme},
-                    ],
+                    "localStorage": local_storage,
                 }
             )
 
         context = browser.new_context(
             color_scheme=color_scheme,
+            locale=device_locale,
             storage_state=storage_state,
             viewport=(
                 {"width": viewport[0], "height": viewport[1]}
