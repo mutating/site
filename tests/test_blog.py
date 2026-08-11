@@ -843,6 +843,10 @@ def test_responsive_post_table_of_contents_expands_on_request(
             summaryHeight: summaryRect.height,
             labelDelta: labelRect.top + labelRect.height / 2 - center,
             toggleDelta: toggleRect.top + toggleRect.height / 2 - center,
+            labelColor: getComputedStyle(label).color,
+            toggleColor: getComputedStyle(toggle).color,
+            labelInset: labelRect.left - summaryRect.left,
+            toggleInset: summaryRect.right - toggleRect.right,
             toggleContent: getComputedStyle(toggle, "::before").content,
           };
         }
@@ -859,6 +863,10 @@ def test_responsive_post_table_of_contents_expands_on_request(
     assert collapsed_geometry["summaryHeight"] >= 40
     assert abs(collapsed_geometry["labelDelta"]) <= 1
     assert abs(collapsed_geometry["toggleDelta"]) <= 1
+    assert collapsed_geometry["toggleColor"] == collapsed_geometry["labelColor"]
+    assert abs(
+        collapsed_geometry["toggleInset"] - collapsed_geometry["labelInset"]
+    ) <= 0.5
     assert collapsed_geometry["toggleContent"] == '"+"'
 
     collapsed_content_top = page.locator(".post__content").evaluate(
