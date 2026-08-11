@@ -2815,12 +2815,14 @@ def test_contact_text_is_selectable_without_disabling_tentacle_hover(
     assert len(selected_text.strip()) >= 3
 
 
-def test_ticker_selection_inverts_only_its_own_colors(
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_selection_backgrounds_remain_translucent_across_the_site(
     driver: DriverFactory,
+    theme: str,
 ) -> None:
-    """Verify that ticker selection inverts pink and white only within the strip."""
+    """Verify selection colors stay legible without covering adjacent text."""
 
-    page = driver(stored_theme="light")
+    page = driver(stored_theme=theme)
     selection_styles = page.locator(".ticker__track").evaluate(
         """
         (track) => {
@@ -2828,6 +2830,19 @@ def test_ticker_selection_inverts_only_its_own_colors(
           const tickerStyle = getComputedStyle(ticker);
           const tickerSelection = getComputedStyle(track, "::selection");
           const globalSelection = getComputedStyle(document.body, "::selection");
+          const probe = document.createElement("span");
+          document.body.append(probe);
+
+          probe.style.backgroundColor = `color-mix(
+            in srgb,
+            ${tickerStyle.backgroundColor} 55%,
+            transparent
+          )`;
+          const expectedGlobalBackground = getComputedStyle(probe).backgroundColor;
+
+          probe.style.backgroundColor = "color-mix(in srgb, #fff 55%, transparent)";
+          const expectedTickerBackground = getComputedStyle(probe).backgroundColor;
+          probe.remove();
 
           return {
             tickerColor: tickerStyle.color,
@@ -2836,15 +2851,23 @@ def test_ticker_selection_inverts_only_its_own_colors(
             selectionBackground: tickerSelection.backgroundColor,
             globalColor: globalSelection.color,
             globalBackground: globalSelection.backgroundColor,
+            expectedTickerBackground,
+            expectedGlobalBackground,
           };
         }
         """
     )
 
     assert selection_styles["selectionColor"] == selection_styles["tickerBackground"]
-    assert selection_styles["selectionBackground"] == selection_styles["tickerColor"]
+    assert (
+        selection_styles["selectionBackground"]
+        == selection_styles["expectedTickerBackground"]
+    )
     assert selection_styles["globalColor"] == selection_styles["tickerColor"]
-    assert selection_styles["globalBackground"] == selection_styles["tickerBackground"]
+    assert (
+        selection_styles["globalBackground"]
+        == selection_styles["expectedGlobalBackground"]
+    )
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -3020,6 +3043,11 @@ def test_desktop_language_list_opens_on_hover(
             borderRadius: style.borderRadius,
             columnGap: style.columnGap,
             justifyContent: style.justifyContent,
+            backgroundColor: style.backgroundColor,
+            color: style.color,
+            navigationColor: getComputedStyle(
+              document.querySelector(".main-nav a:last-child"),
+            ).color,
             fontFamily: style.fontFamily,
             fontSize: style.fontSize,
             fontWeight: style.fontWeight,
@@ -3033,6 +3061,8 @@ def test_desktop_language_list_opens_on_hover(
     assert geometry["borderRadius"] == "12px"
     assert geometry["columnGap"] == "7px"
     assert geometry["justifyContent"] == "center"
+    assert geometry["backgroundColor"] == "rgba(0, 0, 0, 0)"
+    assert geometry["color"] == geometry["navigationColor"]
     assert "Geist Mono" in geometry["fontFamily"]
     assert geometry["fontSize"] == "11px"
     assert geometry["fontWeight"] == "700"
@@ -3041,9 +3071,12 @@ def test_desktop_language_list_opens_on_hover(
     assert switcher.evaluate("(element) => element.open") is True
     expect(language_list).to_be_visible()
     options = language_list.locator(".language-switcher__option")
-    assert options.all_inner_texts() == ["EN", "RU"]
-    expect(options.nth(0)).to_have_attribute("aria-current", "page")
-    expect(options.nth(1)).to_have_attribute("href", "/ru/")
+    assert options.all_inner_texts() == ["RU"]
+    expect(options.nth(0)).to_have_attribute("href", "/ru/")
+    option_colors = options.evaluate_all(
+        "elements => elements.map(element => getComputedStyle(element).color)"
+    )
+    assert option_colors == [geometry["navigationColor"]]
     attachment = switcher.evaluate(
         """
         (element) => {
@@ -3064,6 +3097,15 @@ def test_desktop_language_list_opens_on_hover(
             listWidth: listRect.width,
             listTopLeftRadius: listStyle.borderTopLeftRadius,
             listShadow: listStyle.boxShadow,
+            listBackground: listStyle.backgroundColor,
+            summaryBackground: getComputedStyle(summary).backgroundColor,
+            headerBackground: getComputedStyle(
+              element.closest(".site-header"),
+            ).backgroundColor,
+            listBackdrop: listStyle.backdropFilter,
+            headerBackdrop: getComputedStyle(
+              element.closest(".site-header"),
+            ).backdropFilter,
           };
         }
         """
@@ -3078,6 +3120,35 @@ def test_desktop_language_list_opens_on_hover(
     )
     assert attachment["listTopLeftRadius"] == "0px"
     assert attachment["listShadow"] == "none"
+    assert attachment["summaryBackground"] == "rgba(0, 0, 0, 0)"
+    assert attachment["listBackground"] == attachment["headerBackground"]
+    assert attachment["listBackdrop"] == attachment["headerBackdrop"]
+    spacing = header.evaluate(
+        """
+        (element) => {
+          const lastNavigationLink = element.querySelector(
+            ".main-nav a:last-child",
+          );
+          const navigationText = document.createRange();
+          navigationText.selectNodeContents(lastNavigationLink);
+          const language = element.querySelector(
+            ".language-switcher--desktop",
+          ).getBoundingClientRect();
+          const theme = element.querySelector(".theme-toggle")
+            .getBoundingClientRect();
+          return {
+            navigationToLanguage:
+              language.left - navigationText.getBoundingClientRect().right,
+            languageToTheme: theme.left - language.right,
+          };
+        }
+        """
+    )
+    assert spacing["navigationToLanguage"] == pytest.approx(35, abs=0.5)
+    assert spacing["languageToTheme"] == pytest.approx(
+        spacing["navigationToLanguage"],
+        abs=0.5,
+    )
 
     page.mouse.move(0, 700)
     assert switcher.evaluate("(element) => element.open") is False
@@ -3136,9 +3207,8 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
     assert switcher.evaluate("(element) => element.open") is True
     expect(language_list).to_be_visible()
     options = language_list.locator(".language-switcher__option")
-    assert options.all_inner_texts() == ["EN", "RU"]
-    expect(options.nth(0)).to_have_attribute("aria-current", "page")
-    expect(options.nth(1)).to_have_attribute("href", "/ru/")
+    assert options.all_inner_texts() == ["RU"]
+    expect(options.nth(0)).to_have_attribute("href", "/ru/")
     attachment = switcher.evaluate(
         """
         (element) => {
@@ -3151,11 +3221,20 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
           const listRect = element.querySelector(
             ":scope > .language-switcher__list",
           ).getBoundingClientRect();
+          const list = element.querySelector(
+            ":scope > .language-switcher__list",
+          );
           return {
             summaryBottom: summaryRect.bottom,
             summaryWidth: summaryRect.width,
             listTop: listRect.top,
             listWidth: listRect.width,
+            listBackground: getComputedStyle(list).backgroundColor,
+            menuBackground: getComputedStyle(
+              element.closest(".mobile-menu").querySelector(
+                ":scope > nav",
+              ),
+            ).backgroundColor,
           };
         }
         """
@@ -3168,6 +3247,7 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
         attachment["summaryWidth"],
         abs=0.5,
     )
+    assert attachment["listBackground"] == attachment["menuBackground"]
 
 
 def test_russian_device_language_and_manual_choice_control_routing(

@@ -1,16 +1,29 @@
 {{- $context := .context -}}
 {{- $variant := .variant -}}
 {{- $currentLanguage := $context.Site.Language.Lang -}}
-<details class="language-switcher language-switcher--{{ $variant }}" data-language-switcher>
+{{- $maxLanguageLength := len $currentLanguage -}}
+{{- range hugo.Sites -}}
+  {{- $languageLength := len .Language.Lang -}}
+  {{- if gt $languageLength $maxLanguageLength -}}
+    {{- $maxLanguageLength = $languageLength -}}
+  {{- end -}}
+{{- end -}}
+{{- $desktopWidth := add 24 (mul $maxLanguageLength 7) -}}
+{{- if lt $desktopWidth 48 -}}
+  {{- $desktopWidth = 48 -}}
+{{- end -}}
+<details class="language-switcher language-switcher--{{ $variant }}" data-language-switcher style="--language-switcher-desktop-width: {{ $desktopWidth }}px">
   <summary aria-label="Choose language; current language {{ upper $currentLanguage }}">
     <span>{{ upper $currentLanguage }}</span>
   </summary>
   <div class="language-switcher__list" role="group" aria-label="Languages">
     {{- range hugo.Sites }}
       {{- $language := .Language.Lang -}}
-      {{- $languageURL := partial "language-url.html" (dict "context" $context "language" $language) -}}
-      {{- with $languageURL }}
-        <a class="language-switcher__option" href="{{ . }}" lang="{{ $language }}" hreflang="{{ $language }}" data-language-option="{{ $language }}"{{ if eq $language $currentLanguage }} aria-current="page"{{ end }}>{{ upper $language }}</a>
+      {{- if ne $language $currentLanguage }}
+        {{- $languageURL := partial "language-url.html" (dict "context" $context "language" $language) -}}
+        {{- with $languageURL }}
+          <a class="language-switcher__option" href="{{ . }}" lang="{{ $language }}" hreflang="{{ $language }}" data-language-option="{{ $language }}">{{ upper $language }}</a>
+        {{- end }}
       {{- end }}
     {{- end }}
   </div>

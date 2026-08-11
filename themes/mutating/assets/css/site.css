@@ -158,7 +158,7 @@ section[id] {
 }
 
 ::selection {
-  background: var(--hot);
+  background: color-mix(in srgb, var(--hot) 55%, transparent);
   color: #fff;
 }
 
@@ -541,7 +541,19 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   flex: 0 0 auto;
 }
 
+@media (min-width: 1041px) {
+  .header-actions {
+    gap: 35px;
+  }
+}
+
 .language-switcher {
+  --language-switcher-list-surface: color-mix(
+    in srgb,
+    var(--bg) 82%,
+    transparent
+  );
+  --language-switcher-list-backdrop: blur(20px) saturate(1.35);
   position: relative;
   display: block;
   flex: 0 0 auto;
@@ -551,7 +563,7 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
 }
 
 .language-switcher--desktop {
-  width: 48px;
+  width: var(--language-switcher-desktop-width, 48px);
 }
 
 .language-switcher > summary {
@@ -561,13 +573,14 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
+  background: transparent;
+  color: var(--ink-muted);
   display: inline-flex;
   align-items: center;
   gap: 7px;
   list-style: none;
   cursor: pointer;
-  transition: border-radius 120ms ease;
+  transition: border-radius 120ms ease, color 180ms ease;
 }
 
 .language-switcher > summary::-webkit-details-marker {
@@ -577,6 +590,10 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
 .language-switcher--desktop > summary {
   width: 100%;
   justify-content: center;
+}
+
+.language-switcher > summary:hover {
+  color: var(--ink);
 }
 
 .language-switcher[open] > summary {
@@ -593,7 +610,8 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 0 0 12px 12px;
-  background: var(--surface);
+  background: var(--language-switcher-list-surface);
+  backdrop-filter: var(--language-switcher-list-backdrop);
   box-shadow: none;
   display: grid;
   gap: 2px;
@@ -622,10 +640,6 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
 .language-switcher__option:focus-visible {
   color: var(--ink);
   background: var(--surface-raised);
-}
-
-.language-switcher__option[aria-current="page"] {
-  color: var(--hot);
 }
 
 .language-switcher--desktop .language-switcher__option {
@@ -1145,7 +1159,7 @@ a.section-index:focus-visible {
 }
 
 .ticker ::selection {
-  background: #fff;
+  background: color-mix(in srgb, #fff 55%, transparent);
   color: var(--hot);
 }
 
@@ -2707,6 +2721,8 @@ a.section-index:focus-visible {
   }
 
   .language-switcher--mobile {
+    --language-switcher-list-surface: var(--surface);
+    --language-switcher-list-backdrop: none;
     width: 100%;
   }
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 from pathlib import Path
 
 from playwright.sync_api import expect
@@ -158,3 +160,120 @@ def test_translation_resources_do_not_duplicate_canonical_front_matter() -> None
             assert re.search(
                 rf"^{canonical_key}:", front_matter, re.MULTILINE
             ) is None
+
+
+def test_new_language_is_driven_entirely_by_hugo_configuration(
+    tmp_path: Path,
+) -> None:
+    """Add a third language without changing templates or browser scripts."""
+
+    extra_config = tmp_path / "extra-language.toml"
+    extra_config.write_text(
+        """
+[languages.pt-br]
+label = "Português"
+locale = "pt-BR"
+weight = 3
+""".strip(),
+        encoding="utf-8",
+    )
+    destination = tmp_path / "public"
+    cache_directory = tmp_path / "cache"
+    build = subprocess.run(
+        [
+            "hugo",
+            "--config",
+            f"{PROJECT_ROOT / 'hugo.toml'},{extra_config}",
+            "--destination",
+            str(destination),
+            "--cacheDir",
+            str(cache_directory),
+            "--noBuildLock",
+            "--panicOnWarning",
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert build.returncode == 0, build.stdout + build.stderr
+
+    english_html = (destination / "index.html").read_text(encoding="utf-8")
+    portuguese_html = (destination / "pt-br" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    option_pattern = r'data-language-option="([^"]+)"'
+
+    assert set(re.findall(option_pattern, english_html)) == {"ru", "pt-br"}
+    assert set(re.findall(option_pattern, portuguese_html)) == {"en", "ru"}
+    assert 'var supportedLanguages = ["en","ru","pt-br"]' in english_html
+    assert "--language-switcher-desktop-width: 59px" in english_html
+
+    bootstrap_match = re.search(
+        r"<script>\s*(\(function \(\) \{.*?\}\)\(\);)\s*</script>",
+        english_html,
+        re.DOTALL,
+    )
+    assert bootstrap_match is not None
+    bootstrap = bootstrap_match.group(1)
+
+    def resolve_initial_language(
+        *,
+        stored_language: str | None,
+        device_languages: list[str],
+    ) -> dict[str, object]:
+        harness = f"""
+let redirectedTo = null;
+globalThis.localStorage = {{
+  getItem: () => {json.dumps(stored_language)},
+}};
+Object.defineProperty(globalThis, "navigator", {{
+  value: {{
+    languages: {json.dumps(device_languages)},
+    language: {json.dumps(device_languages[0])},
+  }},
+}});
+globalThis.document = {{ documentElement: {{ dataset: {{}} }} }};
+globalThis.window = {{
+  location: {{
+    origin: "https://example.test",
+    search: "",
+    hash: "",
+    replace: (url) => {{ redirectedTo = url; }},
+  }},
+}};
+{bootstrap}
+console.log(JSON.stringify({{
+  redirectedTo,
+  language: document.documentElement.dataset.language,
+}}));
+"""
+        result = subprocess.run(
+            ["node", "-e", harness],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return json.loads(result.stdout)
+
+    assert resolve_initial_language(
+        stored_language=None,
+        device_languages=["pt-BR", "en-US"],
+    ) == {
+        "redirectedTo": "https://example.test/pt-br/",
+        "language": "en",
+    }
+    assert resolve_initial_language(
+        stored_language="pt-br",
+        device_languages=["en-US"],
+    ) == {
+        "redirectedTo": "https://example.test/pt-br/",
+        "language": "en",
+    }
+
+    browser_script = (
+        PROJECT_ROOT / "themes" / "mutating" / "assets" / "js" / "site.js"
+    ).read_text(encoding="utf-8")
+    assert 'language !== "en"' not in browser_script
+    assert 'language !== "ru"' not in browser_script
