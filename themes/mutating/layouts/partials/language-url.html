@@ -1,0 +1,9 @@
+{{- $context := .context -}}
+{{- $language := .language -}}
+{{- $url := "" -}}
+{{- range where hugo.Sites "Language.Lang" $language -}}
+  {{- with .GetPage $context.Path -}}
+    {{- $url = .RelPermalink -}}
+  {{- end -}}
+{{- end -}}
+{{- return $url -}}

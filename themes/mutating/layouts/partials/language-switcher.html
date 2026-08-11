@@ -1,0 +1,17 @@
+{{- $context := .context -}}
+{{- $variant := .variant -}}
+{{- $currentLanguage := $context.Site.Language.Lang -}}
+<details class="language-switcher language-switcher--{{ $variant }}" data-language-switcher>
+  <summary aria-label="Choose language; current language {{ upper $currentLanguage }}">
+    <span>{{ upper $currentLanguage }}</span>
+  </summary>
+  <div class="language-switcher__list" role="group" aria-label="Languages">
+    {{- range hugo.Sites }}
+      {{- $language := .Language.Lang -}}
+      {{- $languageURL := partial "language-url.html" (dict "context" $context "language" $language) -}}
+      {{- with $languageURL }}
+        <a class="language-switcher__option" href="{{ . }}" lang="{{ $language }}" hreflang="{{ $language }}" data-language-option="{{ $language }}"{{ if eq $language $currentLanguage }} aria-current="page"{{ end }}>{{ upper $language }}</a>
+      {{- end }}
+    {{- end }}
+  </div>
+</details>

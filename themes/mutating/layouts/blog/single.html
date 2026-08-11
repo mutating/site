@@ -1,14 +1,15 @@
 {{ define "main" }}
+{{- $localizedPage := partial "localized-page.html" . -}}
 <article class="post section-shell">
   <header class="post__header">
-    <a class="section-index" href="{{ "/blog/" | relURL }}">BLOG</a>
-    <h1>{{ partial "title-with-period.html" .Title }}</h1>
-    <p class="post__description">{{ .Description }}</p>
+    <a class="section-index" href="{{ "/blog/" | relLangURL }}">BLOG</a>
+    <h1>{{ partial "title-with-period.html" $localizedPage.Title }}</h1>
+    <p class="post__description">{{ $localizedPage.Description }}</p>
     <div class="post__meta">
       <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 January 2006" }}</time>
       <span class="post-reading-time" tabindex="0" aria-describedby="post-word-count">
-        <span>{{ .ReadingTime }} min read</span>
-        <span class="meta-tooltip post-reading-time__tooltip" id="post-word-count" role="tooltip">{{ .WordCount }} words</span>
+        <span>{{ $localizedPage.ReadingTime }} min read</span>
+        <span class="meta-tooltip post-reading-time__tooltip" id="post-word-count" role="tooltip">{{ $localizedPage.WordCount }} words</span>
       </span>
       {{ with .Params.author }}
         {{ $author := site.GetPage (printf "/authors/%s" .) }}
@@ -19,7 +20,7 @@
     </div>
   </header>
   <div class="post__layout">
-    {{ $tableOfContents := .TableOfContents }}
+    {{ $tableOfContents := $localizedPage.TableOfContents }}
     {{ if gt (len $tableOfContents) 100 }}
     {{ $sectionCount := len (findRE "<li>" $tableOfContents) }}
     {{ $sectionLabel := "sections" }}
@@ -33,22 +34,27 @@
       {{ $tableOfContents }}
     </details>
     {{ end }}
-    <div class="post__content">{{ .Content }}</div>
+    <div class="post__content">{{ $localizedPage.Content }}</div>
   </div>
-  {{ with .GetTerms "tags" }}
+  {{ with .Params.tags }}
   <aside class="post__tags" aria-label="Signals in this field note">
     <ul>
       {{ range . }}
+      {{ $tag := printf "%v" . }}
       <li>
-        {{ partial "tag.html" (dict "label" .LinkTitle "href" .RelPermalink "size" "copy") }}
+        {{ partial "tag.html" (dict
+          "label" $tag
+          "href" (printf "/tags/%s/" ($tag | urlize) | relLangURL)
+          "size" "copy"
+        ) }}
       </li>
       {{ end }}
     </ul>
   </aside>
   {{ end }}
   <nav class="post__nav" aria-label="Post navigation">
-    {{ with .PrevInSection }}<a class="post__nav-link post__nav-link--previous" href="{{ .RelPermalink }}"><small>Previous</small><span>← {{ .Title }}</span></a>{{ end }}
-    {{ with .NextInSection }}<a class="post__nav-link post__nav-link--next" href="{{ .RelPermalink }}"><small>Next</small><span>{{ .Title }} →</span></a>{{ end }}
+    {{ with .PrevInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--previous" href="{{ .RelPermalink }}"><small>Previous</small><span>← {{ $localizedPost.Title }}</span></a>{{ end }}
+    {{ with .NextInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--next" href="{{ .RelPermalink }}"><small>Next</small><span>{{ $localizedPost.Title }} →</span></a>{{ end }}
   </nav>
 </article>
 {{ end }}

@@ -1,5 +1,6 @@
 ---
 title: "The mutation-testing digest for June 2026"
+slug: "the-mutation-testing-digest-for-june-2026"
 date: 2026-07-01T09:00:00+03:00
 description: "Mutant Chess, Perfect Scores, and June’s Tool Spree"
 tags: [testing, mutation-testing, llm, adversarial, new-tools, score-audit, evidence]

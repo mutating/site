@@ -1,5 +1,6 @@
 ---
 title: "The mutation-testing digest for July 2026"
+slug: "the-mutation-testing-digest-for-july-2026"
 date: 2026-08-01T09:00:00+03:00
 description: "Survivors as Work Orders, Scores Under Audit"
 tags: [testing, mutation-testing, llm, adoption, real-world, survivor-investigation, tools]

@@ -158,10 +158,13 @@ def test_tag_component_is_shared_by_posts_authors_and_term_pages() -> None:
 
     assert 'partial "tag.html"' in post_template
     assert '"size" "copy"' in post_template
+    assert ".Params.tags" in post_template
+    assert ".LinkTitle" not in post_template
     assert 'partial "tag.html"' in author_template
     assert '"size" "compact"' in author_template
     assert "range first 5 $tagItems" in author_template
     assert '"size" "display"' in term_template
+    assert '"label" .Data.Term' in term_template
     assert "signal-tag--%s" in tag_partial
     assert "signal-tag__bracket" in tag_partial
     assert "signal-tag__label" in tag_partial
@@ -537,10 +540,10 @@ def test_post_tags_render_only_when_present_and_link_to_terms(
     assert {
         text.strip() for text in tag_region.locator("a").all_text_contents()
     } == {
-        "[#Testing]",
-        "[#Verification]",
+        "[#testing]",
+        "[#verification]",
     }
-    verification = tag_region.get_by_role("link", name="#Verification")
+    verification = tag_region.get_by_role("link", name="#verification")
     expect(verification).to_have_attribute(
         "href",
         "/tags/verification/",
@@ -549,7 +552,7 @@ def test_post_tags_render_only_when_present_and_link_to_terms(
     expect(verification.locator(".signal-tag__bracket")).to_have_count(2)
     expect(verification.locator(".signal-tag__bracket").first).to_have_text("[#")
     expect(verification.locator(".signal-tag__bracket").last).to_have_text("]")
-    expect(verification.locator(".signal-tag__label")).to_have_text("Verification")
+    expect(verification.locator(".signal-tag__label")).to_have_text("verification")
     expect(verification).to_have_css("border-top-width", "0px")
     verification.hover()
     expect(verification.locator(".signal-tag__label")).to_have_css(
@@ -566,25 +569,35 @@ def test_post_tags_render_only_when_present_and_link_to_terms(
     [(1280, 720), (390, 844)],
     ids=["desktop", "phone"],
 )
-def test_post_tags_match_article_copy_size(
+def test_post_tags_match_article_copy_typography(
     driver: DriverFactory,
     viewport: tuple[int, int],
 ) -> None:
-    """Keep tag links at the article copy size across responsive widths."""
+    """Match tag-link size and weight to article copy at every width."""
 
     page = driver(
         viewport=viewport,
         load_interactive_visuals=False,
         initial_path=MARKDOWN_FIXTURE_PATH,
     )
-    article_size = page.locator(".post__content").evaluate(
-        "element => getComputedStyle(element).fontSize"
+    article_typography = page.locator(".post__content").evaluate(
+        """
+        element => ({
+          size: getComputedStyle(element).fontSize,
+          weight: getComputedStyle(element).fontWeight,
+        })
+        """
     )
-    tag_size = page.locator(".post__tags a").first.evaluate(
-        "element => getComputedStyle(element).fontSize"
+    tag_typography = page.locator(".post__tags a").first.evaluate(
+        """
+        element => ({
+          size: getComputedStyle(element).fontSize,
+          weight: getComputedStyle(element).fontWeight,
+        })
+        """
     )
 
-    assert tag_size == article_size
+    assert tag_typography == article_typography
 
 
 def test_tag_link_opens_a_distinct_filtered_collection(
@@ -597,7 +610,7 @@ def test_tag_link_opens_a_distinct_filtered_collection(
     page.goto(f"{origin}{MARKDOWN_FIXTURE_PATH}", wait_until="domcontentloaded")
     page.locator(".post__tags").get_by_role(
         "link",
-        name="#Verification",
+        name="#verification",
     ).click()
 
     expect(page).to_have_url(re.compile(r"/tags/verification/$"))
@@ -607,7 +620,7 @@ def test_tag_link_opens_a_distinct_filtered_collection(
         "BLOG / TAGGED SIGNALS"
     )
     expect(collection.locator("h1")).to_have_text(
-        "Signals tagged [#Verification]."
+        "Signals tagged [#verification]."
     )
     heading_tag = collection.locator("h1 .signal-tag--display")
     expect(heading_tag).to_be_visible()
@@ -638,6 +651,42 @@ def test_tag_link_opens_a_distinct_filtered_collection(
 
     assert MARKDOWN_FIXTURE_PATH in post_urls
     assert UNTAGGED_FIXTURE_PATH not in post_urls
+
+
+def test_long_display_tag_wraps_as_text_without_detaching_its_bracket(
+    driver: DriverFactory,
+) -> None:
+    """Keep a long term and its closing bracket in one inline text flow."""
+
+    page = driver(
+        viewport=(1440, 900),
+        load_interactive_visuals=False,
+        initial_path="/tags/survivor-investigation/",
+    )
+    geometry = page.locator("h1 .signal-tag--display").evaluate(
+        """
+        element => {
+          const label = element.querySelector(".signal-tag__label");
+          const brackets = element.querySelectorAll(".signal-tag__bracket");
+          const labelLines = [...label.getClientRects()];
+          const closingBracket = brackets[1].getBoundingClientRect();
+          return {
+            display: getComputedStyle(element).display,
+            lineCount: labelLines.length,
+            closingGap:
+              closingBracket.left - labelLines[labelLines.length - 1].right,
+            overflows:
+              document.documentElement.scrollWidth >
+              document.documentElement.clientWidth,
+          };
+        }
+        """
+    )
+
+    assert geometry["display"] == "inline"
+    assert geometry["lineCount"] >= 2
+    assert abs(geometry["closingGap"]) <= 2
+    assert geometry["overflows"] is False
 
 
 def test_tag_collection_paginates_and_punctuates_titles_once(

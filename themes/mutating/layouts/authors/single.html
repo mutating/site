@@ -8,14 +8,19 @@
 {{- $tagScratch.Set "counts" dict -}}
 {{- range $posts -}}
   {{- range .Params.tags -}}
-    {{- $tag := lower (printf "%v" .) -}}
-    {{- $currentCount := default 0 (index ($tagScratch.Get "counts") $tag) -}}
-    {{- $tagScratch.SetInMap "counts" $tag (add $currentCount 1) -}}
+    {{- $tagName := printf "%v" . -}}
+    {{- $tagKey := lower $tagName -}}
+    {{- $current := index ($tagScratch.Get "counts") $tagKey -}}
+    {{- if $current -}}
+      {{- $tagScratch.SetInMap "counts" $tagKey (dict "name" $current.name "count" (add $current.count 1)) -}}
+    {{- else -}}
+      {{- $tagScratch.SetInMap "counts" $tagKey (dict "name" $tagName "count" 1) -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 {{- $tagItems := slice -}}
-{{- range $tag, $count := ($tagScratch.Get "counts") -}}
-  {{- $tagItems = $tagItems | append (dict "name" $tag "count" $count) -}}
+{{- range $tagKey, $tagItem := ($tagScratch.Get "counts") -}}
+  {{- $tagItems = $tagItems | append $tagItem -}}
 {{- end -}}
 {{- $tagItems = sort $tagItems "count" "desc" -}}
 
@@ -23,7 +28,7 @@
   <header class="author-profile__hero">
     <div class="author-profile__intro">
       <nav class="section-index author-profile__breadcrumb" aria-label="Author breadcrumb">
-        <a href="{{ "/authors/" | relURL }}">AUTHORS</a>
+        <a href="{{ "/authors/" | relLangURL }}">AUTHORS</a>
         <span aria-hidden="true">/</span>
         <a href="{{ .RelPermalink }}" aria-current="page">{{ upper $authorSlug }}</a>
       </nav>
@@ -51,13 +56,13 @@
       {{ end }}
       {{ if and (gt (len $posts) 0) (gt (len $tagItems) 0) }}
         <aside class="author-profile__tags" aria-labelledby="author-tags-heading">
-          <p class="author-profile__label" id="author-tags-heading">FREQUENT SIGNALS</p>
+          <p class="author-profile__label" id="author-tags-heading">FREQUENT TAGS</p>
           <ol>
             {{ range first 5 $tagItems }}
               <li>
                 {{ partial "tag.html" (dict
                   "label" .name
-                  "href" (printf "/tags/%s/" (.name | urlize) | relURL)
+                  "href" (printf "/tags/%s/" (.name | urlize) | relLangURL)
                   "size" "compact"
                   "count" .count
                   "ariaLabel" (printf "#%s, %d authored signals" .name .count)
@@ -88,13 +93,14 @@
     </header>
     <div class="author-posts__grid">
       {{ range first 2 $posts }}
+        {{- $localizedPost := partial "localized-page.html" . -}}
         <a class="author-post-card" href="{{ .RelPermalink }}">
           <div>
             <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
-            <span>{{ .ReadingTime }} min read</span>
+            <span>{{ $localizedPost.ReadingTime }} min read</span>
           </div>
-          <h3>{{ .Title }}</h3>
-          <p>{{ .Description | default .Summary }}</p>
+          <h3>{{ $localizedPost.Title }}</h3>
+          <p>{{ $localizedPost.Description | default $localizedPost.Summary }}</p>
           <b aria-hidden="true">↗</b>
         </a>
       {{ end }}

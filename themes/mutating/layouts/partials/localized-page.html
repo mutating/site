@@ -1,0 +1,8 @@
+{{- $page := . -}}
+{{- $defaultLanguage := hugo.Sites.Default.Language.Lang -}}
+{{- if and .IsPage (ne .Site.Language.Lang $defaultLanguage) -}}
+  {{- with .Resources.GetMatch "translation.md" -}}
+    {{- $page = . -}}
+  {{- end -}}
+{{- end -}}
+{{- return $page -}}
