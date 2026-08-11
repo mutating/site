@@ -1,9 +1,29 @@
 baseURL = "http://localhost:1313/"
-locale = "en-US"
 title = "The Mutating Company — AI systems that doubt"
 theme = "mutating"
 enableRobotsTXT = true
 disableKinds = ["taxonomy"]
+defaultContentLanguage = "en"
+defaultContentLanguageInSubdir = false
+
+[languages]
+  [languages.en]
+    label = "English"
+    locale = "en-US"
+    weight = 1
+  [languages.ru]
+    label = "Русский"
+    locale = "ru-RU"
+    weight = 2
+
+# Publish each default-language page into every language site. Templates replace
+# only its display content when a localized page resource is present, so tags,
+# authors, dates, and URLs stay canonical and are never duplicated in front matter.
+[[cascade]]
+  [cascade.sites.matrix]
+    languages = ["**"]
+  [cascade.target.sites.matrix]
+    languages = ["en"]
 
 [taxonomies]
   tag = "tags"
@@ -11,9 +31,23 @@ disableKinds = ["taxonomy"]
 [params]
   description = "Deterministic verification, interpretability, and testing infrastructure for the AI agents writing tomorrow’s software."
 
-[permalinks]
-  blog = "/blog/:slug/"
-  authors = "/authors/:contentbasename/"
+[[permalinks]]
+  pattern = "/authors/:sections[last]/posts/"
+  [permalinks.target]
+    kind = "section"
+    path = "/author-posts/**"
+
+[[permalinks]]
+  pattern = "/blog/:slug/"
+  [permalinks.target]
+    kind = "page"
+    path = "/blog/**"
+
+[[permalinks]]
+  pattern = "/authors/:contentbasename/"
+  [permalinks.target]
+    kind = "page"
+    path = "/authors/**"
 
 [pagination]
   pagerSize = 10
