@@ -40,9 +40,7 @@
     <ul>
       {{ range . }}
       <li>
-        <a href="{{ .RelPermalink }}" aria-label="#{{ .LinkTitle }}">
-          <span class="post__tag-bracket" aria-hidden="true">[#</span><span class="post__tag-label">{{ .LinkTitle }}</span><span class="post__tag-bracket" aria-hidden="true">]</span>
-        </a>
+        {{ partial "tag.html" (dict "label" .LinkTitle "href" .RelPermalink "size" "copy") }}
       </li>
       {{ end }}
     </ul>

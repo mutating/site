@@ -55,9 +55,13 @@
           <ol>
             {{ range first 5 $tagItems }}
               <li>
-                <a href="{{ printf "/tags/%s/" (.name | urlize) | relURL }}">
-                  <span>#{{ .name }}</span><small>{{ .count }}</small>
-                </a>
+                {{ partial "tag.html" (dict
+                  "label" .name
+                  "href" (printf "/tags/%s/" (.name | urlize) | relURL)
+                  "size" "compact"
+                  "count" .count
+                  "ariaLabel" (printf "#%s, %d authored signals" .name .count)
+                ) }}
               </li>
             {{ end }}
           </ol>
