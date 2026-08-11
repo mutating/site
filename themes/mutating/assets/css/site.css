@@ -4345,6 +4345,7 @@ a.section-index:focus-visible {
     grid-column: auto;
     position: static;
     border-bottom: 1px solid var(--line);
+    padding-right: 0;
     padding-bottom: 0;
   }
 
@@ -4370,7 +4371,7 @@ a.section-index:focus-visible {
     height: auto;
     border: 0;
     border-radius: 0;
-    color: var(--hot);
+    color: inherit;
     font-size: 19px;
     font-weight: 400;
   }
