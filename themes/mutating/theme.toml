@@ -2,9 +2,8 @@ name = "Mutating"
 license = "All rights reserved"
 description = "The complete Hugo theme for The Mutating Company."
 homepage = "https://mutating.tech/"
-min_version = "0.120.0"
+min_version = "0.161.0"
 
 [author]
   name = "The Mutating Company"
   homepage = "https://mutating.tech/"
-
