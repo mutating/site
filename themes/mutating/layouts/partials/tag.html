@@ -1,0 +1,8 @@
+{{- $label := printf "%v" .label -}}
+{{- $size := default "copy" .size -}}
+{{- $class := printf "signal-tag signal-tag--%s" $size -}}
+{{- if .href -}}
+  <a class="{{ $class }}" href="{{ .href }}" aria-label="{{ default (printf "#%s" $label) .ariaLabel }}"><span class="signal-tag__bracket" aria-hidden="true">[#</span><span class="signal-tag__label">{{ $label }}</span><span class="signal-tag__bracket" aria-hidden="true">]</span>{{ with .count }}<small class="signal-tag__count" aria-hidden="true">{{ . }}</small>{{ end }}</a>
+{{- else -}}
+  <span class="{{ $class }}"><span class="signal-tag__bracket" aria-hidden="true">[#</span><span class="signal-tag__label">{{ $label }}</span><span class="signal-tag__bracket" aria-hidden="true">]</span>{{ with .count }}<small class="signal-tag__count" aria-hidden="true">{{ . }}</small>{{ end }}</span>
+{{- end -}}
