@@ -51,6 +51,43 @@ def test_home_page_renders_core_content(driver: DriverFactory) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("viewport_width", "should_be_visible"),
+    [
+        (390, False),
+        (620, False),
+        (621, True),
+        (860, True),
+        (1440, True),
+    ],
+)
+def test_primary_hero_action_is_hidden_only_on_narrow_screens(
+    driver: DriverFactory,
+    viewport_width: int,
+    should_be_visible: bool,
+) -> None:
+    """Hide the large thesis CTA on narrow screens without leaving its gap."""
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(viewport_width, 844),
+        load_interactive_visuals=False,
+    )
+    actions = page.locator(".hero__actions")
+    thesis_link = actions.get_by_role(
+        "link",
+        name="Read our thesis",
+        exact=True,
+    )
+
+    if should_be_visible:
+        expect(actions).to_be_visible()
+        expect(thesis_link).to_be_visible()
+    else:
+        expect(actions).to_be_hidden()
+        expect(thesis_link).to_be_hidden()
+
+
 def test_lossless_webp_assets_preserve_every_source_pixel() -> None:
     """Keep optimized browser assets pixel-identical to their PNG sources.
 
@@ -2994,6 +3031,57 @@ def test_header_is_english_only_without_a_language_control(
         == 1
     )
     assert header.locator(".mobile-menu").count() == 1
+
+
+def test_theme_toggle_stays_inside_header_at_navigation_breakpoint(
+    driver: DriverFactory,
+) -> None:
+    """Keep the theme control visible while desktop navigation is introduced.
+
+    The former responsive boundary restored the desktop navigation at 861 px,
+    before the fixed-width logo, links, and theme toggle could fit in the
+    header. At that exact width the toggle's right edge landed beyond the
+    viewport, and it remained outside the header's padded content box until
+    the viewport was roughly 910 px wide. Exercise both sides of the repaired
+    boundary and the affected interval so future header-content changes cannot
+    silently push this control off-screen again.
+    """
+
+    widths = (860, 861, 900, 920, 921)
+    page = driver(
+        stored_theme="dark",
+        viewport=(widths[0], 844),
+        load_interactive_visuals=False,
+    )
+
+    for width in widths:
+        page.set_viewport_size({"width": width, "height": 844})
+        page.wait_for_function("width => innerWidth === width", arg=width)
+        geometry = page.locator(".site-header").evaluate(
+            """
+            (header) => {
+              const headerRect = header.getBoundingClientRect();
+              const headerStyle = getComputedStyle(header);
+              const toggleRect = header.querySelector(
+                ".theme-toggle",
+              ).getBoundingClientRect();
+              return {
+                viewportWidth: innerWidth,
+                contentRight:
+                  headerRect.right -
+                  (Number.parseFloat(headerStyle.paddingRight) || 0),
+                toggleLeft: toggleRect.left,
+                toggleRight: toggleRect.right,
+                toggleWidth: toggleRect.width,
+              };
+            }
+            """
+        )
+
+        assert geometry["toggleLeft"] >= -0.5, width
+        assert geometry["toggleRight"] <= geometry["viewportWidth"] + 0.5, width
+        assert geometry["toggleRight"] <= geometry["contentRight"] + 0.5, width
+        assert geometry["toggleWidth"] == pytest.approx(68, abs=0.5)
 
 
 def test_mobile_menu_closes_after_clicking_outside_it(
