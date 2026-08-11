@@ -3043,6 +3043,7 @@ def test_desktop_language_list_opens_on_hover(
             borderRadius: style.borderRadius,
             columnGap: style.columnGap,
             justifyContent: style.justifyContent,
+            backgroundColor: style.backgroundColor,
             fontFamily: style.fontFamily,
             fontSize: style.fontSize,
             fontWeight: style.fontWeight,
@@ -3056,6 +3057,7 @@ def test_desktop_language_list_opens_on_hover(
     assert geometry["borderRadius"] == "12px"
     assert geometry["columnGap"] == "7px"
     assert geometry["justifyContent"] == "center"
+    assert geometry["backgroundColor"] == "rgba(0, 0, 0, 0)"
     assert "Geist Mono" in geometry["fontFamily"]
     assert geometry["fontSize"] == "11px"
     assert geometry["fontWeight"] == "700"
@@ -3087,6 +3089,15 @@ def test_desktop_language_list_opens_on_hover(
             listWidth: listRect.width,
             listTopLeftRadius: listStyle.borderTopLeftRadius,
             listShadow: listStyle.boxShadow,
+            listBackground: listStyle.backgroundColor,
+            summaryBackground: getComputedStyle(summary).backgroundColor,
+            headerBackground: getComputedStyle(
+              element.closest(".site-header"),
+            ).backgroundColor,
+            listBackdrop: listStyle.backdropFilter,
+            headerBackdrop: getComputedStyle(
+              element.closest(".site-header"),
+            ).backdropFilter,
           };
         }
         """
@@ -3101,6 +3112,35 @@ def test_desktop_language_list_opens_on_hover(
     )
     assert attachment["listTopLeftRadius"] == "0px"
     assert attachment["listShadow"] == "none"
+    assert attachment["summaryBackground"] == "rgba(0, 0, 0, 0)"
+    assert attachment["listBackground"] == attachment["headerBackground"]
+    assert attachment["listBackdrop"] == attachment["headerBackdrop"]
+    spacing = header.evaluate(
+        """
+        (element) => {
+          const lastNavigationLink = element.querySelector(
+            ".main-nav a:last-child",
+          );
+          const navigationText = document.createRange();
+          navigationText.selectNodeContents(lastNavigationLink);
+          const language = element.querySelector(
+            ".language-switcher--desktop",
+          ).getBoundingClientRect();
+          const theme = element.querySelector(".theme-toggle")
+            .getBoundingClientRect();
+          return {
+            navigationToLanguage:
+              language.left - navigationText.getBoundingClientRect().right,
+            languageToTheme: theme.left - language.right,
+          };
+        }
+        """
+    )
+    assert spacing["navigationToLanguage"] == pytest.approx(35, abs=0.5)
+    assert spacing["languageToTheme"] == pytest.approx(
+        spacing["navigationToLanguage"],
+        abs=0.5,
+    )
 
     page.mouse.move(0, 700)
     assert switcher.evaluate("(element) => element.open") is False
@@ -3174,11 +3214,20 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
           const listRect = element.querySelector(
             ":scope > .language-switcher__list",
           ).getBoundingClientRect();
+          const list = element.querySelector(
+            ":scope > .language-switcher__list",
+          );
           return {
             summaryBottom: summaryRect.bottom,
             summaryWidth: summaryRect.width,
             listTop: listRect.top,
             listWidth: listRect.width,
+            listBackground: getComputedStyle(list).backgroundColor,
+            menuBackground: getComputedStyle(
+              element.closest(".mobile-menu").querySelector(
+                ":scope > nav",
+              ),
+            ).backgroundColor,
           };
         }
         """
@@ -3191,6 +3240,7 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
         attachment["summaryWidth"],
         abs=0.5,
     )
+    assert attachment["listBackground"] == attachment["menuBackground"]
 
 
 def test_russian_device_language_and_manual_choice_control_routing(
