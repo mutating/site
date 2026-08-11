@@ -446,6 +446,7 @@ def test_author_page_aggregates_profile_posts_archive_and_frequent_tags(
     expect(archive).to_have_text(re.compile(r"All field notes"))
 
     frequent_tags = profile.locator(".author-profile__tags li")
+    expect(profile.locator("#author-tags-heading")).to_have_text("FREQUENT TAGS")
     expect(frequent_tags).to_have_count(3)
     first_tag = frequent_tags.first.locator(".signal-tag--compact")
     expect(first_tag.locator(".signal-tag__label")).to_have_text("verification")
