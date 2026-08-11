@@ -10,19 +10,20 @@
   </header>
   <div class="blog-list" id="blog">
     {{ range $paginator.Pages }}
+    {{- $localizedPost := partial "localized-page.html" . -}}
     <article class="blog-card">
       <a class="blog-card__link" href="{{ .RelPermalink }}">
         <div class="blog-card__meta">
           <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
-          <span>{{ .ReadingTime }} min read</span>
+          <span>{{ $localizedPost.ReadingTime }} min read</span>
           {{ with .Params.author }}
             {{ with site.GetPage (printf "/authors/%s" .) }}
               {{ partial "author-byline.html" (dict "author" . "prefix" "By ") }}
             {{ end }}
           {{ end }}
         </div>
-        <h2>{{ partial "title-with-period.html" .Title }}</h2>
-        <p>{{ .Description | default .Summary }}</p>
+        <h2>{{ partial "title-with-period.html" $localizedPost.Title }}</h2>
+        <p>{{ $localizedPost.Description | default $localizedPost.Summary }}</p>
       </a>
     </article>
     {{ end }}

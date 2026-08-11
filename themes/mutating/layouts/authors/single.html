@@ -28,7 +28,7 @@
   <header class="author-profile__hero">
     <div class="author-profile__intro">
       <nav class="section-index author-profile__breadcrumb" aria-label="Author breadcrumb">
-        <a href="{{ "/authors/" | relURL }}">AUTHORS</a>
+        <a href="{{ "/authors/" | relLangURL }}">AUTHORS</a>
         <span aria-hidden="true">/</span>
         <a href="{{ .RelPermalink }}" aria-current="page">{{ upper $authorSlug }}</a>
       </nav>
@@ -62,7 +62,7 @@
               <li>
                 {{ partial "tag.html" (dict
                   "label" .name
-                  "href" (printf "/tags/%s/" (.name | urlize) | relURL)
+                  "href" (printf "/tags/%s/" (.name | urlize) | relLangURL)
                   "size" "compact"
                   "count" .count
                   "ariaLabel" (printf "#%s, %d authored signals" .name .count)
@@ -93,13 +93,14 @@
     </header>
     <div class="author-posts__grid">
       {{ range first 2 $posts }}
+        {{- $localizedPost := partial "localized-page.html" . -}}
         <a class="author-post-card" href="{{ .RelPermalink }}">
           <div>
             <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
-            <span>{{ .ReadingTime }} min read</span>
+            <span>{{ $localizedPost.ReadingTime }} min read</span>
           </div>
-          <h3>{{ .Title }}</h3>
-          <p>{{ .Description | default .Summary }}</p>
+          <h3>{{ $localizedPost.Title }}</h3>
+          <p>{{ $localizedPost.Description | default $localizedPost.Summary }}</p>
           <b aria-hidden="true">↗</b>
         </a>
       {{ end }}

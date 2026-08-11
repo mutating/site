@@ -1,7 +1,41 @@
-{{- $description := .Description | default site.Params.description -}}
-{{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" .Title) -}}
+{{- $localizedPage := partial "localized-page.html" . -}}
+{{- $description := $localizedPage.Description | default site.Params.description -}}
+{{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" $localizedPage.Title) -}}
+{{- $languageURLs := dict -}}
+{{- range hugo.Sites -}}
+  {{- $language := .Language -}}
+  {{- $languageURL := partial "language-url.html" (dict "context" $ "language" $language.Lang) -}}
+  {{- if $languageURL -}}
+    {{- $languageURLs = merge $languageURLs (dict $language.Lang $languageURL) -}}
+  {{- end -}}
+{{- end -}}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  (function () {
+    var currentLanguage = {{ site.Language.Lang | jsonify | safeJS }};
+    var languageURLs = {{ $languageURLs | jsonify | safeJS }};
+    var preferredLanguage = null;
+    var hasStoredLanguage = false;
+    try {
+      preferredLanguage = localStorage.getItem("tmc-language");
+      hasStoredLanguage = preferredLanguage === "en" || preferredLanguage === "ru";
+    } catch (_) {}
+    if (!hasStoredLanguage) {
+      var deviceLanguage = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
+      preferredLanguage = currentLanguage === "en" && /^ru(?:-|$)/i.test(deviceLanguage)
+        ? "ru"
+        : currentLanguage;
+    }
+    document.documentElement.dataset.language = currentLanguage;
+    if (preferredLanguage !== currentLanguage && languageURLs[preferredLanguage]) {
+      var target = new URL(languageURLs[preferredLanguage], window.location.origin);
+      target.search = window.location.search;
+      target.hash = window.location.hash;
+      window.location.replace(target.href);
+    }
+  })();
+</script>
 <script>
   if (
     window.location.hash &&
@@ -19,6 +53,17 @@
 <meta property="og:url" content="{{ .Permalink }}">
 <meta property="og:image" content="{{ "og.png" | absURL }}">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="{{ .Permalink }}">
+{{- range hugo.Sites }}
+  {{- $language := .Language }}
+  {{- $languageURL := index $languageURLs $language.Lang }}
+  {{- with $languageURL }}
+<link rel="alternate" hreflang="{{ $language.Lang }}" href="{{ . | absURL }}">
+  {{- end }}
+{{- end }}
+{{- with index $languageURLs hugo.Sites.Default.Language.Lang }}
+<link rel="alternate" hreflang="x-default" href="{{ . | absURL }}">
+{{- end }}
 <link rel="icon" href="{{ "/favicon.ico" | relURL }}" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="{{ "/favicon-32x32.png" | relURL }}">
 <link rel="icon" type="image/png" sizes="16x16" href="{{ "/favicon-16x16.png" | relURL }}">

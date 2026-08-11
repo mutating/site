@@ -10,7 +10,7 @@
     <div class="dispatches__header">
       <div>
         <a class="section-index" href="#open-source">08 / FROM THE LAB</a>
-        <h2 id="dispatches-heading"><a href="{{ "/blog/" | relURL }}">{{ .Params.latestPostsHeading | default "Fresh signals from the lab." }}</a></h2>
+        <h2 id="dispatches-heading"><a href="{{ "/blog/" | relLangURL }}">{{ .Params.latestPostsHeading | default "Fresh signals from the lab." }}</a></h2>
       </div>
       <span class="dispatches__status"><i></i> {{ .Params.latestPostsStatus | default "Latest field notes" }}</span>
     </div>

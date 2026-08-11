@@ -124,6 +124,78 @@
     });
   }
 
+  function initLanguageSwitcher() {
+    const switchers = [
+      ...document.querySelectorAll("[data-language-switcher]"),
+    ];
+    if (!switchers.length) return;
+
+    const desktopLayout = matchMedia("(min-width: 1041px)");
+    const desktopHover = matchMedia(
+      "(min-width: 1041px) and (hover: hover) and (pointer: fine)",
+    );
+    const close = (switcher) => switcher.removeAttribute("open");
+
+    switchers.forEach((switcher) => {
+      const summary = switcher.querySelector(":scope > summary");
+      const isDesktop = switcher.classList.contains(
+        "language-switcher--desktop",
+      );
+
+      if (isDesktop) {
+        switcher.addEventListener("pointerenter", () => {
+          if (desktopHover.matches) switcher.setAttribute("open", "");
+        });
+        switcher.addEventListener("pointerleave", () => {
+          if (desktopHover.matches) close(switcher);
+        });
+        summary?.addEventListener("click", (event) => {
+          if (!desktopHover.matches || event.detail === 0) return;
+          event.preventDefault();
+          switcher.setAttribute("open", "");
+        });
+      }
+
+      switcher.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || !switcher.open) return;
+        close(switcher);
+        summary?.focus();
+      });
+
+      switcher.querySelectorAll("[data-language-option]").forEach((link) => {
+        link.addEventListener("click", () => {
+          const language = link.dataset.languageOption;
+          if (language !== "en" && language !== "ru") return;
+          try {
+            window.localStorage.setItem("tmc-language", language);
+          } catch (_) {}
+        });
+      });
+    });
+
+    const synchronizeLayout = () => {
+      switchers.forEach((switcher) => {
+        const hiddenByLayout = desktopLayout.matches
+          ? switcher.classList.contains("language-switcher--mobile")
+          : switcher.classList.contains("language-switcher--desktop");
+        if (hiddenByLayout) close(switcher);
+      });
+    };
+
+    document.addEventListener("pointerdown", (event) => {
+      const clickedSwitcher =
+        event.target instanceof Element
+          ? event.target.closest("[data-language-switcher]")
+          : null;
+
+      switchers.forEach((switcher) => {
+        if (switcher.open && switcher !== clickedSwitcher) close(switcher);
+      });
+    });
+    desktopLayout.addEventListener("change", synchronizeLayout);
+    synchronizeLayout();
+  }
+
   function initThemeImages() {
     const images = [
       ...document.querySelectorAll(
@@ -1325,6 +1397,7 @@
     initCurrentYear();
     initCodeCopyButtons();
     initTheme();
+    initLanguageSwitcher();
     initThemeImages();
     initDeferredMedia();
     initTicker();

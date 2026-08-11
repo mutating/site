@@ -1,5 +1,5 @@
 <header class="site-header">
-  <div class="brand" role="link" tabindex="0" aria-label="Reload The Mutating Company home page" data-home-url="{{ "/" | relURL }}">
+  <div class="brand" role="link" tabindex="0" aria-label="Reload The Mutating Company home page" data-home-url="{{ "/" | relLangURL }}">
     <span class="brand__mark brand__mark--eye">
       <span class="animated-eye-logo" aria-hidden="true">
         <span class="animated-eye-logo__clip">
@@ -19,10 +19,11 @@
   </div>
   <nav class="main-nav" aria-label="Main navigation">
     {{ partial "source-link.html" . }}
-    <a href="{{ "/blog/" | relURL }}">Blog</a>
-    <a href="{{ "/#contact" | relURL }}">Contact</a>
+    <a href="{{ "/blog/" | relLangURL }}">Blog</a>
+    <a href="{{ "/#contact" | relLangURL }}">Contact</a>
   </nav>
   <div class="header-actions">
+    {{ partial "language-switcher.html" (dict "context" . "variant" "desktop") }}
     <button class="theme-toggle" type="button" aria-label="Toggle color theme">
       <span class="theme-toggle__track" aria-hidden="true">
         <span class="theme-toggle__sun"><span class="theme-toggle__sun-core"></span><span class="theme-toggle__sun-rays"></span><span class="theme-toggle__sun-rays theme-toggle__sun-rays--diagonal"></span></span>
@@ -33,11 +34,15 @@
     <details class="mobile-menu">
       <summary aria-label="Open navigation menu">Menu</summary>
       <nav aria-label="Mobile navigation">
-        {{ partial "source-link.html" . }}
-        <a href="{{ "/blog/" | relURL }}">Blog</a>
-        <a href="{{ "/#contact" | relURL }}">Contact</a>
+        <div class="mobile-menu__language">
+          {{ partial "language-switcher.html" (dict "context" . "variant" "mobile") }}
+        </div>
+        <div class="mobile-menu__links">
+          {{ partial "source-link.html" . }}
+          <a href="{{ "/blog/" | relLangURL }}">Blog</a>
+          <a href="{{ "/#contact" | relLangURL }}">Contact</a>
+        </div>
       </nav>
     </details>
   </div>
 </header>
-
