@@ -3044,6 +3044,10 @@ def test_desktop_language_list_opens_on_hover(
             columnGap: style.columnGap,
             justifyContent: style.justifyContent,
             backgroundColor: style.backgroundColor,
+            color: style.color,
+            navigationColor: getComputedStyle(
+              document.querySelector(".main-nav a:last-child"),
+            ).color,
             fontFamily: style.fontFamily,
             fontSize: style.fontSize,
             fontWeight: style.fontWeight,
@@ -3058,6 +3062,7 @@ def test_desktop_language_list_opens_on_hover(
     assert geometry["columnGap"] == "7px"
     assert geometry["justifyContent"] == "center"
     assert geometry["backgroundColor"] == "rgba(0, 0, 0, 0)"
+    assert geometry["color"] == geometry["navigationColor"]
     assert "Geist Mono" in geometry["fontFamily"]
     assert geometry["fontSize"] == "11px"
     assert geometry["fontWeight"] == "700"
@@ -3069,6 +3074,10 @@ def test_desktop_language_list_opens_on_hover(
     assert options.all_inner_texts() == ["EN", "RU"]
     expect(options.nth(0)).to_have_attribute("aria-current", "page")
     expect(options.nth(1)).to_have_attribute("href", "/ru/")
+    option_colors = options.evaluate_all(
+        "elements => elements.map(element => getComputedStyle(element).color)"
+    )
+    assert option_colors == [geometry["navigationColor"]] * 2
     attachment = switcher.evaluate(
         """
         (element) => {

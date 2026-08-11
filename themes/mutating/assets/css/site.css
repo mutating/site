@@ -574,12 +574,13 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: transparent;
+  color: var(--ink-muted);
   display: inline-flex;
   align-items: center;
   gap: 7px;
   list-style: none;
   cursor: pointer;
-  transition: border-radius 120ms ease;
+  transition: border-radius 120ms ease, color 180ms ease;
 }
 
 .language-switcher > summary::-webkit-details-marker {
@@ -589,6 +590,10 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
 .language-switcher--desktop > summary {
   width: 100%;
   justify-content: center;
+}
+
+.language-switcher > summary:hover {
+  color: var(--ink);
 }
 
 .language-switcher[open] > summary {
@@ -638,7 +643,7 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
 }
 
 .language-switcher__option[aria-current="page"] {
-  color: var(--hot);
+  color: var(--ink-muted);
 }
 
 .language-switcher--desktop .language-switcher__option {
