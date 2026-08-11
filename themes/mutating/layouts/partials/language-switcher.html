@@ -8,9 +8,11 @@
   <div class="language-switcher__list" role="group" aria-label="Languages">
     {{- range hugo.Sites }}
       {{- $language := .Language.Lang -}}
-      {{- $languageURL := partial "language-url.html" (dict "context" $context "language" $language) -}}
-      {{- with $languageURL }}
-        <a class="language-switcher__option" href="{{ . }}" lang="{{ $language }}" hreflang="{{ $language }}" data-language-option="{{ $language }}"{{ if eq $language $currentLanguage }} aria-current="page"{{ end }}>{{ upper $language }}</a>
+      {{- if ne $language $currentLanguage }}
+        {{- $languageURL := partial "language-url.html" (dict "context" $context "language" $language) -}}
+        {{- with $languageURL }}
+          <a class="language-switcher__option" href="{{ . }}" lang="{{ $language }}" hreflang="{{ $language }}" data-language-option="{{ $language }}">{{ upper $language }}</a>
+        {{- end }}
       {{- end }}
     {{- end }}
   </div>

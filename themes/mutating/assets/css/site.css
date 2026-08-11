@@ -642,10 +642,6 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   background: var(--surface-raised);
 }
 
-.language-switcher__option[aria-current="page"] {
-  color: var(--ink-muted);
-}
-
 .language-switcher--desktop .language-switcher__option {
   padding-inline: 6px;
   justify-content: center;
