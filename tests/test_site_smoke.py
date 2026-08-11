@@ -2263,6 +2263,82 @@ def test_feedback_orbits_share_one_continuous_rotation_and_centered_cards(
         )
 
 
+def test_feedback_loop_click_adds_a_short_stackable_spin_impulse(
+    driver: DriverFactory,
+) -> None:
+    """Speed up the whole feedback orbit without jumping or losing phase.
+
+    A click should raise the playback rate of every synchronized ``spin``
+    animation, a second click should add another bounded impulse, and the
+    diagram should settle back to its normal rate after the short decay.
+    """
+
+    page = driver(stored_theme="light", viewport=(1440, 900))
+    loop = page.locator(".feedback-loop")
+
+    assert loop.get_attribute("role") == "button"
+    assert loop.get_attribute("tabindex") == "0"
+    assert loop.get_attribute("data-impulse-active") == "false"
+
+    loop.click()
+    page.wait_for_function(
+        """
+        () => [...document.querySelector('.feedback-loop')
+          .getAnimations({subtree: true})]
+          .filter((animation) => animation.animationName === 'spin')
+          .every((animation) => animation.playbackRate > 1)
+        """
+    )
+    first_rates = loop.evaluate(
+        """
+        (element) => element.getAnimations({subtree: true})
+          .filter((animation) => animation.animationName === 'spin')
+          .map((animation) => animation.playbackRate)
+        """
+    )
+
+    assert len(first_rates) == 7
+    assert min(first_rates) > 1
+    assert max(first_rates) == pytest.approx(min(first_rates), abs=0.001)
+
+    loop.click()
+    page.wait_for_function(
+        """
+        (firstRate) => document.querySelector('.feedback-loop')
+          .getAnimations({subtree: true})
+          .filter((animation) => animation.animationName === 'spin')
+          .every((animation) => animation.playbackRate > firstRate)
+        """,
+        arg=max(first_rates),
+    )
+    second_rates = loop.evaluate(
+        """
+        (element) => element.getAnimations({subtree: true})
+          .filter((animation) => animation.animationName === 'spin')
+          .map((animation) => animation.playbackRate)
+        """
+    )
+    assert min(second_rates) > max(first_rates)
+    assert max(second_rates) <= 6
+    assert loop.get_attribute("data-impulse-active") == "true"
+
+    page.wait_for_function(
+        """
+        () => document.querySelector('.feedback-loop')
+          .dataset.impulseActive === 'false'
+        """,
+        timeout=2500,
+    )
+    settled_rates = loop.evaluate(
+        """
+        (element) => element.getAnimations({subtree: true})
+          .filter((animation) => animation.animationName === 'spin')
+          .map((animation) => animation.playbackRate)
+        """
+    )
+    assert settled_rates == [1] * 7
+
+
 def test_feedback_geometry_uses_two_dashed_rings_and_one_shared_middle_orbit(
     driver: DriverFactory,
 ) -> None:

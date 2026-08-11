@@ -1572,6 +1572,15 @@ a.section-index:focus-visible {
   margin-inline: auto;
   border-radius: 50%;
   background: var(--feedback-halo);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.feedback-loop:focus-visible {
+  outline: 2px solid var(--hot);
+  outline-offset: 8px;
 }
 
 .feedback-loop::before,

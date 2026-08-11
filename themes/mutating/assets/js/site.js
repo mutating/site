@@ -994,6 +994,97 @@
     });
   }
 
+  function initFeedbackLoopImpulse() {
+    const loop = document.querySelector(".feedback-loop");
+    if (!loop) return;
+
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+    const impulseDuration = 1450;
+    const impulseStrength = 3.5;
+    const maximumBoost = 5;
+    let boostAtStart = 0;
+    let impulseStartedAt = 0;
+    let animationFrame = 0;
+    let spinAnimations = [];
+
+    const findSpinAnimations = () => {
+      spinAnimations = loop
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.animationName === "spin");
+      return spinAnimations;
+    };
+
+    const setPlaybackRate = (rate) => {
+      if (!spinAnimations.length) findSpinAnimations();
+      spinAnimations.forEach((animation) => {
+        if (typeof animation.updatePlaybackRate === "function") {
+          animation.updatePlaybackRate(rate);
+        } else {
+          animation.playbackRate = rate;
+        }
+      });
+      loop.dataset.playbackRate = rate.toFixed(3);
+    };
+
+    const currentBoost = (timestamp) => {
+      const progress = Math.max(
+        0,
+        Math.min(1, (timestamp - impulseStartedAt) / impulseDuration),
+      );
+      return boostAtStart * (1 - progress) ** 2;
+    };
+
+    const settle = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      boostAtStart = 0;
+      impulseStartedAt = 0;
+      setPlaybackRate(1);
+      loop.dataset.impulseActive = "false";
+    };
+
+    const animateImpulse = (timestamp) => {
+      const boost = currentBoost(timestamp);
+      if (boost <= 0.001) {
+        settle();
+        return;
+      }
+      setPlaybackRate(1 + boost);
+      animationFrame = requestAnimationFrame(animateImpulse);
+    };
+
+    const addImpulse = () => {
+      if (reducedMotion.matches || !findSpinAnimations().length) return;
+      const timestamp = performance.now();
+      const remainingBoost = animationFrame ? currentBoost(timestamp) : 0;
+      boostAtStart = Math.min(
+        maximumBoost,
+        remainingBoost + impulseStrength,
+      );
+      impulseStartedAt = timestamp;
+      loop.dataset.impulseActive = "true";
+      setPlaybackRate(1 + boostAtStart);
+      if (!animationFrame) {
+        animationFrame = requestAnimationFrame(animateImpulse);
+      }
+    };
+
+    loop.dataset.impulseActive = "false";
+    loop.dataset.playbackRate = "1.000";
+    loop.addEventListener("click", addImpulse);
+    loop.addEventListener("keydown", (event) => {
+      if (event.repeat) return;
+      if (event.key === "Enter") addImpulse();
+      if (event.key === " ") event.preventDefault();
+    });
+    loop.addEventListener("keyup", (event) => {
+      if (event.key === " ") addImpulse();
+    });
+    reducedMotion.addEventListener("change", (event) => {
+      if (event.matches) settle();
+    });
+  }
+
   function initCoexistencePair() {
     const pair = document.querySelector(".coexistence__pair");
     if (!pair) return;
@@ -1405,6 +1496,7 @@
     initBrandControl();
     initAnimatedEye();
     initComplexityChart();
+    initFeedbackLoopImpulse();
     initCoexistencePair();
     initPantograph();
     initTokamak();
