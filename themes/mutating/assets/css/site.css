@@ -158,7 +158,7 @@ section[id] {
 }
 
 ::selection {
-  background: var(--hot);
+  background: color-mix(in srgb, var(--hot) 55%, transparent);
   color: #fff;
 }
 
@@ -1145,7 +1145,7 @@ a.section-index:focus-visible {
 }
 
 .ticker ::selection {
-  background: #fff;
+  background: color-mix(in srgb, #fff 55%, transparent);
   color: var(--hot);
 }
 

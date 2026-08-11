@@ -2815,12 +2815,14 @@ def test_contact_text_is_selectable_without_disabling_tentacle_hover(
     assert len(selected_text.strip()) >= 3
 
 
-def test_ticker_selection_inverts_only_its_own_colors(
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_selection_backgrounds_remain_translucent_across_the_site(
     driver: DriverFactory,
+    theme: str,
 ) -> None:
-    """Verify that ticker selection inverts pink and white only within the strip."""
+    """Verify selection colors stay legible without covering adjacent text."""
 
-    page = driver(stored_theme="light")
+    page = driver(stored_theme=theme)
     selection_styles = page.locator(".ticker__track").evaluate(
         """
         (track) => {
@@ -2828,6 +2830,19 @@ def test_ticker_selection_inverts_only_its_own_colors(
           const tickerStyle = getComputedStyle(ticker);
           const tickerSelection = getComputedStyle(track, "::selection");
           const globalSelection = getComputedStyle(document.body, "::selection");
+          const probe = document.createElement("span");
+          document.body.append(probe);
+
+          probe.style.backgroundColor = `color-mix(
+            in srgb,
+            ${tickerStyle.backgroundColor} 55%,
+            transparent
+          )`;
+          const expectedGlobalBackground = getComputedStyle(probe).backgroundColor;
+
+          probe.style.backgroundColor = "color-mix(in srgb, #fff 55%, transparent)";
+          const expectedTickerBackground = getComputedStyle(probe).backgroundColor;
+          probe.remove();
 
           return {
             tickerColor: tickerStyle.color,
@@ -2836,15 +2851,23 @@ def test_ticker_selection_inverts_only_its_own_colors(
             selectionBackground: tickerSelection.backgroundColor,
             globalColor: globalSelection.color,
             globalBackground: globalSelection.backgroundColor,
+            expectedTickerBackground,
+            expectedGlobalBackground,
           };
         }
         """
     )
 
     assert selection_styles["selectionColor"] == selection_styles["tickerBackground"]
-    assert selection_styles["selectionBackground"] == selection_styles["tickerColor"]
+    assert (
+        selection_styles["selectionBackground"]
+        == selection_styles["expectedTickerBackground"]
+    )
     assert selection_styles["globalColor"] == selection_styles["tickerColor"]
-    assert selection_styles["globalBackground"] == selection_styles["tickerBackground"]
+    assert (
+        selection_styles["globalBackground"]
+        == selection_styles["expectedGlobalBackground"]
+    )
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
