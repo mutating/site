@@ -1,5 +1,6 @@
 ---
 title: "The mutation-testing digest for May 2026"
+slug: "the-mutation-testing-digest-for-may-2026"
 date: 2026-06-01T09:00:00+03:00
 description: "AI Tests Get a Lie Detector, PIT Learns “Equivalent,” and Zig Gets a Preview"
 tags: [testing, mutation-testing, llm, agents, code, equivalent-mutants, gold-standard, coverage]
