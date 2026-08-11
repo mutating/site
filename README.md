@@ -56,7 +56,9 @@ Every authored page lives in `content/`:
 
 - `content/_index.md` contains the landing-page content.
 - `content/blog/_index.md` contains the blog-list introduction.
-- `content/blog/*.md` contains individual posts.
+- `content/blog/<post>/index.md` contains each post and its canonical metadata.
+- `content/blog/<post>/translation.ru.md` contains an optional Russian
+  translation of that post.
 - `content/authors/_index.md` contains the author-directory introduction.
 - `content/authors/*.md` contains author profiles.
 - `content/author-posts/<author-slug>/_index.md` configures the paginated post
@@ -86,10 +88,10 @@ Everything that defines presentation or behavior lives in `themes/mutating/`:
 
 ## Add a blog post
 
-Create a new Markdown file:
+Create a new leaf bundle:
 
 ```bash
-hugo new content blog/my-new-field-note.md
+hugo new content blog/my-new-field-note/index.md
 ```
 
 If no archetype is configured, a post can also be created manually:
@@ -97,6 +99,7 @@ If no archetype is configured, a post can also be created manually:
 ```markdown
 ---
 title: "My new field note"
+slug: "my-new-field-note"
 date: 2026-07-30T12:00:00+03:00
 description: "A short summary used on the blog list and in metadata."
 author: "muta"
@@ -120,8 +123,9 @@ drafts locally with:
 hugo server --buildDrafts
 ```
 
-Post URLs use `/blog/<slug>/`. The slug defaults to the filename; add
-`slug: "custom-slug"` to front matter when a different URL is required.
+Post URLs use `/blog/<slug>/`. Without an explicit value Hugo derives the slug
+from the title; keep `slug: "custom-slug"` in canonical front matter to make
+the public URL explicit and stable.
 
 Post titles are displayed with exactly one trailing period on list and single
 pages; the source title in front matter is not modified. Markdown headings in
@@ -139,6 +143,38 @@ The optional `tags` list is rendered at the bottom of a post. Each tag links
 to `/tags/<tag>/`, where Hugo uses the same cards and pagination as the main
 blog while keeping a tag-specific heading. If `tags` is empty or omitted, the
 tag region is not rendered.
+
+### Translate a blog post
+
+English is the default language and keeps its existing URLs. Hugo publishes
+the same content under `/ru/` as an English fallback until a Russian page
+resource exists. To translate a post, add `translation.ru.md` next to its
+canonical `index.md`:
+
+```text
+content/blog/my-new-field-note/
+├── index.md
+└── translation.ru.md
+```
+
+The translation contains only fields that are actually localized:
+
+```markdown
+---
+title: "Локализованный заголовок"
+description: "Локализованное краткое описание."
+---
+
+Русский текст статьи.
+```
+
+Keep `date`, `author`, `tags`, `slug`, and all other shared metadata only in
+`index.md`. The canonical page is mapped into both language sites through
+Hugo's sites matrix; templates read the localized page resource for the title,
+description, reading time, table of contents, and body. This gives tag, author,
+archive, and blog collections one article per language site without duplicated
+front matter. If `translation.ru.md` is absent, `/ru/blog/<slug>/` renders the
+canonical English article.
 
 ## Add an author
 
@@ -181,15 +217,15 @@ title: "Jane Doe's field notes"
 description: "Every field note published by Jane Doe, newest first."
 author: "jane-doe"
 type: "author-posts"
-url: "/authors/jane-doe/posts/"
 bodyClass: "blog-page"
 ---
 
 Notes by Jane Doe, ordered from the newest signal to the oldest.
 ```
 
-The `author` value must match the profile filename without `.md`, and `url`
-must follow `/authors/<author-slug>/posts/`.
+The `author` value must match the profile filename without `.md`. Hugo's
+permalink configuration publishes the archive at `/authors/<author-slug>/posts/`
+and `/ru/authors/<author-slug>/posts/`.
 
 ## Python test environment
 
