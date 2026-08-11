@@ -446,14 +446,19 @@ def test_author_page_aggregates_profile_posts_archive_and_frequent_tags(
     expect(archive).to_have_text(re.compile(r"All field notes"))
 
     frequent_tags = profile.locator(".author-profile__tags li")
-    assert 1 <= frequent_tags.count() <= 5
-    expect(frequent_tags.first.locator("span")).to_have_text("#verification")
-    expect(frequent_tags.first.locator("small")).to_have_text("2")
-    expect(frequent_tags.first.locator("a")).to_have_attribute(
+    expect(frequent_tags).to_have_count(3)
+    first_tag = frequent_tags.first.locator(".signal-tag--compact")
+    expect(first_tag.locator(".signal-tag__label")).to_have_text("verification")
+    expect(first_tag.locator(".signal-tag__count")).to_have_text("2")
+    expect(first_tag).to_have_attribute(
         "href",
         "/tags/verification/",
     )
-    frequent_tags.first.locator("a").click()
+    expect(first_tag).to_have_attribute(
+        "aria-label",
+        "#verification, 2 authored signals",
+    )
+    first_tag.click()
     expect(page).to_have_url(
         re.compile(r"/tags/verification/$")
     )
@@ -852,16 +857,104 @@ def test_author_profile_reflows_without_overlap_on_a_narrow_screen(
     assert geometry["widestCard"] <= geometry["viewportWidth"]
 
 
+def test_author_profile_desktop_unifies_identity_bio_portrait_and_signals(
+    driver: DriverFactory,
+) -> None:
+    """Keep the bio with the identity and bridge both columns with signals."""
+
+    page = driver(
+        viewport=(1500, 1000),
+        load_interactive_visuals=False,
+        initial_path="/authors/test-author/",
+    )
+    geometry = page.evaluate(
+        """
+        () => {
+          const profile = document.querySelector(".author-profile");
+          const intro = document.querySelector(".author-profile__intro");
+          const links = document.querySelector(".author-profile__links");
+          const firstParagraph = document.querySelector(
+            ".author-profile__content > :first-child",
+          );
+          const portrait = document.querySelector(
+            ".author-profile__portrait",
+          );
+          const tags = document.querySelector(".author-profile__tags");
+          const tagItems = [...tags.querySelectorAll("li")];
+          const tagList = tags.querySelector("ol");
+          const postsHeading = document.querySelector(".author-posts h2");
+          const archive = document.querySelector(".author-posts__archive");
+          const firstCard = document.querySelector(".author-post-card");
+          const title = intro.querySelector("h1");
+          const profileRect = profile.getBoundingClientRect();
+          const introRect = intro.getBoundingClientRect();
+          const linksRect = links.getBoundingClientRect();
+          const paragraphRect = firstParagraph.getBoundingClientRect();
+          const portraitRect = portrait.getBoundingClientRect();
+          const tagsRect = tags.getBoundingClientRect();
+          const postsHeadingRect = postsHeading.getBoundingClientRect();
+          const archiveRect = archive.getBoundingClientRect();
+          const tagTops = tagItems.map(
+            (item) => item.getBoundingClientRect().top,
+          );
+          return {
+            profileLeft: profileRect.left,
+            profileRight: profileRect.right,
+            introLeft: introRect.left,
+            paragraphLeft: paragraphRect.left,
+            paragraphGap: paragraphRect.top - linksRect.bottom,
+            portraitWidth: portraitRect.width,
+            portraitRight: portraitRect.right,
+            portraitBottom: portraitRect.bottom,
+            tagsLeft: tagsRect.left,
+            tagsRight: tagsRect.right,
+            tagsTop: tagsRect.top,
+            tagsBorder: getComputedStyle(tags).borderTopWidth,
+            tagListBorder: getComputedStyle(tagList).borderTopWidth,
+            tagItemBorder: getComputedStyle(tagItems[0]).borderBottomWidth,
+            postsBorder: getComputedStyle(
+              document.querySelector(".author-posts"),
+            ).borderTopWidth,
+            postsHeadingLeft: postsHeadingRect.left,
+            archiveRight: archiveRect.right,
+            cardMinHeight: getComputedStyle(firstCard).minHeight,
+            titleSize: Number.parseFloat(getComputedStyle(title).fontSize),
+            tagTopSpread: Math.max(...tagTops) - Math.min(...tagTops),
+          };
+        }
+        """
+    )
+
+    assert abs(geometry["introLeft"] - geometry["paragraphLeft"]) <= 1
+    assert 29 <= geometry["paragraphGap"] <= 43
+    assert geometry["portraitWidth"] <= 461
+    # The shared mascot surface is deliberately rotated by two degrees, so
+    # its painted border extends slightly beyond the aligned layout box.
+    assert 0 <= geometry["portraitRight"] - geometry["profileRight"] <= 9
+    assert geometry["portraitBottom"] <= geometry["tagsTop"] + 1
+    assert abs(geometry["tagsLeft"] - geometry["profileLeft"]) <= 1
+    assert abs(geometry["tagsRight"] - geometry["profileRight"]) <= 1
+    assert geometry["tagsBorder"] == "0px"
+    assert geometry["tagListBorder"] == "0px"
+    assert geometry["tagItemBorder"] == "0px"
+    assert geometry["postsBorder"] == "0px"
+    assert abs(geometry["postsHeadingLeft"] - geometry["profileLeft"]) <= 1
+    assert abs(geometry["archiveRight"] - geometry["profileRight"]) <= 1
+    assert geometry["cardMinHeight"] == "310px"
+    assert geometry["titleSize"] <= 124
+    assert geometry["tagTopSpread"] <= 1
+
+
 @pytest.mark.parametrize(
     "viewport",
     [(900, 900), (600, 844), (390, 844)],
     ids=["medium", "narrow", "phone"],
 )
-def test_author_profile_divider_has_compact_symmetric_spacing(
+def test_author_profile_mobile_flow_starts_with_the_identity(
     driver: DriverFactory,
     viewport: tuple[int, int],
 ) -> None:
-    """Keep equal, compact gaps on both sides of the responsive divider."""
+    """Introduce the author before the portrait, bio, signals, and posts."""
 
     page = driver(
         viewport=viewport,
@@ -872,27 +965,53 @@ def test_author_profile_divider_has_compact_symmetric_spacing(
         """
         () => {
           const intro = document.querySelector(".author-profile__intro");
-          const links = document.querySelector(".author-profile__links");
-          const firstParagraph = document.querySelector(
-            ".author-profile__content > :first-child",
+          const portrait = document.querySelector(
+            ".author-profile__portrait",
           );
+          const bio = document.querySelector(".author-profile__bio");
+          const tags = document.querySelector(".author-profile__tags");
+          const posts = document.querySelector(".author-posts");
           const introRect = intro.getBoundingClientRect();
-          const linksRect = links.getBoundingClientRect();
-          const paragraphRect = firstParagraph.getBoundingClientRect();
-          const borderWidth = Number.parseFloat(
-            getComputedStyle(intro).borderBottomWidth,
+          const portraitRect = portrait.getBoundingClientRect();
+          const bioRect = bio.getBoundingClientRect();
+          const tagsRect = tags.getBoundingClientRect();
+          const postsRect = posts.getBoundingClientRect();
+          const tagItems = [...tags.querySelectorAll("li")];
+          const tagColumns = new Set(
+            tagItems.map(
+              (item) => Math.round(item.getBoundingClientRect().left),
+            ),
           );
           return {
-            above: introRect.bottom - borderWidth - linksRect.bottom,
-            below: paragraphRect.top - introRect.bottom,
+            introBottom: introRect.bottom,
+            portraitTop: portraitRect.top,
+            portraitBottom: portraitRect.bottom,
+            bioTop: bioRect.top,
+            bioBottom: bioRect.bottom,
+            tagsTop: tagsRect.top,
+            tagsBottom: tagsRect.bottom,
+            postsTop: postsRect.top,
+            tagsBorder: getComputedStyle(tags).borderTopWidth,
+            tagListBorder: getComputedStyle(
+              tags.querySelector("ol"),
+            ).borderTopWidth,
+            tagItemBorder: getComputedStyle(tagItems[0]).borderBottomWidth,
+            tagColumnCount: tagColumns.size,
+            postsBorder: getComputedStyle(posts).borderTopWidth,
           };
         }
         """
     )
 
-    assert 23 <= spacing["above"] <= 31
-    assert 23 <= spacing["below"] <= 31
-    assert abs(spacing["above"] - spacing["below"]) <= 0.5
+    assert spacing["introBottom"] < spacing["portraitTop"]
+    assert spacing["portraitBottom"] <= spacing["bioTop"]
+    assert spacing["bioBottom"] <= spacing["tagsTop"]
+    assert spacing["tagsBottom"] <= spacing["postsTop"]
+    assert spacing["tagsBorder"] == "0px"
+    assert spacing["tagListBorder"] == "0px"
+    assert spacing["tagItemBorder"] == "0px"
+    assert spacing["tagColumnCount"] == 2
+    assert spacing["postsBorder"] == "0px"
 
 
 def test_author_profile_aligns_with_the_shared_left_edge(

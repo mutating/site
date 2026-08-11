@@ -147,6 +147,27 @@ def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
     assert 'data-has-pagination="{{ $hasPagination }}"' in shared_partial
 
 
+def test_tag_component_is_shared_by_posts_authors_and_term_pages() -> None:
+    """Render one tag primitive at copy, compact, and display sizes."""
+
+    layouts = PROJECT_ROOT / "themes" / "mutating" / "layouts"
+    tag_partial = (layouts / "partials" / "tag.html").read_text()
+    post_template = (layouts / "blog" / "single.html").read_text()
+    author_template = (layouts / "authors" / "single.html").read_text()
+    term_template = (layouts / "_default" / "term.html").read_text()
+
+    assert 'partial "tag.html"' in post_template
+    assert '"size" "copy"' in post_template
+    assert 'partial "tag.html"' in author_template
+    assert '"size" "compact"' in author_template
+    assert "range first 5 $tagItems" in author_template
+    assert '"size" "display"' in term_template
+    assert "signal-tag--%s" in tag_partial
+    assert "signal-tag__bracket" in tag_partial
+    assert "signal-tag__label" in tag_partial
+    assert "signal-tag__count" in tag_partial
+
+
 @pytest.mark.parametrize(
     ("viewport", "page_overflows", "border_width"),
     [
@@ -524,13 +545,14 @@ def test_post_tags_render_only_when_present_and_link_to_terms(
         "href",
         "/tags/verification/",
     )
-    expect(verification.locator(".post__tag-bracket")).to_have_count(2)
-    expect(verification.locator(".post__tag-bracket").first).to_have_text("[#")
-    expect(verification.locator(".post__tag-bracket").last).to_have_text("]")
-    expect(verification.locator(".post__tag-label")).to_have_text("Verification")
+    expect(verification).to_have_class(re.compile(r"\bsignal-tag--copy\b"))
+    expect(verification.locator(".signal-tag__bracket")).to_have_count(2)
+    expect(verification.locator(".signal-tag__bracket").first).to_have_text("[#")
+    expect(verification.locator(".signal-tag__bracket").last).to_have_text("]")
+    expect(verification.locator(".signal-tag__label")).to_have_text("Verification")
     expect(verification).to_have_css("border-top-width", "0px")
     verification.hover()
-    expect(verification.locator(".post__tag-label")).to_have_css(
+    expect(verification.locator(".signal-tag__label")).to_have_css(
         "text-decoration-line",
         "underline",
     )
@@ -585,8 +607,21 @@ def test_tag_link_opens_a_distinct_filtered_collection(
         "BLOG / TAGGED SIGNALS"
     )
     expect(collection.locator("h1")).to_have_text(
-        "Signals tagged #Verification."
+        "Signals tagged [#Verification]."
     )
+    heading_tag = collection.locator("h1 .signal-tag--display")
+    expect(heading_tag).to_be_visible()
+    expect(heading_tag).to_have_attribute("href", "/tags/verification/")
+    expect(heading_tag.locator(".signal-tag__bracket")).to_have_count(2)
+    heading_size = collection.locator("h1").evaluate(
+        "element => Number.parseFloat(getComputedStyle(element).fontSize)"
+    )
+    tag_size = heading_tag.evaluate(
+        "element => Number.parseFloat(getComputedStyle(element).fontSize)"
+    )
+    assert abs(tag_size - heading_size) <= 0.1
+    heading_tag.click()
+    expect(page).to_have_url(re.compile(r"/tags/verification/$"))
 
     post_urls: set[str] = set()
     while True:
