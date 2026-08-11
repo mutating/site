@@ -8,14 +8,19 @@
 {{- $tagScratch.Set "counts" dict -}}
 {{- range $posts -}}
   {{- range .Params.tags -}}
-    {{- $tag := lower (printf "%v" .) -}}
-    {{- $currentCount := default 0 (index ($tagScratch.Get "counts") $tag) -}}
-    {{- $tagScratch.SetInMap "counts" $tag (add $currentCount 1) -}}
+    {{- $tagName := printf "%v" . -}}
+    {{- $tagKey := lower $tagName -}}
+    {{- $current := index ($tagScratch.Get "counts") $tagKey -}}
+    {{- if $current -}}
+      {{- $tagScratch.SetInMap "counts" $tagKey (dict "name" $current.name "count" (add $current.count 1)) -}}
+    {{- else -}}
+      {{- $tagScratch.SetInMap "counts" $tagKey (dict "name" $tagName "count" 1) -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 {{- $tagItems := slice -}}
-{{- range $tag, $count := ($tagScratch.Get "counts") -}}
-  {{- $tagItems = $tagItems | append (dict "name" $tag "count" $count) -}}
+{{- range $tagKey, $tagItem := ($tagScratch.Get "counts") -}}
+  {{- $tagItems = $tagItems | append $tagItem -}}
 {{- end -}}
 {{- $tagItems = sort $tagItems "count" "desc" -}}
 
@@ -51,7 +56,7 @@
       {{ end }}
       {{ if and (gt (len $posts) 0) (gt (len $tagItems) 0) }}
         <aside class="author-profile__tags" aria-labelledby="author-tags-heading">
-          <p class="author-profile__label" id="author-tags-heading">FREQUENT SIGNALS</p>
+          <p class="author-profile__label" id="author-tags-heading">FREQUENT TAGS</p>
           <ol>
             {{ range first 5 $tagItems }}
               <li>

@@ -35,12 +35,17 @@
     {{ end }}
     <div class="post__content">{{ .Content }}</div>
   </div>
-  {{ with .GetTerms "tags" }}
+  {{ with .Params.tags }}
   <aside class="post__tags" aria-label="Signals in this field note">
     <ul>
       {{ range . }}
+      {{ $tag := printf "%v" . }}
       <li>
-        {{ partial "tag.html" (dict "label" .LinkTitle "href" .RelPermalink "size" "copy") }}
+        {{ partial "tag.html" (dict
+          "label" $tag
+          "href" (printf "/tags/%s/" ($tag | urlize) | relURL)
+          "size" "copy"
+        ) }}
       </li>
       {{ end }}
     </ul>
