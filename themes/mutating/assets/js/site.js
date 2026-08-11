@@ -165,7 +165,7 @@
       switcher.querySelectorAll("[data-language-option]").forEach((link) => {
         link.addEventListener("click", () => {
           const language = link.dataset.languageOption;
-          if (language !== "en" && language !== "ru") return;
+          if (!language) return;
           try {
             window.localStorage.setItem("tmc-language", language);
           } catch (_) {}

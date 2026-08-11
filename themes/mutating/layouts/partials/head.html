@@ -2,8 +2,10 @@
 {{- $description := $localizedPage.Description | default site.Params.description -}}
 {{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" $localizedPage.Title) -}}
 {{- $languageURLs := dict -}}
+{{- $supportedLanguages := slice -}}
 {{- range hugo.Sites -}}
   {{- $language := .Language -}}
+  {{- $supportedLanguages = $supportedLanguages | append $language.Lang -}}
   {{- $languageURL := partial "language-url.html" (dict "context" $ "language" $language.Lang) -}}
   {{- if $languageURL -}}
     {{- $languageURLs = merge $languageURLs (dict $language.Lang $languageURL) -}}
@@ -14,18 +16,46 @@
 <script>
   (function () {
     var currentLanguage = {{ site.Language.Lang | jsonify | safeJS }};
+    var defaultLanguage = {{ hugo.Sites.Default.Language.Lang | jsonify | safeJS }};
+    var supportedLanguages = {{ $supportedLanguages | jsonify | safeJS }};
     var languageURLs = {{ $languageURLs | jsonify | safeJS }};
     var preferredLanguage = null;
     var hasStoredLanguage = false;
+    function resolveSupportedLanguage(candidate) {
+      if (typeof candidate !== "string") return null;
+      var normalizedCandidate = candidate.trim().toLowerCase().replace(/_/g, "-");
+      if (!normalizedCandidate) return null;
+      var candidateBase = normalizedCandidate.split("-")[0];
+      var baseMatch = null;
+      for (var index = 0; index < supportedLanguages.length; index += 1) {
+        var language = supportedLanguages[index];
+        var normalizedLanguage = language.toLowerCase().replace(/_/g, "-");
+        if (normalizedLanguage === normalizedCandidate) return language;
+        if (!baseMatch && normalizedLanguage.split("-")[0] === candidateBase) {
+          baseMatch = language;
+        }
+      }
+      return baseMatch;
+    }
     try {
-      preferredLanguage = localStorage.getItem("tmc-language");
-      hasStoredLanguage = preferredLanguage === "en" || preferredLanguage === "ru";
+      preferredLanguage = resolveSupportedLanguage(
+        localStorage.getItem("tmc-language")
+      );
+      hasStoredLanguage = preferredLanguage !== null;
     } catch (_) {}
     if (!hasStoredLanguage) {
-      var deviceLanguage = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
-      preferredLanguage = currentLanguage === "en" && /^ru(?:-|$)/i.test(deviceLanguage)
-        ? "ru"
-        : currentLanguage;
+      preferredLanguage = currentLanguage;
+      if (currentLanguage === defaultLanguage) {
+        var deviceLanguages = navigator.languages && navigator.languages.length
+          ? navigator.languages
+          : [navigator.language];
+        for (var index = 0; index < deviceLanguages.length; index += 1) {
+          var deviceLanguage = resolveSupportedLanguage(deviceLanguages[index]);
+          if (!deviceLanguage) continue;
+          preferredLanguage = deviceLanguage;
+          break;
+        }
+      }
     }
     document.documentElement.dataset.language = currentLanguage;
     if (preferredLanguage !== currentLanguage && languageURLs[preferredLanguage]) {

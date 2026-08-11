@@ -563,7 +563,7 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
 }
 
 .language-switcher--desktop {
-  width: 48px;
+  width: var(--language-switcher-desktop-width, 48px);
 }
 
 .language-switcher > summary {
