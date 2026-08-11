@@ -392,7 +392,7 @@
     const update = () => {
       cancelAnimationFrame(frameRequest);
       frameRequest = requestAnimationFrame(() => {
-        if (matchMedia("(min-width: 861px)").matches) {
+        if (matchMedia("(min-width: 921px)").matches) {
           stage.dataset.canExpand = "true";
           stage.dataset.expansionMeasured = "true";
           stage.dataset.expansionRevision = String(

@@ -11,5 +11,8 @@
     </main>
     {{- $siteScript := resources.Get "js/site.js" | minify | fingerprint -}}
     <script src="{{ $siteScript.RelPermalink }}" integrity="{{ $siteScript.Data.Integrity }}" crossorigin="anonymous" defer></script>
+    {{- if hugo.IsProduction }}
+      {{ partialCached "yandex-metrika.html" . }}
+    {{- end }}
   </body>
 </html>

@@ -426,7 +426,7 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   animation: brand-spectrum-fold 350ms linear both;
 }
 
-@media (min-width: 861px) {
+@media (min-width: 921px) {
   .brand__wordmark:hover .brand__word-reveal {
     inline-size: max-content;
     opacity: 1;
@@ -2535,12 +2535,7 @@ a.section-index:focus-visible {
   }
 }
 
-@media (max-width: 860px) {
-  .section-shell,
-  .site-header {
-    width: min(100% - 32px, 720px);
-  }
-
+@media (max-width: 920px) {
   .main-nav {
     display: none;
   }
@@ -2589,6 +2584,13 @@ a.section-index:focus-visible {
 
   .mobile-menu {
     display: block;
+  }
+}
+
+@media (max-width: 860px) {
+  .section-shell,
+  .site-header {
+    width: min(100% - 32px, 720px);
   }
 
   .hero {
@@ -2799,6 +2801,12 @@ a.section-index:focus-visible {
     min-height: 620px;
   }
 
+}
+
+@media (max-width: 620px) {
+  .hero__actions {
+    display: none;
+  }
 }
 
 @media (max-width: 580px) {

@@ -117,6 +117,76 @@ def test_spatial_overflow_preserves_every_tentacle_via_full_fallback(
     )
 
 
+def test_reduced_spatial_grid_matches_previous_grid_pixel_for_pixel(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Keep the smaller spatial lookup grid from changing visible pixels.
+
+    Grid dimensions are a performance detail: they may change which bounded
+    cell supplies a skeleton candidate, but not the final pixels. Render one
+    deterministic manual frame through the production 56-row grid and the same
+    frame through the previous 64-row grid. Exact canvas equality protects the
+    visual contract while allowing the lookup grid to be tuned independently.
+    """
+
+    page = driver(stored_theme="dark", viewport=(240, 180))
+    common_query = (
+        "max-tentacles=64&render-supersample=0.5"
+        "&manual-animation-frame=1&generation-seed=12345"
+        "&animation-time-origin=0"
+    )
+
+    def render_frame(
+        extra_query: str = "",
+    ) -> tuple[str, int, list[int]]:
+        page.goto(
+            f"{base_url}/muta-tentacles.html?{common_query}{extra_query}",
+            wait_until="domcontentloaded",
+        )
+        canvas = page.locator("#muta")
+        expect(canvas).to_be_visible(timeout=30_000)
+        page.mouse.move(0, 0)
+        page.mouse.move(180, 115)
+        return canvas.evaluate(
+            """
+            element => {
+              const gl = element.getContext("webgl2");
+              gl.disable(gl.DITHER);
+              window.__mutaTentaclesDebugFrameAfter(1100);
+              const pixels = new Uint8Array(
+                gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
+              );
+              gl.readPixels(
+                0,
+                0,
+                gl.drawingBufferWidth,
+                gl.drawingBufferHeight,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                pixels,
+              );
+              return [
+                element.dataset.surfaceShaderPath || "",
+                window.__mutaTentaclesDebugSpatialGridRows,
+                Array.from(pixels),
+              ];
+            }
+            """
+        )
+
+    reduced_path, reduced_rows, reduced_pixels = render_frame()
+    previous_path, previous_rows, previous_pixels = render_frame(
+        "&spatial-grid-rows=64"
+    )
+
+    assert reduced_path == "fast-spatial"
+    assert previous_path == "fast-spatial"
+    assert reduced_rows == 56
+    assert previous_rows == 64
+    assert reduced_pixels == previous_pixels
+
+
 @pytest.mark.parametrize(
     "target_viewport",
     [
