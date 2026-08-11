@@ -541,7 +541,19 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   flex: 0 0 auto;
 }
 
+@media (min-width: 1041px) {
+  .header-actions {
+    gap: 35px;
+  }
+}
+
 .language-switcher {
+  --language-switcher-list-surface: color-mix(
+    in srgb,
+    var(--bg) 82%,
+    transparent
+  );
+  --language-switcher-list-backdrop: blur(20px) saturate(1.35);
   position: relative;
   display: block;
   flex: 0 0 auto;
@@ -561,7 +573,7 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
+  background: transparent;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -593,7 +605,8 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 0 0 12px 12px;
-  background: var(--surface);
+  background: var(--language-switcher-list-surface);
+  backdrop-filter: var(--language-switcher-list-backdrop);
   box-shadow: none;
   display: grid;
   gap: 2px;
@@ -2707,6 +2720,8 @@ a.section-index:focus-visible {
   }
 
   .language-switcher--mobile {
+    --language-switcher-list-surface: var(--surface);
+    --language-switcher-list-backdrop: none;
     width: 100%;
   }
 
