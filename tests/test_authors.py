@@ -427,6 +427,47 @@ def test_author_page_aggregates_profile_posts_archive_and_frequent_tags(
         "href",
         "https://example.com/controlled-human",
     )
+    metadata_geometry = profile.locator(".author-profile__meta").evaluate(
+        """
+        (metadata) => {
+          const intro = metadata.closest(".author-profile__intro");
+          const breadcrumb = intro.querySelector(
+            ".author-profile__breadcrumb",
+          );
+          const title = intro.querySelector("h1");
+          const links = metadata.querySelector(".author-profile__links");
+          const status = metadata.querySelector(".author-profile__status");
+          const statusLabel = status.querySelector(
+            ".author-status__label",
+          );
+          const link = links.querySelector("a");
+          const linksRect = links.getBoundingClientRect();
+          const statusRect = status.getBoundingClientRect();
+          const statusLabelRect = statusLabel.getBoundingClientRect();
+          const linkRect = link.getBoundingClientRect();
+          const breadcrumbRect = breadcrumb.getBoundingClientRect();
+          const titleRect = title.getBoundingClientRect();
+          const metadataRect = metadata.getBoundingClientRect();
+          return {
+            gapAboveTitle: titleRect.top - breadcrumbRect.bottom,
+            gapBelowTitle: metadataRect.top - titleRect.bottom,
+            linkTop: linkRect.top,
+            statusLabelTop: statusLabelRect.top,
+            statusRight: statusRect.right,
+            linksLeft: linksRect.left,
+          };
+        }
+        """
+    )
+    assert abs(
+        metadata_geometry["gapAboveTitle"]
+        - metadata_geometry["gapBelowTitle"]
+    ) <= 1
+    assert abs(
+        metadata_geometry["linkTop"]
+        - metadata_geometry["statusLabelTop"]
+    ) <= 1
+    assert metadata_geometry["statusRight"] < metadata_geometry["linksLeft"]
     expect(profile.locator(".author-profile__content h2")).to_have_text(
         "Working method"
     )
@@ -459,6 +500,33 @@ def test_author_page_aggregates_profile_posts_archive_and_frequent_tags(
         "aria-label",
         "#verification, 2 authored signals",
     )
+    tag_typography = profile.evaluate(
+        """
+        (profile) => {
+          const contentStyle = getComputedStyle(
+            profile.querySelector(".author-profile__content"),
+          );
+          const headingStyle = getComputedStyle(
+            profile.querySelector(".author-profile__label"),
+          );
+          const tagStyle = getComputedStyle(
+            profile.querySelector(".author-profile__tags .signal-tag"),
+          );
+          return {
+            contentFamily: contentStyle.fontFamily,
+            contentSize: Number.parseFloat(contentStyle.fontSize),
+            headingFamily: headingStyle.fontFamily,
+            headingSize: Number.parseFloat(headingStyle.fontSize),
+            tagFamily: tagStyle.fontFamily,
+            tagSize: Number.parseFloat(tagStyle.fontSize),
+          };
+        }
+        """
+    )
+    assert tag_typography["headingFamily"] == tag_typography["contentFamily"]
+    assert tag_typography["tagFamily"] == tag_typography["contentFamily"]
+    assert tag_typography["headingSize"] == tag_typography["contentSize"]
+    assert tag_typography["tagSize"] == tag_typography["contentSize"]
     first_tag.click()
     expect(page).to_have_url(
         re.compile(r"/tags/verification/$")
@@ -514,6 +582,52 @@ def test_robot_profile_reuses_the_home_mascot_surface(
         "/muta-v2-transparent-v10.webp 1x, /muta-v2-transparent-2x-v10.webp 2x",
     )
     assert surface_style(".author-profile__portrait") == home_style
+
+
+def test_author_tags_pack_four_items_into_a_wide_row(
+    driver: DriverFactory,
+) -> None:
+    """Tighten responsive gaps before wrapping tags on wide profiles."""
+
+    page = driver(
+        viewport=(1600, 1000),
+        load_interactive_visuals=False,
+        initial_path="/authors/muta/",
+    )
+
+    geometry = page.evaluate(
+        """
+        () => {
+          const tags = document.querySelector(".author-profile__tags");
+          const list = document.querySelector(".author-profile__tags ol");
+          const items = [...list.querySelectorAll("li")];
+          const rects = items.map((item) => {
+            const rect = item.getBoundingClientRect();
+            return {
+              left: Math.round(rect.left),
+              top: Math.round(rect.top),
+            };
+          });
+          const firstRowTop = rects[0].top;
+          const nextRow = rects.find((rect) => rect.top !== firstRowTop);
+          const style = getComputedStyle(tags);
+          return {
+            firstRowCount: rects.filter(
+              (rect) => rect.top === firstRowTop,
+            ).length,
+            nextRowLeft: nextRow.left,
+            tagsLeft: Math.round(tags.getBoundingClientRect().left),
+            columnGap: Number.parseFloat(style.columnGap),
+            rowGap: Number.parseFloat(style.rowGap),
+          };
+        }
+        """
+    )
+
+    assert geometry["firstRowCount"] == 4
+    assert abs(geometry["nextRowLeft"] - geometry["tagsLeft"]) <= 1
+    assert 16 <= geometry["columnGap"] <= 48
+    assert 12 <= geometry["rowGap"] <= 28
 
 
 def test_human_profile_uses_the_shared_surface_without_colored_halo(
@@ -593,10 +707,10 @@ def test_author_description_has_no_redundant_about_label(
     expect(description).to_have_css("margin-top", "0px")
 
 
-def test_author_without_posts_centers_the_description_column(
+def test_author_without_posts_keeps_the_description_with_the_identity(
     driver: DriverFactory,
 ) -> None:
-    """Center the description only when no authored-post region can follow it."""
+    """Reuse the posting-author grid when publication regions are absent."""
 
     page = driver(
         viewport=(1600, 900),
@@ -608,25 +722,29 @@ def test_author_without_posts_centers_the_description_column(
         wait_until="domcontentloaded",
     )
 
-    details = page.locator(".author-profile__details")
-    expect(details).to_have_class(
-        re.compile(r"\bauthor-profile__details--centered\b")
-    )
+    expect(page.locator(".author-profile__details--centered")).to_have_count(0)
     geometry = page.evaluate(
         """
         () => {
-          const profile = document.querySelector('.author-profile');
+          const intro = document.querySelector('.author-profile__intro');
           const bio = document.querySelector('.author-profile__bio');
-          const profileRect = profile.getBoundingClientRect();
+          const metadata = document.querySelector('.author-profile__meta');
+          const firstParagraph = document.querySelector(
+            '.author-profile__content > :first-child',
+          );
           const bioRect = bio.getBoundingClientRect();
           return {
-            profileCenter: profileRect.left + profileRect.width / 2,
-            bioCenter: bioRect.left + bioRect.width / 2,
+            introLeft: intro.getBoundingClientRect().left,
+            bioLeft: bioRect.left,
+            bioGap:
+              firstParagraph.getBoundingClientRect().top
+              - metadata.getBoundingClientRect().bottom,
           };
         }
         """
     )
-    assert abs(geometry["profileCenter"] - geometry["bioCenter"]) <= 1
+    assert abs(geometry["introLeft"] - geometry["bioLeft"]) <= 1
+    assert 29 <= geometry["bioGap"] <= 43
 
     page.goto(
         f"{origin}/authors/test-author/",
@@ -837,6 +955,12 @@ def test_author_profile_reflows_without_overlap_on_a_narrow_screen(
           const cards = [...document.querySelectorAll(".author-post-card")];
           const introRect = intro.getBoundingClientRect();
           const portraitRect = portrait.getBoundingClientRect();
+          const linkRect = document
+            .querySelector(".author-profile__links a")
+            .getBoundingClientRect();
+          const statusLabelRect = document
+            .querySelector(".author-profile__status .author-status__label")
+            .getBoundingClientRect();
           return {
             overflows:
               document.documentElement.scrollWidth >
@@ -847,6 +971,9 @@ def test_author_profile_reflows_without_overlap_on_a_narrow_screen(
             widestCard: Math.max(
               ...cards.map((card) => card.getBoundingClientRect().width),
             ),
+            metadataTextOffset: Math.abs(
+              linkRect.top - statusLabelRect.top,
+            ),
             viewportWidth: document.documentElement.clientWidth,
           };
         }
@@ -855,6 +982,7 @@ def test_author_profile_reflows_without_overlap_on_a_narrow_screen(
 
     assert geometry["overflows"] is False
     assert geometry["heroOverlaps"] is False
+    assert geometry["metadataTextOffset"] <= 0.1
     assert geometry["widestCard"] <= geometry["viewportWidth"]
 
 
@@ -978,11 +1106,15 @@ def test_author_profile_mobile_flow_starts_with_the_identity(
           const tagsRect = tags.getBoundingClientRect();
           const postsRect = posts.getBoundingClientRect();
           const tagItems = [...tags.querySelectorAll("li")];
-          const tagColumns = new Set(
-            tagItems.map(
-              (item) => Math.round(item.getBoundingClientRect().left),
-            ),
-          );
+          const tagRects = tagItems.map((item) => {
+            const rect = item.getBoundingClientRect();
+            return {
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              bottom: rect.bottom,
+            };
+          });
           return {
             introBottom: introRect.bottom,
             portraitTop: portraitRect.top,
@@ -997,7 +1129,19 @@ def test_author_profile_mobile_flow_starts_with_the_identity(
               tags.querySelector("ol"),
             ).borderTopWidth,
             tagItemBorder: getComputedStyle(tagItems[0]).borderBottomWidth,
-            tagColumnCount: tagColumns.size,
+            tagsFit: tagRects.every(
+              (rect) =>
+                rect.left >= tagsRect.left && rect.right <= tagsRect.right,
+            ),
+            tagsOverlap: tagRects.some((rect, index) =>
+              tagRects.slice(index + 1).some(
+                (other) =>
+                  rect.left < other.right &&
+                  rect.right > other.left &&
+                  rect.top < other.bottom &&
+                  rect.bottom > other.top,
+              ),
+            ),
             postsBorder: getComputedStyle(posts).borderTopWidth,
           };
         }
@@ -1011,42 +1155,109 @@ def test_author_profile_mobile_flow_starts_with_the_identity(
     assert spacing["tagsBorder"] == "0px"
     assert spacing["tagListBorder"] == "0px"
     assert spacing["tagItemBorder"] == "0px"
-    assert spacing["tagColumnCount"] == 2
+    assert spacing["tagsFit"] is True
+    assert spacing["tagsOverlap"] is False
     assert spacing["postsBorder"] == "0px"
 
 
-def test_author_profile_aligns_with_the_shared_left_edge(
+def test_author_pages_match_the_blog_content_shell_and_top_spacing(
     driver: DriverFactory,
 ) -> None:
-    """Align wide author content with the shared header and section gutter."""
+    """Use the blog index's narrower shell and top spacing for author pages."""
 
     page = driver(
         viewport=(1600, 900),
         load_interactive_visuals=False,
     )
+    origin = page.url.rstrip("/")
     page.goto(
-        f"{page.url.rstrip('/')}/authors/test-author/",
+        f"{origin}/blog/",
+        wait_until="domcontentloaded",
+    )
+    blog_geometry = page.evaluate(
+        """
+        () => {
+          const shell = document
+            .querySelector(".blog-index")
+            .getBoundingClientRect();
+          const eyebrow = document
+            .querySelector(".blog-index__header > .section-index")
+            .getBoundingClientRect();
+          const header = document
+            .querySelector(".site-header")
+            .getBoundingClientRect();
+          return {
+            left: shell.left,
+            right: shell.right,
+            topGap: eyebrow.top - header.bottom,
+          };
+        }
+        """
+    )
+
+    page.goto(
+        f"{origin}/authors/",
+        wait_until="domcontentloaded",
+    )
+    directory_geometry = page.evaluate(
+        """
+        () => {
+          const shell = document
+            .querySelector(".authors-index")
+            .getBoundingClientRect();
+          const eyebrow = document
+            .querySelector(".authors-index__header > .section-index")
+            .getBoundingClientRect();
+          const header = document
+            .querySelector(".site-header")
+            .getBoundingClientRect();
+          return {
+            left: shell.left,
+            right: shell.right,
+            topGap: eyebrow.top - header.bottom,
+          };
+        }
+        """
+    )
+
+    assert abs(directory_geometry["left"] - blog_geometry["left"]) <= 1
+    assert abs(directory_geometry["right"] - blog_geometry["right"]) <= 1
+    assert abs(directory_geometry["topGap"] - blog_geometry["topGap"]) <= 1
+
+    page.goto(
+        f"{origin}/authors/test-author/",
         wait_until="domcontentloaded",
     )
 
-    left_edges = page.evaluate(
+    author_geometry = page.evaluate(
         """
-        () => ({
-          header: document
-            .querySelector(".site-header")
-            .getBoundingClientRect().left,
-          profile: document
+        () => {
+          const shell = document
             .querySelector(".author-profile")
-            .getBoundingClientRect().left,
-          intro: document
+            .getBoundingClientRect();
+          const intro = document
             .querySelector(".author-profile__intro")
-            .getBoundingClientRect().left,
-        })
+            .getBoundingClientRect();
+          const eyebrow = document
+            .querySelector(".author-profile__breadcrumb")
+            .getBoundingClientRect();
+          const header = document
+            .querySelector(".site-header")
+            .getBoundingClientRect();
+          return {
+            left: shell.left,
+            right: shell.right,
+            introLeft: intro.left,
+            topGap: eyebrow.top - header.bottom,
+          };
+        }
         """
     )
 
-    assert abs(left_edges["profile"] - left_edges["header"]) <= 1
-    assert abs(left_edges["intro"] - left_edges["header"]) <= 1
+    assert abs(author_geometry["left"] - blog_geometry["left"]) <= 1
+    assert abs(author_geometry["right"] - blog_geometry["right"]) <= 1
+    assert abs(author_geometry["introLeft"] - blog_geometry["left"]) <= 1
+    assert abs(author_geometry["topGap"] - blog_geometry["topGap"]) <= 1
 
 
 def test_author_posts_keep_only_their_own_bottom_spacing(
