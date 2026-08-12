@@ -32,15 +32,17 @@
         <span aria-hidden="true">/</span>
         <a href="{{ .RelPermalink }}" aria-current="page">{{ upper $authorSlug }}</a>
       </nav>
-      {{ partial "author-status.html" (dict "author" . "variant" "profile" "class" "author-profile__status") }}
       <h1>{{ .Title }}</h1>
-      {{ with .Params.links }}
-        <nav class="author-profile__links" aria-label="{{ $.Title }} external links">
-          {{ range . }}
-            <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ .label }} <span aria-hidden="true">↗</span></a>
-          {{ end }}
-        </nav>
-      {{ end }}
+      <div class="author-profile__meta">
+        {{ partial "author-status.html" (dict "author" . "variant" "profile" "class" "author-profile__status") }}
+        {{ with .Params.links }}
+          <nav class="author-profile__links" aria-label="{{ $.Title }} external links">
+            {{ range . }}
+              <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ .label }} <span aria-hidden="true">↗</span></a>
+            {{ end }}
+          </nav>
+        {{ end }}
+      </div>
     </div>
     <div class="author-profile__side">
       {{ with .Params.photo }}
