@@ -707,10 +707,10 @@ def test_author_description_has_no_redundant_about_label(
     expect(description).to_have_css("margin-top", "0px")
 
 
-def test_author_without_posts_centers_the_description_column(
+def test_author_without_posts_keeps_the_description_with_the_identity(
     driver: DriverFactory,
 ) -> None:
-    """Center the description only when no authored-post region can follow it."""
+    """Reuse the posting-author grid when publication regions are absent."""
 
     page = driver(
         viewport=(1600, 900),
@@ -722,25 +722,29 @@ def test_author_without_posts_centers_the_description_column(
         wait_until="domcontentloaded",
     )
 
-    details = page.locator(".author-profile__details")
-    expect(details).to_have_class(
-        re.compile(r"\bauthor-profile__details--centered\b")
-    )
+    expect(page.locator(".author-profile__details--centered")).to_have_count(0)
     geometry = page.evaluate(
         """
         () => {
-          const profile = document.querySelector('.author-profile');
+          const intro = document.querySelector('.author-profile__intro');
           const bio = document.querySelector('.author-profile__bio');
-          const profileRect = profile.getBoundingClientRect();
+          const metadata = document.querySelector('.author-profile__meta');
+          const firstParagraph = document.querySelector(
+            '.author-profile__content > :first-child',
+          );
           const bioRect = bio.getBoundingClientRect();
           return {
-            profileCenter: profileRect.left + profileRect.width / 2,
-            bioCenter: bioRect.left + bioRect.width / 2,
+            introLeft: intro.getBoundingClientRect().left,
+            bioLeft: bioRect.left,
+            bioGap:
+              firstParagraph.getBoundingClientRect().top
+              - metadata.getBoundingClientRect().bottom,
           };
         }
         """
     )
-    assert abs(geometry["profileCenter"] - geometry["bioCenter"]) <= 1
+    assert abs(geometry["introLeft"] - geometry["bioLeft"]) <= 1
+    assert 29 <= geometry["bioGap"] <= 43
 
     page.goto(
         f"{origin}/authors/test-author/",
