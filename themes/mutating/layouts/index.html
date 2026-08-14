@@ -4,6 +4,9 @@
   {{- $tentaclesSource := os.ReadFile "themes/mutating/static/muta-tentacles.html" -}}
   {{- $tentaclesFingerprint := crypto.SHA256 $tentaclesSource -}}
   {{- $content = replace $content "__MUTA_TENTACLES_FINGERPRINT__" $tentaclesFingerprint -}}
+  {{- $tokamakSource := os.ReadFile "themes/mutating/static/tokamak-reactor.html" -}}
+  {{- $tokamakFingerprint := crypto.SHA256 $tokamakSource -}}
+  {{- $content = replace $content "__TOKAMAK_FINGERPRINT__" $tokamakFingerprint -}}
   {{- if ne .Site.Language.Lang hugo.Sites.Default.Language.Lang -}}
     {{- $content = replace $content `href="/authors/` (printf `href="/%s/authors/` .Site.Language.Lang) -}}
   {{- end -}}

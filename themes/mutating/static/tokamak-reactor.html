@@ -58,6 +58,36 @@ body {
   outline: none;
 }
 
+.tokamak-fallback {
+  width: 100%;
+  height: 100%;
+  padding: 32px;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 45%, #240914, #000 68%);
+}
+
+.tokamak-fallback__title {
+  color: #ff79aa;
+  font-size: clamp(15px, 3vw, 22px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tokamak-fallback__copy {
+  max-width: 44ch;
+  margin: 0;
+  color: rgb(255 213 225 / 78%);
+  font-size: clamp(12px, 2vw, 15px);
+  line-height: 1.5;
+}
+
+html[data-tokamak-fallback="webgl-unavailable"] .interaction-hint {
+  display: none;
+}
+
 .scene-shell::after {
   position: absolute;
   inset: 0;
@@ -4892,7 +4922,7 @@ void main() {
     for(let h of i)h.parent?.remove(h),h.geometry.dispose()
   }
   return{source:t.length,batched:[...n.values()].reduce((i,s)=>i+(s.length>1?1:s.length),0)}
-}function SL(){let e=new Ln;gL(e),vL(e),yL(e);let t=BL(e);return e.userData.sourceWireObjects=t.source,e.userData.batchedWireObjects=t.batched,e}function Cv(){let e=(0,up.useRef)(null);return(0,up.useEffect)(()=>{let t=e.current;if(!t)return;let n=new dc;n.background=new Bt(0);let i=new _n(32,1,.1,100);i.position.copy(D1),i.lookAt(Tv);let s=new Kd({antialias:!1,alpha:!0,powerPreference:"high-performance"});s.setClearColor(0,0);s.setPixelRatio(Math.min(window.devicePixelRatio,2)),s.setSize(t.clientWidth,t.clientHeight),s.outputColorSpace=Dn,s.toneMapping=cr,s.toneMappingExposure=1.08,t.appendChild(s.domElement),s.domElement.setAttribute("aria-label","Scroll-linked three-dimensional wireframe toroidal field reactor"),s.domElement.setAttribute("role","img"),s.domElement.tabIndex=0,n.add(new Pc(16727709,.18));let a=new Fo(16727709,.4,7,1.8);a.position.set(0,.42,0),n.add(a);let r=new Fo(16741816,.8,6,2);r.position.set(0,3.1,1.4),n.add(r);let o=SL();n.add(o);
+}function SL(){let e=new Ln;gL(e),vL(e),yL(e);let t=BL(e);return e.userData.sourceWireObjects=t.source,e.userData.batchedWireObjects=t.batched,e}function Cv(){let e=(0,up.useRef)(null);return(0,up.useEffect)(()=>{let t=e.current;if(!t)return;let n=new dc;n.background=new Bt(0);let i=new _n(32,1,.1,100);i.position.copy(D1),i.lookAt(Tv);let s;try{let A=document.createElement("canvas"),S=A.getContext("webgl2",{alpha:!0,depth:!0,stencil:!1,antialias:!1,premultipliedAlpha:!0,preserveDrawingBuffer:!1,powerPreference:"high-performance",failIfMajorPerformanceCaveat:!1});if(!S)throw new Error("WebGL2 unavailable");s=new Kd({canvas:A,context:S,antialias:!1,alpha:!0,powerPreference:"high-performance"})}catch{document.documentElement.dataset.tokamakFallback="webgl-unavailable",t.dataset.tokamakFallback="webgl-unavailable";let A=document.createElement("div");A.className="tokamak-fallback",A.lang="en",A.setAttribute("role","status"),A.setAttribute("aria-live","polite");let S=document.createElement("strong");S.className="tokamak-fallback__title",S.textContent="3D reactor unavailable";let k=document.createElement("p");k.className="tokamak-fallback__copy",k.textContent="This browser or device cannot display the WebGL visualization.",A.append(S,k),t.replaceChildren(A);let d=()=>{window.parent!==window&&window.parent.postMessage({type:"tokamak-state-applied",fallback:"webgl-unavailable"},location.origin)};return window.parent!==window&&(window.addEventListener("message",v=>{v.source===window.parent&&v.origin===location.origin&&v.data?.type==="tokamak-state"&&d()}),d()),void 0}s.setClearColor(0,0);s.setPixelRatio(Math.min(window.devicePixelRatio,2)),s.setSize(t.clientWidth,t.clientHeight),s.outputColorSpace=Dn,s.toneMapping=cr,s.toneMappingExposure=1.08,t.appendChild(s.domElement),s.domElement.setAttribute("aria-label","Scroll-linked three-dimensional wireframe toroidal field reactor"),s.domElement.setAttribute("role","img"),s.domElement.tabIndex=0,n.add(new Pc(16727709,.18));let a=new Fo(16727709,.4,7,1.8);a.position.set(0,.42,0),n.add(a);let r=new Fo(16741816,.8,6,2);r.position.set(0,3.1,1.4),n.add(r);let o=SL();n.add(o);
 let H="",P=new WeakMap,lineDarkMaterials=new WeakMap,lineLightMaterials=new Map,DARK_WIRE_COLOR="#ff3e9d",LIGHT_WIRE_COLOR="#ff2c58",O=new Ji({color:0,side:oi,colorWrite:!1,depthWrite:!0,depthTest:!0,toneMapped:!1}),V=window.parent===window,E=()=>{},C=T=>{
   let A=T.data;
   if(!A||A.type!=="tokamak-state")return;
