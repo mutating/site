@@ -60,10 +60,10 @@ def test_tentacle_page_shows_accessible_fallback_without_webgl2(
     assert errors == []
 
 
-def test_tentacle_runtime_currently_accepts_state_from_non_parent_windows(
+def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
     driver: DriverFactory,
 ) -> None:
-    """Characterize the embedded runtime accepting a state message from itself."""
+    """Tentacles accepts its parent but rejects self and wrong-origin commands."""
 
     page = driver(
         initial_path="/blog/",
@@ -84,18 +84,64 @@ def test_tentacle_runtime_currently_accepts_state_from_non_parent_windows(
     )
     canvas = page.frame_locator("#message-boundary-tentacles").locator("#muta")
     expect(canvas).to_be_attached(timeout=30_000)
+    frame = page.locator("#message-boundary-tentacles")
     frame_root = page.frame_locator("#message-boundary-tentacles").locator("html")
     expect(frame_root).to_have_attribute("data-theme", "light")
 
     canvas.evaluate(
         """
-        () => window.postMessage({
-          type: "muta-tentacles-theme",
-          theme: "dark",
-        }, "*")
+        () => new Promise((resolve) => {
+          const probe = "tentacles-self-message";
+          const observeProbe = (event) => {
+            if (event.data?.probe !== probe) return;
+            removeEventListener("message", observeProbe);
+            resolve();
+          };
+          addEventListener("message", observeProbe);
+          window.postMessage({
+            type: "muta-tentacles-theme",
+            theme: "dark",
+            probe,
+          }, location.origin);
+        })
+        """
+    )
+    expect(frame_root).to_have_attribute("data-theme", "light")
+
+    canvas.evaluate(
+        """
+        () => dispatchEvent(new MessageEvent("message", {
+          data: {
+            type: "muta-tentacles-pointer-hover",
+            x: 0.25,
+            y: 0.75,
+            inside: true,
+          },
+          origin: "https://attacker.example",
+          source: window.parent,
+        }))
+        """
+    )
+    assert canvas.get_attribute("data-pointer-input-source") is None
+
+    frame.evaluate(
+        """
+        (element) => {
+          element.contentWindow.postMessage({
+            type: "muta-tentacles-theme",
+            theme: "dark",
+          }, location.origin);
+          element.contentWindow.postMessage({
+            type: "muta-tentacles-pointer-hover",
+            x: 0.25,
+            y: 0.75,
+            inside: true,
+          }, location.origin);
+        }
         """
     )
     expect(frame_root).to_have_attribute("data-theme", "dark")
+    expect(canvas).to_have_attribute("data-pointer-input-source", "host-overlay")
 
 
 def test_dense_surface_uses_the_bounded_spatial_shader(
@@ -689,11 +735,10 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     expect(canvas).to_be_visible(timeout=30_000)
     canvas.evaluate(
         """
-        element => element.ownerDocument.defaultView.postMessage({
-          type: "muta-tentacles-runtime",
+        element => element.ownerDocument.defaultView.__mutaTentaclesSetRuntimeState({
           visible: true,
           scrollActive: false,
-        }, "*")
+        })
         """
     )
     expect(canvas).to_have_attribute("data-scroll-rendering", "active")
@@ -713,11 +758,10 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     )
     canvas.evaluate(
         """
-        element => element.ownerDocument.defaultView.postMessage({
-          type: "muta-tentacles-runtime",
+        element => element.ownerDocument.defaultView.__mutaTentaclesSetRuntimeState({
           visible: true,
           scrollActive: true,
-        }, "*")
+        })
         """
     )
     expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
@@ -747,11 +791,10 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
 
     canvas.evaluate(
         """
-        element => element.ownerDocument.defaultView.postMessage({
-          type: "muta-tentacles-runtime",
+        element => element.ownerDocument.defaultView.__mutaTentaclesSetRuntimeState({
           visible: true,
           scrollActive: false,
-        }, "*")
+        })
         """
     )
     expect(canvas).to_have_attribute("data-scroll-rendering", "active")

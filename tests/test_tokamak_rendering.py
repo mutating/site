@@ -202,10 +202,10 @@ def test_parent_page_reveals_embedded_tokamak_fallback_without_webgl(
     assert errors == []
 
 
-def test_tokamak_runtime_currently_accepts_state_from_non_parent_windows(
+def test_tokamak_runtime_accepts_state_only_from_its_same_origin_parent(
     driver: DriverFactory,
 ) -> None:
-    """Characterize the embedded reactor accepting a state message from itself."""
+    """Tokamak accepts its parent but rejects self and wrong-origin state."""
 
     page = driver(
         stored_theme="light",
@@ -216,13 +216,53 @@ def test_tokamak_runtime_currently_accepts_state_from_non_parent_windows(
     expect(canvas).to_have_attribute("data-reactor-theme", "light")
     canvas.evaluate(
         """
-        () => window.postMessage({
+        () => new Promise((resolve) => {
+          const probe = "tokamak-self-message";
+          const observeProbe = (event) => {
+            if (event.data?.probe !== probe) return;
+            removeEventListener("message", observeProbe);
+            resolve();
+          };
+          addEventListener("message", observeProbe);
+          window.postMessage({
+            type: "tokamak-state",
+            theme: "dark",
+            rotationX: -0.3,
+            modelScale: 1,
+            visible: true,
+            probe,
+          }, location.origin);
+        })
+        """
+    )
+    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+
+    canvas.evaluate(
+        """
+        () => dispatchEvent(new MessageEvent("message", {
+          data: {
+            type: "tokamak-state",
+            theme: "dark",
+            rotationX: -0.3,
+            modelScale: 1,
+            visible: true,
+          },
+          origin: "https://attacker.example",
+          source: window.parent,
+        }))
+        """
+    )
+    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+
+    page.locator(".tokamak-model__frame").evaluate(
+        """
+        (element) => element.contentWindow.postMessage({
           type: "tokamak-state",
           theme: "dark",
           rotationX: -0.3,
           modelScale: 1,
           visible: true,
-        }, "*")
+        }, location.origin)
         """
     )
     expect(canvas).to_have_attribute("data-reactor-theme", "dark")
@@ -889,38 +929,61 @@ def test_tokamak_matches_intended_visual_reference(
         viewport=(480, 420),
         load_interactive_visuals=True,
     )
-    page.goto(f"{base_url}/tokamak-reactor.html")
-    canvas = page.locator("canvas")
+    page.goto(f"{base_url}/blog/", wait_until="domcontentloaded")
+    page.evaluate(
+        """
+        () => {
+          const frame = document.createElement("iframe");
+          frame.id = "tokamak-reference-frame";
+          frame.src = "/tokamak-reactor.html";
+          frame.style.cssText = [
+            "position:fixed",
+            "inset:0",
+            "width:480px",
+            "height:420px",
+            "border:0",
+            "z-index:2147483647",
+          ].join(";");
+          document.body.append(frame);
+        }
+        """
+    )
+    runtime_frame = page.locator("#tokamak-reference-frame")
+    canvas = page.frame_locator("#tokamak-reference-frame").locator("canvas")
     expect(canvas).to_be_visible()
     baselines = Path(__file__).with_name("visual_baselines")
     light_front: Image.Image | None = None
 
-    for theme in ("dark", "light"):
-        prior_frames = int(
-            canvas.get_attribute("data-render-frames") or "0"
-        )
-        page.evaluate(
+    def apply_trusted_parent_state(theme: str, rotation_x: float) -> None:
+        """Send one complete render state through the production trust boundary."""
+
+        prior_frames = int(canvas.get_attribute("data-render-frames") or "0")
+        runtime_frame.evaluate(
             """
-            (selectedTheme) => window.postMessage({
+            (element, state) => element.contentWindow.postMessage({
               type: "tokamak-state",
-              theme: selectedTheme,
-              rotationX: -0.3,
+              theme: state.theme,
+              rotationX: state.rotationX,
               modelScale: 1,
               visible: true,
-            }, "*")
+            }, location.origin)
             """,
-            theme,
+            {"theme": theme, "rotationX": rotation_x},
         )
         expect(canvas).to_have_attribute("data-reactor-theme", theme)
         page.wait_for_function(
             """
-            (baseline) => Number(
-              document.querySelector("canvas").dataset.renderFrames
+            ({baseline}) => Number(
+              document.querySelector("#tokamak-reference-frame")
+                .contentDocument.querySelector("canvas").dataset.renderFrames
             ) > baseline
             """,
-            arg=prior_frames,
+            arg={"baseline": prior_frames},
         )
         page.wait_for_timeout(100)
+
+    for theme in ("dark", "light"):
+        apply_trusted_parent_state(theme, -0.3)
 
         actual = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
         expected = Image.open(
@@ -954,32 +1017,11 @@ def test_tokamak_matches_intended_visual_reference(
     assert blue - green < 55
     assert red - blue > 45
 
-    prior_frames = int(canvas.get_attribute("data-render-frames") or "0")
-    page.evaluate(
-        """
-        () => window.postMessage({
-          type: "tokamak-state",
-          theme: "light",
-          rotationX: -0.52,
-          modelScale: 1,
-          visible: true,
-        }, "*")
-        """
-    )
-    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+    apply_trusted_parent_state("light", -0.52)
     expect(canvas).to_have_attribute(
         "data-plasma-halo",
         "theme-aware-light-v3",
     )
-    page.wait_for_function(
-        """
-        (baseline) => Number(
-          document.querySelector("canvas").dataset.renderFrames
-        ) > baseline
-        """,
-        arg=prior_frames,
-    )
-    page.wait_for_timeout(100)
 
     oblique = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
     expected_oblique = Image.open(
