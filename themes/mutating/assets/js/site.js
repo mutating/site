@@ -404,11 +404,30 @@
     const ticker = document.querySelector(".ticker");
     const track = ticker?.querySelector(".ticker__track");
     if (!ticker || !track) return;
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     let started = false;
+    let frameRequest = 0;
+    let animations = [];
+
+    const stop = () => {
+      if (frameRequest) {
+        cancelAnimationFrame(frameRequest);
+        frameRequest = 0;
+      }
+      animations.forEach((animation) => animation.cancel());
+      animations = [];
+      started = false;
+    };
+
     const start = () => {
-      if (started) return;
+      if (started || reducedMotion.matches) return;
       started = true;
-      requestAnimationFrame(() => {
+      frameRequest = requestAnimationFrame(() => {
+        frameRequest = 0;
+        if (reducedMotion.matches) {
+          started = false;
+          return;
+        }
         const trackWidth = track.scrollWidth;
         const tickerWidth = ticker.clientWidth;
         const originalPixelsPerSecond = trackWidth / 56;
@@ -419,7 +438,7 @@
         const loopSeconds = fullTravelSeconds + pauseSeconds;
         const travelEndOffset = fullTravelSeconds / loopSeconds;
 
-        track.animate(
+        const introAnimation = track.animate(
           [
             { transform: "translate3d(calc(50vw - 50%), 0, 0)" },
             { transform: "translate3d(-100%, 0, 0)" },
@@ -430,7 +449,7 @@
             fill: "forwards",
           },
         );
-        track.animate(
+        const loopAnimation = track.animate(
           [
             { transform: "translate3d(100vw, 0, 0)", offset: 0 },
             {
@@ -446,8 +465,14 @@
             iterations: Infinity,
           },
         );
+        animations = [introAnimation, loopAnimation];
       });
     };
+
+    reducedMotion.addEventListener("change", () => {
+      if (reducedMotion.matches) stop();
+      else start();
+    });
     if (document.fonts) document.fonts.ready.then(start);
     else start();
   }

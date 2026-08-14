@@ -1,6 +1,9 @@
 {{ define "main" }}
   {{- $latestPosts := partial "latest-posts.html" . -}}
   {{- $content := replaceRE `(?s)<section class="dispatches section-shell" id="open-source".*?</section>` $latestPosts .Content -}}
+  {{- $tentaclesSource := os.ReadFile "themes/mutating/static/muta-tentacles.html" -}}
+  {{- $tentaclesFingerprint := crypto.SHA256 $tentaclesSource -}}
+  {{- $content = replace $content "__MUTA_TENTACLES_FINGERPRINT__" $tentaclesFingerprint -}}
   {{- if ne .Site.Language.Lang hugo.Sites.Default.Language.Lang -}}
     {{- $content = replace $content `href="/authors/` (printf `href="/%s/authors/` .Site.Language.Lang) -}}
   {{- end -}}
