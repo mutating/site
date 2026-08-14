@@ -36,7 +36,11 @@ class _InteractiveIframeParser(HTMLParser):
         classes = (values.get("class") or "").split()
         if tag != "iframe":
             return
-        source = values.get("src") or values.get("data-deferred-src")
+        source = (
+            values.get("src")
+            or values.get("data-deferred-src")
+            or values.get("data-prewarm-src")
+        )
         if source:
             for class_name in ("contact__tentacles", "tokamak-model__frame"):
                 if class_name in classes:

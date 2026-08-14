@@ -5547,6 +5547,13 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
     )
     frame = page.locator(".contact__tentacles")
     expect(frame).to_be_attached(timeout=30_000)
+    expect(frame).to_have_attribute(
+        "src",
+        re.compile(
+            r"^/muta-tentacles\.html\?v=[0-9a-f]{64}&embedded=1$"
+        ),
+        timeout=30_000,
+    )
     frame.evaluate(
         """
         (element) => {
