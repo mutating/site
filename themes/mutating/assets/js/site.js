@@ -21,9 +21,13 @@
       textarea.style.position = "fixed";
       textarea.style.inset = "0 auto auto -9999px";
       document.body.append(textarea);
-      textarea.select();
-      const copied = document.execCommand("copy");
-      textarea.remove();
+      let copied = false;
+      try {
+        textarea.select();
+        copied = document.execCommand("copy");
+      } finally {
+        textarea.remove();
+      }
       if (!copied) throw new Error("The browser rejected the copy command.");
     };
 
