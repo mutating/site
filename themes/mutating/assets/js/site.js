@@ -1267,6 +1267,29 @@
     let scrollIdleTimer = 0;
     const scrollIdleFallbackMs = 320;
 
+    const prewarm = () => {
+      const source = frame.dataset.prewarmSrc;
+      if (
+        !source ||
+        frame.hasAttribute("src") ||
+        frame.hasAttribute("srcdoc")
+      ) {
+        return;
+      }
+      frame.loading = "eager";
+      frame.src = source;
+      delete frame.dataset.prewarmSrc;
+    };
+    const schedulePrewarm = () => {
+      requestAnimationFrame(() => {
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(prewarm, { timeout: 2000 });
+        } else {
+          window.setTimeout(prewarm, 0);
+        }
+      });
+    };
+
     const sendTheme = () => {
       const theme =
         document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -1415,7 +1438,9 @@
     new IntersectionObserver(
       ([entry]) => {
         contactIsNearViewport = entry.isIntersecting;
-        if (!contactIsNearViewport) {
+        if (contactIsNearViewport) {
+          prewarm();
+        } else {
           clearScrollIdleTimer();
           scrollIsActive = false;
         }
@@ -1443,6 +1468,7 @@
     });
     sendTheme();
     sendRuntimeState();
+    schedulePrewarm();
   }
 
   function initMobileMenus() {
