@@ -117,6 +117,138 @@ def _image_difference_statistics(
     )
 
 
+def test_tokamak_currently_fails_blank_when_webgl_is_unavailable(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Characterize Tokamak's blank root and page error when WebGL is unavailable."""
+
+    page = driver(
+        initial_path="/blog/",
+        load_interactive_visuals=True,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+              HTMLCanvasElement.prototype.getContext = function (kind, options) {
+                if (kind === "webgl" || kind === "webgl2") return null;
+                return nativeGetContext.call(this, kind, options);
+              };
+            })();
+            """,
+        ),
+    )
+    with page.expect_event("pageerror") as error_event:
+        page.goto(
+            f"{base_url}/tokamak-reactor.html",
+            wait_until="domcontentloaded",
+        )
+
+    assert "Error creating WebGL context" in str(error_event.value)
+    expect(page.locator("canvas")).to_have_count(0)
+    expect(page.locator("#root")).to_be_empty()
+
+
+def test_tokamak_runtime_currently_accepts_state_from_non_parent_windows(
+    driver: DriverFactory,
+) -> None:
+    """Characterize the embedded reactor accepting a state message from itself."""
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+    )
+    canvas = _show_reactor(page)
+    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+    canvas.evaluate(
+        """
+        () => window.postMessage({
+          type: "tokamak-state",
+          theme: "dark",
+          rotationX: -0.3,
+          modelScale: 1,
+          visible: true,
+        }, "*")
+        """
+    )
+    expect(canvas).to_have_attribute("data-reactor-theme", "dark")
+
+
+def test_tokamak_currently_disables_camera_controls_before_reset_inputs(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Characterize disabled orbit controls while R and double-click only redraw."""
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(480, 420),
+        load_interactive_visuals=True,
+    )
+    page.goto(f"{base_url}/tokamak-reactor.html", wait_until="domcontentloaded")
+    canvas = page.locator("canvas")
+    expect(canvas).to_have_attribute(
+        "data-shader-compilation", "complete", timeout=30_000
+    )
+    expect(canvas).to_have_attribute("data-render-frames", re.compile(r"[1-9]\d*"))
+    baseline = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+
+    def assert_same_as_baseline(image: Image.Image) -> None:
+        mean, high, extreme = _image_difference_statistics(baseline, image)
+        assert mean < 0.6
+        assert high < 0.012
+        assert extreme < 0.003
+
+    bounds = canvas.bounding_box()
+    assert bounds is not None
+    unchanged_frames = int(canvas.get_attribute("data-render-frames") or "0")
+    start_x = bounds["x"] + bounds["width"] / 2
+    start_y = bounds["y"] + bounds["height"] / 2
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(start_x + 95, start_y + 45, steps=4)
+    page.mouse.up()
+    page.mouse.wheel(0, 120)
+    assert int(canvas.get_attribute("data-render-frames") or "0") == unchanged_frames
+    assert_same_as_baseline(
+        Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+    )
+
+    page.keyboard.press("x")
+    assert int(canvas.get_attribute("data-render-frames") or "0") == unchanged_frames
+
+    before_reset = int(canvas.get_attribute("data-render-frames") or "0")
+    page.keyboard.press("r")
+    page.wait_for_function(
+        "baseline => Number(document.querySelector('canvas').dataset.renderFrames) > baseline",
+        arg=before_reset,
+    )
+    assert_same_as_baseline(
+        Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+    )
+
+    before_reset = int(canvas.get_attribute("data-render-frames") or "0")
+    assert page.evaluate(
+        """
+        ({x, y}) => document.elementFromPoint(x, y) !== document.querySelector("canvas")
+        """,
+        {"x": start_x, "y": start_y},
+    )
+    page.mouse.dblclick(start_x, start_y)
+    assert int(canvas.get_attribute("data-render-frames") or "0") == before_reset
+
+    canvas.dispatch_event("dblclick")
+    page.wait_for_function(
+        "baseline => Number(document.querySelector('canvas').dataset.renderFrames) > baseline",
+        arg=before_reset,
+    )
+    assert_same_as_baseline(
+        Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+    )
+
+
 def test_light_tokamak_uses_invisible_depth_occluders(
     driver: DriverFactory,
 ) -> None:

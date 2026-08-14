@@ -25,6 +25,79 @@ pytestmark = [
 ]
 
 
+def test_tentacle_page_shows_accessible_fallback_without_webgl2(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Replace the Muta canvas with explanatory text when WebGL2 is unavailable."""
+
+    page = driver(
+        initial_path="/blog/",
+        load_interactive_visuals=True,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+              HTMLCanvasElement.prototype.getContext = function (kind, options) {
+                if (kind === "webgl2") return null;
+                return nativeGetContext.call(this, kind, options);
+              };
+            })();
+            """,
+        ),
+    )
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(f"{base_url}/muta-tentacles.html", wait_until="domcontentloaded")
+
+    expect(page.locator("#muta")).to_have_count(0)
+    fallback = page.get_by_text(
+        "Для рендера Muta требуется браузер с поддержкой WebGL 2.",
+        exact=True,
+    )
+    expect(fallback).to_be_visible()
+    assert fallback.text_content().strip()
+    assert errors == []
+
+
+def test_tentacle_runtime_currently_accepts_state_from_non_parent_windows(
+    driver: DriverFactory,
+) -> None:
+    """Characterize the embedded runtime accepting a state message from itself."""
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="light",
+        viewport=(320, 240),
+        load_interactive_visuals=True,
+    )
+    page.evaluate(
+        """
+        () => {
+          const frame = document.createElement("iframe");
+          frame.id = "message-boundary-tentacles";
+          frame.style.cssText = "width:240px;height:180px";
+          frame.src = "/muta-tentacles.html?embedded=1&max-tentacles=64&render-supersample=0.5";
+          document.body.append(frame);
+        }
+        """
+    )
+    canvas = page.frame_locator("#message-boundary-tentacles").locator("#muta")
+    expect(canvas).to_be_attached(timeout=30_000)
+    frame_root = page.frame_locator("#message-boundary-tentacles").locator("html")
+    expect(frame_root).to_have_attribute("data-theme", "light")
+
+    canvas.evaluate(
+        """
+        () => window.postMessage({
+          type: "muta-tentacles-theme",
+          theme: "dark",
+        }, "*")
+        """
+    )
+    expect(frame_root).to_have_attribute("data-theme", "dark")
+
+
 def test_dense_surface_uses_the_bounded_spatial_shader(
     driver: DriverFactory,
     base_url: str,

@@ -202,6 +202,74 @@ def test_unpaginated_list_keeps_tail_line_only_to_fill_a_short_page(
     )
 
 
+def test_unpaginated_blog_tail_recomputes_after_live_resize(
+    driver: DriverFactory,
+) -> None:
+    """Recompute the final blog rule when a mounted page starts or stops scrolling."""
+
+    page = driver(
+        viewport=(390, 600),
+        load_interactive_visuals=False,
+        initial_path="/tags/verification/",
+    )
+    index = page.locator('.blog-index[data-has-pagination="false"]')
+    last_card = page.locator(".blog-card:last-child")
+    expect(index).to_have_attribute("data-page-overflows", "true")
+    expect(last_card).to_have_css("border-bottom-width", "0px")
+
+    page.set_viewport_size({"width": 1440, "height": 1600})
+    expect(index).to_have_attribute("data-page-overflows", "false")
+    expect(last_card).to_have_css("border-bottom-width", "1px")
+
+    page.set_viewport_size({"width": 390, "height": 600})
+    expect(index).to_have_attribute("data-page-overflows", "true")
+    expect(last_card).to_have_css("border-bottom-width", "0px")
+
+
+def test_unpaginated_blog_tail_recomputes_when_fonts_finish_loading(
+    driver: DriverFactory,
+) -> None:
+    """Re-measure the final blog rule after the held font-ready promise resolves."""
+
+    page = driver(
+        viewport=(1440, 1600),
+        load_interactive_visuals=False,
+        initial_path="/tags/verification/",
+        init_scripts=(
+            """
+            (() => {
+              let release;
+              const heldReady = new Promise((resolve) => { release = resolve; });
+              Object.defineProperty(document.fonts, "ready", {
+                configurable: true,
+                get: () => heldReady,
+              });
+              window.__releaseHeldFontsReady = release;
+            })();
+            """,
+        ),
+    )
+    index = page.locator('.blog-index[data-has-pagination="false"]')
+    expect(index).to_have_attribute("data-page-overflows", "false")
+    page.evaluate(
+        """
+        () => {
+          const spacer = document.createElement("div");
+          spacer.id = "font-metric-spacer";
+          spacer.style.height = "1800px";
+          document.body.append(spacer);
+        }
+        """
+    )
+    expect(index).to_have_attribute("data-page-overflows", "false")
+
+    page.evaluate("window.__releaseHeldFontsReady()")
+    expect(index).to_have_attribute("data-page-overflows", "true")
+    expect(page.locator(".blog-card:last-child")).to_have_css(
+        "border-bottom-width", "0px"
+    )
+
+
 def test_post_renders_full_markdown_features(driver: DriverFactory) -> None:
     """Render every supported Markdown structure from the controlled test post."""
 
@@ -518,6 +586,187 @@ def test_code_copy_button_writes_the_rendered_source(
         "Code copied to clipboard",
     )
     assert page.evaluate("window.__copiedCode") == expected_source
+
+
+@pytest.mark.parametrize(
+    "clipboard_mode",
+    ["missing", "rejected", "insecure"],
+)
+def test_code_copy_falls_back_when_modern_clipboard_is_unavailable(
+    driver: DriverFactory,
+    clipboard_mode: str,
+) -> None:
+    """Use execCommand when Clipboard API is missing, insecure, or rejected."""
+
+    setup = {
+        "missing": "value: undefined",
+        "rejected": (
+            'value: {writeText: async () => { throw new Error("blocked"); }}'
+        ),
+        "insecure": (
+            "value: {writeText: async () => { "
+            "window.__unexpectedClipboardWrite = true; }}"
+        ),
+    }[clipboard_mode]
+    secure = "false" if clipboard_mode == "insecure" else "true"
+    page = driver(
+        initial_path=MARKDOWN_FIXTURE_PATH,
+        load_interactive_visuals=False,
+        init_scripts=(
+            f"""
+            (() => {{
+              window.__copyFallbackCalls = [];
+              Object.defineProperty(window, "isSecureContext", {{
+                configurable: true,
+                value: {secure},
+              }});
+              Object.defineProperty(navigator, "clipboard", {{
+                configurable: true,
+                {setup},
+              }});
+              document.execCommand = (command) => {{
+                const textarea = document.querySelector("body > textarea");
+                window.__copyFallbackCalls.push({{
+                  command,
+                  value: textarea?.value ?? null,
+                }});
+                return true;
+              }};
+            }})();
+            """,
+        ),
+    )
+    block = page.locator(".post__content .code-block").first
+    expected_source = block.locator("code").text_content()
+    button = block.locator(".code-copy-button")
+
+    block.hover()
+    button.click()
+    expect(button).to_have_attribute("data-copy-state", "copied")
+    expect(button).to_have_text("Copied")
+    expect(button).to_have_attribute("aria-label", "Code copied to clipboard")
+    assert page.evaluate("window.__copyFallbackCalls") == [
+        {"command": "copy", "value": expected_source}
+    ]
+    assert page.locator("body > textarea").count() == 0
+    assert page.evaluate("window.__unexpectedClipboardWrite || false") is False
+
+
+def test_code_copy_reports_accessible_error_when_all_copy_methods_fail(
+    driver: DriverFactory,
+) -> None:
+    """Expose accessible error feedback when both copy mechanisms fail."""
+
+    page = driver(
+        initial_path=MARKDOWN_FIXTURE_PATH,
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            Object.defineProperty(navigator, "clipboard", {
+              configurable: true,
+              value: {writeText: async () => { throw new Error("blocked"); }},
+            });
+            document.execCommand = () => false;
+            """,
+        ),
+    )
+    block = page.locator(".post__content .code-block").first
+    button = block.locator(".code-copy-button")
+
+    block.hover()
+    button.click()
+    expect(button).to_have_attribute("data-copy-state", "error")
+    expect(button).to_have_text("Try again")
+    expect(button).to_have_attribute("aria-label", "Code could not be copied")
+    assert page.locator("body > textarea").count() == 0
+
+
+def test_code_copy_currently_leaves_temporary_textarea_when_exec_command_throws(
+    driver: DriverFactory,
+) -> None:
+    """Characterize the leaked fallback textarea after execCommand throws."""
+
+    page = driver(
+        initial_path=MARKDOWN_FIXTURE_PATH,
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            Object.defineProperty(navigator, "clipboard", {
+              configurable: true,
+              value: {writeText: async () => { throw new Error("blocked"); }},
+            });
+            document.execCommand = () => { throw new Error("legacy copy blocked"); };
+            """,
+        ),
+    )
+    block = page.locator(".post__content .code-block").first
+    button = block.locator(".code-copy-button")
+    block.hover()
+    button.click()
+
+    expect(button).to_have_attribute("data-copy-state", "error")
+    expect(button).to_have_text("Try again")
+    expect(button).to_have_attribute("aria-label", "Code could not be copied")
+    expect(page.locator("body > textarea")).to_have_count(1)
+
+
+def test_code_copy_feedback_resets_and_restarts_its_timer(
+    driver: DriverFactory,
+) -> None:
+    """Reset copy feedback after 1800 ms and restart that timer on a new copy."""
+
+    page = driver(
+        initial_path=MARKDOWN_FIXTURE_PATH,
+        load_interactive_visuals=False,
+        init_scripts=(
+            CLIPBOARD_INIT_SCRIPT,
+            """
+            (() => {
+              const nativeSetTimeout = window.setTimeout.bind(window);
+              const nativeClearTimeout = window.clearTimeout.bind(window);
+              let nextId = 9000;
+              window.__copyTimers = [];
+              window.setTimeout = (callback, delay, ...args) => {
+                if (delay !== 1800) return nativeSetTimeout(callback, delay, ...args);
+                const timer = {id: ++nextId, callback, cancelled: false, delay};
+                window.__copyTimers.push(timer);
+                return timer.id;
+              };
+              window.clearTimeout = (id) => {
+                const timer = window.__copyTimers.find((item) => item.id === id);
+                if (timer) timer.cancelled = true;
+                else nativeClearTimeout(id);
+              };
+              window.__runCopyTimer = (id) => {
+                const timer = window.__copyTimers.find((item) => item.id === id);
+                if (timer && !timer.cancelled) timer.callback();
+              };
+            })();
+            """,
+        ),
+    )
+    block = page.locator(".post__content .code-block").first
+    button = block.locator(".code-copy-button")
+
+    block.hover()
+    button.click()
+    expect(button).to_have_attribute("data-copy-state", "copied")
+    first_id = page.evaluate("window.__copyTimers[0].id")
+    button.evaluate("element => element.click()")
+    expect(button).to_have_attribute("data-copy-state", "copied")
+    timers = page.evaluate(
+        "window.__copyTimers.map(({id, cancelled, delay}) => ({id, cancelled, delay}))"
+    )
+    assert timers == [
+        {"id": first_id, "cancelled": True, "delay": 1800},
+        {"id": first_id + 1, "cancelled": False, "delay": 1800},
+    ]
+    page.evaluate("id => window.__runCopyTimer(id)", first_id)
+    expect(button).to_have_attribute("data-copy-state", "copied")
+    page.evaluate("id => window.__runCopyTimer(id)", first_id + 1)
+    expect(button).to_have_attribute("data-copy-state", "idle")
+    expect(button).to_have_text("Copy")
+    expect(button).to_have_attribute("aria-label", "Copy code to clipboard")
 
 
 def test_post_tags_render_only_when_present_and_link_to_terms(
@@ -1008,6 +1257,35 @@ def test_responsive_post_table_of_contents_expands_on_request(
     )
     assert expanded_content_top > collapsed_content_top
     assert 26 <= expanded_content_gap <= 28
+
+
+def test_post_toc_tracks_live_breakpoint_changes_and_cannot_close_on_desktop(
+    driver: DriverFactory,
+) -> None:
+    """Track live TOC breakpoints and reject attempts to collapse it on desktop."""
+
+    page = driver(
+        viewport=(900, 900),
+        load_interactive_visuals=False,
+        initial_path=MARKDOWN_FIXTURE_PATH,
+    )
+    toc = page.locator("details.post__toc")
+    expect(toc).not_to_have_attribute("open", "")
+
+    page.set_viewport_size({"width": 1200, "height": 900})
+    expect(toc).to_have_attribute("open", "")
+    toc.evaluate(
+        """
+        (element) => {
+          element.removeAttribute("open");
+          element.dispatchEvent(new Event("toggle"));
+        }
+        """
+    )
+    expect(toc).to_have_attribute("open", "")
+
+    page.set_viewport_size({"width": 900, "height": 900})
+    expect(toc).not_to_have_attribute("open", "")
 
 
 def test_single_edge_recommendation_spans_the_post_navigation(

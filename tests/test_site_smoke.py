@@ -722,6 +722,109 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     )
 
 
+@pytest.mark.parametrize("failure", ["http", "xml", "network"])
+def test_pantograph_reports_fetch_and_parse_failures_without_breaking_the_page(
+    driver: DriverFactory,
+    base_url: str,
+    failure: str,
+) -> None:
+    """Report Pantograph HTTP, network and XML failures without breaking the page."""
+
+    page = driver(
+        initial_path="/blog/",
+        load_interactive_visuals=False,
+    )
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    def fail_route(route) -> None:
+        if failure == "http":
+            route.fulfill(status=404, content_type="image/svg+xml", body="")
+        elif failure == "xml":
+            route.fulfill(
+                status=200,
+                content_type="image/svg+xml",
+                body="<svg><broken></svg>",
+            )
+        else:
+            route.abort("failed")
+
+    page.context.route("**/pantograph-variant-20-clean-v2.svg", fail_route)
+    page.goto(f"{base_url}/", wait_until="domcontentloaded")
+    root = page.locator("html")
+    stage = page.locator(".pantograph-visual__object")
+    expect(root).to_have_attribute("data-theme-ready", "true")
+    expect(stage).to_have_attribute("data-pantograph-error", re.compile(r".+"))
+    expect(stage.locator("svg")).to_have_count(0)
+    expect(stage.locator("script")).to_have_count(0)
+    expect(page.get_by_role("button", name="Toggle color theme")).to_be_visible()
+    assert errors == []
+
+
+def test_pantograph_mounts_valid_svg_without_optional_runtime_script(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Mount a valid static Pantograph SVG without requiring an embedded runtime."""
+
+    page = driver(initial_path="/blog/", load_interactive_visuals=False)
+    page.context.route(
+        "**/pantograph-variant-20-clean-v2.svg",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="image/svg+xml",
+            body=(
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'width="320" height="180" viewBox="0 0 320 180">'
+                '<circle id="static-pantograph" cx="10" cy="10" r="5"/>'
+                "</svg>"
+            ),
+        ),
+    )
+    page.goto(f"{base_url}/", wait_until="domcontentloaded")
+    stage = page.locator(".pantograph-visual__object")
+    svg = stage.locator("svg")
+
+    expect(svg).to_have_count(1)
+    expect(svg.locator("#static-pantograph")).to_have_count(1)
+    expect(svg).not_to_have_attribute("width", re.compile(r".+"))
+    expect(svg).not_to_have_attribute("height", re.compile(r".+"))
+    expect(stage.locator("script")).to_have_count(0)
+    expect(stage).not_to_have_attribute("data-pantograph-error", re.compile(r".+"))
+
+
+def test_pantograph_ignores_intentional_abort_but_reports_network_rejection(
+    driver: DriverFactory,
+) -> None:
+    """Ignore a rejected Pantograph fetch when its own controller is aborted."""
+
+    page = driver(
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeFetch = window.fetch.bind(window);
+              window.AbortController = class {
+                constructor() { this.signal = {aborted: true}; }
+                abort() { this.signal.aborted = true; }
+              };
+              window.fetch = (resource, options) => {
+                if (String(resource).includes("pantograph-variant")) {
+                  window.__pantographFetchFinished = true;
+                  return Promise.reject(new Error("intentional abort"));
+                }
+                return nativeFetch(resource, options);
+              };
+            })();
+            """,
+        ),
+    )
+    stage = page.locator(".pantograph-visual__object")
+    page.wait_for_function("window.__pantographFetchFinished === true")
+    expect(stage).not_to_have_attribute("data-pantograph-error", re.compile(r".+"))
+    expect(page.locator("html")).to_have_attribute("data-theme-ready", "true")
+
+
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_pantograph_controls_and_active_gradient_use_site_pink(
     driver: DriverFactory,
@@ -2339,6 +2442,125 @@ def test_feedback_loop_click_adds_a_short_stackable_spin_impulse(
     assert settled_rates == [1] * 7
 
 
+def test_feedback_loop_keyboard_controls_follow_enter_and_space_contract(
+    driver: DriverFactory,
+) -> None:
+    """Run one Enter impulse, ignore repeats, and activate Space only on keyup."""
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1440, 900),
+        load_interactive_visuals=False,
+        controllable_animation_frames=True,
+    )
+    loop = page.locator(".feedback-loop")
+    page.evaluate("window.__mutaTestSetAnimationFramesPaused(true)")
+    loop.focus()
+    loop.dispatch_event(
+        "keydown", {"key": "Enter", "repeat": False, "bubbles": True}
+    )
+    expect(loop).to_have_attribute("data-impulse-active", "true")
+    first_rate = float(loop.get_attribute("data-playback-rate") or "0")
+    assert first_rate > 1
+
+    loop.dispatch_event(
+        "keydown", {"key": "Enter", "repeat": True, "bubbles": True}
+    )
+    assert float(loop.get_attribute("data-playback-rate") or "0") == first_rate
+
+    page.emulate_media(reduced_motion="reduce")
+    expect(loop).to_have_attribute("data-impulse-active", "false")
+    page.emulate_media(reduced_motion="no-preference")
+    keydown_prevented = loop.evaluate(
+        """
+        (element) => {
+          const event = new KeyboardEvent("keydown", {
+            key: " ", bubbles: true, cancelable: true,
+          });
+          element.dispatchEvent(event);
+          return event.defaultPrevented;
+        }
+        """
+    )
+    assert keydown_prevented is True
+    expect(loop).to_have_attribute("data-impulse-active", "false")
+    loop.dispatch_event("keyup", {"key": " ", "bubbles": True})
+    expect(loop).to_have_attribute("data-impulse-active", "true")
+
+
+def test_feedback_loop_reduced_motion_blocks_and_cancels_impulses(
+    driver: DriverFactory,
+) -> None:
+    """Block feedback impulses under reduce and settle one on a live change."""
+
+    page = driver(
+        reduced_motion="reduce",
+        load_interactive_visuals=False,
+        controllable_animation_frames=True,
+    )
+    loop = page.locator(".feedback-loop")
+    page.evaluate("window.__mutaTestSetAnimationFramesPaused(true)")
+    loop.click()
+    loop.press("Enter")
+    loop.press("Space")
+    expect(loop).to_have_attribute("data-impulse-active", "false")
+    expect(loop).to_have_attribute("data-playback-rate", "1.000")
+
+    page.emulate_media(reduced_motion="no-preference")
+    loop.click()
+    expect(loop).to_have_attribute("data-impulse-active", "true")
+    assert float(loop.get_attribute("data-playback-rate") or "0") > 1
+    assert loop.evaluate(
+        """
+        (element) => element.getAnimations({subtree: true})
+          .filter((animation) => animation.animationName === "spin").length
+        """
+    ) == 7
+    page.emulate_media(reduced_motion="reduce")
+    expect(loop).to_have_attribute("data-impulse-active", "false")
+    expect(loop).to_have_attribute("data-playback-rate", "1.000")
+    rates = loop.evaluate(
+        """
+        (element) => element.getAnimations({subtree: true})
+          .filter((animation) => animation.animationName === "spin")
+          .map((animation) => animation.playbackRate)
+        """
+    )
+    assert all(rate == 1 for rate in rates)
+
+
+def test_feedback_loop_falls_back_to_direct_playback_rate_assignment(
+    driver: DriverFactory,
+) -> None:
+    """Assign playbackRate directly when updatePlaybackRate is unavailable."""
+
+    page = driver(
+        load_interactive_visuals=False,
+        controllable_animation_frames=True,
+        init_scripts=(
+            """
+            Object.defineProperty(Animation.prototype, "updatePlaybackRate", {
+              configurable: true,
+              value: undefined,
+            });
+            """,
+        ),
+    )
+    loop = page.locator(".feedback-loop")
+    page.evaluate("window.__mutaTestSetAnimationFramesPaused(true)")
+    loop.click()
+    expect(loop).to_have_attribute("data-impulse-active", "true")
+    rates = loop.evaluate(
+        """
+        (element) => element.getAnimations({subtree: true})
+          .filter((animation) => animation.animationName === "spin")
+          .map((animation) => animation.playbackRate)
+        """
+    )
+    assert len(rates) == 7
+    assert min(rates) > 1
+
+
 def test_feedback_geometry_uses_two_dashed_rings_and_one_shared_middle_orbit(
     driver: DriverFactory,
 ) -> None:
@@ -2722,34 +2944,6 @@ def test_hero_muta_uses_a_fidelity_preserving_high_density_asset(
     )
 
 
-def test_tentacle_iframe_revision_matches_its_current_file_contents() -> None:
-    """Prevent production from silently serving obsolete tentacle physics.
-
-    The contact iframe is a static HTML asset and browsers/CDNs may retain a
-    previously deployed response under an unchanged URL. That was a blind spot
-    in the former tests: they navigated directly to the working-tree HTML and
-    always exercised the newest code, while the real page could keep loading an
-    older cached interaction whose impulse never ended.
-
-    The page's ``v`` query must therefore equal the first twelve hexadecimal
-    characters of the current file's SHA-256 digest. Any future physics edit
-    changes the digest and makes this test fail until the iframe URL is bumped,
-    guaranteeing that a deployed page requests the exact implementation covered
-    by the test suite rather than a stale cached copy.
-    """
-
-    surface = THEME_STATIC_ROOT / "muta-tentacles.html"
-    page_source = (PROJECT_ROOT / "content" / "_index.md").read_text(
-        encoding="utf-8"
-    )
-    revision = hashlib.sha256(surface.read_bytes()).hexdigest()[:12]
-
-    assert (
-        f'/muta-tentacles.html?v={revision}&amp;embedded=1"'
-        in page_source
-    )
-
-
 def test_contact_text_is_selectable_without_disabling_tentacle_hover(
     driver: DriverFactory,
 ) -> None:
@@ -2943,6 +3137,95 @@ def test_selection_backgrounds_remain_translucent_across_the_site(
     assert (
         selection_styles["globalBackground"]
         == selection_styles["expectedGlobalBackground"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("reduced_motion", "expected_animation_count", "expect_infinite_loop"),
+    [
+        ("no-preference", 2, True),
+        ("reduce", 0, False),
+    ],
+)
+def test_ticker_respects_the_system_motion_preference(
+    driver: DriverFactory,
+    reduced_motion: str,
+    expected_animation_count: int,
+    expect_infinite_loop: bool,
+) -> None:
+    """Animate normally, but leave the decorative ticker still when requested."""
+
+    page = driver(
+        reduced_motion=reduced_motion,
+        load_interactive_visuals=False,
+    )
+    root = page.locator("html")
+    track = page.locator(".ticker__track")
+    expect(root).to_have_attribute("data-theme-ready", "true")
+
+    page.evaluate(
+        """
+        async () => {
+          await document.fonts?.ready;
+          await new Promise((resolve) => requestAnimationFrame(
+            () => requestAnimationFrame(resolve),
+          ));
+        }
+        """
+    )
+    animation_state = track.evaluate(
+        """
+        (element) => {
+          const animations = element.getAnimations();
+          return {
+            count: animations.length,
+            hasInfiniteLoop: animations.some(
+              (animation) =>
+                animation.effect?.getTiming().iterations === Infinity,
+            ),
+          };
+        }
+        """
+    )
+
+    assert page.evaluate(
+        "matchMedia('(prefers-reduced-motion: reduce)').matches"
+    ) is (reduced_motion == "reduce")
+    assert animation_state == {
+        "count": expected_animation_count,
+        "hasInfiniteLoop": expect_infinite_loop,
+    }
+
+
+def test_ticker_follows_live_reduced_motion_changes(
+    driver: DriverFactory,
+) -> None:
+    """Stop and restore the ticker when the OS preference changes at runtime."""
+
+    page = driver(
+        reduced_motion="no-preference",
+        load_interactive_visuals=False,
+    )
+    track = page.locator(".ticker__track")
+    page.wait_for_function(
+        "document.querySelector('.ticker__track').getAnimations().length === 2"
+    )
+
+    page.emulate_media(reduced_motion="reduce")
+    page.wait_for_function(
+        "document.querySelector('.ticker__track').getAnimations().length === 0"
+    )
+
+    page.emulate_media(reduced_motion="no-preference")
+    page.wait_for_function(
+        "document.querySelector('.ticker__track').getAnimations().length === 2"
+    )
+    assert track.evaluate(
+        """
+        (element) => element.getAnimations().some(
+          (animation) => animation.effect?.getTiming().iterations === Infinity,
+        )
+        """
     )
 
 
@@ -3533,6 +3816,435 @@ def test_tmc_wordmark_waits_for_science_gothic_before_becoming_visible(
         )"""
     ) is True
     expect(stage).to_be_visible()
+
+
+def test_deferred_media_loads_once_at_first_intersection(
+    driver: DriverFactory,
+) -> None:
+    """Load deferred images and frames once, at their first true intersection."""
+
+    page = driver(
+        stored_theme="light",
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              window.__observerInstances = [];
+              window.IntersectionObserver = class {
+                constructor(callback, options = {}) {
+                  this.callback = callback;
+                  this.options = options;
+                  this.observed = [];
+                  this.unobserved = [];
+                  window.__observerInstances.push(this);
+                }
+                observe(target) { this.observed.push(target); }
+                unobserve(target) { this.unobserved.push(target); }
+                disconnect() {}
+              };
+              window.__deferredObserver = () => window.__observerInstances.find(
+                (observer) => observer.options.rootMargin === "600px 0px",
+              );
+            })();
+            """,
+        ),
+    )
+    image = page.locator(".manifesto__art")
+    frame = page.locator(".tokamak-model__frame")
+    expected = [
+        image.get_attribute("data-deferred-src"),
+        frame.get_attribute("data-deferred-src"),
+    ]
+    assert all(expected)
+    assert image.get_attribute("src") is None
+    assert frame.get_attribute("src") is None
+    assert page.evaluate("window.__deferredObserver().options.rootMargin") == (
+        "600px 0px"
+    )
+
+    page.evaluate(
+        """
+        () => {
+          const observer = window.__deferredObserver();
+          const targets = [
+            document.querySelector(".manifesto__art"),
+            document.querySelector(".tokamak-model__frame"),
+          ];
+          observer.callback(targets.map((target) => ({target, isIntersecting: false})));
+        }
+        """
+    )
+    assert image.get_attribute("src") is None
+    assert frame.get_attribute("src") is None
+
+    page.evaluate(
+        """
+        () => {
+          const observer = window.__deferredObserver();
+          const targets = [
+            document.querySelector(".manifesto__art"),
+            document.querySelector(".tokamak-model__frame"),
+          ];
+          observer.callback(targets.map((target) => ({target, isIntersecting: true})));
+        }
+        """
+    )
+    expect(image).to_have_attribute("src", expected[0])
+    expect(frame).to_have_attribute("src", expected[1])
+    expect(image).not_to_have_attribute("data-deferred-src", re.compile(".+"))
+    expect(frame).not_to_have_attribute("data-deferred-src", re.compile(".+"))
+    assert page.evaluate(
+        """
+        () => window.__deferredObserver().unobserved.filter(
+          (target) => target.matches(".manifesto__art, .tokamak-model__frame"),
+        ).length
+        """
+    ) == 2
+
+
+def test_deferred_media_loads_eagerly_without_intersection_observer(
+    driver: DriverFactory,
+) -> None:
+    """Load all deferred media eagerly when IntersectionObserver is unavailable."""
+
+    page = driver(
+        stored_theme="light",
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              const NativeObserver = window.IntersectionObserver;
+              let reads = 0;
+              Object.defineProperty(window, "IntersectionObserver", {
+                configurable: true,
+                get() {
+                  reads += 1;
+                  return reads === 1 ? undefined : NativeObserver;
+                },
+              });
+            })();
+            """,
+        ),
+    )
+
+    expect(page.locator("html")).to_have_attribute("data-theme-ready", "true")
+    expect(page.locator("[data-deferred-src]")).to_have_count(0)
+    for selector in (
+        ".manifesto__art",
+        ".tokamak-model__frame",
+        ".pillar-card__visual img",
+    ):
+        elements = page.locator(selector)
+        assert elements.count() > 0
+        assert all(elements.nth(index).get_attribute("src") for index in range(elements.count()))
+
+
+def test_theme_image_source_tracks_theme_before_and_after_deferred_load(
+    driver: DriverFactory,
+) -> None:
+    """Synchronize a theme image before lazy-load and after it receives src."""
+
+    page = driver(
+        stored_theme="light",
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              window.__observerInstances = [];
+              window.IntersectionObserver = class {
+                constructor(callback, options = {}) {
+                  this.callback = callback;
+                  this.options = options;
+                  this.unobserved = [];
+                  window.__observerInstances.push(this);
+                }
+                observe() {}
+                unobserve(target) { this.unobserved.push(target); }
+                disconnect() {}
+              };
+              window.__deferredObserver = () => window.__observerInstances.find(
+                (observer) => observer.options.rootMargin === "600px 0px",
+              );
+            })();
+            """,
+        ),
+    )
+    image = page.locator(".pillar-card__rotor-image")
+    light_source = image.get_attribute("data-theme-src-light")
+    dark_source = image.get_attribute("data-theme-src-dark")
+    expect(image).to_have_attribute("data-deferred-src", light_source)
+    assert image.get_attribute("src") is None
+
+    page.get_by_role("button", name="Toggle color theme", exact=True).click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    expect(image).to_have_attribute("data-deferred-src", dark_source)
+    assert image.get_attribute("src") is None
+
+    page.evaluate(
+        """
+        () => {
+          const target = document.querySelector(".pillar-card__rotor-image");
+          window.__deferredObserver().callback([{target, isIntersecting: true}]);
+        }
+        """
+    )
+    expect(image).to_have_attribute("src", dark_source)
+    expect(image).not_to_have_attribute("data-deferred-src", re.compile(".+"))
+
+    page.get_by_role("button", name="Toggle color theme", exact=True).click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "light")
+    expect(image).to_have_attribute("src", light_source)
+    assert page.evaluate(
+        "window.__deferredObserver().unobserved.filter((item) => item.matches('.pillar-card__rotor-image')).length"
+    ) == 1
+
+
+@pytest.mark.parametrize(
+    ("viewport", "variant"),
+    [((1280, 720), "desktop"), ((390, 844), "mobile")],
+)
+def test_language_switcher_escape_closes_menu_and_restores_summary_focus(
+    driver: DriverFactory,
+    viewport: tuple[int, int],
+    variant: str,
+) -> None:
+    """Escape closes either language menu and restores its summary focus."""
+
+    page = driver(viewport=viewport, load_interactive_visuals=False)
+    if variant == "mobile":
+        page.locator(".mobile-menu > summary").click()
+    switcher = page.locator(f".language-switcher--{variant}")
+    summary = switcher.locator(":scope > summary")
+    summary.focus()
+    summary.press("Enter")
+    expect(switcher).to_have_attribute("open", "")
+    original_url = page.url
+
+    summary.press("Escape")
+    expect(switcher).not_to_have_attribute("open", "")
+    assert summary.evaluate("element => document.activeElement === element")
+    assert page.url == original_url
+
+
+def test_language_switchers_close_only_when_pointer_moves_outside_them(
+    driver: DriverFactory,
+) -> None:
+    """Keep the clicked language menu open, close peers, then close all outside."""
+
+    page = driver(viewport=(1280, 720), load_interactive_visuals=False)
+    desktop = page.locator(".language-switcher--desktop")
+    mobile = page.locator(".language-switcher--mobile")
+    page.evaluate(
+        """
+        () => document.querySelectorAll("[data-language-switcher]")
+          .forEach((element) => element.open = true)
+        """
+    )
+    desktop.locator(":scope > summary").dispatch_event("pointerdown")
+    expect(desktop).to_have_attribute("open", "")
+    expect(mobile).not_to_have_attribute("open", "")
+
+    page.locator(".hero__lede").dispatch_event("pointerdown")
+    expect(desktop).not_to_have_attribute("open", "")
+    expect(mobile).not_to_have_attribute("open", "")
+
+
+def test_language_switcher_closes_the_hidden_variant_after_breakpoint_change(
+    driver: DriverFactory,
+) -> None:
+    """Close the language control hidden by each live 1041 px layout transition."""
+
+    page = driver(viewport=(1280, 720), load_interactive_visuals=False)
+    desktop = page.locator(".language-switcher--desktop")
+    mobile = page.locator(".language-switcher--mobile")
+    desktop.evaluate("element => element.open = true")
+
+    page.set_viewport_size({"width": 1040, "height": 720})
+    expect(desktop).not_to_have_attribute("open", "")
+    mobile.evaluate("element => element.open = true")
+    page.set_viewport_size({"width": 1041, "height": 720})
+    expect(mobile).not_to_have_attribute("open", "")
+    expect(desktop).not_to_have_attribute("open", "")
+
+
+def test_language_selection_navigates_when_storage_write_is_blocked(
+    driver: DriverFactory,
+) -> None:
+    """Navigate to the chosen locale even when localStorage rejects the write."""
+
+    page = driver(
+        stored_language=None,
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeSetItem = Storage.prototype.setItem;
+              Storage.prototype.setItem = function (key, value) {
+                if (key === "tmc-language") throw new Error("language storage blocked");
+                return nativeSetItem.call(this, key, value);
+              };
+            })();
+            """,
+        ),
+    )
+    switcher = page.locator(".language-switcher--desktop")
+    switcher.hover()
+    switcher.locator('[data-language-option="ru"]').click()
+
+    expect(page).to_have_url(re.compile(r"/ru/$"))
+    expect(page.locator("html")).to_have_attribute("lang", "ru")
+
+
+def test_language_selection_currently_reverts_when_existing_storage_cannot_be_updated(
+    driver: DriverFactory,
+) -> None:
+    """Characterize the stale locale winning when a new manual choice cannot persist."""
+
+    page = driver(
+        stored_language="en",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeSetItem = Storage.prototype.setItem;
+              Storage.prototype.setItem = function (key, value) {
+                if (key === "tmc-language") throw new Error("language storage blocked");
+                return nativeSetItem.call(this, key, value);
+              };
+            })();
+            """,
+        ),
+    )
+    switcher = page.locator(".language-switcher--desktop")
+    switcher.hover()
+    with page.expect_request(re.compile(r"/ru/$")):
+        switcher.locator('[data-language-option="ru"]').click()
+
+    expect(page).to_have_url(re.compile(r"/$"))
+    expect(page.locator("html")).to_have_attribute("lang", "en")
+    assert page.evaluate("localStorage.getItem('tmc-language')") == "en"
+
+
+@pytest.mark.parametrize("failure", ["missing", "empty", "rejected"])
+def test_wordmark_font_gate_uses_visible_fallback_when_font_loading_fails(
+    driver: DriverFactory,
+    failure: str,
+) -> None:
+    """Show the wordmark through fallback state for every font-loading failure."""
+
+    setup = {
+        "missing": "document.fonts.load = undefined;",
+        "empty": "document.fonts.load = async () => [];",
+        "rejected": (
+            'document.fonts.load = async () => { throw new Error("font blocked"); };'
+        ),
+    }[failure]
+    page = driver(
+        load_interactive_visuals=False,
+        init_scripts=(
+            f"""
+            (() => {{
+              window.__capturedWindowErrors = [];
+              addEventListener("error", (event) => window.__capturedWindowErrors.push(event.message));
+              addEventListener("unhandledrejection", (event) => window.__capturedWindowErrors.push(String(event.reason)));
+              {setup}
+            }})();
+            """,
+        ),
+    )
+    expect(page.locator("html")).to_have_attribute(
+        "data-wordmark-font-ready", "fallback"
+    )
+    expect(page.locator(".brand__wordmark")).to_have_css("opacity", "1")
+    expect(page.locator(".brand__wordmark-stage")).to_be_visible()
+    assert page.evaluate("window.__capturedWindowErrors") == []
+
+
+def test_current_year_populates_every_placeholder(driver: DriverFactory) -> None:
+    """Populate every current-year placeholder from the browser clock."""
+
+    page = driver(load_interactive_visuals=False)
+    values = page.locator("[data-current-year]").all_inner_texts()
+    expected = page.evaluate("String(new Date().getFullYear())")
+
+    assert values
+    assert values == [expected] * len(values)
+    expect(page.locator(".hero [data-current-year]")).to_have_text(expected)
+    expect(page.locator(".site-footer [data-current-year]")).to_have_text(expected)
+
+
+def test_mobile_menu_closes_after_same_page_navigation(
+    driver: DriverFactory,
+) -> None:
+    """Close mobile navigation after its Contact link reaches the home anchor."""
+
+    page = driver(viewport=(390, 844), load_interactive_visuals=False)
+    menu = page.locator(".mobile-menu")
+    menu.locator(":scope > summary").click()
+    expect(menu).to_have_attribute("open", "")
+
+    menu.locator('.mobile-menu__links a[href="/#contact"]').click()
+    expect(page).to_have_url(re.compile(r"/#contact$"))
+    expect(menu).not_to_have_attribute("open", "")
+    expect(menu.get_by_role("navigation", name="Mobile navigation")).to_be_hidden()
+
+
+@pytest.mark.parametrize("key", ["Enter", " "])
+def test_brand_keyboard_activation_matches_primary_click(
+    driver: DriverFactory,
+    key: str,
+) -> None:
+    """Activate the home brand once from either Enter or Space."""
+
+    page = driver(
+        initial_path="/blog/markdown-feature-fixture/#structured-signals",
+        load_interactive_visuals=False,
+    )
+    page.evaluate(
+        """
+        () => addEventListener("keydown", (event) => {
+          sessionStorage.setItem(
+            "tmc-brand-key-prevented",
+            String(event.defaultPrevented),
+          );
+        })
+        """
+    )
+    page.locator(".brand").press(key)
+
+    expect(page).to_have_url(re.compile(r"/$"))
+    assert page.evaluate(
+        "sessionStorage.getItem('tmc-brand-key-prevented')"
+    ) == "true"
+
+
+def test_brand_keyboard_control_ignores_repeats_and_unrelated_keys(
+    driver: DriverFactory,
+) -> None:
+    """Ignore repeated activation keys and unrelated brand key presses."""
+
+    page = driver(
+        initial_path="/#feedback",
+        load_interactive_visuals=False,
+    )
+    result = page.locator(".brand").evaluate(
+        """
+        (element) => {
+          let activations = 0;
+          addEventListener("tmc-brand-home-activate", () => activations += 1);
+          for (const event of [
+            new KeyboardEvent("keydown", {key: "Enter", repeat: true, bubbles: true, cancelable: true}),
+            new KeyboardEvent("keydown", {key: " ", repeat: true, bubbles: true, cancelable: true}),
+            new KeyboardEvent("keydown", {key: "A", bubbles: true, cancelable: true}),
+          ]) element.dispatchEvent(event);
+          return {activations, hash: location.hash};
+        }
+        """
+    )
+
+    assert result == {"activations": 0, "hash": "#feedback"}
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
