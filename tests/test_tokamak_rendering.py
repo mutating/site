@@ -228,11 +228,11 @@ def test_tokamak_runtime_currently_accepts_state_from_non_parent_windows(
     expect(canvas).to_have_attribute("data-reactor-theme", "dark")
 
 
-def test_tokamak_currently_disables_camera_controls_before_reset_inputs(
+def test_tokamak_exposes_no_direct_camera_controls_and_ignores_user_input(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """Characterize disabled orbit controls while R and double-click only redraw."""
+    """Standalone Tokamak exposes no controls and ignores every direct input."""
 
     page = driver(
         initial_path="/blog/",
@@ -246,60 +246,45 @@ def test_tokamak_currently_disables_camera_controls_before_reset_inputs(
         "data-shader-compilation", "complete", timeout=30_000
     )
     expect(canvas).to_have_attribute("data-render-frames", re.compile(r"[1-9]\d*"))
-    baseline = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+    expect(canvas).not_to_have_attribute("tabindex", re.compile(r".+"))
+    expect(canvas).to_have_attribute(
+        "aria-label",
+        "Scroll-linked three-dimensional wireframe toroidal field reactor",
+    )
+    expect(page.locator(".interaction-hint")).to_have_count(0)
+    expect(page.locator(".reactor-scene")).to_have_css("cursor", "default")
+    expect(page.locator(".reactor-scene")).to_have_css("touch-action", "auto")
+    expect(page.locator(".reactor-scene")).to_have_css("pointer-events", "none")
 
-    def assert_same_as_baseline(image: Image.Image) -> None:
-        mean, high, extreme = _image_difference_statistics(baseline, image)
-        assert mean < 0.6
-        assert high < 0.012
-        assert extreme < 0.003
-
-    bounds = canvas.bounding_box()
-    assert bounds is not None
     unchanged_frames = int(canvas.get_attribute("data-render-frames") or "0")
-    start_x = bounds["x"] + bounds["width"] / 2
-    start_y = bounds["y"] + bounds["height"] / 2
-    page.mouse.move(start_x, start_y)
-    page.mouse.down()
-    page.mouse.move(start_x + 95, start_y + 45, steps=4)
-    page.mouse.up()
-    page.mouse.wheel(0, 120)
-    assert int(canvas.get_attribute("data-render-frames") or "0") == unchanged_frames
-    assert_same_as_baseline(
-        Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
+    canvas.dispatch_event(
+        "pointerdown",
+        {"pointerId": 1, "pointerType": "mouse", "clientX": 120, "clientY": 120},
     )
-
-    page.keyboard.press("x")
-    assert int(canvas.get_attribute("data-render-frames") or "0") == unchanged_frames
-
-    before_reset = int(canvas.get_attribute("data-render-frames") or "0")
-    page.keyboard.press("r")
-    page.wait_for_function(
-        "baseline => Number(document.querySelector('canvas').dataset.renderFrames) > baseline",
-        arg=before_reset,
+    canvas.dispatch_event(
+        "pointermove",
+        {"pointerId": 1, "pointerType": "mouse", "clientX": 220, "clientY": 180},
     )
-    assert_same_as_baseline(
-        Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
-    )
-
-    before_reset = int(canvas.get_attribute("data-render-frames") or "0")
-    assert page.evaluate(
+    canvas.dispatch_event("pointerup", {"pointerId": 1, "pointerType": "mouse"})
+    canvas.dispatch_event("wheel", {"deltaY": 120})
+    page.evaluate(
         """
-        ({x, y}) => document.elementFromPoint(x, y) !== document.querySelector("canvas")
-        """,
-        {"x": start_x, "y": start_y},
+        () => window.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "r",
+          bubbles: true,
+        }))
+        """
     )
-    page.mouse.dblclick(start_x, start_y)
-    assert int(canvas.get_attribute("data-render-frames") or "0") == before_reset
-
     canvas.dispatch_event("dblclick")
-    page.wait_for_function(
-        "baseline => Number(document.querySelector('canvas').dataset.renderFrames) > baseline",
-        arg=before_reset,
+    page.evaluate(
+        """
+        () => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })
+        """
     )
-    assert_same_as_baseline(
-        Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
-    )
+
+    assert int(canvas.get_attribute("data-render-frames") or "0") == unchanged_frames
 
 
 def test_light_tokamak_uses_invisible_depth_occluders(
