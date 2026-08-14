@@ -1230,7 +1230,12 @@
     frame.addEventListener("load", schedule);
     document.addEventListener("visibilitychange", schedule);
     addEventListener("message", (event) => {
-      if (event.source !== frame.contentWindow) return;
+      if (
+        event.source !== frame.contentWindow ||
+        event.origin !== location.origin
+      ) {
+        return;
+      }
       if (event.data?.type === "tokamak-ready") schedule();
       else if (event.data?.type === "tokamak-state-applied") {
         shell.classList.add("is-ready");
@@ -1364,20 +1369,17 @@
     };
     const handleMessage = (event) => {
       if (
-        event.source === frame.contentWindow &&
-        event.data?.type === "muta-tentacles-ready"
+        event.source !== frame.contentWindow ||
+        event.origin !== location.origin
       ) {
+        return;
+      }
+      if (event.data?.type === "muta-tentacles-ready") {
         sendTheme();
         sendRuntimeState();
-      } else if (
-        event.source === frame.contentWindow &&
-        event.data?.type === "muta-tentacles-scroll-input"
-      ) {
+      } else if (event.data?.type === "muta-tentacles-scroll-input") {
         handleForwardedScrollInput(event.data.deltaY);
-      } else if (
-        event.source === frame.contentWindow &&
-        event.data?.type === "muta-tentacles-pointer-move"
-      ) {
+      } else if (event.data?.type === "muta-tentacles-pointer-move") {
         const normalizedX = Number(event.data.x);
         const normalizedY = Number(event.data.y);
         if (
