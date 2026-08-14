@@ -681,10 +681,22 @@ def test_code_copy_reports_accessible_error_when_all_copy_methods_fail(
     assert page.locator("body > textarea").count() == 0
 
 
-def test_code_copy_currently_leaves_temporary_textarea_when_exec_command_throws(
+@pytest.mark.parametrize(
+    "fallback_failure",
+    [
+        'document.execCommand = () => { throw new Error("legacy copy blocked"); };',
+        (
+            "HTMLTextAreaElement.prototype.select = () => { "
+            'throw new Error("selection blocked"); };'
+        ),
+    ],
+    ids=["exec-command-throws", "textarea-select-throws"],
+)
+def test_code_copy_removes_temporary_textarea_when_fallback_throws(
     driver: DriverFactory,
+    fallback_failure: str,
 ) -> None:
-    """Characterize the leaked fallback textarea after execCommand throws."""
+    """Remove the fallback textarea when selection or execCommand raises."""
 
     page = driver(
         initial_path=MARKDOWN_FIXTURE_PATH,
@@ -695,8 +707,8 @@ def test_code_copy_currently_leaves_temporary_textarea_when_exec_command_throws(
               configurable: true,
               value: {writeText: async () => { throw new Error("blocked"); }},
             });
-            document.execCommand = () => { throw new Error("legacy copy blocked"); };
-            """,
+            """
+            + fallback_failure,
         ),
     )
     block = page.locator(".post__content .code-block").first
@@ -707,7 +719,7 @@ def test_code_copy_currently_leaves_temporary_textarea_when_exec_command_throws(
     expect(button).to_have_attribute("data-copy-state", "error")
     expect(button).to_have_text("Try again")
     expect(button).to_have_attribute("aria-label", "Code could not be copied")
-    expect(page.locator("body > textarea")).to_have_count(1)
+    expect(page.locator("body > textarea")).to_have_count(0)
 
 
 def test_code_copy_feedback_resets_and_restarts_its_timer(
