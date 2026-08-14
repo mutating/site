@@ -15,15 +15,17 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 THEME_ROOT = PROJECT_ROOT / "themes" / "mutating"
 TENTACLES_SOURCE = THEME_ROOT / "static" / "muta-tentacles.html"
+TOKAMAK_SOURCE = THEME_ROOT / "static" / "tokamak-reactor.html"
 FINGERPRINT_MARKER = "__MUTA_TENTACLES_FINGERPRINT__"
+TOKAMAK_FINGERPRINT_MARKER = "__TOKAMAK_FINGERPRINT__"
 
 
-class _ContactIframeParser(HTMLParser):
-    """Extract the contact iframe URL without depending on HTML formatting."""
+class _InteractiveIframeParser(HTMLParser):
+    """Extract interactive iframe URLs without depending on HTML formatting."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.source: str | None = None
+        self.sources: dict[str, str] = {}
 
     def handle_starttag(
         self,
@@ -32,16 +34,26 @@ class _ContactIframeParser(HTMLParser):
     ) -> None:
         values = dict(attributes)
         classes = (values.get("class") or "").split()
-        if tag == "iframe" and "contact__tentacles" in classes:
-            self.source = values.get("src")
+        if tag != "iframe":
+            return
+        source = values.get("src") or values.get("data-deferred-src")
+        if source:
+            for class_name in ("contact__tentacles", "tokamak-model__frame"):
+                if class_name in classes:
+                    self.sources[class_name] = source
 
 
-def _extract_iframe_query(rendered_home: str) -> dict[str, list[str]]:
-    parser = _ContactIframeParser()
+def _extract_iframe_query(
+    rendered_home: str,
+    *,
+    class_name: str = "contact__tentacles",
+    expected_path: str = "/muta-tentacles.html",
+) -> dict[str, list[str]]:
+    parser = _InteractiveIframeParser()
     parser.feed(rendered_home)
-    assert parser.source is not None
-    source = urlsplit(parser.source)
-    assert source.path == "/muta-tentacles.html"
+    assert class_name in parser.sources
+    source = urlsplit(parser.sources[class_name])
+    assert source.path == expected_path
     return parse_qs(source.query, keep_blank_values=True)
 
 
@@ -90,9 +102,12 @@ def tentacle_fingerprint_builds(
     theme_static.mkdir()
     isolated_tentacles = theme_static / TENTACLES_SOURCE.name
     shutil.copy2(TENTACLES_SOURCE, isolated_tentacles)
+    isolated_tokamak = theme_static / TOKAMAK_SOURCE.name
+    shutil.copy2(TOKAMAK_SOURCE, isolated_tokamak)
 
     content_before = (content / "_index.md").read_bytes()
     original_bytes = isolated_tentacles.read_bytes()
+    original_tokamak_bytes = isolated_tokamak.read_bytes()
     original_destination = source / "public-original"
     original_home = _build_site(source, original_destination)
 
@@ -106,6 +121,10 @@ def tentacle_fingerprint_builds(
         "original_bytes": original_bytes,
         "original_home": original_home,
         "original_output": (original_destination / TENTACLES_SOURCE.name).read_bytes(),
+        "original_tokamak_bytes": original_tokamak_bytes,
+        "original_tokamak_output": (
+            original_destination / TOKAMAK_SOURCE.name
+        ).read_bytes(),
         "mutated_bytes": mutated_bytes,
         "mutated_home": mutated_home,
         "mutated_output": (mutated_destination / TENTACLES_SOURCE.name).read_bytes(),
@@ -154,3 +173,27 @@ def test_tentacle_iframe_fingerprint_changes_when_asset_content_changes(
     assert mutated_query["v"] == [hashlib.sha256(mutated_bytes).hexdigest()]
     assert mutated_query["embedded"] == ["1"]
     assert tentacle_fingerprint_builds["mutated_output"] == mutated_bytes
+
+
+def test_tokamak_iframe_uses_build_generated_asset_fingerprint(
+    tentacle_fingerprint_builds: dict[str, object],
+) -> None:
+    """Hugo gives the embedded Tokamak the served reactor file's full SHA-256."""
+
+    content_source = (PROJECT_ROOT / "content" / "_index.md").read_text(
+        encoding="utf-8"
+    )
+    tokamak_bytes = tentacle_fingerprint_builds["original_tokamak_bytes"]
+    original_home = tentacle_fingerprint_builds["original_home"]
+    assert isinstance(tokamak_bytes, bytes)
+    assert isinstance(original_home, str)
+
+    query = _extract_iframe_query(
+        original_home,
+        class_name="tokamak-model__frame",
+        expected_path="/tokamak-reactor.html",
+    )
+    assert content_source.count(TOKAMAK_FINGERPRINT_MARKER) == 1
+    assert TOKAMAK_FINGERPRINT_MARKER not in original_home
+    assert query == {"v": [hashlib.sha256(tokamak_bytes).hexdigest()]}
+    assert tentacle_fingerprint_builds["original_tokamak_output"] == tokamak_bytes

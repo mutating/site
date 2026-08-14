@@ -3431,7 +3431,9 @@ def test_desktop_language_list_opens_on_hover(
     expect(language_list).to_be_visible()
     options = language_list.locator(".language-switcher__option")
     assert options.all_inner_texts() == ["RU"]
-    expect(options.nth(0)).to_have_attribute("href", "/ru/")
+    expect(options.nth(0)).to_have_attribute(
+        "href", "/ru/?tmc-language-choice=ru"
+    )
     option_colors = options.evaluate_all(
         "elements => elements.map(element => getComputedStyle(element).color)"
     )
@@ -3567,7 +3569,9 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
     expect(language_list).to_be_visible()
     options = language_list.locator(".language-switcher__option")
     assert options.all_inner_texts() == ["RU"]
-    expect(options.nth(0)).to_have_attribute("href", "/ru/")
+    expect(options.nth(0)).to_have_attribute(
+        "href", "/ru/?tmc-language-choice=ru"
+    )
     attachment = switcher.evaluate(
         """
         (element) => {
@@ -4067,13 +4071,34 @@ def test_language_switcher_closes_the_hidden_variant_after_breakpoint_change(
     expect(desktop).not_to_have_attribute("open", "")
 
 
-def test_language_selection_navigates_when_storage_write_is_blocked(
+@pytest.mark.parametrize(
+    (
+        "stored_language",
+        "initial_path",
+        "selected_language",
+        "request_pattern",
+        "final_pattern",
+    ),
+    [
+        (None, "", "ru", r"/ru/\?tmc-language-choice=ru$", r"/ru/$"),
+        ("en", "", "ru", r"/ru/\?tmc-language-choice=ru$", r"/ru/$"),
+        ("ru", "/ru/", "en", r"/\?tmc-language-choice=en$", r"/$"),
+    ],
+    ids=["empty-to-ru", "stale-en-to-ru", "stale-ru-to-en"],
+)
+def test_language_selection_survives_blocked_storage(
     driver: DriverFactory,
+    stored_language: str | None,
+    initial_path: str,
+    selected_language: str,
+    request_pattern: str,
+    final_pattern: str,
 ) -> None:
-    """Navigate to the chosen locale even when localStorage rejects the write."""
+    """Manual locale choice wins with empty or stale blocked storage both ways."""
 
     page = driver(
-        stored_language=None,
+        stored_language=stored_language,
+        initial_path=initial_path,
         viewport=(1280, 720),
         load_interactive_visuals=False,
         init_scripts=(
@@ -4090,41 +4115,15 @@ def test_language_selection_navigates_when_storage_write_is_blocked(
     )
     switcher = page.locator(".language-switcher--desktop")
     switcher.hover()
-    switcher.locator('[data-language-option="ru"]').click()
+    with page.expect_request(re.compile(request_pattern)):
+        switcher.locator(
+            f'[data-language-option="{selected_language}"]'
+        ).click()
 
-    expect(page).to_have_url(re.compile(r"/ru/$"))
-    expect(page.locator("html")).to_have_attribute("lang", "ru")
-
-
-def test_language_selection_currently_reverts_when_existing_storage_cannot_be_updated(
-    driver: DriverFactory,
-) -> None:
-    """Characterize the stale locale winning when a new manual choice cannot persist."""
-
-    page = driver(
-        stored_language="en",
-        viewport=(1280, 720),
-        load_interactive_visuals=False,
-        init_scripts=(
-            """
-            (() => {
-              const nativeSetItem = Storage.prototype.setItem;
-              Storage.prototype.setItem = function (key, value) {
-                if (key === "tmc-language") throw new Error("language storage blocked");
-                return nativeSetItem.call(this, key, value);
-              };
-            })();
-            """,
-        ),
-    )
-    switcher = page.locator(".language-switcher--desktop")
-    switcher.hover()
-    with page.expect_request(re.compile(r"/ru/$")):
-        switcher.locator('[data-language-option="ru"]').click()
-
-    expect(page).to_have_url(re.compile(r"/$"))
-    expect(page.locator("html")).to_have_attribute("lang", "en")
-    assert page.evaluate("localStorage.getItem('tmc-language')") == "en"
+    expect(page).to_have_url(re.compile(final_pattern))
+    expect(page.locator("html")).to_have_attribute("lang", selected_language)
+    assert page.evaluate("localStorage.getItem('tmc-language')") == stored_language
+    assert "tmc-language-choice" not in page.url
 
 
 @pytest.mark.parametrize("failure", ["missing", "empty", "rejected"])

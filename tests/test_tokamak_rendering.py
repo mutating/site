@@ -117,11 +117,11 @@ def _image_difference_statistics(
     )
 
 
-def test_tokamak_currently_fails_blank_when_webgl_is_unavailable(
+def test_tokamak_shows_accessible_fallback_without_webgl(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """Characterize Tokamak's blank root and page error when WebGL is unavailable."""
+    """Replace the standalone reactor with an accessible fallback without WebGL."""
 
     page = driver(
         initial_path="/blog/",
@@ -138,15 +138,68 @@ def test_tokamak_currently_fails_blank_when_webgl_is_unavailable(
             """,
         ),
     )
-    with page.expect_event("pageerror") as error_event:
-        page.goto(
-            f"{base_url}/tokamak-reactor.html",
-            wait_until="domcontentloaded",
-        )
+    errors: list[str] = []
+    console_errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on(
+        "console",
+        lambda message: (
+            console_errors.append(message.text) if message.type == "error" else None
+        ),
+    )
+    page.goto(
+        f"{base_url}/tokamak-reactor.html",
+        wait_until="domcontentloaded",
+    )
 
-    assert "Error creating WebGL context" in str(error_event.value)
+    fallback = page.get_by_role("status")
+    expect(fallback).to_be_visible()
+    expect(fallback).to_have_attribute("lang", "en")
+    expect(fallback.locator(".tokamak-fallback__title")).to_have_text(
+        "3D reactor unavailable"
+    )
+    expect(fallback.locator(".tokamak-fallback__copy")).to_contain_text(
+        "cannot display the WebGL visualization"
+    )
+    expect(page.locator("html")).to_have_attribute(
+        "data-tokamak-fallback", "webgl-unavailable"
+    )
     expect(page.locator("canvas")).to_have_count(0)
-    expect(page.locator("#root")).to_be_empty()
+    expect(page.locator("#root .tokamak-fallback")).to_have_count(1)
+    assert errors == []
+    assert console_errors == []
+
+
+def test_parent_page_reveals_embedded_tokamak_fallback_without_webgl(
+    driver: DriverFactory,
+) -> None:
+    """Reveal the embedded fallback after its readiness handshake with the parent."""
+
+    page = driver(
+        load_interactive_visuals=True,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+              HTMLCanvasElement.prototype.getContext = function (kind, options) {
+                if (kind === "webgl" || kind === "webgl2") return null;
+                return nativeGetContext.call(this, kind, options);
+              };
+            })();
+            """,
+        ),
+    )
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    model = page.locator(".tokamak-model")
+    model.scroll_into_view_if_needed()
+
+    expect(model).to_have_class(re.compile(r"\bis-ready\b"))
+    fallback = page.frame_locator(".tokamak-model__frame").get_by_role("status")
+    expect(fallback).to_be_visible()
+    expect(fallback).to_contain_text("3D reactor unavailable")
+    expect(page.locator(".tokamak-model__frame")).to_have_css("opacity", "1")
+    assert errors == []
 
 
 def test_tokamak_runtime_currently_accepts_state_from_non_parent_windows(

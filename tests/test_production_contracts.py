@@ -133,13 +133,20 @@ def _run_language_bootstrap(
     storage_throws: bool = False,
     search: str = "",
     fragment: str = "",
+    path: str = "/",
 ) -> dict[str, object]:
     harness = f"""
 let redirectedTo = null;
+let replacedUrl = null;
+const storageWrites = [];
 globalThis.localStorage = {{
   getItem() {{
     if ({json.dumps(storage_throws)}) throw new Error("storage blocked");
     return {json.dumps(stored)};
+  }},
+  setItem(key, value) {{
+    if ({json.dumps(storage_throws)}) throw new Error("storage blocked");
+    storageWrites.push([key, value]);
   }},
 }};
 Object.defineProperty(globalThis, "navigator", {{
@@ -148,8 +155,13 @@ Object.defineProperty(globalThis, "navigator", {{
 }});
 globalThis.document = {{ documentElement: {{ dataset: {{}} }} }};
 globalThis.window = {{
+  history: {{
+    state: null,
+    replaceState(_state, _title, url) {{ replacedUrl = url; }},
+  }},
   location: {{
     origin: {json.dumps(TEST_ORIGIN)},
+    pathname: {json.dumps(path)},
     search: {json.dumps(search)},
     hash: {json.dumps(fragment)},
     replace(url) {{ redirectedTo = url; }},
@@ -158,6 +170,8 @@ globalThis.window = {{
 {bootstrap}
 console.log(JSON.stringify({{
   redirectedTo,
+  replacedUrl,
+  storageWrites,
   language: document.documentElement.dataset.language,
 }}));
 """
@@ -221,6 +235,45 @@ console.log(JSON.stringify({{
 }}));
 """
     return _run_node(harness)
+
+
+def test_home_emits_the_pantograph_mount_consumed_by_runtime(
+    built_sites: dict[str, Path],
+) -> None:
+    """The built home exposes the exact Pantograph mount required by site.js."""
+
+    home = _read_output(built_sites["production"], "/")
+
+    assert home.count('class="pantograph-visual"') == 1
+    assert home.count('class="pantograph-visual__object"') == 1
+    assert 'class="distribution__visual-object"' not in home
+    assert re.search(
+        r'<div class="pantograph-visual" role="img" '
+        r'aria-label="An animated pantograph coordinating local and distributed '
+        r'verification work"><div class="pantograph-visual__object" '
+        r'aria-hidden="true"></div></div>',
+        home,
+    )
+
+
+def test_home_emits_feedback_nodes_in_the_intended_cycle_order(
+    built_sites: dict[str, Path],
+) -> None:
+    """The feedback diagram keeps each numbered node's intended process label."""
+
+    home = _read_output(built_sites["production"], "/")
+    labels = re.findall(
+        r'<div class="feedback-node feedback-node--(?:top|right|bottom|left)">'
+        r'<span>\d+</span><strong>([^<]+)</strong></div>',
+        home,
+    )
+
+    assert labels == [
+        "Better product",
+        "Faster tests",
+        "Sharper signals",
+        "Smarter agents",
+    ]
 
 
 def test_metrika_markup_is_emitted_only_in_production_build(
@@ -365,7 +418,34 @@ def test_language_redirect_preserves_query_and_fragment_exactly(
 
     assert result == {
         "redirectedTo": (f"{TEST_ORIGIN}/ru/?preview=1&utm_source=test#section"),
+        "replacedUrl": None,
+        "storageWrites": [],
         "language": "en",
+    }
+
+
+def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
+    built_sites: dict[str, Path],
+) -> None:
+    """A manual RU marker beats stale EN storage and is removed from the URL."""
+
+    bootstrap = _extract_language_bootstrap(
+        _read_output(built_sites["production"], "/ru/")
+    )
+    result = _run_language_bootstrap(
+        bootstrap,
+        stored="en",
+        search="?preview=1&tmc-language-choice=ru",
+        fragment="#section",
+        path="/ru/",
+        storage_throws=True,
+    )
+
+    assert result == {
+        "redirectedTo": None,
+        "replacedUrl": "/ru/?preview=1#section",
+        "storageWrites": [],
+        "language": "ru",
     }
 
 
