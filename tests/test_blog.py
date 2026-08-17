@@ -640,7 +640,11 @@ def test_code_copy_falls_back_when_modern_clipboard_is_unavailable(
     expected_source = block.locator("code").text_content()
     button = block.locator(".code-copy-button")
 
+    block.scroll_into_view_if_needed()
     block.hover()
+    expect(button).to_be_visible()
+    expect(button).to_have_css("opacity", "1")
+    expect(button).to_have_css("transform", "matrix(1, 0, 0, 1, 0, 0)")
     button.click()
     expect(button).to_have_attribute("data-copy-state", "copied")
     expect(button).to_have_text("Copied")
@@ -760,7 +764,11 @@ def test_code_copy_feedback_resets_and_restarts_its_timer(
     block = page.locator(".post__content .code-block").first
     button = block.locator(".code-copy-button")
 
+    block.scroll_into_view_if_needed()
     block.hover()
+    expect(button).to_be_visible()
+    expect(button).to_have_css("opacity", "1")
+    expect(button).to_have_css("transform", "matrix(1, 0, 0, 1, 0, 0)")
     button.click()
     expect(button).to_have_attribute("data-copy-state", "copied")
     first_id = page.evaluate("window.__copyTimers[0].id")
@@ -1320,11 +1328,17 @@ def test_single_edge_recommendation_spans_the_post_navigation(
     origin = page.url.rstrip("/")
 
     edge_expectations = {
-        "/blog/newest-navigation-edge-fixture/": "post__nav-link--previous",
-        "/blog/oldest-navigation-edge-fixture/": "post__nav-link--next",
+        "/blog/newest-navigation-edge-fixture/": (
+            "post__nav-link--previous",
+            "/blog/the-mutation-testing-digest-for-july-2026/",
+        ),
+        "/blog/oldest-navigation-edge-fixture/": (
+            "post__nav-link--next",
+            "/blog/author-pagination-01/",
+        ),
     }
     directions: set[str] = set()
-    for post_url, expected_direction in edge_expectations.items():
+    for post_url, (expected_direction, expected_href) in edge_expectations.items():
         response = page.goto(
             f"{origin}{post_url}",
             wait_until="domcontentloaded",
@@ -1341,7 +1355,8 @@ def test_single_edge_recommendation_spans_the_post_navigation(
         assert abs(link_box["width"] - navigation_box["width"]) <= 1
 
         classes = link.get_attribute("class") or ""
-        assert expected_direction in classes
+        assert set(classes.split()) == {"post__nav-link", expected_direction}
+        assert link.get_attribute("href") == expected_href
         directions.add(expected_direction.removeprefix("post__nav-link--"))
 
     assert directions == {"previous", "next"}

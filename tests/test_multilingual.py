@@ -14,7 +14,8 @@ from conftest import DriverFactory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MAY_POST_PATH = "/blog/the-mutation-testing-digest-for-may-2026/"
-TEST_DIGEST_PATH = "/blog/test-didegest-june-2026/"
+LATEST_DIGEST_PATH = "/blog/the-mutation-testing-digest-for-july-2026/"
+JUNE_DIGEST_PATH = "/blog/the-mutation-testing-digest-for-june-2026/"
 
 
 def test_russian_article_uses_translated_content_and_canonical_metadata(
@@ -76,16 +77,73 @@ def test_latest_source_article_also_has_russian_content(
 
     page = driver(
         stored_language="ru",
-        initial_path=f"/ru{TEST_DIGEST_PATH}",
+        initial_path=f"/ru{LATEST_DIGEST_PATH}",
         load_interactive_visuals=False,
     )
 
+    expect(page).to_have_url(re.compile(r"/ru/blog/the-mutation-testing-digest-for-july-2026/$"))
+    expect(page.locator("html")).to_have_attribute("lang", "ru")
     expect(page.locator(".post__header h1")).to_have_text(
-        "Тестовый дайджест за июнь 2026 года."
+        "Дайджест мутационного тестирования за июль 2026 года."
     )
     expect(page.locator(".post__content > p").first).to_contain_text(
-        "В июне 2026 года мутационное тестирование"
+        "Прототип на большой языковой модели"
     )
+    expect(page.locator("time")).to_have_attribute("datetime", "2026-08-01")
+    expect(page.locator(".post__author")).to_have_attribute(
+        "href", "/ru/authors/muta/"
+    )
+    tag_links = page.locator(".post__tags a")
+    expect(tag_links).to_have_count(7)
+    assert set(tag_links.evaluate_all(
+        "elements => elements.map(element => element.getAttribute('href'))"
+    )) == {
+        "/ru/tags/testing/",
+        "/ru/tags/mutation-testing/",
+        "/ru/tags/llm/",
+        "/ru/tags/adoption/",
+        "/ru/tags/real-world/",
+        "/ru/tags/survivor-investigation/",
+        "/ru/tags/tools/",
+    }
+
+
+def test_june_source_article_also_has_russian_content(
+    driver: DriverFactory,
+) -> None:
+    """Keep the June source article on its translated resource as well."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path=f"/ru{JUNE_DIGEST_PATH}",
+        load_interactive_visuals=False,
+    )
+
+    expect(page).to_have_url(re.compile(r"/ru/blog/the-mutation-testing-digest-for-june-2026/$"))
+    expect(page.locator("html")).to_have_attribute("lang", "ru")
+    expect(page.locator(".post__header h1")).to_have_text(
+        "Дайджест мутационного тестирования за июнь 2026 года."
+    )
+    expect(page.locator(".post__content > p").first).to_contain_text(
+        "Самые интересные июньские новости о мутационном тестировании"
+    )
+    expect(page.locator("time")).to_have_attribute("datetime", "2026-07-01")
+    expect(page.locator(".post__author")).to_have_attribute(
+        "href", "/ru/authors/muta/"
+    )
+    tag_links = page.locator(".post__tags a")
+    expect(tag_links).to_have_count(7)
+    assert set(tag_links.evaluate_all(
+        "elements => elements.map(element => element.getAttribute('href'))"
+    )) == {
+        "/ru/tags/testing/",
+        "/ru/tags/mutation-testing/",
+        "/ru/tags/llm/",
+        "/ru/tags/adversarial/",
+        "/ru/tags/new-tools/",
+        "/ru/tags/score-audit/",
+        "/ru/tags/evidence/",
+    }
 
 
 def test_multilingual_collections_never_repeat_an_article(
@@ -150,7 +208,16 @@ def test_translation_resources_do_not_duplicate_canonical_front_matter() -> None
             "*/translation.ru.md"
         )
     )
-    assert len(translations) == 4
+    expected_translation_paths = {
+        Path("mt-state-may-2026/translation.ru.md"),
+        Path("mt-state-june-2026/translation.ru.md"),
+        Path("mt-state-july-2026/translation.ru.md"),
+    }
+    translation_root = PROJECT_ROOT / "content" / "blog"
+    assert {
+        translation.relative_to(translation_root)
+        for translation in translations
+    } == expected_translation_paths
 
     for translation in translations:
         front_matter = translation.read_text(encoding="utf-8").split("---", 2)[1]

@@ -285,7 +285,14 @@ def test_tokamak_exposes_no_direct_camera_controls_and_ignores_user_input(
     expect(canvas).to_have_attribute(
         "data-shader-compilation", "complete", timeout=30_000
     )
-    expect(canvas).to_have_attribute("data-render-frames", re.compile(r"[1-9]\d*"))
+    # Compilation and the first demand-render are separate async stages. Under
+    # the full xdist suite, the browser may need the full render timeout before
+    # its first GPU-backed frame is committed; keep requiring a real frame.
+    expect(canvas).to_have_attribute(
+        "data-render-frames",
+        re.compile(r"[1-9]\d*"),
+        timeout=30_000,
+    )
     expect(canvas).not_to_have_attribute("tabindex", re.compile(r".+"))
     expect(canvas).to_have_attribute(
         "aria-label",

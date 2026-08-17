@@ -2376,21 +2376,57 @@ def test_feedback_loop_click_adds_a_short_stackable_spin_impulse(
     diagram should settle back to its normal rate after the short decay.
     """
 
-    page = driver(stored_theme="light", viewport=(1440, 900))
+    page = driver(
+        stored_theme="light",
+        viewport=(1440, 900),
+        controllable_animation_frames=True,
+        init_scripts=(
+            """
+            (() => {
+              Object.defineProperty(Performance.prototype, "now", {
+                configurable: true,
+                value: () => 0,
+              });
+            })();
+            """,
+        ),
+    )
     loop = page.locator(".feedback-loop")
+    page.evaluate("window.__mutaTestSetAnimationFramesPaused(true)")
+    page.evaluate(
+        """
+        (() => {
+          const queuedCallbacks = [];
+          window.requestAnimationFrame = (callback) => {
+            queuedCallbacks.push(callback);
+            return queuedCallbacks.length;
+          };
+          window.__mutaTestFlushFrames = (timestamp) => {
+            const callbacks = queuedCallbacks.splice(0);
+            callbacks.forEach((callback) => callback(timestamp));
+          };
+        })();
+        """
+    )
 
     assert loop.get_attribute("role") == "button"
     assert loop.get_attribute("tabindex") == "0"
     assert loop.get_attribute("data-impulse-active") == "false"
 
     loop.click()
+    expect(loop).to_have_attribute("data-playback-rate", "4.500")
     page.wait_for_function(
         """
         () => [...document.querySelector('.feedback-loop')
           .getAnimations({subtree: true})]
           .filter((animation) => animation.animationName === 'spin')
-          .every((animation) => animation.playbackRate > 1)
-        """
+          .length === 7 &&
+          [...document.querySelector('.feedback-loop')
+            .getAnimations({subtree: true})]
+            .filter((animation) => animation.animationName === 'spin')
+            .every((animation) => Math.abs(animation.playbackRate - 4.5) < 0.001)
+        """,
+        polling=20,
     )
     first_rates = loop.evaluate(
         """
@@ -2401,18 +2437,23 @@ def test_feedback_loop_click_adds_a_short_stackable_spin_impulse(
     )
 
     assert len(first_rates) == 7
-    assert min(first_rates) > 1
-    assert max(first_rates) == pytest.approx(min(first_rates), abs=0.001)
+    assert first_rates == pytest.approx([4.5] * 7, abs=0.001)
+    assert loop.get_attribute("data-impulse-active") == "true"
 
     loop.click()
+    expect(loop).to_have_attribute("data-playback-rate", "6.000")
     page.wait_for_function(
         """
-        (firstRate) => document.querySelector('.feedback-loop')
-          .getAnimations({subtree: true})
+        () => [...document.querySelector('.feedback-loop')
+          .getAnimations({subtree: true})]
           .filter((animation) => animation.animationName === 'spin')
-          .every((animation) => animation.playbackRate > firstRate)
+          .length === 7 &&
+          [...document.querySelector('.feedback-loop')
+            .getAnimations({subtree: true})]
+            .filter((animation) => animation.animationName === 'spin')
+            .every((animation) => Math.abs(animation.playbackRate - 6) < 0.001)
         """,
-        arg=max(first_rates),
+        polling=20,
     )
     second_rates = loop.evaluate(
         """
@@ -2421,15 +2462,45 @@ def test_feedback_loop_click_adds_a_short_stackable_spin_impulse(
           .map((animation) => animation.playbackRate)
         """
     )
-    assert min(second_rates) > max(first_rates)
-    assert max(second_rates) <= 6
+    assert len(second_rates) == 7
+    assert second_rates == pytest.approx([6.0] * 7, abs=0.001)
     assert loop.get_attribute("data-impulse-active") == "true"
 
+    page.evaluate("window.__mutaTestFlushFrames(500)")
     page.wait_for_function(
         """
-        () => document.querySelector('.feedback-loop')
-          .dataset.impulseActive === 'false'
+        () => {
+          const loop = document.querySelector('.feedback-loop');
+          const animations = [...loop.getAnimations({subtree: true})]
+            .filter((animation) => animation.animationName === 'spin');
+          return loop.dataset.impulseActive === 'true' &&
+            animations.length === 7 &&
+            animations.every(
+              (animation) => animation.playbackRate > 1 &&
+                animation.playbackRate < 6,
+            );
+        }
         """,
+        polling=5,
+        timeout=1000,
+    )
+    page.evaluate("window.__mutaTestFlushFrames(1000)")
+    page.evaluate("window.__mutaTestFlushFrames(1500)")
+    page.wait_for_function(
+        """
+        () => {
+          const loop = document.querySelector('.feedback-loop');
+          const animations = [...loop.getAnimations({subtree: true})]
+            .filter((animation) => animation.animationName === 'spin');
+          return loop.dataset.impulseActive === 'false' &&
+            loop.dataset.playbackRate === '1.000' &&
+            animations.length === 7 &&
+            animations.every(
+              (animation) => Math.abs(animation.playbackRate - 1) < 0.001,
+            );
+        }
+        """,
+        polling=20,
         timeout=2500,
     )
     settled_rates = loop.evaluate(

@@ -428,6 +428,7 @@ def test_finished_curves_fill_the_chart_in_every_theme_and_layout(
         load_interactive_visuals=False,
     )
     _center_chart_panel(page)
+    _settle_view_observation(page)
     expect(page.locator(".complexity-chart")).to_have_attribute(
         "data-curves-revealed",
         "true",
