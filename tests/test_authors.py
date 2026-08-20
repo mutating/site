@@ -24,7 +24,7 @@ def test_author_content_uses_a_boolean_robot_flag() -> None:
     flat_author_files = sorted(
         path
         for path in (PROJECT_ROOT / "content" / "authors").glob("*.md")
-        if path.name != "_index.md"
+        if not path.name.startswith("_index.")
     )
     bundled_author_files = sorted(
         (PROJECT_ROOT / "content" / "authors").glob("*/index.md")

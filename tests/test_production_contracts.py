@@ -470,7 +470,7 @@ def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
                 "description": (
                     "Детерминированная верификация, интерпретируемость и "
                     "инфраструктура тестирования для ИИ-агентов, создающих "
-                    "программное обеспечение будущего."
+                    "ПО будущего."
                 ),
                 "type": "website",
             },
@@ -496,8 +496,8 @@ def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
                     "The Mutating Company"
                 ),
                 "description": (
-                    "ИИ-тесты получают детектор лжи, PIT узнаёт об "
-                    "эквивалентности, а Zig — предварительную версию"
+                    "ИИ-тестам — детектор лжи, PIT — статус «эквивалентен», "
+                    "Zig — превью"
                 ),
                 "type": "article",
             },

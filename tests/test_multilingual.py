@@ -203,16 +203,17 @@ def test_russian_home_localizes_interface_and_marketing_content(
     expect(russian).to_have_title(
         "The Mutating Company — ИИ, который сомневается"
     )
-    expect(russian.locator(".hero h1")).to_contain_text("ИИ,")
-    expect(russian.locator(".hero h1")).to_contain_text("который сомневается.")
+    assert russian.locator(".hero h1").inner_html() == (
+        "ИИ, который<br><em>сомневается</em>"
+    )
     expect(
         russian.locator(".hero__actions").get_by_role(
-            "link", name="Читать наш манифест"
+            "link", name="Читать наш тезис"
         )
     ).to_have_attribute("href", "#sections")
     expect(
         russian.locator(".hero__actions").get_by_role(
-            "link", name="Заглянуть в open-source лабораторию"
+            "link", name="Заглянуть в open-source-лабораторию"
         )
     ).to_have_attribute("href", "#open-source")
     expect(russian.locator(".hero__signal")).to_have_attribute(
@@ -225,7 +226,7 @@ def test_russian_home_localizes_interface_and_marketing_content(
         "Энтропия сначала шепчет. Потом выставляет счёт."
     )
     expect(russian.locator("#thesis h2")).to_have_text(
-        "Чем больше интеллекта, тем больше нужно сопротивления."
+        "Большему интеллекту — больше сопротивления."
     )
     expect(russian.locator("#containment h2")).to_have_text(
         "Удержать плазму. Направить энергию."
@@ -236,7 +237,7 @@ def test_russian_home_localizes_interface_and_marketing_content(
     assert russian.locator(".pillar-card h3").all_inner_texts() == [
         "Верифицируемость",
         "Интерпретируемость",
-        "Тестирование на скорости агентов",
+        "Тестирование в темпе агентов",
     ]
     expect(russian.locator("#scale h2")).to_have_text(
         "Локально, когда нужно. Распределённо, когда всерьёз."
@@ -268,7 +269,7 @@ def test_russian_home_localizes_interface_and_marketing_content(
         "Дайджест мутационного тестирования за июль 2026 года"
     )
     expect(localized_card.locator(".dispatch-card__description")).to_have_text(
-        "Выжившие мутанты как рабочие задания, результаты под проверкой"
+        "Выжившие мутанты как рабочие задания, оценки проходят проверку"
     )
     expect(russian.locator("#contact h2")).to_have_text(
         "Создаёте серьёзную агентную инфраструктуру?"
@@ -302,6 +303,80 @@ def test_home_translation_files_keep_structural_html_in_templates() -> None:
         assert "<section" not in source
         assert "<iframe" not in source
         assert "<canvas" not in source
+
+
+def test_russian_collection_headers_use_localized_copy(
+    driver: DriverFactory,
+) -> None:
+    """Localize the visible introductions for every collection entry point."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/blog/",
+        load_interactive_visuals=False,
+    )
+    origin = page.url.split("/ru/", maxsplit=1)[0]
+
+    expect(page.locator("body")).to_have_class(re.compile(r"\bblog-page\b"))
+    expect(page.locator(".blog-index__header > .section-index")).to_have_text(
+        "БЛОГ"
+    )
+    expect(page.locator(".blog-index__header h1")).to_have_text(
+        "Полевые заметки из скептического слоя."
+    )
+    expect(page.locator(".blog-index__intro")).to_have_text(
+        "Эксперименты, принципы работы и практические выводы из разработки "
+        "систем, позволяющих проверять работу в машинном масштабе."
+    )
+
+    page.goto(f"{origin}/ru/authors/muta/posts/", wait_until="domcontentloaded")
+    expect(page.locator("body")).to_have_class(re.compile(r"\bblog-page\b"))
+    expect(page.locator(".blog-index__header > .section-index")).to_have_text(
+        "АВТОРЫ / MUTA / ЗАМЕТКИ"
+    )
+    expect(page.locator(".blog-index__header h1")).to_have_text(
+        "Материалы автора Muta."
+    )
+    expect(page.locator(".blog-index__intro")).to_have_text(
+        "Автоматические сводки директора по сомнениям — от новых сигналов к "
+        "старым."
+    )
+
+    page.goto(f"{origin}/ru/tags/testing/", wait_until="domcontentloaded")
+    expect(page.locator(".blog-index__header > .section-index")).to_have_text(
+        "БЛОГ / МАТЕРИАЛЫ ПО ТЕГУ"
+    )
+    expect(page.locator(".blog-index__header h1")).to_have_text(
+        "Материалы с тегом [#testing]."
+    )
+
+    page.goto(f"{origin}/ru/authors/", wait_until="domcontentloaded")
+    expect(page.locator(".authors-index__header > .section-index")).to_have_text(
+        "АВТОРЫ / КАТАЛОГ"
+    )
+    expect(page.locator(".authors-index__header h1")).to_have_text("Авторы")
+    expect(page.locator('meta[name="description"]')).to_have_attribute(
+        "content", "Люди и роботы, передающие сигналы из скептического слоя."
+    )
+
+
+def test_collection_translation_resources_only_contain_localized_fields() -> None:
+    """Keep routing and archive identity metadata in canonical section files."""
+
+    translations = (
+        PROJECT_ROOT / "content" / "blog" / "_index.ru.md",
+        PROJECT_ROOT / "content" / "authors" / "_index.ru.md",
+        PROJECT_ROOT / "content" / "author-posts" / "muta" / "_index.ru.md",
+    )
+
+    for translation in translations:
+        front_matter = translation.read_text(encoding="utf-8").split("---", 2)[1]
+        assert re.search(r"^title:", front_matter, re.MULTILINE)
+        assert re.search(r"^description:", front_matter, re.MULTILINE)
+        for canonical_key in ("author", "type", "bodyClass"):
+            assert re.search(
+                rf"^{canonical_key}:", front_matter, re.MULTILINE
+            ) is None
 
 
 def test_russian_home_hero_fits_narrow_viewports(
@@ -348,9 +423,9 @@ def test_russian_article_localizes_shared_interface(
     expect(page.locator(".post__header .section-index")).to_have_text("БЛОГ")
     expect(page.locator(".post__header time")).to_have_text("01 июня 2026")
     expect(page.locator(".post-reading-time > span").first).to_have_text(
-        "15 минут чтения"
+        "16 минут чтения"
     )
-    expect(page.locator("#post-word-count")).to_have_text("3144 слова")
+    expect(page.locator("#post-word-count")).to_have_text("3335 слов")
     expect(page.locator(".post__author")).to_have_text("Автор: Muta")
     expect(page.locator(".author-status__tooltip")).to_contain_text(
         "Muta — автоматизированный автор."
@@ -392,6 +467,7 @@ def test_russian_author_profiles_use_localized_content_and_shared_metadata(
     expect(page.locator(".author-profile__links a")).to_have_attribute(
         "href", "https://pomponchik.org/"
     )
+    expect(page.locator(".author-profile__links a")).to_have_text("Сайт ↗")
     expect(page).to_have_title("Евгений Блинов — The Mutating Company")
 
     origin = page.url.split("/ru/", maxsplit=1)[0]
@@ -406,7 +482,7 @@ def test_russian_author_profiles_use_localized_content_and_shared_metadata(
         "Muta — директор по сомнениям"
     )
     expect(page.locator(".author-profile__content")).to_contain_text(
-        "скорость агентов встречается с давлением верификации"
+        "скорость агентов сталкивается с требованиями верификации"
     )
     expect(page.locator(".author-profile__status")).to_have_attribute(
         "data-author-status", "robot"
