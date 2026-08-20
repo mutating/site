@@ -102,12 +102,13 @@ def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
 
     canvas.evaluate(
         """
-        () => new Promise((resolve) => {
+        (element) => {
           const probe = "tentacles-self-message";
+          element.dataset.selfMessageObserved = "false";
           const observeProbe = (event) => {
             if (event.data?.probe !== probe) return;
             removeEventListener("message", observeProbe);
-            resolve();
+            element.dataset.selfMessageObserved = "true";
           };
           addEventListener("message", observeProbe);
           window.postMessage({
@@ -115,8 +116,13 @@ def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
             theme: "dark",
             probe,
           }, location.origin);
-        })
+        }
         """
+    )
+    expect(canvas).to_have_attribute(
+        "data-self-message-observed",
+        "true",
+        timeout=5_000,
     )
     expect(frame_root).to_have_attribute("data-theme", "light")
 

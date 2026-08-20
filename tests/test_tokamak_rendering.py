@@ -216,12 +216,13 @@ def test_tokamak_runtime_accepts_state_only_from_its_same_origin_parent(
     expect(canvas).to_have_attribute("data-reactor-theme", "light")
     canvas.evaluate(
         """
-        () => new Promise((resolve) => {
+        (element) => {
           const probe = "tokamak-self-message";
+          element.dataset.selfMessageObserved = "false";
           const observeProbe = (event) => {
             if (event.data?.probe !== probe) return;
             removeEventListener("message", observeProbe);
-            resolve();
+            element.dataset.selfMessageObserved = "true";
           };
           addEventListener("message", observeProbe);
           window.postMessage({
@@ -232,8 +233,13 @@ def test_tokamak_runtime_accepts_state_only_from_its_same_origin_parent(
             visible: true,
             probe,
           }, location.origin);
-        })
+        }
         """
+    )
+    expect(canvas).to_have_attribute(
+        "data-self-message-observed",
+        "true",
+        timeout=5_000,
     )
     expect(canvas).to_have_attribute("data-reactor-theme", "light")
 
