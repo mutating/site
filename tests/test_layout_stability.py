@@ -475,6 +475,12 @@ def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
     after every click, before a CSS transition could settle, it verifies that the
     page and contact substrate expose the same computed background color.
 
+    The iframe uses its production manual-frame diagnostic mode because this
+    regression observes the cross-document theme protocol and surrounding DOM
+    geometry, not animation cadence. That leaves the real WebGL document and
+    message handler in place without asking Linux's software renderer to draw
+    continuously while the parent performs nine synchronous layout snapshots.
+
     The test also guards the scroll position and every primary section rectangle,
     because a genuine layout jump must not be hidden by fixing only the color
     mismatch. Nine switches deliberately leave the page in the opposite theme,
@@ -488,6 +494,7 @@ def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
         stored_theme="light",
         viewport=(390, 844),
         bounded_tentacle_rendering=True,
+        manual_tentacle_rendering=True,
     )
     page.evaluate(
         """
@@ -503,7 +510,8 @@ def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
         re.compile(
             r"[?&]max-tentacles=64"
             r"&render-supersample=0\.5"
-            r"&generation-seed=12345$"
+            r"&generation-seed=12345"
+            r"&manual-animation-frame=1$"
         ),
         timeout=30_000,
     )

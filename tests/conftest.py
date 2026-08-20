@@ -354,6 +354,7 @@ def driver(
         reduced_motion: ReducedMotion = "no-preference",
         load_interactive_visuals: bool | None = None,
         bounded_tentacle_rendering: bool = False,
+        manual_tentacle_rendering: bool = False,
         animation_frame_interval_ms: float | None = None,
         controllable_animation_frames: bool = False,
         initial_path: str = "",
@@ -455,6 +456,12 @@ def driver(
             context.route("**/muta-tentacles.html*", lambda route: route.abort())
             context.route("**/tokamak-reactor.html*", lambda route: route.abort())
 
+        if manual_tentacle_rendering and not bounded_tentacle_rendering:
+            raise ValueError(
+                "manual_tentacle_rendering requires "
+                "bounded_tentacle_rendering"
+            )
+
         if bounded_tentacle_rendering:
             # The production tentacle density is intentionally expensive. On
             # GitHub's Linux software renderer it can monopolize Chromium
@@ -462,10 +469,14 @@ def driver(
             # iframe. Install the profile at document start, while the parser
             # is still constructing the authored data-prewarm-src element.
             # This keeps the real WebGL runtime and iframe protocol under test
-            # while bounding only scene density and backing resolution.
-            context.add_init_script(
-                """
+            # while bounding scene density and backing resolution. Tests that
+            # inspect only the iframe protocol may additionally opt into its
+            # existing manual-frame mode so continuous software rendering
+            # cannot monopolize the browser between assertions.
+            bounded_profile_script = """
                 (() => {
+                  const useManualAnimationFrame =
+                    __MANUAL_TENTACLE_RENDERING__;
                   const boundTentacleSource = (root) => {
                     for (const frame of root.querySelectorAll(
                       'iframe[data-prewarm-src*="/muta-tentacles.html"]',
@@ -477,6 +488,12 @@ def driver(
                       source.searchParams.set("max-tentacles", "64");
                       source.searchParams.set("render-supersample", "0.5");
                       source.searchParams.set("generation-seed", "12345");
+                      if (useManualAnimationFrame) {
+                        source.searchParams.set(
+                          "manual-animation-frame",
+                          "1",
+                        );
+                      }
                       frame.dataset.prewarmSrc =
                         `${source.pathname}${source.search}${source.hash}`;
                     }
@@ -493,8 +510,11 @@ def driver(
                     observer.disconnect();
                   }, { once: true });
                 })();
-                """
-            )
+                """.replace(
+                    "__MANUAL_TENTACLE_RENDERING__",
+                    "true" if manual_tentacle_rendering else "false",
+                )
+            context.add_init_script(bounded_profile_script)
 
         if animation_frame_interval_ms is not None:
             frame_interval = float(animation_frame_interval_ms)
