@@ -349,18 +349,16 @@ python -m pytest -n 16
 python -m pytest -n 1
 ```
 
-Each xdist worker performs its own clean Hugo build, cache, content copy,
-nonstandard port selection, server process, and browser lifecycle. Nothing is
-shared between worker filesystems or server processes. A successful validation
-build is removed immediately and the development server renders to memory, so
-raising `-n` does not multiply full static-site copies on disk. Tests that
-require the real WebGL tentacle or tokamak renderers opt in with the
+Each xdist worker performs its own content copy, cache, nonstandard port
+selection, server process, and browser lifecycle. The immutable validation
+build is protected by a file lock and performed once for the complete pytest
+run; every worker then serves its own in-memory Hugo site. Tests that require
+the real WebGL tentacle or tokamak renderers opt in with the
 `interactive_visuals` marker; `--dist loadgroup` keeps each renderer's tests on
-one resource group so changing `-n` does not create competing GPU contexts.
-All other browser tests intercept those heavyweight iframe resources while
-still exercising the real page DOM and application code. At the end of the
-session every worker terminates its complete Hugo process group and pytest
-removes its temporary build directories.
+one resource group. All other browser tests intercept those heavyweight iframe
+resources while still exercising the real page DOM and application code. At
+the end of the session every worker terminates its complete Hugo process group
+and pytest removes its temporary build directories.
 
 An explicitly configured already-running URL remains available for focused
 diagnostics:
@@ -373,10 +371,16 @@ TEST_BASE_URL=http://127.0.0.1:1313 python -m pytest tests/test_blog.py
 
 `.github/workflows/tests.yml` runs on every push to every branch. The GitHub
 runner installs Hugo Extended `0.164.0` and Python `3.11`, creates the same
-repository-local `venv` used for local development, installs Chromium and its
-system dependencies through Playwright, and runs the complete pytest suite.
-The tests perform their own temporary Hugo build and server lifecycle through
-`tests/conftest.py`.
+repository-local `venv` used for local development, and installs Chromium and
+its system dependencies through Playwright. A three-entry matrix runs ordinary
+browser tests on two workers and gives each WebGL renderer its own one-worker
+job. This prevents Chromium's software WebGL renderers on the Linux runner from
+competing for CPU while allowing the three independent suites to run in
+parallel. Verbose node IDs and the 25 slowest durations remain in every job log
+even when another matrix entry fails. A 120-second per-test timeout turns a
+stalled browser-side promise into an attributable failure instead of letting it
+consume the complete job timeout. The tests perform their own temporary Hugo
+build and server lifecycle through `tests/conftest.py`.
 
 ## Production deployment
 
