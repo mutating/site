@@ -21,11 +21,15 @@ PAGER_SIZE = int(HUGO_CONFIG["pagination"]["pagerSize"])
 def test_author_content_uses_a_boolean_robot_flag() -> None:
     """Define human-versus-robot identity with boolean robot front matter."""
 
-    author_files = sorted(
+    flat_author_files = sorted(
         path
         for path in (PROJECT_ROOT / "content" / "authors").glob("*.md")
         if path.name != "_index.md"
     )
+    bundled_author_files = sorted(
+        (PROJECT_ROOT / "content" / "authors").glob("*/index.md")
+    )
+    author_files = flat_author_files + bundled_author_files
     assert author_files
 
     for author_file in author_files:

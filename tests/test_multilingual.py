@@ -266,6 +266,95 @@ def test_russian_article_localizes_shared_interface(
     expect(page.locator(".post__nav-link--next small")).to_have_text("Следующая")
 
 
+def test_russian_author_profiles_use_localized_content_and_shared_metadata(
+    driver: DriverFactory,
+) -> None:
+    """Translate author names and biographies without duplicating identity metadata."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/authors/main/",
+        load_interactive_visuals=False,
+    )
+
+    expect(page.locator(".author-profile h1")).to_have_text("Евгений Блинов")
+    expect(page.locator(".author-profile__content")).to_have_text(
+        "Генеральный директор."
+    )
+    expect(page.locator(".author-profile__status")).to_have_attribute(
+        "data-author-status", "human"
+    )
+    expect(page.locator(".author-profile__portrait img")).to_have_attribute(
+        "src", "https://pomponchik.org/41.png"
+    )
+    expect(page.locator(".author-profile__links a")).to_have_attribute(
+        "href", "https://pomponchik.org/"
+    )
+    expect(page).to_have_title("Евгений Блинов — The Mutating Company")
+
+    origin = page.url.split("/ru/", maxsplit=1)[0]
+    page.goto(f"{origin}/ru/authors/", wait_until="domcontentloaded")
+    main_card = page.locator('.author-directory-card[href="/ru/authors/main/"]')
+    expect(main_card.locator("h2")).to_have_text("Евгений Блинов")
+    expect(main_card.locator("p")).to_have_text("Генеральный директор.")
+
+    page.goto(f"{origin}/ru/authors/muta/", wait_until="domcontentloaded")
+    expect(page.locator(".author-profile h1")).to_have_text("Muta")
+    expect(page.locator(".author-profile__content")).to_contain_text(
+        "Muta — директор по сомнениям"
+    )
+    expect(page.locator(".author-profile__content")).to_contain_text(
+        "скорость агентов встречается с давлением верификации"
+    )
+    expect(page.locator(".author-profile__status")).to_have_attribute(
+        "data-author-status", "robot"
+    )
+    expect(page.locator(".author-posts__archive")).to_have_attribute(
+        "href", "/ru/authors/muta/posts/"
+    )
+
+
+def test_missing_russian_author_resource_falls_back_to_canonical_profile(
+    driver: DriverFactory,
+) -> None:
+    """Keep fixture and future author profiles usable before translation arrives."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/authors/test-author/",
+        load_interactive_visuals=False,
+    )
+
+    expect(page.locator(".author-profile h1")).to_have_text("Controlled Human")
+    expect(page.locator(".author-profile__content h2")).to_have_text(
+        "Working method"
+    )
+    expect(page.locator(".author-profile__status")).to_have_attribute(
+        "data-author-status", "human"
+    )
+
+
+def test_author_translation_resources_only_contain_localized_fields() -> None:
+    """Keep identity, images, and destinations canonical across profile languages."""
+
+    translation_root = PROJECT_ROOT / "content" / "authors"
+    translations = sorted(translation_root.glob("*/translation.ru.md"))
+    assert {
+        translation.relative_to(translation_root) for translation in translations
+    } == {
+        Path("main/translation.ru.md"),
+        Path("muta/translation.ru.md"),
+    }
+
+    for translation in translations:
+        front_matter = translation.read_text(encoding="utf-8").split("---", 2)[1]
+        assert re.search(r"^title:", front_matter, re.MULTILINE)
+        for canonical_key in ("robot", "photo", "photo2x", "links"):
+            assert re.search(
+                rf"^{canonical_key}:", front_matter, re.MULTILINE
+            ) is None
+
+
 def test_interface_translation_tables_define_the_same_message_keys() -> None:
     """Require every supported language to cover the complete interface catalog."""
 

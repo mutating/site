@@ -1,4 +1,5 @@
 {{- $author := .author -}}
+{{- $localizedAuthor := partial "localized-page.html" $author -}}
 {{- $status := partial "author-kind.html" $author -}}
 {{- $prefix := default "" .prefix -}}
 <span
@@ -7,8 +8,8 @@
 >
   <i class="author-status__light" aria-hidden="true"></i>
   {{- if .link }}
-    <a class="author-byline__name post__author" href="{{ $author.RelPermalink }}" rel="author">{{ $prefix }}{{ $author.Title }}</a>
+    <a class="author-byline__name post__author" href="{{ $author.RelPermalink }}" rel="author">{{ $prefix }}{{ $localizedAuthor.Title }}</a>
   {{- else }}
-    <span class="author-byline__name">{{ $prefix }}{{ $author.Title }}</span>
+    <span class="author-byline__name">{{ $prefix }}{{ $localizedAuthor.Title }}</span>
   {{- end }}
 </span>

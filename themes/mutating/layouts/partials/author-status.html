@@ -1,4 +1,5 @@
 {{- $author := .author -}}
+{{- $localizedAuthor := partial "localized-page.html" $author -}}
 {{- $variant := default "profile" .variant -}}
 {{- $status := partial "author-kind.html" $author -}}
 {{- $statusLabelKey := printf "author_status_%s" $status -}}
@@ -18,6 +19,6 @@
   {{- end }}
   <span class="meta-tooltip author-status__tooltip" id="{{ $tooltipID }}" role="tooltip">
     {{ T "author_disclosure" }}
-    {{ if eq $status "robot" }}{{ T "author_identity_robot" (dict "author" $author.Title) }}{{ else }}{{ T "author_identity_human" (dict "author" $author.Title) }}{{ end }}
+    {{ if eq $status "robot" }}{{ T "author_identity_robot" (dict "author" $localizedAuthor.Title) }}{{ else }}{{ T "author_identity_human" (dict "author" $localizedAuthor.Title) }}{{ end }}
   </span>
 </div>

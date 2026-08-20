@@ -1,4 +1,5 @@
 {{ define "main" }}
+{{- $localizedAuthor := partial "localized-page.html" . -}}
 {{- $authorSlug := .File.ContentBaseName -}}
 {{- $status := partial "author-kind.html" . -}}
 {{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
@@ -32,11 +33,11 @@
         <span aria-hidden="true">/</span>
         <a href="{{ .RelPermalink }}" aria-current="page">{{ upper $authorSlug }}</a>
       </nav>
-      <h1>{{ .Title }}</h1>
+      <h1>{{ $localizedAuthor.Title }}</h1>
       <div class="author-profile__meta">
         {{ partial "author-status.html" (dict "author" . "variant" "profile" "class" "author-profile__status") }}
         {{ with .Params.links }}
-          <nav class="author-profile__links" aria-label="{{ T "author_external_links" (dict "author" $.Title) }}">
+          <nav class="author-profile__links" aria-label="{{ T "author_external_links" (dict "author" $localizedAuthor.Title) }}">
             {{ range . }}
               <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ .label }} <span aria-hidden="true">↗</span></a>
             {{ end }}
@@ -52,7 +53,7 @@
             class="mascot-card__art"
             src="{{ . | relURL }}"
             {{- with $.Params.photo2x }} srcset="{{ $.Params.photo | relURL }} 1x, {{ . | relURL }} 2x"{{ end }}
-            alt="{{ $.Title }}"
+            alt="{{ $localizedAuthor.Title }}"
           >
         </figure>
       {{ end }}
@@ -79,7 +80,7 @@
 
   <div class="author-profile__details">
     <div class="author-profile__bio">
-      <div class="post__content author-profile__content">{{ .Content }}</div>
+      <div class="post__content author-profile__content">{{ $localizedAuthor.Content }}</div>
     </div>
   </div>
 
@@ -88,7 +89,7 @@
     <header>
       <h2 id="author-posts-heading">{{ T "author_posts_heading" }}</h2>
       {{ with $archive }}
-        <a class="author-posts__archive" href="{{ .RelPermalink }}" aria-label="{{ T "view_every_post_by" (dict "author" $.Title) }}">
+        <a class="author-posts__archive" href="{{ .RelPermalink }}" aria-label="{{ T "view_every_post_by" (dict "author" $localizedAuthor.Title) }}">
           <span>{{ T "all_field_notes" }}</span><b aria-hidden="true">↗</b>
         </a>
       {{ end }}

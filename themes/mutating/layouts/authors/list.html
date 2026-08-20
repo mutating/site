@@ -9,6 +9,7 @@
     {{ range .Pages.ByTitle }}
       {{- $status := partial "author-kind.html" . -}}
       {{- $statusLabelKey := printf "author_status_%s" $status -}}
+      {{- $localizedAuthor := partial "localized-page.html" . -}}
       <a class="author-directory-card" href="{{ .RelPermalink }}">
         {{ with .Params.photo }}
           <img src="{{ . | relURL }}" alt="">
@@ -18,8 +19,8 @@
             <i class="author-status__light" aria-hidden="true"></i>
             <span class="author-status__label">{{ T $statusLabelKey | upper }}</span>
           </span>
-          <h2>{{ .Title }}</h2>
-          <p>{{ .Plain | truncate 150 }}</p>
+          <h2>{{ $localizedAuthor.Title }}</h2>
+          <p>{{ $localizedAuthor.Plain | truncate 150 }}</p>
         </div>
       </a>
     {{ end }}
