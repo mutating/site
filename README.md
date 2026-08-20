@@ -57,16 +57,20 @@ Every authored page lives in `content/`:
 - `content/_index.md` contains the English landing-page content.
 - `content/_index.ru.md` contains the Russian landing-page translation.
 - `content/blog/_index.md` contains the blog-list introduction.
+- `content/blog/_index.ru.md` contains its Russian translation.
 - `content/blog/<post>/index.md` contains each post and its canonical metadata.
 - `content/blog/<post>/translation.ru.md` contains an optional Russian
   translation of that post.
 - `content/authors/_index.md` contains the author-directory introduction.
+- `content/authors/_index.ru.md` contains its Russian translation.
 - `content/authors/<author-slug>/index.md` contains each author profile and its
   canonical identity metadata.
 - `content/authors/<author-slug>/translation.ru.md` contains an optional Russian
   translation of that profile.
 - `content/author-posts/<author-slug>/_index.md` configures the paginated post
   archive for an author.
+- `content/author-posts/<author-slug>/_index.ru.md` contains the localized
+  archive title, description, and introduction.
 
 Shared interface copy lives in Hugo translation tables:
 
@@ -209,6 +213,19 @@ Add or rename a home content field in both language files, then consume it from
 the corresponding partial. Do not duplicate home HTML in either content file.
 The latest-posts partial resolves each card through the same localized
 page-resource mechanism used by blog lists and articles.
+
+### Translate collection introductions
+
+Blog, author-directory, and author-archive headers are section content. Add a
+native `_index.ru.md` beside each canonical `_index.md` and translate only its
+`title`, `description`, and Markdown body. Keep structural values such as
+`author`, `type`, and `bodyClass` in the canonical file; templates derive the
+archive identity and page class without duplicating them in translations.
+
+Tag collection headings are generated dynamically because tags come from post
+metadata. Their surrounding copy belongs in `i18n/en.toml` and `i18n/ru.toml`
+under `blog_tagged_signals`, `signals_tagged_prefix`, and
+`tagged_posts_pagination`; the tag value itself remains canonical.
 
 ### Translate the interface
 
