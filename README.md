@@ -64,6 +64,11 @@ Every authored page lives in `content/`:
 - `content/author-posts/<author-slug>/_index.md` configures the paginated post
   archive for an author.
 
+Shared interface copy lives in Hugo translation tables:
+
+- `i18n/en.toml` contains the complete default-language catalog.
+- `i18n/ru.toml` contains the Russian interface translation.
+
 Everything that defines presentation or behavior lives in `themes/mutating/`:
 
 - `layouts/_default/baseof.html` is the shared HTML document.
@@ -179,6 +184,22 @@ description, reading time, table of contents, and body. This gives tag, author,
 archive, and blog collections one article per language site without duplicated
 front matter. If `translation.ru.md` is absent, `/ru/blog/<slug>/` renders the
 canonical English article.
+
+### Translate the interface
+
+Navigation labels, reading times, pagination, author statuses, tooltips, dates,
+and other shared interface copy use Hugo's `T` function and the tables in
+`i18n/`. Add every new message key to both language files, using Hugo plural
+forms for count-dependent text. Keep article and landing-page prose in
+`content/` rather than moving it into the interface catalog.
+
+The selected language controls both layers: `/ru/` renders Russian interface
+messages and localized dates even when an untranslated article falls back to
+its canonical English content. Check catalog gaps during development with:
+
+```bash
+hugo --printI18nWarnings
+```
 
 ## Add an author
 
