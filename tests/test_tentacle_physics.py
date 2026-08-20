@@ -193,10 +193,17 @@ def test_dense_surface_uses_the_bounded_spatial_shader(
         viewport=(1280, 720),
     )
     page.goto(
-        f"{base_url}/muta-tentacles.html?generation-seed=12345",
+        (
+            f"{base_url}/muta-tentacles.html?generation-seed=12345"
+            "&manual-animation-frame=1"
+        ),
         wait_until="domcontentloaded",
     )
     canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1100)")
     expect(canvas).to_have_attribute(
         "data-surface-shader-path",
         "fast-spatial",
@@ -241,10 +248,15 @@ def test_spatial_overflow_preserves_every_tentacle_via_full_fallback(
             f"{base_url}/muta-tentacles.html"
             "?max-spatial-candidates=1&generation-seed=12345"
             "&max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
         ),
         wait_until="domcontentloaded",
     )
     canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1100)")
     expect(canvas).to_have_attribute(
         "data-surface-shader-path",
         "full-fallback",
@@ -364,13 +376,13 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     This regression opens the exact production iframe document at the contact
     block's desktop dimensions, then narrows that already-loaded surface to the
     parametrized desktop, tablet, or phone dimensions and waits for its
-    aspect-aware reload to finish. It deliberately pauses only animation-frame
-    delivery—the browser condition that makes the race deterministic—while
-    preserving real pointer events and wall-clock timers. Three actual left
-    clicks must each show the source-strength impulse on press and submit an
-    ordinary hover frame immediately on release without waiting for another
-    animation frame. The release frame must neither retain peak force nor
-    introduce a synthetic zero-force recovery kick.
+    aspect-aware reload to finish. It deliberately uses the runtime's manual
+    animation-frame mode—the browser condition that makes the race
+    deterministic—while preserving real pointer events and the production
+    force clock. Three actual left clicks must each show the source-strength
+    impulse on press and submit an ordinary hover frame immediately on release
+    without waiting for another animation frame. The release frame must neither
+    retain peak force nor introduce a synthetic zero-force recovery kick.
     Repeating the click cycle is intentional: it guards the formerly
     intermittent second-or-later click as well as the first click after a
     resize.
@@ -384,12 +396,12 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
         initial_path="/blog/",
         stored_theme="dark",
         viewport=(1440, 650),
-        controllable_animation_frames=True,
     )
     page.goto(
         (
             f"{base_url}/muta-tentacles.html"
             "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
         ),
         wait_until="domcontentloaded",
     )
@@ -405,11 +417,18 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
             "height": target_viewport[1],
         }
     )
+    # In manual-frame mode the resize is consumed by the next explicit render;
+    # that render schedules the production aspect-aware document reload.
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(16)")
     page.wait_for_function(
         "origin => performance.timeOrigin !== origin",
         arg=initial_time_origin,
         timeout=30_000,
     )
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(16)")
     expect(canvas).to_have_attribute(
         "data-rendered-frame-id",
         re.compile(r"^[1-9][0-9]*$"),
@@ -425,14 +444,6 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     page.mouse.move(pointer_x, pointer_y)
 
     for _ in range(3):
-        canvas.evaluate(
-            """
-            element => {
-              element.ownerDocument.defaultView
-                .__mutaTestSetAnimationFramesPaused(true);
-            }
-            """
-        )
         page.wait_for_timeout(35)
         page.mouse.down(button="left")
         expect(canvas).to_have_attribute(
@@ -455,19 +466,6 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
         assert released_state["phase"] == "hover"
         assert released_state["pressed"] == "false"
         assert released_state["force"] == 1
-        canvas.evaluate(
-            """
-            element => {
-              element.ownerDocument.defaultView
-                .__mutaTestSetAnimationFramesPaused(false);
-            }
-            """
-        )
-        expect(canvas).to_have_attribute(
-            "data-pointer-interaction-phase",
-            "hover",
-            timeout=1_000,
-        )
 
 
 def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
@@ -1694,6 +1692,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
         (
             f"{base_url}/muta-tentacles.html"
             "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
         ),
         wait_until="domcontentloaded",
     )
@@ -1713,6 +1712,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
         direction,
         timeout=1_000,
     )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(50)")
     expect(canvas).to_have_attribute(
         "data-pointer-interaction-phase",
         "held",
