@@ -25,15 +25,22 @@ pytestmark = [
 ]
 
 
-def _wait_for_bounded_contact_tentacles_source(frame: Locator) -> None:
+def _wait_for_bounded_contact_tentacles_source(
+    frame: Locator,
+    *,
+    manual_animation_frame: bool = False,
+) -> None:
     """Wait until prewarming exposes the bounded real-WebGL iframe URL."""
 
+    manual_frame_query = (
+        r"&manual-animation-frame=1" if manual_animation_frame else ""
+    )
     expect(frame).to_have_attribute(
         "src",
         re.compile(
             r"^/muta-tentacles\.html\?v=[0-9a-f]{64}&embedded=1"
             r"&max-tentacles=64&render-supersample=0\.5"
-            r"&generation-seed=12345$"
+            r"&generation-seed=12345" + manual_frame_query + r"$"
         ),
         timeout=30_000,
     )
@@ -658,25 +665,30 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     the post-impulse held force before the next image appeared and made the
     initial click response look substantially longer than in the source file.
 
-    This test supplies 100 ms animation-frame timestamps and verifies that the
-    embedded production surface performs exactly one 33 ms physics update,
+    This test supplies one 100 ms animation-frame timestamp and verifies that
+    the embedded production surface performs exactly one 33 ms physics update,
     fixing both the number of force applications and their simulated duration.
-    Only scene density and backing resolution are reduced here; the authored
-    iframe URL, embedded visibility lifecycle, real animation-frame path, and
-    clock remain intact. Separate tests exercise the full-density workload.
+    The frame is advanced through the runtime's manual clock so Linux software
+    rendering cannot continuously monopolize Chromium between assertions.
+    Only scene density and backing resolution are reduced; the authored iframe
+    URL, embedded visibility lifecycle, production frame callback, and clock
+    remain intact. Separate tests exercise the full-density workload.
     """
 
     page = driver(
         stored_theme="dark",
         viewport=(1440, 900),
         bounded_tentacle_rendering=True,
-        animation_frame_interval_ms=100,
+        manual_tentacle_rendering=True,
     )
     contact = page.locator("#contact")
     expect(contact).to_be_attached()
     frame = page.locator(".contact__tentacles")
     expect(frame).to_be_attached()
-    _wait_for_bounded_contact_tentacles_source(frame)
+    _wait_for_bounded_contact_tentacles_source(
+        frame,
+        manual_animation_frame=True,
+    )
     frame.evaluate(
         """
         (element) => {
@@ -716,6 +728,10 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
         timeout=30_000,
     )
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    frame.evaluate(
+        "element => "
+        "element.contentWindow.__mutaTentaclesDebugFrameAfter(100)"
+    )
 
     expect(canvas).to_have_attribute(
         "data-physics-substeps",
