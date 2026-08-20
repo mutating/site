@@ -1,5 +1,8 @@
 {{ define "main" }}
   {{- $authorSlug := .Params.author -}}
+  {{- if and (not $authorSlug) .File -}}
+    {{- $authorSlug = .File.ContentBaseName -}}
+  {{- end -}}
   {{- $author := site.GetPage (printf "/authors/%s" $authorSlug) -}}
   {{- $localizedAuthor := partial "localized-page.html" $author -}}
   {{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}

@@ -39,7 +39,9 @@
         {{ with .Params.links }}
           <nav class="author-profile__links" aria-label="{{ T "author_external_links" (dict "author" $localizedAuthor.Title) }}">
             {{ range . }}
-              <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ .label }} <span aria-hidden="true">↗</span></a>
+              {{- $label := .label -}}
+              {{- with .labelKey }}{{ $label = T . }}{{ end -}}
+              <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ $label }} <span aria-hidden="true">↗</span></a>
             {{ end }}
           </nav>
         {{ end }}
