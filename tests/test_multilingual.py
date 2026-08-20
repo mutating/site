@@ -201,10 +201,10 @@ def test_russian_home_localizes_interface_and_marketing_content(
     ).to_be_visible()
     expect(russian.locator(".mobile-menu > summary")).to_have_text("Меню")
     expect(russian).to_have_title(
-        "The Mutating Company — ИИ-системы, которые сомневаются"
+        "The Mutating Company — ИИ, который сомневается"
     )
-    expect(russian.locator(".hero h1")).to_contain_text("ИИ-системы")
-    expect(russian.locator(".hero h1")).to_contain_text("которые сомневаются.")
+    expect(russian.locator(".hero h1")).to_contain_text("ИИ,")
+    expect(russian.locator(".hero h1")).to_contain_text("который сомневается.")
     expect(
         russian.locator(".hero__actions").get_by_role(
             "link", name="Читать наш манифест"
@@ -277,7 +277,7 @@ def test_russian_home_localizes_interface_and_marketing_content(
         re.compile(r"Начать разговор")
     )
     expect(russian.locator(".site-footer__tagline")).to_have_text(
-        "ИИ-системы, которые сомневаются. Для программ, которые не должны подвести."
+        "ИИ, который сомневается. Для программ, которые не должны подвести."
     )
 
     home_structure = """

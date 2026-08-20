@@ -466,7 +466,7 @@ def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
         (
             "/ru/",
             {
-                "title": "The Mutating Company — ИИ-системы, которые сомневаются",
+                "title": "The Mutating Company — ИИ, который сомневается",
                 "description": (
                     "Детерминированная верификация, интерпретируемость и "
                     "инфраструктура тестирования для ИИ-агентов, создающих "
