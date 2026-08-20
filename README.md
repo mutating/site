@@ -60,7 +60,10 @@ Every authored page lives in `content/`:
 - `content/blog/<post>/translation.ru.md` contains an optional Russian
   translation of that post.
 - `content/authors/_index.md` contains the author-directory introduction.
-- `content/authors/*.md` contains author profiles.
+- `content/authors/<author-slug>/index.md` contains each author profile and its
+  canonical identity metadata.
+- `content/authors/<author-slug>/translation.ru.md` contains an optional Russian
+  translation of that profile.
 - `content/author-posts/<author-slug>/_index.md` configures the paginated post
   archive for an author.
 
@@ -142,11 +145,11 @@ the post body receive hover-revealed anchor links. Fenced code blocks use the
 language declared after the opening fence for syntax highlighting and reveal a
 copy button on hover.
 
-The optional `author` value is the filename of a profile in `content/authors/`
-without the `.md` extension. For example, `author: "muta"` resolves
-`content/authors/muta.md`, adds a `By Muta` link to the post metadata, and
-routes it to `/authors/muta/`. If `author` is omitted, no author metadata is
-rendered.
+The optional `author` value is the bundle directory name of a profile in
+`content/authors/`. For example, `author: "muta"` resolves
+`content/authors/muta/index.md`, adds a `By Muta` link to the post metadata,
+and routes it to `/authors/muta/`. If `author` is omitted, no author metadata
+is rendered.
 
 The optional `tags` list is rendered at the bottom of a post. Each tag links
 to `/tags/<tag>/`, where Hugo uses the same cards and pagination as the main
@@ -203,9 +206,9 @@ hugo --printI18nWarnings
 
 ## Add an author
 
-Create `content/authors/<author-slug>.md`. Author URLs always use the filename,
-so `content/authors/jane-doe.md` becomes `/authors/jane-doe/` regardless of the
-display name:
+Create `content/authors/<author-slug>/index.md`. Author URLs always use the
+bundle directory, so `content/authors/jane-doe/index.md` becomes
+`/authors/jane-doe/` regardless of the display name:
 
 ```markdown
 ---
@@ -229,8 +232,29 @@ This body supports the same Markdown features as a blog post.
 `robot` is a boolean: use `true` for an automated author and `false` for a
 human. `links` is optional and its entire region is omitted when the list is
 absent. The profile automatically collects all posts whose `author` value
-matches its filename and derives up to five of the most frequent tags across
-those posts.
+matches its bundle directory and derives up to five of the most frequent tags
+across those posts.
+
+To translate the profile, add `translation.ru.md` beside `index.md` with only
+the localized fields:
+
+```text
+content/authors/jane-doe/
+├── index.md
+└── translation.ru.md
+```
+
+```markdown
+---
+title: "Джейн Доу"
+---
+
+Джейн создаёт системы верификации для распределённых программных агентов.
+```
+
+Keep `robot`, photos, external link destinations, and other shared identity
+metadata only in the canonical `index.md`. Until the translation exists, the
+Russian URL renders the canonical profile as a fallback.
 
 If the author has posts, also create
 `content/author-posts/<author-slug>/_index.md` so the profile can link to a
