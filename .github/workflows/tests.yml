@@ -14,9 +14,25 @@ concurrency:
 
 jobs:
   pytest:
-    name: Hugo and Playwright tests
+    name: ${{ matrix.suite.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.suite.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - name: Browser tests
+            marker: "not interactive_visuals"
+            workers: 2
+            timeout: 15
+          - name: Tentacle WebGL tests
+            marker: "xdist_group(name='tentacle-webgl')"
+            workers: 1
+            timeout: 30
+          - name: Tokamak WebGL tests
+            marker: "xdist_group(name='tokamak-webgl')"
+            workers: 1
+            timeout: 20
 
     steps:
       - name: Check out the repository
@@ -47,4 +63,23 @@ jobs:
         run: venv/bin/python -m playwright install --with-deps chromium
 
       - name: Run the test suite
-        run: venv/bin/python -m pytest
+        run: >-
+          venv/bin/python -m pytest
+          -n ${{ matrix.suite.workers }}
+          -m "${{ matrix.suite.marker }}"
+          -vv
+          --tb=short
+          --durations=25
+
+  test-result:
+    name: Hugo and Playwright tests
+    if: ${{ always() }}
+    needs: pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify every test shard passed
+        env:
+          TEST_SHARDS_RESULT: ${{ needs.pytest.result }}
+        run: test "$TEST_SHARDS_RESULT" = "success"
