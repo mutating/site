@@ -1,9 +1,9 @@
 <footer class="site-footer section-shell">
   <p class="site-footer__legal">© <span data-current-year></span> THE MUTATING COMPANY.</p>
-  <p class="site-footer__tagline">AI systems that doubt. Built for software that has to hold up.</p>
+  <p class="site-footer__tagline">{{ T "footer_tagline" }}</p>
   <div class="site-footer__links">
     {{ partial "source-link.html" . }}
-    <a href="{{ "/blog/" | relLangURL }}">Blog</a>
-    <a href="{{ "/#contact" | relLangURL }}">Contact</a>
+    <a href="{{ "/blog/" | relLangURL }}">{{ T "nav_blog" }}</a>
+    <a href="{{ "/#contact" | relLangURL }}">{{ T "nav_contact" }}</a>
   </div>
 </footer>

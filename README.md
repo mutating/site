@@ -54,21 +54,35 @@ is intentionally ignored by Git.
 
 Every authored page lives in `content/`:
 
-- `content/_index.md` contains the landing-page content.
+- `content/_index.md` contains the English landing-page content.
+- `content/_index.ru.md` contains the Russian landing-page translation.
 - `content/blog/_index.md` contains the blog-list introduction.
+- `content/blog/_index.ru.md` contains its Russian translation.
 - `content/blog/<post>/index.md` contains each post and its canonical metadata.
 - `content/blog/<post>/translation.ru.md` contains an optional Russian
   translation of that post.
 - `content/authors/_index.md` contains the author-directory introduction.
-- `content/authors/*.md` contains author profiles.
+- `content/authors/_index.ru.md` contains its Russian translation.
+- `content/authors/<author-slug>/index.md` contains each author profile and its
+  canonical identity metadata.
+- `content/authors/<author-slug>/translation.ru.md` contains an optional Russian
+  translation of that profile.
 - `content/author-posts/<author-slug>/_index.md` configures the paginated post
   archive for an author.
+- `content/author-posts/<author-slug>/_index.ru.md` contains the localized
+  archive title, description, and introduction.
+
+Shared interface copy lives in Hugo translation tables:
+
+- `i18n/en.toml` contains the complete default-language catalog.
+- `i18n/ru.toml` contains the Russian interface translation.
 
 Everything that defines presentation or behavior lives in `themes/mutating/`:
 
 - `layouts/_default/baseof.html` is the shared HTML document.
 - `layouts/partials/header.html` and `footer.html` are shared by every page.
-- `layouts/index.html` renders the landing page.
+- `layouts/index.html` composes the landing page from `layouts/partials/home/`;
+  those partials own its shared structure, assets, and interactive mounts.
 - `layouts/blog/list.html` and `single.html` render the blog entry points.
 - `layouts/_default/term.html` renders filtered tag collections.
 - `layouts/author-posts/list.html` renders author-specific post archives.
@@ -85,10 +99,9 @@ Everything that defines presentation or behavior lives in `themes/mutating/`:
   Hugo.
 - `static/` also contains every local image, font, SVG, and standalone
   interactive HTML asset.
-- The Tentacles and Tokamak iframes keep stable static paths, while
-  `layouts/index.html` injects each file's full SHA-256 into its `v` query during
-  every build; `content/_index.md` therefore contains fingerprint markers,
-  never manually maintained revisions.
+- The Tentacles and Tokamak iframes keep stable static paths, while their home
+  partials inject each file's full SHA-256 into its `v` query during every
+  build.
 
 ## Add a blog post
 
@@ -137,11 +150,11 @@ the post body receive hover-revealed anchor links. Fenced code blocks use the
 language declared after the opening fence for syntax highlighting and reveal a
 copy button on hover.
 
-The optional `author` value is the filename of a profile in `content/authors/`
-without the `.md` extension. For example, `author: "muta"` resolves
-`content/authors/muta.md`, adds a `By Muta` link to the post metadata, and
-routes it to `/authors/muta/`. If `author` is omitted, no author metadata is
-rendered.
+The optional `author` value is the bundle directory name of a profile in
+`content/authors/`. For example, `author: "muta"` resolves
+`content/authors/muta/index.md`, adds a `By Muta` link to the post metadata,
+and routes it to `/authors/muta/`. If `author` is omitted, no author metadata
+is rendered.
 
 The optional `tags` list is rendered at the bottom of a post. Each tag links
 to `/tags/<tag>/`, where Hugo uses the same cards and pagination as the main
@@ -180,11 +193,61 @@ archive, and blog collections one article per language site without duplicated
 front matter. If `translation.ru.md` is absent, `/ru/blog/<slug>/` renders the
 canonical English article.
 
+### Translate the landing page
+
+The landing page uses Hugo's native home-page translations:
+
+```text
+content/
+├── _index.md
+└── _index.ru.md
+```
+
+Both files define the same structured `home` fields for the hero, ticker,
+content sections, dynamic-post heading, and contact block. The English and
+Russian files contain copy only. Shared HTML, image sources, section order,
+interactive mounts, and fingerprint generation live in
+`themes/mutating/layouts/partials/home/`.
+
+Add or rename a home content field in both language files, then consume it from
+the corresponding partial. Do not duplicate home HTML in either content file.
+The latest-posts partial resolves each card through the same localized
+page-resource mechanism used by blog lists and articles.
+
+### Translate collection introductions
+
+Blog, author-directory, and author-archive headers are section content. Add a
+native `_index.ru.md` beside each canonical `_index.md` and translate only its
+`title`, `description`, and Markdown body. Keep structural values such as
+`author`, `type`, and `bodyClass` in the canonical file; templates derive the
+archive identity and page class without duplicating them in translations.
+
+Tag collection headings are generated dynamically because tags come from post
+metadata. Their surrounding copy belongs in `i18n/en.toml` and `i18n/ru.toml`
+under `blog_tagged_signals`, `signals_tagged_prefix`, and
+`tagged_posts_pagination`; the tag value itself remains canonical.
+
+### Translate the interface
+
+Navigation labels, reading times, pagination, author statuses, tooltips, dates,
+and other shared interface copy use Hugo's `T` function and the tables in
+`i18n/`. Add every new message key to both language files, using Hugo plural
+forms for count-dependent text. Keep article and landing-page prose in
+`content/` rather than moving it into the interface catalog.
+
+The selected language controls both layers: `/ru/` renders Russian interface
+messages and localized dates even when an untranslated article falls back to
+its canonical English content. Check catalog gaps during development with:
+
+```bash
+hugo --printI18nWarnings
+```
+
 ## Add an author
 
-Create `content/authors/<author-slug>.md`. Author URLs always use the filename,
-so `content/authors/jane-doe.md` becomes `/authors/jane-doe/` regardless of the
-display name:
+Create `content/authors/<author-slug>/index.md`. Author URLs always use the
+bundle directory, so `content/authors/jane-doe/index.md` becomes
+`/authors/jane-doe/` regardless of the display name:
 
 ```markdown
 ---
@@ -208,8 +271,29 @@ This body supports the same Markdown features as a blog post.
 `robot` is a boolean: use `true` for an automated author and `false` for a
 human. `links` is optional and its entire region is omitted when the list is
 absent. The profile automatically collects all posts whose `author` value
-matches its filename and derives up to five of the most frequent tags across
-those posts.
+matches its bundle directory and derives up to five of the most frequent tags
+across those posts.
+
+To translate the profile, add `translation.ru.md` beside `index.md` with only
+the localized fields:
+
+```text
+content/authors/jane-doe/
+├── index.md
+└── translation.ru.md
+```
+
+```markdown
+---
+title: "Джейн Доу"
+---
+
+Джейн создаёт системы верификации для распределённых программных агентов.
+```
+
+Keep `robot`, photos, external link destinations, and other shared identity
+metadata only in the canonical `index.md`. Until the translation exists, the
+Russian URL renders the canonical profile as a fallback.
 
 If the author has posts, also create
 `content/author-posts/<author-slug>/_index.md` so the profile can link to a
@@ -265,18 +349,16 @@ python -m pytest -n 16
 python -m pytest -n 1
 ```
 
-Each xdist worker performs its own clean Hugo build, cache, content copy,
-nonstandard port selection, server process, and browser lifecycle. Nothing is
-shared between worker filesystems or server processes. A successful validation
-build is removed immediately and the development server renders to memory, so
-raising `-n` does not multiply full static-site copies on disk. Tests that
-require the real WebGL tentacle or tokamak renderers opt in with the
+Each xdist worker performs its own content copy, cache, nonstandard port
+selection, server process, and browser lifecycle. The immutable validation
+build is protected by a file lock and performed once for the complete pytest
+run; every worker then serves its own in-memory Hugo site. Tests that require
+the real WebGL tentacle or tokamak renderers opt in with the
 `interactive_visuals` marker; `--dist loadgroup` keeps each renderer's tests on
-one resource group so changing `-n` does not create competing GPU contexts.
-All other browser tests intercept those heavyweight iframe resources while
-still exercising the real page DOM and application code. At the end of the
-session every worker terminates its complete Hugo process group and pytest
-removes its temporary build directories.
+one resource group. All other browser tests intercept those heavyweight iframe
+resources while still exercising the real page DOM and application code. At
+the end of the session every worker terminates its complete Hugo process group
+and pytest removes its temporary build directories.
 
 An explicitly configured already-running URL remains available for focused
 diagnostics:
@@ -289,10 +371,16 @@ TEST_BASE_URL=http://127.0.0.1:1313 python -m pytest tests/test_blog.py
 
 `.github/workflows/tests.yml` runs on every push to every branch. The GitHub
 runner installs Hugo Extended `0.164.0` and Python `3.11`, creates the same
-repository-local `venv` used for local development, installs Chromium and its
-system dependencies through Playwright, and runs the complete pytest suite.
-The tests perform their own temporary Hugo build and server lifecycle through
-`tests/conftest.py`.
+repository-local `venv` used for local development, and installs Chromium and
+its system dependencies through Playwright. A three-entry matrix runs ordinary
+browser tests on two workers and gives each WebGL renderer its own one-worker
+job. This prevents Chromium's software WebGL renderers on the Linux runner from
+competing for CPU while allowing the three independent suites to run in
+parallel. Verbose node IDs and the 25 slowest durations remain in every job log
+even when another matrix entry fails. A 120-second per-test timeout turns a
+stalled browser-side promise into an attributable failure instead of letting it
+consume the complete job timeout. The tests perform their own temporary Hugo
+build and server lifecycle through `tests/conftest.py`.
 
 ## Production deployment
 

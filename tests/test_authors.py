@@ -21,11 +21,15 @@ PAGER_SIZE = int(HUGO_CONFIG["pagination"]["pagerSize"])
 def test_author_content_uses_a_boolean_robot_flag() -> None:
     """Define human-versus-robot identity with boolean robot front matter."""
 
-    author_files = sorted(
+    flat_author_files = sorted(
         path
         for path in (PROJECT_ROOT / "content" / "authors").glob("*.md")
-        if path.name != "_index.md"
+        if not path.name.startswith("_index.")
     )
+    bundled_author_files = sorted(
+        (PROJECT_ROOT / "content" / "authors").glob("*/index.md")
+    )
+    author_files = flat_author_files + bundled_author_files
     assert author_files
 
     for author_file in author_files:
@@ -140,7 +144,7 @@ def test_author_byline_partial_is_shared_by_posts_and_post_lists() -> None:
 
     assert 'partial "author-byline.html"' in post_status
     assert 'partial "author-byline.html"' in post_list
-    assert '"prefix" "By "' in post_list
+    assert 'T "author_by"' in post_list
     assert 'class="post__author"' not in post_status
     assert "author-status__light" in byline
     assert "data-author-status" in byline

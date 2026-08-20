@@ -1,0 +1,16 @@
+{{- $content := .Params.home.containment -}}
+{{- $tokamakSource := os.ReadFile "themes/mutating/static/tokamak-reactor.html" -}}
+{{- $tokamakFingerprint := crypto.SHA256 $tokamakSource -}}
+<section class="containment section-shell" id="containment" aria-labelledby="containment-heading">
+  <div class="containment__copy">
+    <a class="section-index" href="#containment">03 / {{ $content.label }}</a>
+    <h2 id="containment-heading">{{ $content.heading }}</h2>
+    <p class="large-copy">{{ $content.lead }}</p>
+    <p>{{ $content.paragraph_before_link }}<a class="inline-text-link" href="https://en.wikipedia.org/wiki/Tokamak" target="_blank" rel="noreferrer">{{ $content.link_label }}</a>{{ $content.paragraph_after_link }}</p>
+    <div class="containment__formula containment__formula--desktop"><span>{{ $content.formula_agent }}</span><b>×</b><span>{{ $content.formula_checks }}</span><b>=</b><span>{{ $content.formula_result }}</span></div>
+  </div>
+  <div class="containment__visual">
+    <div class="tokamak-model"><iframe class="tokamak-model__frame" data-deferred-src="/tokamak-reactor.html?v={{ $tokamakFingerprint }}" title="{{ $content.reactor_title }}" loading="lazy" tabindex="-1" aria-label="{{ $content.reactor_aria }}"></iframe></div>
+  </div>
+  <div class="containment__formula containment__formula--mobile"><span>{{ $content.formula_agent }}</span><b>×</b><span>{{ $content.formula_checks }}</span><b>=</b><span>{{ $content.formula_result }}</span></div>
+</section>

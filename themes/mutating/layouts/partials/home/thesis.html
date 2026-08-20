@@ -1,0 +1,10 @@
+{{- $content := .Params.home.thesis -}}
+<section class="manifesto section-shell" id="thesis">
+  <a class="section-index" href="#thesis">02 / {{ $content.label }}</a>
+  <div class="manifesto__headline"><h2>{{ $content.heading }}</h2></div>
+  <div class="manifesto__body">
+    <p class="large-copy">{{ $content.lead }}</p>
+    {{- range $content.paragraphs }}<p>{{ . }}</p>{{ end }}
+  </div>
+  <div class="manifesto__visual" aria-hidden="true"><img class="manifesto__art" data-deferred-src="/thesis-resistance-field-pink-v1-lossless.webp" width="1254" height="1254" loading="lazy" decoding="async" alt=""></div>
+</section>

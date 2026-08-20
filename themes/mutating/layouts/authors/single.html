@@ -1,4 +1,5 @@
 {{ define "main" }}
+{{- $localizedAuthor := partial "localized-page.html" . -}}
 {{- $authorSlug := .File.ContentBaseName -}}
 {{- $status := partial "author-kind.html" . -}}
 {{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
@@ -27,18 +28,20 @@
 <article class="author-profile{{ if $posts }} author-profile--with-posts{{ end }} section-shell">
   <header class="author-profile__hero">
     <div class="author-profile__intro">
-      <nav class="section-index author-profile__breadcrumb" aria-label="Author breadcrumb">
-        <a href="{{ "/authors/" | relLangURL }}">AUTHORS</a>
+      <nav class="section-index author-profile__breadcrumb" aria-label="{{ T "author_breadcrumb" }}">
+        <a href="{{ "/authors/" | relLangURL }}">{{ T "authors_label" }}</a>
         <span aria-hidden="true">/</span>
         <a href="{{ .RelPermalink }}" aria-current="page">{{ upper $authorSlug }}</a>
       </nav>
-      <h1>{{ .Title }}</h1>
+      <h1>{{ $localizedAuthor.Title }}</h1>
       <div class="author-profile__meta">
         {{ partial "author-status.html" (dict "author" . "variant" "profile" "class" "author-profile__status") }}
         {{ with .Params.links }}
-          <nav class="author-profile__links" aria-label="{{ $.Title }} external links">
+          <nav class="author-profile__links" aria-label="{{ T "author_external_links" (dict "author" $localizedAuthor.Title) }}">
             {{ range . }}
-              <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ .label }} <span aria-hidden="true">↗</span></a>
+              {{- $label := .label -}}
+              {{- with .labelKey }}{{ $label = T . }}{{ end -}}
+              <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ $label }} <span aria-hidden="true">↗</span></a>
             {{ end }}
           </nav>
         {{ end }}
@@ -52,13 +55,13 @@
             class="mascot-card__art"
             src="{{ . | relURL }}"
             {{- with $.Params.photo2x }} srcset="{{ $.Params.photo | relURL }} 1x, {{ . | relURL }} 2x"{{ end }}
-            alt="{{ $.Title }}"
+            alt="{{ $localizedAuthor.Title }}"
           >
         </figure>
       {{ end }}
       {{ if and (gt (len $posts) 0) (gt (len $tagItems) 0) }}
         <aside class="author-profile__tags" aria-labelledby="author-tags-heading">
-          <p class="author-profile__label" id="author-tags-heading">FREQUENT TAGS</p>
+          <p class="author-profile__label" id="author-tags-heading">{{ T "frequent_tags" }}</p>
           <ol>
             {{ range first 5 $tagItems }}
               <li>
@@ -67,7 +70,7 @@
                   "href" (printf "/tags/%s/" (.name | urlize) | relLangURL)
                   "size" "compact"
                   "count" .count
-                  "ariaLabel" (printf "#%s, %d authored signals" .name .count)
+                  "ariaLabel" (T "authored_signals_count" (dict "tag" .name "count" .count))
                 ) }}
               </li>
             {{ end }}
@@ -79,17 +82,17 @@
 
   <div class="author-profile__details">
     <div class="author-profile__bio">
-      <div class="post__content author-profile__content">{{ .Content }}</div>
+      <div class="post__content author-profile__content">{{ $localizedAuthor.Content }}</div>
     </div>
   </div>
 
   {{ if $posts }}
   <section class="author-posts" aria-labelledby="author-posts-heading">
     <header>
-      <h2 id="author-posts-heading">Authored signals.</h2>
+      <h2 id="author-posts-heading">{{ T "author_posts_heading" }}</h2>
       {{ with $archive }}
-        <a class="author-posts__archive" href="{{ .RelPermalink }}" aria-label="View every post by {{ $.Title }}">
-          <span>All field notes</span><b aria-hidden="true">↗</b>
+        <a class="author-posts__archive" href="{{ .RelPermalink }}" aria-label="{{ T "view_every_post_by" (dict "author" $localizedAuthor.Title) }}">
+          <span>{{ T "all_field_notes" }}</span><b aria-hidden="true">↗</b>
         </a>
       {{ end }}
     </header>
@@ -98,8 +101,8 @@
         {{- $localizedPost := partial "localized-page.html" . -}}
         <a class="author-post-card" href="{{ .RelPermalink }}">
           <div>
-            <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
-            <span>{{ $localizedPost.ReadingTime }} min read</span>
+            <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date | time.Format "02 Jan 2006" }}</time>
+            <span>{{ T "reading_time" (dict "count" $localizedPost.ReadingTime) }}</span>
           </div>
           <h3>{{ $localizedPost.Title }}</h3>
           <p>{{ $localizedPost.Description | default $localizedPost.Summary }}</p>

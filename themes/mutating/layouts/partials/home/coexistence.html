@@ -1,0 +1,12 @@
+{{- $content := .Params.home.coexistence -}}
+<section class="coexistence section-shell" id="the-deal">
+  <a class="section-index" href="#the-deal">07 / {{ $content.label }}</a>
+  <h2>{{ $content.heading }}</h2>
+  <p>{{ $content.paragraph }}</p>
+  <button type="button" class="coexistence__pair" aria-label="{{ $content.control_aria }}" aria-pressed="false">
+    <span class="coexistence__pair-inner">
+      <span class="coexistence__pair-face coexistence__pair-face--front" aria-hidden="false"><span>{{ $content.human }}</span><i>⇄</i><span>{{ $content.robot }}</span><small>{{ $content.shared_ground }}</small></span>
+      <span class="coexistence__pair-face coexistence__pair-face--back" aria-hidden="true"><span>{{ $content.robot }}</span><i>⇄</i><span>{{ $content.human }}</span><small>{{ $content.shared_ground }}</small></span>
+    </span>
+  </button>
+</section>

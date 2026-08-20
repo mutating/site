@@ -3,7 +3,7 @@
   <head>
     {{ partial "head.html" . }}
   </head>
-  <body class="{{ with .Params.bodyClass }}{{ . }}{{ else }}site-page{{ end }}">
+  <body class="{{ with .Params.bodyClass }}{{ . }}{{ else }}{{ if .IsHome }}home-page{{ else if or (eq .Section "blog") (eq .Section "author-posts") }}blog-page{{ else }}site-page{{ end }}{{ end }}">
     <main>
       {{ partial "header.html" . }}
       {{ block "main" . }}{{ end }}

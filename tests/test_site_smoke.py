@@ -5615,13 +5615,16 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
     page = driver(
         stored_theme="dark",
         viewport=viewport,
+        bounded_tentacle_rendering=True,
     )
     frame = page.locator(".contact__tentacles")
     expect(frame).to_be_attached(timeout=30_000)
     expect(frame).to_have_attribute(
         "src",
         re.compile(
-            r"^/muta-tentacles\.html\?v=[0-9a-f]{64}&embedded=1$"
+            r"^/muta-tentacles\.html\?v=[0-9a-f]{64}&embedded=1"
+            r"&max-tentacles=64&render-supersample=0\.5"
+            r"&generation-seed=12345$"
         ),
         timeout=30_000,
     )

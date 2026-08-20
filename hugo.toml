@@ -14,6 +14,7 @@ defaultContentLanguageInSubdir = false
   [languages.ru]
     label = "Русский"
     locale = "ru-RU"
+    title = "The Mutating Company — ИИ, который сомневается"
     weight = 2
 
 # Publish each default-language page into every language site. Templates replace

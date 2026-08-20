@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 from playwright.sync_api import expect
@@ -171,10 +172,10 @@ def test_multilingual_collections_never_repeat_an_article(
         assert len(hrefs) == len(set(hrefs)), path
 
 
-def test_home_copy_is_identical_in_both_languages(
+def test_russian_home_localizes_interface_and_marketing_content(
     driver: DriverFactory,
 ) -> None:
-    """Keep landing-page copy unchanged outside the language control."""
+    """Render one shared home structure with complete language-specific copy."""
 
     english = driver(
         stored_language="en",
@@ -186,18 +187,364 @@ def test_home_copy_is_identical_in_both_languages(
         load_interactive_visuals=False,
     )
 
-    copy_without_language_control = """
-      body => {
-        const copy = body.cloneNode(true);
-        copy.querySelectorAll("[data-language-switcher]").forEach(
-          (switcher) => switcher.remove(),
-        );
-        return copy.innerText;
-      }
+    expect(english.locator(".main-nav .source-link")).to_have_text("Sources")
+    expect(russian.locator(".main-nav .source-link")).to_have_text("Исходники")
+    expect(russian.locator(".main-nav")).to_have_attribute(
+        "aria-label", "Основная навигация"
+    )
+    expect(russian.locator(".main-nav").get_by_role("link", name="Блог")).to_be_visible()
+    expect(
+        russian.locator(".main-nav").get_by_role("link", name="Контакты")
+    ).to_be_visible()
+    expect(
+        russian.get_by_role("button", name="Переключить цветовую тему")
+    ).to_be_visible()
+    expect(russian.locator(".mobile-menu > summary")).to_have_text("Меню")
+    expect(russian).to_have_title(
+        "The Mutating Company — ИИ, который сомневается"
+    )
+    assert russian.locator(".hero h1").inner_html() == (
+        "ИИ, который<br><em>сомневается</em>"
+    )
+    expect(
+        russian.locator(".hero__actions").get_by_role(
+            "link", name="Читать наш тезис"
+        )
+    ).to_have_attribute("href", "#sections")
+    expect(
+        russian.locator(".hero__actions").get_by_role(
+            "link", name="Заглянуть в open-source-лабораторию"
+        )
+    ).to_have_attribute("href", "#open-source")
+    expect(russian.locator(".hero__signal")).to_have_attribute(
+        "aria-label", "Состояние системы"
+    )
+    expect(russian.locator(".mascot-card__art")).to_have_attribute(
+        "alt", "Весёлый розовый одноглазый мутант с подозрительной ухмылкой"
+    )
+    expect(russian.locator("#complexity h2")).to_have_text(
+        "Энтропия сначала шепчет. Потом выставляет счёт."
+    )
+    expect(russian.locator("#thesis h2")).to_have_text(
+        "Большему интеллекту — больше сопротивления."
+    )
+    expect(russian.locator("#containment h2")).to_have_text(
+        "Удержать плазму. Направить энергию."
+    )
+    expect(russian.locator("#what-we-build h2")).to_have_text(
+        "Скептический слой для стека агентных систем."
+    )
+    assert russian.locator(".pillar-card h3").all_inner_texts() == [
+        "Верифицируемость",
+        "Интерпретируемость",
+        "Тестирование в темпе агентов",
+    ]
+    expect(russian.locator("#scale h2")).to_have_text(
+        "Локально, когда нужно. Распределённо, когда всерьёз."
+    )
+    assert russian.locator(".feedback-node strong").all_inner_texts() == [
+        "Продукт лучше",
+        "Тесты быстрее",
+        "Сигналы точнее",
+        "Агенты умнее",
+    ]
+    expect(russian.locator("#the-deal h2")).to_have_text(
+        "Люди и роботы могут сосуществовать."
+    )
+    expect(russian.locator("#dispatches-heading")).to_have_text(
+        "Свежие сигналы из лаборатории."
+    )
+    expect(russian.locator(".dispatches__status")).to_contain_text(
+        "Последние заметки"
+    )
+    call_to_actions = russian.locator(".dispatch-card__cta")
+    expect(call_to_actions).to_have_count(2)
+    assert all(
+        "Читать заметку" in text for text in call_to_actions.all_inner_texts()
+    )
+    localized_card = russian.locator(
+        f'.dispatch-card[href="/ru{LATEST_DIGEST_PATH}"]'
+    )
+    expect(localized_card.locator("h3")).to_have_text(
+        "Дайджест мутационного тестирования за июль 2026 года"
+    )
+    expect(localized_card.locator(".dispatch-card__description")).to_have_text(
+        "Выжившие мутанты как рабочие задания, оценки проходят проверку"
+    )
+    expect(russian.locator("#contact h2")).to_have_text(
+        "Создаёте серьёзную агентную инфраструктуру?"
+    )
+    expect(russian.locator("#contact .button")).to_have_text(
+        re.compile(r"Начать разговор")
+    )
+    expect(russian.locator(".site-footer__tagline")).to_have_text(
+        "ИИ, который сомневается. Для программ, которые не должны подвести."
+    )
+
+    home_structure = """
+      sections => sections.map(section => ({
+        id: section.id,
+        classes: section.className,
+      }))
     """
-    assert english.locator("body").evaluate(
-        copy_without_language_control
-    ) == russian.locator("body").evaluate(copy_without_language_control)
+    assert english.locator("main > section").evaluate_all(
+        home_structure
+    ) == russian.locator("main > section").evaluate_all(home_structure)
+
+
+def test_home_translation_files_keep_structural_html_in_templates() -> None:
+    """Store home copy in content files while keeping its markup in the theme."""
+
+    for path in (
+        PROJECT_ROOT / "content" / "_index.md",
+        PROJECT_ROOT / "content" / "_index.ru.md",
+    ):
+        source = path.read_text(encoding="utf-8")
+        assert "<section" not in source
+        assert "<iframe" not in source
+        assert "<canvas" not in source
+
+
+def test_russian_collection_headers_use_localized_copy(
+    driver: DriverFactory,
+) -> None:
+    """Localize the visible introductions for every collection entry point."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/blog/",
+        load_interactive_visuals=False,
+    )
+    origin = page.url.split("/ru/", maxsplit=1)[0]
+
+    expect(page.locator("body")).to_have_class(re.compile(r"\bblog-page\b"))
+    expect(page.locator(".blog-index__header > .section-index")).to_have_text(
+        "БЛОГ"
+    )
+    expect(page.locator(".blog-index__header h1")).to_have_text(
+        "Полевые заметки из скептического слоя."
+    )
+    expect(page.locator(".blog-index__intro")).to_have_text(
+        "Эксперименты, принципы работы и практические выводы из разработки "
+        "систем, позволяющих проверять работу в машинном масштабе."
+    )
+
+    page.goto(f"{origin}/ru/authors/muta/posts/", wait_until="domcontentloaded")
+    expect(page.locator("body")).to_have_class(re.compile(r"\bblog-page\b"))
+    expect(page.locator(".blog-index__header > .section-index")).to_have_text(
+        "АВТОРЫ / MUTA / ЗАМЕТКИ"
+    )
+    expect(page.locator(".blog-index__header h1")).to_have_text(
+        "Материалы автора Muta."
+    )
+    expect(page.locator(".blog-index__intro")).to_have_text(
+        "Автоматические сводки директора по сомнениям — от новых сигналов к "
+        "старым."
+    )
+
+    page.goto(f"{origin}/ru/tags/testing/", wait_until="domcontentloaded")
+    expect(page.locator(".blog-index__header > .section-index")).to_have_text(
+        "БЛОГ / МАТЕРИАЛЫ ПО ТЕГУ"
+    )
+    expect(page.locator(".blog-index__header h1")).to_have_text(
+        "Материалы с тегом [#testing]."
+    )
+
+    page.goto(f"{origin}/ru/authors/", wait_until="domcontentloaded")
+    expect(page.locator(".authors-index__header > .section-index")).to_have_text(
+        "АВТОРЫ / КАТАЛОГ"
+    )
+    expect(page.locator(".authors-index__header h1")).to_have_text("Авторы")
+    expect(page.locator('meta[name="description"]')).to_have_attribute(
+        "content", "Люди и роботы, передающие сигналы из скептического слоя."
+    )
+
+
+def test_collection_translation_resources_only_contain_localized_fields() -> None:
+    """Keep routing and archive identity metadata in canonical section files."""
+
+    translations = (
+        PROJECT_ROOT / "content" / "blog" / "_index.ru.md",
+        PROJECT_ROOT / "content" / "authors" / "_index.ru.md",
+        PROJECT_ROOT / "content" / "author-posts" / "muta" / "_index.ru.md",
+    )
+
+    for translation in translations:
+        front_matter = translation.read_text(encoding="utf-8").split("---", 2)[1]
+        assert re.search(r"^title:", front_matter, re.MULTILINE)
+        assert re.search(r"^description:", front_matter, re.MULTILINE)
+        for canonical_key in ("author", "type", "bodyClass"):
+            assert re.search(
+                rf"^{canonical_key}:", front_matter, re.MULTILINE
+            ) is None
+
+
+def test_russian_home_hero_fits_narrow_viewports(
+    driver: DriverFactory,
+) -> None:
+    """Keep the longer non-wrapping Russian hero line inside the page shell."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/",
+        viewport=(390, 844),
+        load_interactive_visuals=False,
+    )
+
+    for width, height in ((390, 844), (280, 700)):
+        page.set_viewport_size({"width": width, "height": height})
+        bounds = page.locator(".hero h1 em").evaluate(
+            """
+            element => {
+              const rect = element.getBoundingClientRect();
+              return {
+                left: rect.left,
+                right: rect.right,
+                viewportWidth: document.documentElement.clientWidth,
+              };
+            }
+            """
+        )
+        assert bounds["left"] >= 0
+        assert bounds["right"] <= bounds["viewportWidth"]
+
+
+def test_russian_article_localizes_shared_interface(
+    driver: DriverFactory,
+) -> None:
+    """Use the active Hugo language for chrome, dates, plurals, and accessibility."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path=f"/ru{MAY_POST_PATH}",
+        load_interactive_visuals=False,
+    )
+
+    expect(page.locator(".post__header .section-index")).to_have_text("БЛОГ")
+    expect(page.locator(".post__header time")).to_have_text("01 июня 2026")
+    expect(page.locator(".post-reading-time > span").first).to_have_text(
+        "16 минут чтения"
+    )
+    expect(page.locator("#post-word-count")).to_have_text("3335 слов")
+    expect(page.locator(".post__author")).to_have_text("Автор: Muta")
+    expect(page.locator(".author-status__tooltip")).to_contain_text(
+        "Muta — автоматизированный автор."
+    )
+    expect(page.locator(".post__toc-label--desktop")).to_have_text(
+        "На этой странице"
+    )
+    expect(page.locator(".post__toc-label--mobile")).to_have_text("22 раздела")
+    expect(page.locator(".post__tags")).to_have_attribute(
+        "aria-label", "Темы этой заметки"
+    )
+    expect(page.locator(".post__nav")).to_have_attribute(
+        "aria-label", "Навигация по публикациям"
+    )
+    expect(page.locator(".post__nav-link--next small")).to_have_text("Следующая")
+
+
+def test_russian_author_profiles_use_localized_content_and_shared_metadata(
+    driver: DriverFactory,
+) -> None:
+    """Translate author names and biographies without duplicating identity metadata."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/authors/main/",
+        load_interactive_visuals=False,
+    )
+
+    expect(page.locator(".author-profile h1")).to_have_text("Евгений Блинов")
+    expect(page.locator(".author-profile__content")).to_have_text(
+        "Генеральный директор."
+    )
+    expect(page.locator(".author-profile__status")).to_have_attribute(
+        "data-author-status", "human"
+    )
+    expect(page.locator(".author-profile__portrait img")).to_have_attribute(
+        "src", "https://pomponchik.org/41.png"
+    )
+    expect(page.locator(".author-profile__links a")).to_have_attribute(
+        "href", "https://pomponchik.org/"
+    )
+    expect(page.locator(".author-profile__links a")).to_have_text("Сайт ↗")
+    expect(page).to_have_title("Евгений Блинов — The Mutating Company")
+
+    origin = page.url.split("/ru/", maxsplit=1)[0]
+    page.goto(f"{origin}/ru/authors/", wait_until="domcontentloaded")
+    main_card = page.locator('.author-directory-card[href="/ru/authors/main/"]')
+    expect(main_card.locator("h2")).to_have_text("Евгений Блинов")
+    expect(main_card.locator("p")).to_have_text("Генеральный директор.")
+
+    page.goto(f"{origin}/ru/authors/muta/", wait_until="domcontentloaded")
+    expect(page.locator(".author-profile h1")).to_have_text("Muta")
+    expect(page.locator(".author-profile__content")).to_contain_text(
+        "Muta — директор по сомнениям"
+    )
+    expect(page.locator(".author-profile__content")).to_contain_text(
+        "скорость агентов сталкивается с требованиями верификации"
+    )
+    expect(page.locator(".author-profile__status")).to_have_attribute(
+        "data-author-status", "robot"
+    )
+    expect(page.locator(".author-posts__archive")).to_have_attribute(
+        "href", "/ru/authors/muta/posts/"
+    )
+
+
+def test_missing_russian_author_resource_falls_back_to_canonical_profile(
+    driver: DriverFactory,
+) -> None:
+    """Keep fixture and future author profiles usable before translation arrives."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/authors/test-author/",
+        load_interactive_visuals=False,
+    )
+
+    expect(page.locator(".author-profile h1")).to_have_text("Controlled Human")
+    expect(page.locator(".author-profile__content h2")).to_have_text(
+        "Working method"
+    )
+    expect(page.locator(".author-profile__status")).to_have_attribute(
+        "data-author-status", "human"
+    )
+
+
+def test_author_translation_resources_only_contain_localized_fields() -> None:
+    """Keep identity, images, and destinations canonical across profile languages."""
+
+    translation_root = PROJECT_ROOT / "content" / "authors"
+    translations = sorted(translation_root.glob("*/translation.ru.md"))
+    assert {
+        translation.relative_to(translation_root) for translation in translations
+    } == {
+        Path("main/translation.ru.md"),
+        Path("muta/translation.ru.md"),
+    }
+
+    for translation in translations:
+        front_matter = translation.read_text(encoding="utf-8").split("---", 2)[1]
+        assert re.search(r"^title:", front_matter, re.MULTILINE)
+        for canonical_key in ("robot", "photo", "photo2x", "links"):
+            assert re.search(
+                rf"^{canonical_key}:", front_matter, re.MULTILINE
+            ) is None
+
+
+def test_interface_translation_tables_define_the_same_message_keys() -> None:
+    """Require every supported language to cover the complete interface catalog."""
+
+    translation_root = PROJECT_ROOT / "i18n"
+    english = tomllib.loads(
+        (translation_root / "en.toml").read_text(encoding="utf-8")
+    )
+    russian = tomllib.loads(
+        (translation_root / "ru.toml").read_text(encoding="utf-8")
+    )
+
+    assert english.keys() == russian.keys()
 
 
 def test_translation_resources_do_not_duplicate_canonical_front_matter() -> None:

@@ -2821,7 +2821,7 @@ a.section-index:focus-visible {
   .feedback,
   .distribution,
   .containment {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .manifesto {
@@ -3020,6 +3020,10 @@ a.section-index:focus-visible {
     margin-top: 23px;
     font-size: clamp(61px, 20vw, 92px);
     letter-spacing: -0.075em;
+  }
+
+  html:lang(ru) .hero h1 {
+    font-size: clamp(42px, 15vw, 70px);
   }
 
   .hero__lede {

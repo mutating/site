@@ -14,11 +14,11 @@
     <article class="blog-card">
       <a class="blog-card__link" href="{{ .RelPermalink }}">
         <div class="blog-card__meta">
-          <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
-          <span>{{ $localizedPost.ReadingTime }} min read</span>
+          <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date | time.Format "02 Jan 2006" }}</time>
+          <span>{{ T "reading_time" (dict "count" $localizedPost.ReadingTime) }}</span>
           {{ with .Params.author }}
             {{ with site.GetPage (printf "/authors/%s" .) }}
-              {{ partial "author-byline.html" (dict "author" . "prefix" "By ") }}
+              {{ partial "author-byline.html" (dict "author" . "prefix" (printf "%s " (T "author_by"))) }}
             {{ end }}
           {{ end }}
         </div>
@@ -31,9 +31,9 @@
   {{ if $hasPagination }}
   <nav class="blog-pagination" aria-label="{{ .paginationLabel }}">
     {{ if $paginator.HasPrev }}
-      <a class="blog-pagination__direction" href="{{ $paginator.Prev.URL }}">← Newer</a>
+      <a class="blog-pagination__direction" href="{{ $paginator.Prev.URL }}">← {{ T "newer" }}</a>
     {{ else }}
-      <span class="blog-pagination__direction is-disabled" aria-disabled="true">← Newer</span>
+      <span class="blog-pagination__direction is-disabled" aria-disabled="true">← {{ T "newer" }}</span>
     {{ end }}
     <div class="blog-pagination__pages">
       {{ range $paginator.Pagers }}
@@ -41,9 +41,9 @@
       {{ end }}
     </div>
     {{ if $paginator.HasNext }}
-      <a class="blog-pagination__direction" href="{{ $paginator.Next.URL }}">Older →</a>
+      <a class="blog-pagination__direction" href="{{ $paginator.Next.URL }}">{{ T "older" }} →</a>
     {{ else }}
-      <span class="blog-pagination__direction is-disabled" aria-disabled="true">Older →</span>
+      <span class="blog-pagination__direction is-disabled" aria-disabled="true">{{ T "older" }} →</span>
     {{ end }}
   </nav>
   {{ end }}

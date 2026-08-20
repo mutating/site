@@ -1,17 +1,13 @@
 {{ define "main" }}
-  {{- $latestPosts := partial "latest-posts.html" . -}}
-  {{- $content := replaceRE `(?s)<section class="dispatches section-shell" id="open-source".*?</section>` $latestPosts .Content -}}
-  {{- $tentaclesSource := os.ReadFile "themes/mutating/static/muta-tentacles.html" -}}
-  {{- $tentaclesFingerprint := crypto.SHA256 $tentaclesSource -}}
-  {{- $content = replace $content "__MUTA_TENTACLES_FINGERPRINT__" $tentaclesFingerprint -}}
-  {{- $tokamakSource := os.ReadFile "themes/mutating/static/tokamak-reactor.html" -}}
-  {{- $tokamakFingerprint := crypto.SHA256 $tokamakSource -}}
-  {{- $content = replace $content "__TOKAMAK_FINGERPRINT__" $tokamakFingerprint -}}
-  {{- if ne .Site.Language.Lang hugo.Sites.Default.Language.Lang -}}
-    {{- $content = replace $content `href="/authors/` (printf `href="/%s/authors/` .Site.Language.Lang) -}}
-  {{- end -}}
-  {{- if not $latestPosts -}}
-    {{- $content = replace $content `href="#open-source"` `href="https://github.com/mutating"` -}}
-  {{- end -}}
-  {{- $content | safeHTML -}}
+  {{ partial "home/hero.html" . }}
+  {{ partial "home/ticker.html" . }}
+  {{ partial "home/complexity.html" . }}
+  {{ partial "home/thesis.html" . }}
+  {{ partial "home/containment.html" . }}
+  {{ partial "home/pillars.html" . }}
+  {{ partial "home/distribution.html" . }}
+  {{ partial "home/feedback.html" . }}
+  {{ partial "home/coexistence.html" . }}
+  {{ partial "latest-posts.html" . }}
+  {{ partial "home/contact.html" . }}
 {{ end }}

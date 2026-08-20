@@ -1,18 +1,22 @@
 {{ define "main" }}
   {{- $authorSlug := .Params.author -}}
+  {{- if and (not $authorSlug) .File -}}
+    {{- $authorSlug = .File.ContentBaseName -}}
+  {{- end -}}
   {{- $author := site.GetPage (printf "/authors/%s" $authorSlug) -}}
+  {{- $localizedAuthor := partial "localized-page.html" $author -}}
   {{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
   {{ partial "post-list.html" (dict
     "context" .
     "pages" $posts
     "kind" "author"
-    "eyebrow" (printf "AUTHORS / %s / FIELD NOTES" (upper $authorSlug))
-    "title" (printf "Signals from %s." $author.Title)
-    "titlePrefix" "Signals from "
+    "eyebrow" (T "author_field_notes" (dict "author" (upper $authorSlug)))
+    "title" (printf "%s%s." (T "signals_from_prefix") $localizedAuthor.Title)
+    "titlePrefix" (T "signals_from_prefix")
     "titleLink" $author.RelPermalink
-    "titleLinkText" $author.Title
+    "titleLinkText" $localizedAuthor.Title
     "titleSuffix" "."
     "intro" .Content
-    "paginationLabel" (printf "Posts by %s pagination" $author.Title)
+    "paginationLabel" (T "posts_by_pagination" (dict "author" $localizedAuthor.Title))
   ) }}
 {{ end }}

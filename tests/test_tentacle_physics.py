@@ -25,13 +25,22 @@ pytestmark = [
 ]
 
 
-def _wait_for_contact_tentacles_source(frame: Locator) -> None:
-    """Wait until controlled prewarming exposes the authored iframe URL."""
+def _wait_for_bounded_contact_tentacles_source(
+    frame: Locator,
+    *,
+    manual_animation_frame: bool = False,
+) -> None:
+    """Wait until prewarming exposes the bounded real-WebGL iframe URL."""
 
+    manual_frame_query = (
+        r"&manual-animation-frame=1" if manual_animation_frame else ""
+    )
     expect(frame).to_have_attribute(
         "src",
         re.compile(
-            r"^/muta-tentacles\.html\?v=[0-9a-f]{64}&embedded=1$"
+            r"^/muta-tentacles\.html\?v=[0-9a-f]{64}&embedded=1"
+            r"&max-tentacles=64&render-supersample=0\.5"
+            r"&generation-seed=12345" + manual_frame_query + r"$"
         ),
         timeout=30_000,
     )
@@ -102,12 +111,13 @@ def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
 
     canvas.evaluate(
         """
-        () => new Promise((resolve) => {
+        (element) => {
           const probe = "tentacles-self-message";
+          element.dataset.selfMessageObserved = "false";
           const observeProbe = (event) => {
             if (event.data?.probe !== probe) return;
             removeEventListener("message", observeProbe);
-            resolve();
+            element.dataset.selfMessageObserved = "true";
           };
           addEventListener("message", observeProbe);
           window.postMessage({
@@ -115,8 +125,13 @@ def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
             theme: "dark",
             probe,
           }, location.origin);
-        })
+        }
         """
+    )
+    expect(canvas).to_have_attribute(
+        "data-self-message-observed",
+        "true",
+        timeout=5_000,
     )
     expect(frame_root).to_have_attribute("data-theme", "light")
 
@@ -179,12 +194,23 @@ def test_dense_surface_uses_the_bounded_spatial_shader(
     contact-section scroll hitch.
     """
 
-    page = driver(stored_theme="dark", viewport=(1280, 720))
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(1280, 720),
+    )
     page.goto(
-        f"{base_url}/muta-tentacles.html?generation-seed=12345",
+        (
+            f"{base_url}/muta-tentacles.html?generation-seed=12345"
+            "&manual-animation-frame=1"
+        ),
         wait_until="domcontentloaded",
     )
     canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1100)")
     expect(canvas).to_have_attribute(
         "data-surface-shader-path",
         "fast-spatial",
@@ -219,16 +245,25 @@ def test_spatial_overflow_preserves_every_tentacle_via_full_fallback(
     buffer size can affect performance, but it must never make geometry vanish.
     """
 
-    page = driver(stored_theme="dark", viewport=(240, 180))
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(240, 180),
+    )
     page.goto(
         (
             f"{base_url}/muta-tentacles.html"
             "?max-spatial-candidates=1&generation-seed=12345"
             "&max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
         ),
         wait_until="domcontentloaded",
     )
     canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1100)")
     expect(canvas).to_have_attribute(
         "data-surface-shader-path",
         "full-fallback",
@@ -261,7 +296,11 @@ def test_reduced_spatial_grid_matches_previous_grid_pixel_for_pixel(
     visual contract while allowing the lookup grid to be tuned independently.
     """
 
-    page = driver(stored_theme="dark", viewport=(240, 180))
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(240, 180),
+    )
     common_query = (
         "max-tentacles=64&render-supersample=0.5"
         "&manual-animation-frame=1&generation-seed=12345"
@@ -344,13 +383,13 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     This regression opens the exact production iframe document at the contact
     block's desktop dimensions, then narrows that already-loaded surface to the
     parametrized desktop, tablet, or phone dimensions and waits for its
-    aspect-aware reload to finish. It deliberately pauses only animation-frame
-    delivery—the browser condition that makes the race deterministic—while
-    preserving real pointer events and wall-clock timers. Three actual left
-    clicks must each show the source-strength impulse on press and submit an
-    ordinary hover frame immediately on release without waiting for another
-    animation frame. The release frame must neither retain peak force nor
-    introduce a synthetic zero-force recovery kick.
+    aspect-aware reload to finish. It deliberately uses the runtime's manual
+    animation-frame mode—the browser condition that makes the race
+    deterministic—while preserving real pointer events and the production
+    force clock. Three actual left clicks must each show the source-strength
+    impulse on press and submit an ordinary hover frame immediately on release
+    without waiting for another animation frame. The release frame must neither
+    retain peak force nor introduce a synthetic zero-force recovery kick.
     Repeating the click cycle is intentional: it guards the formerly
     intermittent second-or-later click as well as the first click after a
     resize.
@@ -361,14 +400,15 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     """
 
     page = driver(
+        initial_path="/blog/",
         stored_theme="dark",
         viewport=(1440, 650),
-        controllable_animation_frames=True,
     )
     page.goto(
         (
             f"{base_url}/muta-tentacles.html"
             "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
         ),
         wait_until="domcontentloaded",
     )
@@ -384,11 +424,18 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
             "height": target_viewport[1],
         }
     )
+    # In manual-frame mode the resize is consumed by the next explicit render;
+    # that render schedules the production aspect-aware document reload.
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(16)")
     page.wait_for_function(
         "origin => performance.timeOrigin !== origin",
         arg=initial_time_origin,
         timeout=30_000,
     )
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(16)")
     expect(canvas).to_have_attribute(
         "data-rendered-frame-id",
         re.compile(r"^[1-9][0-9]*$"),
@@ -404,14 +451,6 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     page.mouse.move(pointer_x, pointer_y)
 
     for _ in range(3):
-        canvas.evaluate(
-            """
-            element => {
-              element.ownerDocument.defaultView
-                .__mutaTestSetAnimationFramesPaused(true);
-            }
-            """
-        )
         page.wait_for_timeout(35)
         page.mouse.down(button="left")
         expect(canvas).to_have_attribute(
@@ -434,19 +473,6 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
         assert released_state["phase"] == "hover"
         assert released_state["pressed"] == "false"
         assert released_state["force"] == 1
-        canvas.evaluate(
-            """
-            element => {
-              element.ownerDocument.defaultView
-                .__mutaTestSetAnimationFramesPaused(false);
-            }
-            """
-        )
-        expect(canvas).to_have_attribute(
-            "data-pointer-interaction-phase",
-            "hover",
-            timeout=1_000,
-        )
 
 
 def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
@@ -471,6 +497,7 @@ def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
     """
 
     page = driver(
+        initial_path="/blog/",
         stored_theme="dark",
         viewport=(240, 180),
     )
@@ -549,7 +576,11 @@ def test_full_density_surface_never_queues_a_deadline_render(
     when the nominal force timer and low-density state tests look correct.
     """
 
-    page = driver(stored_theme="dark", viewport=viewport)
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=viewport,
+    )
     page.goto(
         (
             f"{base_url}/muta-tentacles.html"
@@ -634,24 +665,30 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     the post-impulse held force before the next image appeared and made the
     initial click response look substantially longer than in the source file.
 
-    This test supplies 100 ms animation-frame timestamps and verifies that the
-    embedded production surface performs exactly one 33 ms physics update,
+    This test supplies one 100 ms animation-frame timestamp and verifies that
+    the embedded production surface performs exactly one 33 ms physics update,
     fixing both the number of force applications and their simulated duration.
-    Only scene density and backing resolution are reduced here; the authored
-    iframe URL, embedded visibility lifecycle, real animation-frame path, and
-    clock remain intact. Separate tests exercise the full-density workload.
+    The frame is advanced through the runtime's manual clock so Linux software
+    rendering cannot continuously monopolize Chromium between assertions.
+    Only scene density and backing resolution are reduced; the authored iframe
+    URL, embedded visibility lifecycle, production frame callback, and clock
+    remain intact. Separate tests exercise the full-density workload.
     """
 
     page = driver(
         stored_theme="dark",
         viewport=(1440, 900),
-        animation_frame_interval_ms=100,
+        bounded_tentacle_rendering=True,
+        manual_tentacle_rendering=True,
     )
     contact = page.locator("#contact")
     expect(contact).to_be_attached()
     frame = page.locator(".contact__tentacles")
     expect(frame).to_be_attached()
-    _wait_for_contact_tentacles_source(frame)
+    _wait_for_bounded_contact_tentacles_source(
+        frame,
+        manual_animation_frame=True,
+    )
     frame.evaluate(
         """
         (element) => {
@@ -691,6 +728,10 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
         timeout=30_000,
     )
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    frame.evaluate(
+        "element => "
+        "element.contentWindow.__mutaTentaclesDebugFrameAfter(100)"
+    )
 
     expect(canvas).to_have_attribute(
         "data-physics-substeps",
@@ -734,6 +775,7 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     """
 
     page = driver(
+        initial_path="/blog/",
         stored_theme="dark",
         viewport=(1280, 720),
         load_interactive_visuals=True,
@@ -1007,10 +1049,13 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
     scrolling toward the footer. That one-time burst occurred in precisely the
     area reported as jerky, independently of the steady-state FPS improvements.
 
-    This integration regression remains at ``scrollY == 0`` and requires the
-    real iframe canvas to initialize while the contact section is still far
-    below the viewport. Its runtime must then be paused by the existing
-    visibility protocol, so prewarming consumes no ongoing animation work.
+    This integration regression remains at ``scrollY == 0`` and requires a
+    real WebGL iframe canvas to initialize while the contact section is still
+    far below the viewport. It uses the suite's bounded rendering profile so
+    Linux software rendering cannot obscure the prewarm protocol being tested;
+    separate standalone regressions exercise full production density. The
+    runtime must then be paused by the existing visibility protocol, so
+    prewarming consumes no ongoing animation work.
     Leaving the runtime URL permanently in ``data-prewarm-src`` makes the
     canvas absent and fails; forgetting the visibility handoff leaves the
     offscreen simulation running and also fails. The test therefore moves only
@@ -1022,6 +1067,7 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
         stored_theme="dark",
         viewport=(1280, 720),
         load_interactive_visuals=True,
+        bounded_tentacle_rendering=True,
     )
     assert page.evaluate("() => window.scrollY") == 0
     assert page.locator("#contact").evaluate(
@@ -1057,22 +1103,24 @@ def _open_contact_with_active_tentacle_runtime(
     pending can strand a frame locator between the old and new documents.
 
     These callers test the scroll protocol and its production timers, not the
-    renderer's frame cadence.  The helper therefore preserves the iframe's
-    authored URL and adds only its existing manual-frame diagnostic flag before
-    bringing the offscreen iframe into view.  Real wheel events, postMessage
-    traffic, and setTimeout deadlines continue to run, while unrelated
-    continuous WebGL frames cannot dominate the deterministic timer assertions.
-    Separate tests keep the real frame and physics-counter lifecycle covered.
+    renderer's density or frame cadence. The helper therefore loads the real
+    iframe with the suite's bounded rendering profile and adds its existing
+    manual-frame diagnostic flag before bringing the offscreen iframe into
+    view. Real wheel events, postMessage traffic, and setTimeout deadlines
+    continue to run, while unrelated continuous WebGL frames cannot dominate
+    the deterministic timer assertions. Separate tests keep full production
+    density, the real frame path, and physics-counter lifecycle covered.
     """
 
     page = driver(
         stored_theme="dark",
         viewport=viewport,
         load_interactive_visuals=True,
+        bounded_tentacle_rendering=True,
     )
     frame = page.locator(".contact__tentacles")
     expect(frame).to_be_attached(timeout=30_000)
-    _wait_for_contact_tentacles_source(frame)
+    _wait_for_bounded_contact_tentacles_source(frame)
     frame.evaluate(
         """
         (element) => {
@@ -1557,6 +1605,7 @@ def test_click_impulse_is_applied_to_exactly_one_physics_frame(
     """
 
     page = driver(
+        initial_path="/blog/",
         stored_theme="dark",
         viewport=(240, 180),
     )
@@ -1651,6 +1700,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     """
 
     page = driver(
+        initial_path="/blog/",
         stored_theme="dark",
         viewport=(240, 180),
     )
@@ -1658,6 +1708,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
         (
             f"{base_url}/muta-tentacles.html"
             "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
         ),
         wait_until="domcontentloaded",
     )
@@ -1677,6 +1728,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
         direction,
         timeout=1_000,
     )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(50)")
     expect(canvas).to_have_attribute(
         "data-pointer-interaction-phase",
         "held",
@@ -2042,7 +2094,11 @@ def test_release_keeps_tentacle_geometry_continuous_at_every_width(
     artificial reverse kick that replaced it.
     """
 
-    page = driver(stored_theme="dark", viewport=viewport)
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=viewport,
+    )
     canvas = _open_diagnostic_surface(page, base_url)
     _assert_release_continuity(page, canvas, release="pointerup")
 
@@ -2075,7 +2131,11 @@ def test_missing_pointerup_still_ends_and_redraws_the_impulse(
     permitting a reverse recovery kick.
     """
 
-    page = driver(stored_theme="dark", viewport=(755, 620))
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(755, 620),
+    )
     canvas = _open_diagnostic_surface(page, base_url)
     _assert_release_continuity(page, canvas, release=release)
 
@@ -2260,7 +2320,11 @@ def test_old_release_recovery_fails_the_reverse_impulse_guard(
     ).read_text(encoding="utf-8")
     legacy_source = _restore_legacy_release_recovery(source)
 
-    page = driver(stored_theme="dark", viewport=(755, 620))
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(755, 620),
+    )
     page.context.route(
         "**/muta-tentacles-legacy-release.html*",
         lambda route: route.fulfill(
@@ -2424,7 +2488,11 @@ def test_timing_regressions_are_detected_by_eleven_independent_mutations(
     mutated = source.replace(original, replacement, 1)
     assert mutated != source
 
-    page = driver(stored_theme="dark", viewport=(755, 620))
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(755, 620),
+    )
     page.context.route(
         "**/muta-tentacles-mutated.html*",
         lambda route: route.fulfill(

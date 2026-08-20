@@ -1,0 +1,28 @@
+{{- $content := .Params.home.hero -}}
+{{- $posts := where .Site.RegularPages "Section" "blog" -}}
+{{- $openSourceURL := "#open-source" -}}
+{{- if eq (len $posts) 0 -}}
+  {{- $openSourceURL = "https://github.com/mutating" -}}
+{{- end -}}
+<section class="hero section-shell">
+  <div class="hero__copy">
+    <p class="eyebrow">{{ $content.eyebrow }} <span>— <span data-current-year></span></span></p>
+    <h1>{{ $content.heading_line_1 }}<br>{{ $content.heading_line_2_prefix }}<em>{{ $content.heading_emphasis }}</em></h1>
+    <p class="hero__lede">{{ $content.lede }}</p>
+    <div class="hero__actions">
+      <a class="button button--primary" href="#sections">{{ $content.primary_action }} <span aria-hidden="true">↓</span></a>
+      <a class="text-link" href="{{ $openSourceURL }}">{{ $content.secondary_action }} <span aria-hidden="true">↗</span></a>
+    </div>
+    <div class="hero__signal" aria-label="{{ $content.status_aria }}">
+      <span class="signal-dot"></span><span>{{ $content.status }}</span><span>{{ $content.confidence }}</span>
+    </div>
+  </div>
+  <figure class="mascot-card">
+    <div class="mascot-card__halo"></div>
+    <picture class="mascot-card__picture">
+      <source type="image/avif" srcset="/muta-v2-transparent-v10-lossless.avif 1254w, /muta-v2-transparent-2x-v10-lossless.avif 2508w" sizes="(max-width: 755px) calc(100vw - 32px), (max-width: 1120px) min(calc(100vw - 64px), 560px), min(42vw, 650px)">
+      <img class="mascot-card__art" src="/muta-v2-transparent-v10.webp" srcset="/muta-v2-transparent-v10.webp 1254w, /muta-v2-transparent-2x-v10.webp 2508w" sizes="(max-width: 755px) calc(100vw - 32px), (max-width: 1120px) min(calc(100vw - 64px), 560px), min(42vw, 650px)" width="1254" height="1254" fetchpriority="high" decoding="async" alt="{{ $content.mascot_alt }}">
+    </picture>
+    <figcaption><a class="mascot-card__author" href="{{ "/authors/muta/" | relLangURL }}" rel="author">{{ $content.mascot_link }}</a>{{ $content.mascot_role }}</figcaption>
+  </figure>
+</section>
