@@ -69,6 +69,7 @@ jobs:
           -m "${{ matrix.suite.marker }}"
           -vv
           --tb=short
+          --max-worker-restart=0
           --durations=25
 
   test-result:
