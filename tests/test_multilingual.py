@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 from playwright.sync_api import expect
@@ -171,10 +172,10 @@ def test_multilingual_collections_never_repeat_an_article(
         assert len(hrefs) == len(set(hrefs)), path
 
 
-def test_home_copy_is_identical_in_both_languages(
+def test_russian_home_localizes_interface_without_rewriting_marketing_content(
     driver: DriverFactory,
 ) -> None:
-    """Keep landing-page copy unchanged outside the language control."""
+    """Translate shared controls while leaving the untranslated landing copy intact."""
 
     english = driver(
         stored_language="en",
@@ -186,18 +187,97 @@ def test_home_copy_is_identical_in_both_languages(
         load_interactive_visuals=False,
     )
 
-    copy_without_language_control = """
-      body => {
-        const copy = body.cloneNode(true);
-        copy.querySelectorAll("[data-language-switcher]").forEach(
-          (switcher) => switcher.remove(),
-        );
-        return copy.innerText;
-      }
-    """
-    assert english.locator("body").evaluate(
-        copy_without_language_control
-    ) == russian.locator("body").evaluate(copy_without_language_control)
+    expect(english.locator(".main-nav .source-link")).to_have_text("Sources")
+    expect(russian.locator(".main-nav .source-link")).to_have_text("Исходники")
+    expect(russian.locator(".main-nav")).to_have_attribute(
+        "aria-label", "Основная навигация"
+    )
+    expect(russian.locator(".main-nav").get_by_role("link", name="Блог")).to_be_visible()
+    expect(
+        russian.locator(".main-nav").get_by_role("link", name="Контакты")
+    ).to_be_visible()
+    expect(
+        russian.get_by_role("button", name="Переключить цветовую тему")
+    ).to_be_visible()
+    expect(russian.locator(".mobile-menu > summary")).to_have_text("Меню")
+    expect(russian.locator("#dispatches-heading")).to_have_text(
+        "Свежие сигналы из лаборатории."
+    )
+    expect(russian.locator(".dispatches__status")).to_contain_text(
+        "Последние заметки"
+    )
+    call_to_actions = russian.locator(".dispatch-card__cta")
+    expect(call_to_actions).to_have_count(2)
+    assert all(
+        "Читать заметку" in text for text in call_to_actions.all_inner_texts()
+    )
+    expect(russian.locator(".site-footer__tagline")).to_have_text(
+        "ИИ-системы, которые сомневаются. Для программ, которые не должны подвести."
+    )
+
+    content_selectors = (
+        ".hero",
+        ".complexity",
+        ".manifesto",
+        ".containment",
+        ".pillars",
+        ".distribution",
+        ".feedback",
+        ".coexistence",
+        ".contact",
+    )
+    for selector in content_selectors:
+        assert english.locator(selector).inner_text() == russian.locator(
+            selector
+        ).inner_text(), selector
+
+
+def test_russian_article_localizes_shared_interface(
+    driver: DriverFactory,
+) -> None:
+    """Use the active Hugo language for chrome, dates, plurals, and accessibility."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path=f"/ru{MAY_POST_PATH}",
+        load_interactive_visuals=False,
+    )
+
+    expect(page.locator(".post__header .section-index")).to_have_text("БЛОГ")
+    expect(page.locator(".post__header time")).to_have_text("01 июня 2026")
+    expect(page.locator(".post-reading-time > span").first).to_have_text(
+        "15 минут чтения"
+    )
+    expect(page.locator("#post-word-count")).to_have_text("3144 слова")
+    expect(page.locator(".post__author")).to_have_text("Автор: Muta")
+    expect(page.locator(".author-status__tooltip")).to_contain_text(
+        "Muta — автоматизированный автор."
+    )
+    expect(page.locator(".post__toc-label--desktop")).to_have_text(
+        "На этой странице"
+    )
+    expect(page.locator(".post__toc-label--mobile")).to_have_text("22 раздела")
+    expect(page.locator(".post__tags")).to_have_attribute(
+        "aria-label", "Темы этой заметки"
+    )
+    expect(page.locator(".post__nav")).to_have_attribute(
+        "aria-label", "Навигация по публикациям"
+    )
+    expect(page.locator(".post__nav-link--next small")).to_have_text("Следующая")
+
+
+def test_interface_translation_tables_define_the_same_message_keys() -> None:
+    """Require every supported language to cover the complete interface catalog."""
+
+    translation_root = PROJECT_ROOT / "i18n"
+    english = tomllib.loads(
+        (translation_root / "en.toml").read_text(encoding="utf-8")
+    )
+    russian = tomllib.loads(
+        (translation_root / "ru.toml").read_text(encoding="utf-8")
+    )
+
+    assert english.keys() == russian.keys()
 
 
 def test_translation_resources_do_not_duplicate_canonical_front_matter() -> None:

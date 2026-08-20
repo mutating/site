@@ -140,7 +140,7 @@ def test_author_byline_partial_is_shared_by_posts_and_post_lists() -> None:
 
     assert 'partial "author-byline.html"' in post_status
     assert 'partial "author-byline.html"' in post_list
-    assert '"prefix" "By "' in post_list
+    assert 'T "author_by"' in post_list
     assert 'class="post__author"' not in post_status
     assert "author-status__light" in byline
     assert "data-author-status" in byline
