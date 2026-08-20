@@ -54,7 +54,8 @@ is intentionally ignored by Git.
 
 Every authored page lives in `content/`:
 
-- `content/_index.md` contains the landing-page content.
+- `content/_index.md` contains the English landing-page content.
+- `content/_index.ru.md` contains the Russian landing-page translation.
 - `content/blog/_index.md` contains the blog-list introduction.
 - `content/blog/<post>/index.md` contains each post and its canonical metadata.
 - `content/blog/<post>/translation.ru.md` contains an optional Russian
@@ -76,7 +77,8 @@ Everything that defines presentation or behavior lives in `themes/mutating/`:
 
 - `layouts/_default/baseof.html` is the shared HTML document.
 - `layouts/partials/header.html` and `footer.html` are shared by every page.
-- `layouts/index.html` renders the landing page.
+- `layouts/index.html` composes the landing page from `layouts/partials/home/`;
+  those partials own its shared structure, assets, and interactive mounts.
 - `layouts/blog/list.html` and `single.html` render the blog entry points.
 - `layouts/_default/term.html` renders filtered tag collections.
 - `layouts/author-posts/list.html` renders author-specific post archives.
@@ -93,10 +95,9 @@ Everything that defines presentation or behavior lives in `themes/mutating/`:
   Hugo.
 - `static/` also contains every local image, font, SVG, and standalone
   interactive HTML asset.
-- The Tentacles and Tokamak iframes keep stable static paths, while
-  `layouts/index.html` injects each file's full SHA-256 into its `v` query during
-  every build; `content/_index.md` therefore contains fingerprint markers,
-  never manually maintained revisions.
+- The Tentacles and Tokamak iframes keep stable static paths, while their home
+  partials inject each file's full SHA-256 into its `v` query during every
+  build.
 
 ## Add a blog post
 
@@ -187,6 +188,27 @@ description, reading time, table of contents, and body. This gives tag, author,
 archive, and blog collections one article per language site without duplicated
 front matter. If `translation.ru.md` is absent, `/ru/blog/<slug>/` renders the
 canonical English article.
+
+### Translate the landing page
+
+The landing page uses Hugo's native home-page translations:
+
+```text
+content/
+├── _index.md
+└── _index.ru.md
+```
+
+Both files define the same structured `home` fields for the hero, ticker,
+content sections, dynamic-post heading, and contact block. The English and
+Russian files contain copy only. Shared HTML, image sources, section order,
+interactive mounts, and fingerprint generation live in
+`themes/mutating/layouts/partials/home/`.
+
+Add or rename a home content field in both language files, then consume it from
+the corresponding partial. Do not duplicate home HTML in either content file.
+The latest-posts partial resolves each card through the same localized
+page-resource mechanism used by blog lists and articles.
 
 ### Translate the interface
 
