@@ -464,6 +464,18 @@ def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
             },
         ),
         (
+            "/ru/",
+            {
+                "title": "The Mutating Company — ИИ-системы, которые сомневаются",
+                "description": (
+                    "Детерминированная верификация, интерпретируемость и "
+                    "инфраструктура тестирования для ИИ-агентов, создающих "
+                    "программное обеспечение будущего."
+                ),
+                "type": "website",
+            },
+        ),
+        (
             "/blog/the-mutation-testing-digest-for-may-2026/",
             {
                 "title": (
@@ -501,7 +513,13 @@ def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
             },
         ),
     ],
-    ids=["home", "english-article", "russian-article", "russian-fallback"],
+    ids=[
+        "english-home",
+        "russian-home",
+        "english-article",
+        "russian-article",
+        "russian-fallback",
+    ],
 )
 def test_production_head_metadata_matches_each_page_locale(
     built_sites: dict[str, Path],

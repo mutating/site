@@ -172,10 +172,10 @@ def test_multilingual_collections_never_repeat_an_article(
         assert len(hrefs) == len(set(hrefs)), path
 
 
-def test_russian_home_localizes_interface_without_rewriting_marketing_content(
+def test_russian_home_localizes_interface_and_marketing_content(
     driver: DriverFactory,
 ) -> None:
-    """Translate shared controls while leaving the untranslated landing copy intact."""
+    """Render one shared home structure with complete language-specific copy."""
 
     english = driver(
         stored_language="en",
@@ -200,6 +200,56 @@ def test_russian_home_localizes_interface_without_rewriting_marketing_content(
         russian.get_by_role("button", name="Переключить цветовую тему")
     ).to_be_visible()
     expect(russian.locator(".mobile-menu > summary")).to_have_text("Меню")
+    expect(russian).to_have_title(
+        "The Mutating Company — ИИ-системы, которые сомневаются"
+    )
+    expect(russian.locator(".hero h1")).to_contain_text("ИИ-системы")
+    expect(russian.locator(".hero h1")).to_contain_text("которые сомневаются.")
+    expect(
+        russian.locator(".hero__actions").get_by_role(
+            "link", name="Читать наш манифест"
+        )
+    ).to_have_attribute("href", "#sections")
+    expect(
+        russian.locator(".hero__actions").get_by_role(
+            "link", name="Заглянуть в open-source лабораторию"
+        )
+    ).to_have_attribute("href", "#open-source")
+    expect(russian.locator(".hero__signal")).to_have_attribute(
+        "aria-label", "Состояние системы"
+    )
+    expect(russian.locator(".mascot-card__art")).to_have_attribute(
+        "alt", "Весёлый розовый одноглазый мутант с подозрительной ухмылкой"
+    )
+    expect(russian.locator("#complexity h2")).to_have_text(
+        "Энтропия сначала шепчет. Потом выставляет счёт."
+    )
+    expect(russian.locator("#thesis h2")).to_have_text(
+        "Чем больше интеллекта, тем больше нужно сопротивления."
+    )
+    expect(russian.locator("#containment h2")).to_have_text(
+        "Удержать плазму. Направить энергию."
+    )
+    expect(russian.locator("#what-we-build h2")).to_have_text(
+        "Скептический слой для стека агентных систем."
+    )
+    assert russian.locator(".pillar-card h3").all_inner_texts() == [
+        "Верифицируемость",
+        "Интерпретируемость",
+        "Тестирование на скорости агентов",
+    ]
+    expect(russian.locator("#scale h2")).to_have_text(
+        "Локально, когда нужно. Распределённо, когда всерьёз."
+    )
+    assert russian.locator(".feedback-node strong").all_inner_texts() == [
+        "Продукт лучше",
+        "Тесты быстрее",
+        "Сигналы точнее",
+        "Агенты умнее",
+    ]
+    expect(russian.locator("#the-deal h2")).to_have_text(
+        "Люди и роботы могут сосуществовать."
+    )
     expect(russian.locator("#dispatches-heading")).to_have_text(
         "Свежие сигналы из лаборатории."
     )
@@ -211,25 +261,77 @@ def test_russian_home_localizes_interface_without_rewriting_marketing_content(
     assert all(
         "Читать заметку" in text for text in call_to_actions.all_inner_texts()
     )
+    localized_card = russian.locator(
+        f'.dispatch-card[href="/ru{LATEST_DIGEST_PATH}"]'
+    )
+    expect(localized_card.locator("h3")).to_have_text(
+        "Дайджест мутационного тестирования за июль 2026 года"
+    )
+    expect(localized_card.locator(".dispatch-card__description")).to_have_text(
+        "Выжившие мутанты как рабочие задания, результаты под проверкой"
+    )
+    expect(russian.locator("#contact h2")).to_have_text(
+        "Создаёте серьёзную агентную инфраструктуру?"
+    )
+    expect(russian.locator("#contact .button")).to_have_text(
+        re.compile(r"Начать разговор")
+    )
     expect(russian.locator(".site-footer__tagline")).to_have_text(
         "ИИ-системы, которые сомневаются. Для программ, которые не должны подвести."
     )
 
-    content_selectors = (
-        ".hero",
-        ".complexity",
-        ".manifesto",
-        ".containment",
-        ".pillars",
-        ".distribution",
-        ".feedback",
-        ".coexistence",
-        ".contact",
+    home_structure = """
+      sections => sections.map(section => ({
+        id: section.id,
+        classes: section.className,
+      }))
+    """
+    assert english.locator("main > section").evaluate_all(
+        home_structure
+    ) == russian.locator("main > section").evaluate_all(home_structure)
+
+
+def test_home_translation_files_keep_structural_html_in_templates() -> None:
+    """Store home copy in content files while keeping its markup in the theme."""
+
+    for path in (
+        PROJECT_ROOT / "content" / "_index.md",
+        PROJECT_ROOT / "content" / "_index.ru.md",
+    ):
+        source = path.read_text(encoding="utf-8")
+        assert "<section" not in source
+        assert "<iframe" not in source
+        assert "<canvas" not in source
+
+
+def test_russian_home_hero_fits_narrow_viewports(
+    driver: DriverFactory,
+) -> None:
+    """Keep the longer non-wrapping Russian hero line inside the page shell."""
+
+    page = driver(
+        stored_language="ru",
+        initial_path="/ru/",
+        viewport=(390, 844),
+        load_interactive_visuals=False,
     )
-    for selector in content_selectors:
-        assert english.locator(selector).inner_text() == russian.locator(
-            selector
-        ).inner_text(), selector
+
+    for width, height in ((390, 844), (280, 700)):
+        page.set_viewport_size({"width": width, "height": height})
+        bounds = page.locator(".hero h1 em").evaluate(
+            """
+            element => {
+              const rect = element.getBoundingClientRect();
+              return {
+                left: rect.left,
+                right: rect.right,
+                viewportWidth: document.documentElement.clientWidth,
+              };
+            }
+            """
+        )
+        assert bounds["left"] >= 0
+        assert bounds["right"] <= bounds["viewportWidth"]
 
 
 def test_russian_article_localizes_shared_interface(

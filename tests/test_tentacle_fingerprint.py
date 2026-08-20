@@ -138,18 +138,26 @@ def tentacle_fingerprint_builds(
 def test_tentacle_iframe_uses_build_generated_asset_fingerprint(
     tentacle_fingerprint_builds: dict[str, object],
 ) -> None:
-    """Hugo replaces the marker with the served Tentacles file's full SHA-256."""
+    """The contact partial hashes the served Tentacles file during the build."""
 
     content_source = (PROJECT_ROOT / "content" / "_index.md").read_text(
         encoding="utf-8"
     )
+    partial_source = (
+        THEME_ROOT / "layouts" / "partials" / "home" / "contact.html"
+    ).read_text(encoding="utf-8")
     original_bytes = tentacle_fingerprint_builds["original_bytes"]
     original_home = tentacle_fingerprint_builds["original_home"]
     assert isinstance(original_bytes, bytes)
     assert isinstance(original_home, str)
 
     query = _extract_iframe_query(original_home)
-    assert content_source.count(FINGERPRINT_MARKER) == 1
+    assert FINGERPRINT_MARKER not in content_source
+    assert FINGERPRINT_MARKER not in partial_source
+    assert 'os.ReadFile "themes/mutating/static/muta-tentacles.html"' in (
+        partial_source
+    )
+    assert "crypto.SHA256" in partial_source
     assert FINGERPRINT_MARKER not in original_home
     assert query == {
         "v": [hashlib.sha256(original_bytes).hexdigest()],
@@ -182,11 +190,14 @@ def test_tentacle_iframe_fingerprint_changes_when_asset_content_changes(
 def test_tokamak_iframe_uses_build_generated_asset_fingerprint(
     tentacle_fingerprint_builds: dict[str, object],
 ) -> None:
-    """Hugo gives the embedded Tokamak the served reactor file's full SHA-256."""
+    """The containment partial hashes the served Tokamak file during the build."""
 
     content_source = (PROJECT_ROOT / "content" / "_index.md").read_text(
         encoding="utf-8"
     )
+    partial_source = (
+        THEME_ROOT / "layouts" / "partials" / "home" / "containment.html"
+    ).read_text(encoding="utf-8")
     tokamak_bytes = tentacle_fingerprint_builds["original_tokamak_bytes"]
     original_home = tentacle_fingerprint_builds["original_home"]
     assert isinstance(tokamak_bytes, bytes)
@@ -197,7 +208,12 @@ def test_tokamak_iframe_uses_build_generated_asset_fingerprint(
         class_name="tokamak-model__frame",
         expected_path="/tokamak-reactor.html",
     )
-    assert content_source.count(TOKAMAK_FINGERPRINT_MARKER) == 1
+    assert TOKAMAK_FINGERPRINT_MARKER not in content_source
+    assert TOKAMAK_FINGERPRINT_MARKER not in partial_source
+    assert 'os.ReadFile "themes/mutating/static/tokamak-reactor.html"' in (
+        partial_source
+    )
+    assert "crypto.SHA256" in partial_source
     assert TOKAMAK_FINGERPRINT_MARKER not in original_home
     assert query == {"v": [hashlib.sha256(tokamak_bytes).hexdigest()]}
     assert tentacle_fingerprint_builds["original_tokamak_output"] == tokamak_bytes
