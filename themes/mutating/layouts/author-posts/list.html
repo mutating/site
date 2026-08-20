@@ -6,13 +6,13 @@
     "context" .
     "pages" $posts
     "kind" "author"
-    "eyebrow" (printf "AUTHORS / %s / FIELD NOTES" (upper $authorSlug))
-    "title" (printf "Signals from %s." $author.Title)
-    "titlePrefix" "Signals from "
+    "eyebrow" (T "author_field_notes" (dict "author" (upper $authorSlug)))
+    "title" (printf "%s%s." (T "signals_from_prefix") $author.Title)
+    "titlePrefix" (T "signals_from_prefix")
     "titleLink" $author.RelPermalink
     "titleLinkText" $author.Title
     "titleSuffix" "."
     "intro" .Content
-    "paginationLabel" (printf "Posts by %s pagination" $author.Title)
+    "paginationLabel" (T "posts_by_pagination" (dict "author" $author.Title))
   ) }}
 {{ end }}

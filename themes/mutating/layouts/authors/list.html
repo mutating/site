@@ -1,13 +1,14 @@
 {{ define "main" }}
 <section class="authors-index section-shell">
   <header class="authors-index__header">
-    <a class="section-index" href="#authors">AUTHORS / DIRECTORY</a>
+    <a class="section-index" href="#authors">{{ T "authors_directory" }}</a>
     <h1>{{ .Title }}</h1>
     {{ with .Content }}<div>{{ . }}</div>{{ end }}
   </header>
   <div class="authors-index__grid" id="authors">
     {{ range .Pages.ByTitle }}
       {{- $status := partial "author-kind.html" . -}}
+      {{- $statusLabelKey := printf "author_status_%s" $status -}}
       <a class="author-directory-card" href="{{ .RelPermalink }}">
         {{ with .Params.photo }}
           <img src="{{ . | relURL }}" alt="">
@@ -15,7 +16,7 @@
         <div>
           <span class="author-status author-status--directory" data-author-status="{{ $status }}">
             <i class="author-status__light" aria-hidden="true"></i>
-            <span class="author-status__label">{{ upper $status }}</span>
+            <span class="author-status__label">{{ T $statusLabelKey | upper }}</span>
           </span>
           <h2>{{ .Title }}</h2>
           <p>{{ .Plain | truncate 150 }}</p>

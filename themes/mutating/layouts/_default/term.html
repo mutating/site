@@ -3,10 +3,10 @@
     "context" .
     "pages" .Pages
     "kind" "tag"
-    "eyebrow" "BLOG / TAGGED SIGNALS"
-    "titlePrefix" "Signals tagged "
+    "eyebrow" (T "blog_tagged_signals")
+    "titlePrefix" (T "signals_tagged_prefix")
     "titleTag" (dict "label" .Data.Term "href" .RelPermalink "size" "display")
     "titleSuffix" "."
-    "paginationLabel" (printf "Posts tagged %s pagination" .Title)
+    "paginationLabel" (T "tagged_posts_pagination" (dict "tag" .Title))
   ) }}
 {{ end }}

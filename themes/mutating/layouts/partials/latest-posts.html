@@ -9,10 +9,10 @@
   <section class="dispatches section-shell" id="open-source" aria-labelledby="dispatches-heading">
     <div class="dispatches__header">
       <div>
-        <a class="section-index" href="#open-source">08 / FROM THE LAB</a>
-        <h2 id="dispatches-heading"><a href="{{ "/blog/" | relLangURL }}">{{ .Params.latestPostsHeading | default "Fresh signals from the lab." }}</a></h2>
+        <a class="section-index" href="#open-source">{{ T "from_the_lab" }}</a>
+        <h2 id="dispatches-heading"><a href="{{ "/blog/" | relLangURL }}">{{ if eq .Site.Language.Lang hugo.Sites.Default.Language.Lang }}{{ .Params.latestPostsHeading | default (T "latest_posts_heading") }}{{ else }}{{ T "latest_posts_heading" }}{{ end }}</a></h2>
       </div>
-      <span class="dispatches__status"><i></i> {{ .Params.latestPostsStatus | default "Latest field notes" }}</span>
+      <span class="dispatches__status"><i></i> {{ if eq .Site.Language.Lang hugo.Sites.Default.Language.Lang }}{{ .Params.latestPostsStatus | default (T "latest_posts_status") }}{{ else }}{{ T "latest_posts_status" }}{{ end }}</span>
     </div>
     <div class="dispatch-grid{{ if eq (len $latestPosts) 1 }} dispatch-grid--single{{ end }}">
       {{- range $index, $post := $latestPosts }}
@@ -21,7 +21,7 @@
           <p>{{ $slug }}</p>
           <h3>{{ $post.Title }}</h3>
           <span class="dispatch-card__description">{{ $post.Description }}</span>
-          <span class="dispatch-card__cta">Read the field note <b aria-hidden="true">↗</b></span>
+          <span class="dispatch-card__cta">{{ T "read_field_note" }} <b aria-hidden="true">↗</b></span>
         </a>
       {{- end }}
     </div>
