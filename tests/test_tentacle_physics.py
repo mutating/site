@@ -25,6 +25,137 @@ pytestmark = [
 ]
 
 
+def _wait_for_contact_tentacles_source(frame: Locator) -> None:
+    """Wait until controlled prewarming exposes the authored iframe URL."""
+
+    expect(frame).to_have_attribute(
+        "src",
+        re.compile(
+            r"^/muta-tentacles\.html\?v=[0-9a-f]{64}&embedded=1$"
+        ),
+        timeout=30_000,
+    )
+
+
+def test_tentacle_page_shows_accessible_fallback_without_webgl2(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Replace the Muta canvas with explanatory text when WebGL2 is unavailable."""
+
+    page = driver(
+        initial_path="/blog/",
+        load_interactive_visuals=True,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+              HTMLCanvasElement.prototype.getContext = function (kind, options) {
+                if (kind === "webgl2") return null;
+                return nativeGetContext.call(this, kind, options);
+              };
+            })();
+            """,
+        ),
+    )
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(f"{base_url}/muta-tentacles.html", wait_until="domcontentloaded")
+
+    expect(page.locator("#muta")).to_have_count(0)
+    fallback = page.get_by_text(
+        "Для рендера Muta требуется браузер с поддержкой WebGL 2.",
+        exact=True,
+    )
+    expect(fallback).to_be_visible()
+    assert fallback.text_content().strip()
+    assert errors == []
+
+
+def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
+    driver: DriverFactory,
+) -> None:
+    """Tentacles accepts its parent but rejects self and wrong-origin commands."""
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="light",
+        viewport=(320, 240),
+        load_interactive_visuals=True,
+    )
+    page.evaluate(
+        """
+        () => {
+          const frame = document.createElement("iframe");
+          frame.id = "message-boundary-tentacles";
+          frame.style.cssText = "width:240px;height:180px";
+          frame.src = "/muta-tentacles.html?embedded=1&max-tentacles=64&render-supersample=0.5";
+          document.body.append(frame);
+        }
+        """
+    )
+    canvas = page.frame_locator("#message-boundary-tentacles").locator("#muta")
+    expect(canvas).to_be_attached(timeout=30_000)
+    frame = page.locator("#message-boundary-tentacles")
+    frame_root = page.frame_locator("#message-boundary-tentacles").locator("html")
+    expect(frame_root).to_have_attribute("data-theme", "light")
+
+    canvas.evaluate(
+        """
+        () => new Promise((resolve) => {
+          const probe = "tentacles-self-message";
+          const observeProbe = (event) => {
+            if (event.data?.probe !== probe) return;
+            removeEventListener("message", observeProbe);
+            resolve();
+          };
+          addEventListener("message", observeProbe);
+          window.postMessage({
+            type: "muta-tentacles-theme",
+            theme: "dark",
+            probe,
+          }, location.origin);
+        })
+        """
+    )
+    expect(frame_root).to_have_attribute("data-theme", "light")
+
+    canvas.evaluate(
+        """
+        () => dispatchEvent(new MessageEvent("message", {
+          data: {
+            type: "muta-tentacles-pointer-hover",
+            x: 0.25,
+            y: 0.75,
+            inside: true,
+          },
+          origin: "https://attacker.example",
+          source: window.parent,
+        }))
+        """
+    )
+    assert canvas.get_attribute("data-pointer-input-source") is None
+
+    frame.evaluate(
+        """
+        (element) => {
+          element.contentWindow.postMessage({
+            type: "muta-tentacles-theme",
+            theme: "dark",
+          }, location.origin);
+          element.contentWindow.postMessage({
+            type: "muta-tentacles-pointer-hover",
+            x: 0.25,
+            y: 0.75,
+            inside: true,
+          }, location.origin);
+        }
+        """
+    )
+    expect(frame_root).to_have_attribute("data-theme", "dark")
+    expect(canvas).to_have_attribute("data-pointer-input-source", "host-overlay")
+
+
 def test_dense_surface_uses_the_bounded_spatial_shader(
     driver: DriverFactory,
     base_url: str,
@@ -520,6 +651,7 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     expect(contact).to_be_attached()
     frame = page.locator(".contact__tentacles")
     expect(frame).to_be_attached()
+    _wait_for_contact_tentacles_source(frame)
     frame.evaluate(
         """
         (element) => {
@@ -616,11 +748,10 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     expect(canvas).to_be_visible(timeout=30_000)
     canvas.evaluate(
         """
-        element => element.ownerDocument.defaultView.postMessage({
-          type: "muta-tentacles-runtime",
+        element => element.ownerDocument.defaultView.__mutaTentaclesSetRuntimeState({
           visible: true,
           scrollActive: false,
-        }, "*")
+        })
         """
     )
     expect(canvas).to_have_attribute("data-scroll-rendering", "active")
@@ -640,11 +771,10 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     )
     canvas.evaluate(
         """
-        element => element.ownerDocument.defaultView.postMessage({
-          type: "muta-tentacles-runtime",
+        element => element.ownerDocument.defaultView.__mutaTentaclesSetRuntimeState({
           visible: true,
           scrollActive: true,
-        }, "*")
+        })
         """
     )
     expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
@@ -674,11 +804,10 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
 
     canvas.evaluate(
         """
-        element => element.ownerDocument.defaultView.postMessage({
-          type: "muta-tentacles-runtime",
+        element => element.ownerDocument.defaultView.__mutaTentaclesSetRuntimeState({
           visible: true,
           scrollActive: false,
-        }, "*")
+        })
         """
     )
     expect(canvas).to_have_attribute("data-scroll-rendering", "active")
@@ -700,6 +829,172 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     }
 
 
+def test_contact_surface_waits_for_idle_before_exposing_its_iframe_source(
+    driver: DriverFactory,
+) -> None:
+    """Promote Contact Tentacles only when the browser runs its idle callback.
+
+    The runtime URL starts in ``data-prewarm-src`` while the real ``src`` is
+    absent, so the browser cannot request WebGL work during critical rendering.
+    Holding ``requestIdleCallback`` proves that initialization keeps it there.
+    Releasing that exact callback must move the URL to ``src`` with eager
+    loading, and its two-second deadline prevents an idle callback from being
+    postponed indefinitely on a busy page.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              if (window !== window.top) return;
+              window.__mutaPrewarmIdleCalls = [];
+              window.requestIdleCallback = (callback, options) => {
+                window.__mutaPrewarmIdleCalls.push({callback, options});
+                return window.__mutaPrewarmIdleCalls.length;
+              };
+            })();
+            """,
+        ),
+    )
+    frame = page.locator(".contact__tentacles")
+
+    page.wait_for_function(
+        "window.__mutaPrewarmIdleCalls.length === 1",
+    )
+    prewarm_source = frame.get_attribute("data-prewarm-src")
+    assert prewarm_source is not None
+    assert frame.get_attribute("src") is None
+    assert page.evaluate(
+        "window.__mutaPrewarmIdleCalls[0].options.timeout",
+    ) == 2000
+
+    page.evaluate(
+        "window.__mutaPrewarmIdleCalls.shift().callback()",
+    )
+
+    expect(frame).to_have_attribute("loading", "eager")
+    expect(frame).to_have_attribute("src", prewarm_source)
+    expect(frame).not_to_have_attribute("data-prewarm-src", re.compile(".+"))
+    assert page.evaluate("window.__mutaPrewarmIdleCalls.length") == 0
+
+
+def test_contact_surface_uses_zero_delay_prewarm_without_idle_callback(
+    driver: DriverFactory,
+) -> None:
+    """Use a controlled zero-delay timer when requestIdleCallback is absent.
+
+    Browsers without the Idle Callback API must still move expensive WebGL
+    startup away from parsing and the first render. The harness captures only
+    zero-delay timers in the top document, leaving every unrelated timer real.
+    Until the captured fallback runs the iframe has no requestable ``src``;
+    invoking it must move the authored URL into an eager iframe without
+    scrolling the page.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              if (window !== window.top) return;
+              delete window.requestIdleCallback;
+              const nativeSetTimeout = window.setTimeout.bind(window);
+              window.__mutaPrewarmTimerCalls = [];
+              window.setTimeout = (callback, delay, ...args) => {
+                if (delay === 0) {
+                  window.__mutaPrewarmTimerCalls.push({callback, delay, args});
+                  return 1000 + window.__mutaPrewarmTimerCalls.length;
+                }
+                return nativeSetTimeout(callback, delay, ...args);
+              };
+            })();
+            """,
+        ),
+    )
+    frame = page.locator(".contact__tentacles")
+
+    page.wait_for_function(
+        "window.__mutaPrewarmTimerCalls.length === 1",
+    )
+    prewarm_source = frame.get_attribute("data-prewarm-src")
+    assert prewarm_source is not None
+    assert frame.get_attribute("src") is None
+    assert page.evaluate(
+        "window.__mutaPrewarmTimerCalls[0].delay",
+    ) == 0
+
+    page.evaluate(
+        """
+        () => {
+          const timer = window.__mutaPrewarmTimerCalls.shift();
+          timer.callback(...timer.args);
+        }
+        """
+    )
+
+    expect(frame).to_have_attribute("loading", "eager")
+    expect(frame).to_have_attribute("src", prewarm_source)
+    expect(frame).not_to_have_attribute("data-prewarm-src", re.compile(".+"))
+    assert page.evaluate("window.__mutaPrewarmTimerCalls.length") == 0
+
+
+def test_contact_surface_prewarm_does_not_wait_when_contact_becomes_visible(
+    driver: DriverFactory,
+) -> None:
+    """Start prewarming immediately if Contact arrives before the idle phase.
+
+    A fast scroll can bring the unrequested iframe near the viewport while its
+    idle callback is still queued. Holding that callback and scrolling the real
+    section into view proves the IntersectionObserver path exposes its source
+    immediately. Running the stale callback afterward must be harmless, so the
+    runtime is never reloaded or reinitialized.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+        init_scripts=(
+            """
+            (() => {
+              if (window !== window.top) return;
+              window.__mutaPrewarmIdleCalls = [];
+              window.requestIdleCallback = (callback, options) => {
+                window.__mutaPrewarmIdleCalls.push({callback, options});
+                return window.__mutaPrewarmIdleCalls.length;
+              };
+            })();
+            """,
+        ),
+    )
+    frame = page.locator(".contact__tentacles")
+
+    page.wait_for_function(
+        "window.__mutaPrewarmIdleCalls.length === 1",
+    )
+    prewarm_source = frame.get_attribute("data-prewarm-src")
+    assert prewarm_source is not None
+    assert frame.get_attribute("src") is None
+
+    frame.evaluate(
+        "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
+    )
+
+    expect(frame).to_have_attribute("loading", "eager")
+    expect(frame).to_have_attribute("src", prewarm_source)
+    expect(frame).not_to_have_attribute("data-prewarm-src", re.compile(".+"))
+    assert page.evaluate("window.__mutaPrewarmIdleCalls.length") == 1
+    page.evaluate(
+        "window.__mutaPrewarmIdleCalls.shift().callback()",
+    )
+    expect(frame).to_have_attribute("loading", "eager")
+
+
 def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
     driver: DriverFactory,
 ) -> None:
@@ -716,10 +1011,11 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
     real iframe canvas to initialize while the contact section is still far
     below the viewport. Its runtime must then be paused by the existing
     visibility protocol, so prewarming consumes no ongoing animation work.
-    Restoring ``loading="lazy"`` makes the canvas absent and fails; forgetting
-    the visibility handoff leaves the offscreen simulation running and also
-    fails. The test therefore moves only startup cost away from scrolling
-    without trading it for permanent background rendering.
+    Leaving the runtime URL permanently in ``data-prewarm-src`` makes the
+    canvas absent and fails; forgetting the visibility handoff leaves the
+    offscreen simulation running and also fails. The test therefore moves only
+    startup cost away from scrolling without trading it for permanent
+    background rendering.
     """
 
     page = driver(
@@ -776,6 +1072,7 @@ def _open_contact_with_active_tentacle_runtime(
     )
     frame = page.locator(".contact__tentacles")
     expect(frame).to_be_attached(timeout=30_000)
+    _wait_for_contact_tentacles_source(frame)
     frame.evaluate(
         """
         (element) => {

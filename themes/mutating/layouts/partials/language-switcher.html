@@ -22,7 +22,7 @@
       {{- if ne $language $currentLanguage }}
         {{- $languageURL := partial "language-url.html" (dict "context" $context "language" $language) -}}
         {{- with $languageURL }}
-          <a class="language-switcher__option" href="{{ . }}" lang="{{ $language }}" hreflang="{{ $language }}" data-language-option="{{ $language }}">{{ upper $language }}</a>
+          <a class="language-switcher__option" href="{{ . }}?tmc-language-choice={{ $language }}" lang="{{ $language }}" hreflang="{{ $language }}" data-language-option="{{ $language }}">{{ upper $language }}</a>
         {{- end }}
       {{- end }}
     {{- end }}

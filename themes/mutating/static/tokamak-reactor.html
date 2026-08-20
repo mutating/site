@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Toroidal Field Reactor — MSAA v5</title>
-  <meta name="description" content="Автономная интерактивная HTML-версия 3D-модели тороидального реактора с 4× MSAA, SMAA и цветом исходного референса.">
+  <meta name="description" content="HTML-версия 3D-модели тороидального реактора, поворот которой синхронизирован с прокруткой родительской страницы.">
   <!-- Frozen source revision: b68f0b587c863465ec2885d95370e9a32f559eaf -->
   <style>:root {
   --background: #000;
@@ -43,19 +43,41 @@ body {
 }
 
 .reactor-scene {
-  cursor: grab;
-  touch-action: none;
-}
-
-.reactor-scene:active {
-  cursor: grabbing;
+  cursor: default;
+  touch-action: auto;
+  pointer-events: none;
 }
 
 .reactor-scene canvas {
   display: block;
   width: 100%;
   height: 100%;
-  outline: none;
+}
+
+.tokamak-fallback {
+  width: 100%;
+  height: 100%;
+  padding: 32px;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 45%, #240914, #000 68%);
+}
+
+.tokamak-fallback__title {
+  color: #ff79aa;
+  font-size: clamp(15px, 3vw, 22px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tokamak-fallback__copy {
+  max-width: 44ch;
+  margin: 0;
+  color: rgb(255 213 225 / 78%);
+  font-size: clamp(12px, 2vw, 15px);
+  line-height: 1.5;
 }
 
 .scene-shell::after {
@@ -66,43 +88,6 @@ body {
   background:
     radial-gradient(circle at 50% 47%, transparent 50%, rgb(0 0 0 / 18%) 76%),
     linear-gradient(180deg, rgb(0 0 0 / 15%), transparent 22% 78%, rgb(0 0 0 / 16%));
-}
-
-.interaction-hint {
-  position: fixed;
-  z-index: 2;
-  bottom: 18px;
-  left: 50%;
-  padding: 7px 11px;
-  color: rgb(255 145 178 / 48%);
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateX(-50%);
-  animation: hint 4.8s ease-out 0.9s both;
-}
-
-@keyframes hint {
-  0%,
-  100% {
-    opacity: 0;
-  }
-
-  18%,
-  68% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .interaction-hint {
-    animation: none;
-    opacity: 0;
-  }
 }</style>
 <style id="site-embed-overrides">
 html, body, #root, .scene-shell, .reactor-scene {
@@ -111,8 +96,7 @@ html, body, #root, .scene-shell, .reactor-scene {
   min-height: 0 !important;
   background: transparent !important;
 }
-.reactor-scene { cursor: default; touch-action: auto; pointer-events: none; }
-.scene-shell::after, .interaction-hint { display: none !important; }
+.scene-shell::after { display: none !important; }
 </style>
 </head>
 <body>
@@ -4892,8 +4876,9 @@ void main() {
     for(let h of i)h.parent?.remove(h),h.geometry.dispose()
   }
   return{source:t.length,batched:[...n.values()].reduce((i,s)=>i+(s.length>1?1:s.length),0)}
-}function SL(){let e=new Ln;gL(e),vL(e),yL(e);let t=BL(e);return e.userData.sourceWireObjects=t.source,e.userData.batchedWireObjects=t.batched,e}function Cv(){let e=(0,up.useRef)(null);return(0,up.useEffect)(()=>{let t=e.current;if(!t)return;let n=new dc;n.background=new Bt(0);let i=new _n(32,1,.1,100);i.position.copy(D1),i.lookAt(Tv);let s=new Kd({antialias:!1,alpha:!0,powerPreference:"high-performance"});s.setClearColor(0,0);s.setPixelRatio(Math.min(window.devicePixelRatio,2)),s.setSize(t.clientWidth,t.clientHeight),s.outputColorSpace=Dn,s.toneMapping=cr,s.toneMappingExposure=1.08,t.appendChild(s.domElement),s.domElement.setAttribute("aria-label","Scroll-linked three-dimensional wireframe toroidal field reactor"),s.domElement.setAttribute("role","img"),s.domElement.tabIndex=0,n.add(new Pc(16727709,.18));let a=new Fo(16727709,.4,7,1.8);a.position.set(0,.42,0),n.add(a);let r=new Fo(16741816,.8,6,2);r.position.set(0,3.1,1.4),n.add(r);let o=SL();n.add(o);
+}function SL(){let e=new Ln;gL(e),vL(e),yL(e);let t=BL(e);return e.userData.sourceWireObjects=t.source,e.userData.batchedWireObjects=t.batched,e}function Cv(){let e=(0,up.useRef)(null);return(0,up.useEffect)(()=>{let t=e.current;if(!t)return;let n=new dc;n.background=new Bt(0);let i=new _n(32,1,.1,100);i.position.copy(D1),i.lookAt(Tv);let s;try{let A=document.createElement("canvas"),S=A.getContext("webgl2",{alpha:!0,depth:!0,stencil:!1,antialias:!1,premultipliedAlpha:!0,preserveDrawingBuffer:!1,powerPreference:"high-performance",failIfMajorPerformanceCaveat:!1});if(!S)throw new Error("WebGL2 unavailable");s=new Kd({canvas:A,context:S,antialias:!1,alpha:!0,powerPreference:"high-performance"})}catch{document.documentElement.dataset.tokamakFallback="webgl-unavailable",t.dataset.tokamakFallback="webgl-unavailable";let A=document.createElement("div");A.className="tokamak-fallback",A.lang="en",A.setAttribute("role","status"),A.setAttribute("aria-live","polite");let S=document.createElement("strong");S.className="tokamak-fallback__title",S.textContent="3D reactor unavailable";let k=document.createElement("p");k.className="tokamak-fallback__copy",k.textContent="This browser or device cannot display the WebGL visualization.",A.append(S,k),t.replaceChildren(A);let d=()=>{window.parent!==window&&window.parent.postMessage({type:"tokamak-state-applied",fallback:"webgl-unavailable"},location.origin)};return window.parent!==window&&(window.addEventListener("message",v=>{v.source===window.parent&&v.origin===location.origin&&v.data?.type==="tokamak-state"&&d()}),d()),void 0}s.setClearColor(0,0);s.setPixelRatio(Math.min(window.devicePixelRatio,2)),s.setSize(t.clientWidth,t.clientHeight),s.outputColorSpace=Dn,s.toneMapping=cr,s.toneMappingExposure=1.08,t.appendChild(s.domElement),s.domElement.setAttribute("aria-label","Scroll-linked three-dimensional wireframe toroidal field reactor"),s.domElement.setAttribute("role","img"),n.add(new Pc(16727709,.18));let a=new Fo(16727709,.4,7,1.8);a.position.set(0,.42,0),n.add(a);let r=new Fo(16741816,.8,6,2);r.position.set(0,3.1,1.4),n.add(r);let o=SL();n.add(o);
 let H="",P=new WeakMap,lineDarkMaterials=new WeakMap,lineLightMaterials=new Map,DARK_WIRE_COLOR="#ff3e9d",LIGHT_WIRE_COLOR="#ff2c58",O=new Ji({color:0,side:oi,colorWrite:!1,depthWrite:!0,depthTest:!0,toneMapped:!1}),V=window.parent===window,E=()=>{},C=T=>{
+  if(window.parent===window||T.source!==window.parent||T.origin!==location.origin)return;
   let A=T.data;
   if(!A||A.type!=="tokamak-state")return;
   let S=!1;
@@ -4928,10 +4913,9 @@ let H="",P=new WeakMap,lineDarkMaterials=new WeakMap,lineLightMaterials=new Map,
   }
   s.domElement.dataset.reactorTheme=H,s.domElement.dataset.wireObjects=String(I),s.domElement.dataset.sourceWireObjects=String(o.userData.sourceWireObjects||I),s.domElement.dataset.lightDepthOccluders=String(D),s.domElement.dataset.wireColors=[...W].sort().join(","),s.domElement.dataset.lightPalette="warm-site-pink-v2",s.domElement.dataset.darkWireColor=DARK_WIRE_COLOR,s.domElement.dataset.lightWireColor=LIGHT_WIRE_COLOR,s.domElement.dataset.lightCompositing="premultiplied-additive-v3",s.domElement.dataset.lightBloomAlpha="rgb-only",s.domElement.dataset.renderVisible=String(V);
   S&&E();
-  window.parent!==window&&window.parent.postMessage({type:"tokamak-state-applied",theme:H,wireObjects:I,depthOccluders:D},"*")
+  window.parent!==window&&window.parent.postMessage({type:"tokamak-state-applied",theme:H,wireObjects:I,depthOccluders:D},location.origin)
 };window.addEventListener("message",C);
-let l=o.getObjectByName("energy-ring-front"),c=o.getObjectByName("energy-ring-back"),h=new tp(i,s.domElement);
-h.target.copy(Tv),h.enabled=!1,h.update();
+let l=o.getObjectByName("energy-ring-front"),c=o.getObjectByName("energy-ring-back");
 let T=Math.atan2(i.position.x,i.position.z);l&&(l.rotation.y=T),c&&(c.rotation.y=T);
 let p=new Be(1,1,{type:Ke,samples:Math.min(4,s.capabilities.maxSamples)});
 p.texture.name="ReactorScene.MSAA";
@@ -4960,8 +4944,6 @@ s.domElement.dataset.postprocessStages="16";
 s.domElement.dataset.bloomSampling="paired-bilinear";
 s.domElement.dataset.plasmaHalo="theme-aware-light-v3";
 s.domElement.dataset.transparentPassMode="single";
-let m=()=>{i.position.copy(D1),h.target.copy(Tv),h.update(),E()},f=w=>{w.key.toLowerCase()==="r"&&m()};
-window.addEventListener("keydown",f),s.domElement.addEventListener("dblclick",m);
 let x=0,G=0,q=!0,K=!1,R=()=>{
   x=0;
   if(!V||document.hidden||!q)return;
@@ -4986,9 +4968,9 @@ let g=()=>{
 },_=new ResizeObserver(g),W=()=>E();
 _.observe(t),document.addEventListener("visibilitychange",W),g();
 window.__tokamakDiagnostics=()=>({frames:G,calls:s.info.render.calls,triangles:s.info.render.triangles,lines:s.info.render.lines,visible:V,paused:s.domElement.dataset.renderPaused==="true",sceneSamples:p.samples,postSamples:0});
-window.parent!==window&&window.parent.postMessage({type:"tokamak-ready"},"*");
+window.parent!==window&&window.parent.postMessage({type:"tokamak-ready"},location.origin);
 s.compileAsync(n,i).catch(()=>{}).then(()=>{K=!0,s.domElement.dataset.shaderCompilation="complete",E()});
-return()=>{x&&cancelAnimationFrame(x),_.disconnect(),document.removeEventListener("visibilitychange",W),window.removeEventListener("message",C),window.removeEventListener("keydown",f),s.domElement.removeEventListener("dblclick",m),h.dispose(),u.dispose(),O.dispose(),new Set(P.values()).forEach(w=>w?.dispose()),s.dispose(),t.removeChild(s.domElement),n.traverse(w=>{if(w instanceof We||w instanceof Qi){w.geometry?.dispose();let F=w.material;Array.isArray(F)?F.forEach(N=>N.dispose()):F?.dispose()}})}},[]),(0,L1.jsx)("div",{ref:e,className:"reactor-scene"})}var Ko=gr(ou(),1);function ML(){return(0,Ko.jsxs)("main",{className:"scene-shell",children:[(0,Ko.jsx)(Cv,{}),(0,Ko.jsx)("div",{className:"interaction-hint","aria-hidden":"true",children:"Drag to rotate \xB7 Scroll to zoom \xB7 R to reset"})]})}var U1=document.getElementById("root");if(!U1)throw new Error("Missing root element");(0,N1.createRoot)(U1).render((0,Ko.jsx)(ML,{}));})();
+return()=>{x&&cancelAnimationFrame(x),_.disconnect(),document.removeEventListener("visibilitychange",W),window.removeEventListener("message",C),u.dispose(),O.dispose(),new Set(P.values()).forEach(w=>w?.dispose()),s.dispose(),t.removeChild(s.domElement),n.traverse(w=>{if(w instanceof We||w instanceof Qi){w.geometry?.dispose();let F=w.material;Array.isArray(F)?F.forEach(N=>N.dispose()):F?.dispose()}})}},[]),(0,L1.jsx)("div",{ref:e,className:"reactor-scene"})}var Ko=gr(ou(),1);function ML(){return(0,Ko.jsx)("main",{className:"scene-shell",children:(0,Ko.jsx)(Cv,{})})}var U1=document.getElementById("root");if(!U1)throw new Error("Missing root element");(0,N1.createRoot)(U1).render((0,Ko.jsx)(ML,{}));})();
 /*! Bundled license information:
 
 scheduler/cjs/scheduler.production.js:

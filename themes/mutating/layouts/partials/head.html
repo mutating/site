@@ -21,6 +21,7 @@
     var languageURLs = {{ $languageURLs | jsonify | safeJS }};
     var preferredLanguage = null;
     var hasStoredLanguage = false;
+    var forwardedSearch = window.location.search;
     function resolveSupportedLanguage(candidate) {
       if (typeof candidate !== "string") return null;
       var normalizedCandidate = candidate.trim().toLowerCase().replace(/_/g, "-");
@@ -37,12 +38,36 @@
       }
       return baseMatch;
     }
-    try {
-      preferredLanguage = resolveSupportedLanguage(
-        localStorage.getItem("tmc-language")
-      );
-      hasStoredLanguage = preferredLanguage !== null;
-    } catch (_) {}
+    var languageChoiceParameter = "tmc-language-choice";
+    var searchParameters = new URLSearchParams(window.location.search);
+    var manualLanguage = resolveSupportedLanguage(
+      searchParameters.get(languageChoiceParameter)
+    );
+    if (manualLanguage) {
+      preferredLanguage = manualLanguage;
+      hasStoredLanguage = true;
+      try {
+        localStorage.setItem("tmc-language", manualLanguage);
+      } catch (_) {}
+      searchParameters.delete(languageChoiceParameter);
+      var serializedSearch = searchParameters.toString();
+      forwardedSearch = serializedSearch ? "?" + serializedSearch : "";
+      if (window.history && typeof window.history.replaceState === "function") {
+        window.history.replaceState(
+          window.history.state,
+          "",
+          window.location.pathname + forwardedSearch + window.location.hash
+        );
+      }
+    }
+    if (!hasStoredLanguage) {
+      try {
+        preferredLanguage = resolveSupportedLanguage(
+          localStorage.getItem("tmc-language")
+        );
+        hasStoredLanguage = preferredLanguage !== null;
+      } catch (_) {}
+    }
     if (!hasStoredLanguage) {
       preferredLanguage = currentLanguage;
       if (currentLanguage === defaultLanguage) {
@@ -60,7 +85,7 @@
     document.documentElement.dataset.language = currentLanguage;
     if (preferredLanguage !== currentLanguage && languageURLs[preferredLanguage]) {
       var target = new URL(languageURLs[preferredLanguage], window.location.origin);
-      target.search = window.location.search;
+      target.search = forwardedSearch;
       target.hash = window.location.hash;
       window.location.replace(target.href);
     }

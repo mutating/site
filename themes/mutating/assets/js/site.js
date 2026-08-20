@@ -21,9 +21,13 @@
       textarea.style.position = "fixed";
       textarea.style.inset = "0 auto auto -9999px";
       document.body.append(textarea);
-      textarea.select();
-      const copied = document.execCommand("copy");
-      textarea.remove();
+      let copied = false;
+      try {
+        textarea.select();
+        copied = document.execCommand("copy");
+      } finally {
+        textarea.remove();
+      }
       if (!copied) throw new Error("The browser rejected the copy command.");
     };
 
@@ -404,11 +408,30 @@
     const ticker = document.querySelector(".ticker");
     const track = ticker?.querySelector(".ticker__track");
     if (!ticker || !track) return;
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     let started = false;
+    let frameRequest = 0;
+    let animations = [];
+
+    const stop = () => {
+      if (frameRequest) {
+        cancelAnimationFrame(frameRequest);
+        frameRequest = 0;
+      }
+      animations.forEach((animation) => animation.cancel());
+      animations = [];
+      started = false;
+    };
+
     const start = () => {
-      if (started) return;
+      if (started || reducedMotion.matches) return;
       started = true;
-      requestAnimationFrame(() => {
+      frameRequest = requestAnimationFrame(() => {
+        frameRequest = 0;
+        if (reducedMotion.matches) {
+          started = false;
+          return;
+        }
         const trackWidth = track.scrollWidth;
         const tickerWidth = ticker.clientWidth;
         const originalPixelsPerSecond = trackWidth / 56;
@@ -419,7 +442,7 @@
         const loopSeconds = fullTravelSeconds + pauseSeconds;
         const travelEndOffset = fullTravelSeconds / loopSeconds;
 
-        track.animate(
+        const introAnimation = track.animate(
           [
             { transform: "translate3d(calc(50vw - 50%), 0, 0)" },
             { transform: "translate3d(-100%, 0, 0)" },
@@ -430,7 +453,7 @@
             fill: "forwards",
           },
         );
-        track.animate(
+        const loopAnimation = track.animate(
           [
             { transform: "translate3d(100vw, 0, 0)", offset: 0 },
             {
@@ -446,8 +469,14 @@
             iterations: Infinity,
           },
         );
+        animations = [introAnimation, loopAnimation];
       });
     };
+
+    reducedMotion.addEventListener("change", () => {
+      if (reducedMotion.matches) stop();
+      else start();
+    });
     if (document.fonts) document.fonts.ready.then(start);
     else start();
   }
@@ -1205,7 +1234,12 @@
     frame.addEventListener("load", schedule);
     document.addEventListener("visibilitychange", schedule);
     addEventListener("message", (event) => {
-      if (event.source !== frame.contentWindow) return;
+      if (
+        event.source !== frame.contentWindow ||
+        event.origin !== location.origin
+      ) {
+        return;
+      }
       if (event.data?.type === "tokamak-ready") schedule();
       else if (event.data?.type === "tokamak-state-applied") {
         shell.classList.add("is-ready");
@@ -1232,6 +1266,29 @@
     let scrollIsActive = false;
     let scrollIdleTimer = 0;
     const scrollIdleFallbackMs = 320;
+
+    const prewarm = () => {
+      const source = frame.dataset.prewarmSrc;
+      if (
+        !source ||
+        frame.hasAttribute("src") ||
+        frame.hasAttribute("srcdoc")
+      ) {
+        return;
+      }
+      frame.loading = "eager";
+      frame.src = source;
+      delete frame.dataset.prewarmSrc;
+    };
+    const schedulePrewarm = () => {
+      requestAnimationFrame(() => {
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(prewarm, { timeout: 2000 });
+        } else {
+          window.setTimeout(prewarm, 0);
+        }
+      });
+    };
 
     const sendTheme = () => {
       const theme =
@@ -1339,20 +1396,17 @@
     };
     const handleMessage = (event) => {
       if (
-        event.source === frame.contentWindow &&
-        event.data?.type === "muta-tentacles-ready"
+        event.source !== frame.contentWindow ||
+        event.origin !== location.origin
       ) {
+        return;
+      }
+      if (event.data?.type === "muta-tentacles-ready") {
         sendTheme();
         sendRuntimeState();
-      } else if (
-        event.source === frame.contentWindow &&
-        event.data?.type === "muta-tentacles-scroll-input"
-      ) {
+      } else if (event.data?.type === "muta-tentacles-scroll-input") {
         handleForwardedScrollInput(event.data.deltaY);
-      } else if (
-        event.source === frame.contentWindow &&
-        event.data?.type === "muta-tentacles-pointer-move"
-      ) {
+      } else if (event.data?.type === "muta-tentacles-pointer-move") {
         const normalizedX = Number(event.data.x);
         const normalizedY = Number(event.data.y);
         if (
@@ -1384,7 +1438,9 @@
     new IntersectionObserver(
       ([entry]) => {
         contactIsNearViewport = entry.isIntersecting;
-        if (!contactIsNearViewport) {
+        if (contactIsNearViewport) {
+          prewarm();
+        } else {
           clearScrollIdleTimer();
           scrollIsActive = false;
         }
@@ -1412,6 +1468,7 @@
     });
     sendTheme();
     sendRuntimeState();
+    schedulePrewarm();
   }
 
   function initMobileMenus() {

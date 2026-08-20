@@ -117,6 +117,223 @@ def _image_difference_statistics(
     )
 
 
+def test_tokamak_shows_accessible_fallback_without_webgl(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Replace the standalone reactor with an accessible fallback without WebGL."""
+
+    page = driver(
+        initial_path="/blog/",
+        load_interactive_visuals=True,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+              HTMLCanvasElement.prototype.getContext = function (kind, options) {
+                if (kind === "webgl" || kind === "webgl2") return null;
+                return nativeGetContext.call(this, kind, options);
+              };
+            })();
+            """,
+        ),
+    )
+    errors: list[str] = []
+    console_errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on(
+        "console",
+        lambda message: (
+            console_errors.append(message.text) if message.type == "error" else None
+        ),
+    )
+    page.goto(
+        f"{base_url}/tokamak-reactor.html",
+        wait_until="domcontentloaded",
+    )
+
+    fallback = page.get_by_role("status")
+    expect(fallback).to_be_visible()
+    expect(fallback).to_have_attribute("lang", "en")
+    expect(fallback.locator(".tokamak-fallback__title")).to_have_text(
+        "3D reactor unavailable"
+    )
+    expect(fallback.locator(".tokamak-fallback__copy")).to_contain_text(
+        "cannot display the WebGL visualization"
+    )
+    expect(page.locator("html")).to_have_attribute(
+        "data-tokamak-fallback", "webgl-unavailable"
+    )
+    expect(page.locator("canvas")).to_have_count(0)
+    expect(page.locator("#root .tokamak-fallback")).to_have_count(1)
+    assert errors == []
+    assert console_errors == []
+
+
+def test_parent_page_reveals_embedded_tokamak_fallback_without_webgl(
+    driver: DriverFactory,
+) -> None:
+    """Reveal the embedded fallback after its readiness handshake with the parent."""
+
+    page = driver(
+        load_interactive_visuals=True,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetContext = HTMLCanvasElement.prototype.getContext;
+              HTMLCanvasElement.prototype.getContext = function (kind, options) {
+                if (kind === "webgl" || kind === "webgl2") return null;
+                return nativeGetContext.call(this, kind, options);
+              };
+            })();
+            """,
+        ),
+    )
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    model = page.locator(".tokamak-model")
+    model.scroll_into_view_if_needed()
+
+    expect(model).to_have_class(re.compile(r"\bis-ready\b"))
+    fallback = page.frame_locator(".tokamak-model__frame").get_by_role("status")
+    expect(fallback).to_be_visible()
+    expect(fallback).to_contain_text("3D reactor unavailable")
+    expect(page.locator(".tokamak-model__frame")).to_have_css("opacity", "1")
+    assert errors == []
+
+
+def test_tokamak_runtime_accepts_state_only_from_its_same_origin_parent(
+    driver: DriverFactory,
+) -> None:
+    """Tokamak accepts its parent but rejects self and wrong-origin state."""
+
+    page = driver(
+        stored_theme="light",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+    )
+    canvas = _show_reactor(page)
+    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+    canvas.evaluate(
+        """
+        () => new Promise((resolve) => {
+          const probe = "tokamak-self-message";
+          const observeProbe = (event) => {
+            if (event.data?.probe !== probe) return;
+            removeEventListener("message", observeProbe);
+            resolve();
+          };
+          addEventListener("message", observeProbe);
+          window.postMessage({
+            type: "tokamak-state",
+            theme: "dark",
+            rotationX: -0.3,
+            modelScale: 1,
+            visible: true,
+            probe,
+          }, location.origin);
+        })
+        """
+    )
+    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+
+    canvas.evaluate(
+        """
+        () => dispatchEvent(new MessageEvent("message", {
+          data: {
+            type: "tokamak-state",
+            theme: "dark",
+            rotationX: -0.3,
+            modelScale: 1,
+            visible: true,
+          },
+          origin: "https://attacker.example",
+          source: window.parent,
+        }))
+        """
+    )
+    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+
+    page.locator(".tokamak-model__frame").evaluate(
+        """
+        (element) => element.contentWindow.postMessage({
+          type: "tokamak-state",
+          theme: "dark",
+          rotationX: -0.3,
+          modelScale: 1,
+          visible: true,
+        }, location.origin)
+        """
+    )
+    expect(canvas).to_have_attribute("data-reactor-theme", "dark")
+
+
+def test_tokamak_exposes_no_direct_camera_controls_and_ignores_user_input(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Standalone Tokamak exposes no controls and ignores every direct input."""
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(480, 420),
+        load_interactive_visuals=True,
+    )
+    page.goto(f"{base_url}/tokamak-reactor.html", wait_until="domcontentloaded")
+    canvas = page.locator("canvas")
+    expect(canvas).to_have_attribute(
+        "data-shader-compilation", "complete", timeout=30_000
+    )
+    # Compilation and the first demand-render are separate async stages. Under
+    # the full xdist suite, the browser may need the full render timeout before
+    # its first GPU-backed frame is committed; keep requiring a real frame.
+    expect(canvas).to_have_attribute(
+        "data-render-frames",
+        re.compile(r"[1-9]\d*"),
+        timeout=30_000,
+    )
+    expect(canvas).not_to_have_attribute("tabindex", re.compile(r".+"))
+    expect(canvas).to_have_attribute(
+        "aria-label",
+        "Scroll-linked three-dimensional wireframe toroidal field reactor",
+    )
+    expect(page.locator(".interaction-hint")).to_have_count(0)
+    expect(page.locator(".reactor-scene")).to_have_css("cursor", "default")
+    expect(page.locator(".reactor-scene")).to_have_css("touch-action", "auto")
+    expect(page.locator(".reactor-scene")).to_have_css("pointer-events", "none")
+
+    unchanged_frames = int(canvas.get_attribute("data-render-frames") or "0")
+    canvas.dispatch_event(
+        "pointerdown",
+        {"pointerId": 1, "pointerType": "mouse", "clientX": 120, "clientY": 120},
+    )
+    canvas.dispatch_event(
+        "pointermove",
+        {"pointerId": 1, "pointerType": "mouse", "clientX": 220, "clientY": 180},
+    )
+    canvas.dispatch_event("pointerup", {"pointerId": 1, "pointerType": "mouse"})
+    canvas.dispatch_event("wheel", {"deltaY": 120})
+    page.evaluate(
+        """
+        () => window.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "r",
+          bubbles: true,
+        }))
+        """
+    )
+    canvas.dispatch_event("dblclick")
+    page.evaluate(
+        """
+        () => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })
+        """
+    )
+
+    assert int(canvas.get_attribute("data-render-frames") or "0") == unchanged_frames
+
+
 def test_light_tokamak_uses_invisible_depth_occluders(
     driver: DriverFactory,
 ) -> None:
@@ -719,38 +936,61 @@ def test_tokamak_matches_intended_visual_reference(
         viewport=(480, 420),
         load_interactive_visuals=True,
     )
-    page.goto(f"{base_url}/tokamak-reactor.html")
-    canvas = page.locator("canvas")
+    page.goto(f"{base_url}/blog/", wait_until="domcontentloaded")
+    page.evaluate(
+        """
+        () => {
+          const frame = document.createElement("iframe");
+          frame.id = "tokamak-reference-frame";
+          frame.src = "/tokamak-reactor.html";
+          frame.style.cssText = [
+            "position:fixed",
+            "inset:0",
+            "width:480px",
+            "height:420px",
+            "border:0",
+            "z-index:2147483647",
+          ].join(";");
+          document.body.append(frame);
+        }
+        """
+    )
+    runtime_frame = page.locator("#tokamak-reference-frame")
+    canvas = page.frame_locator("#tokamak-reference-frame").locator("canvas")
     expect(canvas).to_be_visible()
     baselines = Path(__file__).with_name("visual_baselines")
     light_front: Image.Image | None = None
 
-    for theme in ("dark", "light"):
-        prior_frames = int(
-            canvas.get_attribute("data-render-frames") or "0"
-        )
-        page.evaluate(
+    def apply_trusted_parent_state(theme: str, rotation_x: float) -> None:
+        """Send one complete render state through the production trust boundary."""
+
+        prior_frames = int(canvas.get_attribute("data-render-frames") or "0")
+        runtime_frame.evaluate(
             """
-            (selectedTheme) => window.postMessage({
+            (element, state) => element.contentWindow.postMessage({
               type: "tokamak-state",
-              theme: selectedTheme,
-              rotationX: -0.3,
+              theme: state.theme,
+              rotationX: state.rotationX,
               modelScale: 1,
               visible: true,
-            }, "*")
+            }, location.origin)
             """,
-            theme,
+            {"theme": theme, "rotationX": rotation_x},
         )
         expect(canvas).to_have_attribute("data-reactor-theme", theme)
         page.wait_for_function(
             """
-            (baseline) => Number(
-              document.querySelector("canvas").dataset.renderFrames
+            ({baseline}) => Number(
+              document.querySelector("#tokamak-reference-frame")
+                .contentDocument.querySelector("canvas").dataset.renderFrames
             ) > baseline
             """,
-            arg=prior_frames,
+            arg={"baseline": prior_frames},
         )
         page.wait_for_timeout(100)
+
+    for theme in ("dark", "light"):
+        apply_trusted_parent_state(theme, -0.3)
 
         actual = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
         expected = Image.open(
@@ -784,32 +1024,11 @@ def test_tokamak_matches_intended_visual_reference(
     assert blue - green < 55
     assert red - blue > 45
 
-    prior_frames = int(canvas.get_attribute("data-render-frames") or "0")
-    page.evaluate(
-        """
-        () => window.postMessage({
-          type: "tokamak-state",
-          theme: "light",
-          rotationX: -0.52,
-          modelScale: 1,
-          visible: true,
-        }, "*")
-        """
-    )
-    expect(canvas).to_have_attribute("data-reactor-theme", "light")
+    apply_trusted_parent_state("light", -0.52)
     expect(canvas).to_have_attribute(
         "data-plasma-halo",
         "theme-aware-light-v3",
     )
-    page.wait_for_function(
-        """
-        (baseline) => Number(
-          document.querySelector("canvas").dataset.renderFrames
-        ) > baseline
-        """,
-        arg=prior_frames,
-    )
-    page.wait_for_timeout(100)
 
     oblique = Image.open(io.BytesIO(canvas.screenshot())).convert("RGB")
     expected_oblique = Image.open(

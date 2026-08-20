@@ -1343,7 +1343,12 @@
           visible: runtimeVisible,
           scrollActive: false,
         });
+        const isTrustedParentMessage = (event) =>
+          window.parent !== window &&
+          event.source === window.parent &&
+          event.origin === window.location.origin;
         addEventListener("message", (event) => {
+          if (!isTrustedParentMessage(event)) return;
           if (
             event.data?.type === "muta-tentacles-theme" &&
             (event.data.theme === "light" || event.data.theme === "dark")
@@ -1422,14 +1427,17 @@
                   type: "muta-tentacles-scroll-input",
                   deltaY,
                 },
-                "*",
+                window.location.origin,
               );
             }
           },
           { passive: true },
         );
         if (window.parent !== window) {
-          window.parent.postMessage({ type: "muta-tentacles-ready" }, "*");
+          window.parent.postMessage(
+            { type: "muta-tentacles-ready" },
+            window.location.origin,
+          );
         }
 
         function mulberry32(seed) {
@@ -2282,7 +2290,7 @@
                 x: pointer.targetX,
                 y: pointer.targetY,
               },
-              "*",
+              window.location.origin,
             );
           }
         }
@@ -2482,6 +2490,7 @@
           }
         });
         addEventListener("message", (event) => {
+          if (!isTrustedParentMessage(event)) return;
           if (event.data?.type === "muta-tentacles-pointer-hover") {
             if (event.data.inside === false) {
               pointer.inside = false;

@@ -85,6 +85,10 @@ Everything that defines presentation or behavior lives in `themes/mutating/`:
   Hugo.
 - `static/` also contains every local image, font, SVG, and standalone
   interactive HTML asset.
+- The Tentacles and Tokamak iframes keep stable static paths, while
+  `layouts/index.html` injects each file's full SHA-256 into its `v` query during
+  every build; `content/_index.md` therefore contains fingerprint markers,
+  never manually maintained revisions.
 
 ## Add a blog post
 

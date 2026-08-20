@@ -1,6 +1,6 @@
 ---
 title: "Newest navigation edge fixture"
-date: 2026-07-31T23:59:59Z
+date: 2026-08-02T23:59:59Z
 description: "A deterministic newest post for navigation-edge coverage."
 slug: "newest-navigation-edge-fixture"
 ---
