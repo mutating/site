@@ -1,0 +1,10 @@
+{{- $content := .Params.home.distribution -}}
+<section class="distribution section-shell" id="scale" aria-labelledby="distribution-heading">
+  <div class="distribution__copy">
+    <a class="section-index" href="#scale">05 / {{ $content.label }}</a>
+    <h2 id="distribution-heading">{{ $content.heading }}</h2>
+    <p>{{ $content.paragraph }}</p>
+    <ul>{{ range $index, $point := $content.points }}<li><span>{{ printf "%02d" (add $index 1) }}</span> {{ $point }}</li>{{ end }}</ul>
+  </div>
+  <div class="pantograph-visual" role="img" aria-label="{{ $content.visual_aria }}"><div class="pantograph-visual__object" aria-hidden="true"></div></div>
+</section>

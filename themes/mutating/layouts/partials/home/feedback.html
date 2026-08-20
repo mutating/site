@@ -1,0 +1,23 @@
+{{- $content := .Params.home.feedback -}}
+{{- $positions := slice "top" "right" "bottom" "left" -}}
+<section class="feedback section-shell" id="feedback" aria-labelledby="feedback-heading">
+  <div class="feedback__visual">
+    <div class="feedback-loop" role="button" tabindex="0" aria-label="{{ $content.visual_aria }}">
+      {{- range $index, $label := $content.nodes -}}<div class="feedback-node feedback-node--{{ index $positions $index }}"><span>{{ printf "%02d" (add $index 1) }}</span><strong>{{ $label }}</strong></div>{{- end }}
+      <svg class="feedback-arrows" viewBox="0 0 100 100" aria-hidden="true">
+        <g class="feedback-arrow" transform="rotate(0 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+        <g class="feedback-arrow" transform="rotate(90 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+        <g class="feedback-arrow" transform="rotate(180 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+        <g class="feedback-arrow" transform="rotate(270 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+      </svg>
+      <div class="feedback-core">{{ $content.core_line_1 }}<br>{{ $content.core_line_2 }}</div>
+    </div>
+  </div>
+  <div class="feedback__copy">
+    <a class="section-index" href="#feedback">06 / {{ $content.label }}</a>
+    <h2 id="feedback-heading">{{ $content.heading }}</h2>
+    <p class="large-copy">{{ $content.lead }}</p>
+    <p>{{ $content.paragraph }}</p>
+    <blockquote>{{ $content.quote }}</blockquote>
+  </div>
+</section>

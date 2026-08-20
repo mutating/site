@@ -1,0 +1,24 @@
+{{- $content := .Params.home.complexity -}}
+<section class="complexity section-shell" id="complexity" aria-labelledby="complexity-heading">
+  <div class="complexity__copy">
+    <a class="section-index" href="#complexity">01 / {{ $content.label }}</a>
+    <h2 id="complexity-heading">{{ $content.heading }}</h2>
+    {{- range $content.paragraphs }}<p>{{ . }}</p>{{ end }}
+  </div>
+  <div class="chart-panel">
+    <div class="chart-panel__header"><span>{{ $content.chart_metric }}</span><span>{{ $content.chart_model }}</span></div>
+    <div class="complexity-chart" role="img" aria-label="{{ $content.chart_aria }}" data-curves-revealed="false">
+      <canvas class="complexity-chart__layer complexity-chart__static" aria-hidden="true"></canvas>
+      <canvas class="complexity-chart__layer complexity-chart__curves" aria-hidden="true"></canvas>
+      <div class="complexity-chart__annotations" aria-hidden="true">
+        <span class="complexity-chart__curve-label complexity-chart__curve-label--entropy">{{ $content.entropy_label }}</span>
+        <span class="complexity-chart__curve-label complexity-chart__curve-label--verification">{{ $content.verification_label }}</span>
+      </div>
+      <span class="chart-panel__axis-label chart-panel__cost" aria-hidden="true">↑ {{ $content.cost_axis }}</span>
+    </div>
+    <div class="chart-panel__footer">
+      <span class="chart-panel__axis-label chart-panel__scale">{{ $content.scale_axis }} →</span>
+      <p class="chart-panel__caption">{{ $content.caption }}</p>
+    </div>
+  </div>
+</section>

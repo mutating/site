@@ -1,0 +1,12 @@
+{{- $content := .Params.home.pillars -}}
+{{- $first := index $content.cards 0 -}}
+{{- $second := index $content.cards 1 -}}
+{{- $third := index $content.cards 2 -}}
+<section class="pillars section-shell" id="what-we-build" aria-labelledby="pillars-heading">
+  <div class="pillars__intro"><a class="section-index" href="#what-we-build">04 / {{ $content.label }}</a><h2 id="pillars-heading">{{ $content.heading }}</h2></div>
+  <div class="pillars__grid">
+    <article class="pillar-card"><span class="pillar-card__number">01</span><div class="pillar-card__visual" aria-hidden="true"><img data-deferred-src="/pillar-verifiability-v1-lossless.webp" width="1104" height="901" loading="lazy" decoding="async" alt=""></div><h3>{{ $first.title }}</h3><p>{{ $first.description }}</p></article>
+    <article class="pillar-card"><span class="pillar-card__number">02</span><div class="pillar-card__visual" aria-hidden="true"><img data-deferred-src="/pillar-interpretability-v1-lossless.webp" width="942" height="1140" loading="lazy" decoding="async" alt=""></div><h3>{{ $second.title }}</h3><p>{{ $second.description }}</p></article>
+    <article class="pillar-card"><span class="pillar-card__number">03</span><div class="pillar-card__visual" aria-hidden="true"><span class="pillar-card__rotor"><img class="pillar-card__rotor-image" data-theme-src-light="/pillar-testing-speed-rotor-v4-lossless.webp" data-theme-src-dark="/pillar-testing-speed-rotor-v2-lossless.webp" width="1060" height="1062" loading="lazy" decoding="async" alt=""></span></div><h3>{{ $third.title }}</h3><p>{{ $third.description }}</p></article>
+  </div>
+</section>

@@ -1,0 +1,3 @@
+{{- $content := .Params.home.ticker -}}
+<div class="ticker" aria-hidden="true"><div class="ticker__track">{{ range $index, $item := $content.items }}{{ if $index }} {{ end }}{{ $item }} <span>✦</span>{{ end }}</div></div>
+<span class="section-list-anchor" id="sections" aria-hidden="true"></span>

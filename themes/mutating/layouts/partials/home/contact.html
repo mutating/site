@@ -1,0 +1,14 @@
+{{- $content := .Params.home.contact -}}
+{{- $tentaclesSource := os.ReadFile "themes/mutating/static/muta-tentacles.html" -}}
+{{- $tentaclesFingerprint := crypto.SHA256 $tentaclesSource -}}
+<section class="contact section-shell" id="contact">
+  <div class="contact__clip">
+    <iframe class="contact__tentacles" data-prewarm-src="/muta-tentacles.html?v={{ $tentaclesFingerprint }}&amp;embedded=1" title="{{ $content.frame_title }}" tabindex="-1" data-scroll-active="false"></iframe>
+    <div class="contact__copy">
+      <a class="section-index" href="#contact">{{ $content.label }}</a>
+      <h2>{{ $content.heading }}</h2>
+      <p>{{ $content.paragraph }}</p>
+      <a class="button button--dark" href="mailto:contact@mutating.tech">{{ $content.action }} <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+</section>
