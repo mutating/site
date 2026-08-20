@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -496,21 +497,21 @@ def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
         })
         """
     )
+    iframe = page.locator(".contact__tentacles")
+    expect(iframe).to_have_attribute(
+        "src",
+        re.compile(
+            r"[?&]max-tentacles=64"
+            r"&render-supersample=0\.5"
+            r"&generation-seed=12345$"
+        ),
+        timeout=30_000,
+    )
     iframe_root = page.frame_locator(".contact__tentacles").locator("html")
     expect(iframe_root).to_have_attribute(
         "data-theme",
         "light",
         timeout=30_000,
-    )
-    assert iframe_root.evaluate(
-        """
-        () => {
-          const source = new URL(location.href);
-          return source.searchParams.get("max-tentacles") === "64" &&
-            source.searchParams.get("render-supersample") === "0.5" &&
-            source.searchParams.get("generation-seed") === "12345";
-        }
-        """
     )
 
     expect(
