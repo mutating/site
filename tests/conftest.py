@@ -353,6 +353,7 @@ def driver(
         device_scale_factor: float | None = None,
         reduced_motion: ReducedMotion = "no-preference",
         load_interactive_visuals: bool | None = None,
+        bounded_tentacle_rendering: bool = False,
         animation_frame_interval_ms: float | None = None,
         controllable_animation_frames: bool = False,
         initial_path: str = "",
@@ -453,6 +454,47 @@ def driver(
         if not should_load_interactive_visuals:
             context.route("**/muta-tentacles.html*", lambda route: route.abort())
             context.route("**/tokamak-reactor.html*", lambda route: route.abort())
+
+        if bounded_tentacle_rendering:
+            # The production tentacle density is intentionally expensive. On
+            # GitHub's Linux software renderer it can monopolize Chromium
+            # before a test gets a chance to rewrite the already-started
+            # iframe. Install the profile at document start, while the parser
+            # is still constructing the authored data-prewarm-src element.
+            # This keeps the real WebGL runtime and iframe protocol under test
+            # while bounding only scene density and backing resolution.
+            context.add_init_script(
+                """
+                (() => {
+                  const boundTentacleSource = (root) => {
+                    for (const frame of root.querySelectorAll(
+                      'iframe[data-prewarm-src*="/muta-tentacles.html"]',
+                    )) {
+                      const source = new URL(
+                        frame.dataset.prewarmSrc,
+                        location.href,
+                      );
+                      source.searchParams.set("max-tentacles", "64");
+                      source.searchParams.set("render-supersample", "0.5");
+                      source.searchParams.set("generation-seed", "12345");
+                      frame.dataset.prewarmSrc =
+                        `${source.pathname}${source.search}${source.hash}`;
+                    }
+                  };
+                  const observer = new MutationObserver(() => {
+                    boundTentacleSource(document);
+                  });
+                  observer.observe(document, {
+                    childList: true,
+                    subtree: true,
+                  });
+                  addEventListener("DOMContentLoaded", () => {
+                    boundTentacleSource(document);
+                    observer.disconnect();
+                  }, { once: true });
+                })();
+                """
+            )
 
         if animation_frame_interval_ms is not None:
             frame_interval = float(animation_frame_interval_ms)

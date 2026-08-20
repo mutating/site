@@ -9,6 +9,7 @@ def test_every_test_has_a_bounded_runtime(pytestconfig: pytest.Config) -> None:
     """Turn a stalled browser promise into a reported failure before CI ends."""
 
     assert float(pytestconfig.getini("timeout")) == 120
+    assert pytestconfig.getini("timeout_method") == "thread"
 
 
 def test_parallel_temp_root_keeps_its_cleanup_lock(

@@ -486,6 +486,7 @@ def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
     page = driver(
         stored_theme="light",
         viewport=(390, 844),
+        bounded_tentacle_rendering=True,
     )
     page.evaluate(
         """
@@ -500,6 +501,16 @@ def test_rapid_theme_switches_keep_tentacle_surface_and_layout_in_lockstep(
         "data-theme",
         "light",
         timeout=30_000,
+    )
+    assert iframe_root.evaluate(
+        """
+        () => {
+          const source = new URL(location.href);
+          return source.searchParams.get("max-tentacles") === "64" &&
+            source.searchParams.get("render-supersample") === "0.5" &&
+            source.searchParams.get("generation-seed") === "12345";
+        }
+        """
     )
 
     expect(
