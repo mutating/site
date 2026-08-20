@@ -715,6 +715,7 @@ def test_code_copy_removes_temporary_textarea_when_fallback_throws(
             + fallback_failure,
         ),
     )
+    page.evaluate("document.fonts.ready")
     block = page.locator(".post__content .code-block").first
     button = block.locator(".code-copy-button")
     block.hover()
