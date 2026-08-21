@@ -139,6 +139,21 @@
           : Number.NaN;
         const useManualAnimationFrame =
           runtimeSearch.get("manual-animation-frame") === "1";
+        const gpuTimingRequested =
+          runtimeSearch.get("gpu-timing") === "1";
+        const requestedGpuTimingInterval = Number(
+          runtimeSearch.get("gpu-timing-interval"),
+        );
+        const GPU_TIMING_SAMPLE_INTERVAL =
+          useManualAnimationFrame &&
+          Number.isFinite(requestedGpuTimingInterval) &&
+          requestedGpuTimingInterval > 0
+            ? Math.min(
+                120,
+                Math.max(1, Math.floor(requestedGpuTimingInterval)),
+              )
+            : 30;
+        const GPU_TIMING_QUERY_POOL_SIZE = 4;
         const CHAIN_LINKS = 50;
         const RENDER_POINTS = 14;
         const POINT_X = 0;
@@ -207,6 +222,39 @@
             : 64;
         const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const floatColor = Boolean(gl.getExtension("EXT_color_buffer_float"));
+        const gpuTimerExtension = gpuTimingRequested
+          ? gl.getExtension("EXT_disjoint_timer_query_webgl2")
+          : null;
+        const gpuTimerQueries = [];
+        let gpuTimingEnabled = Boolean(gpuTimerExtension);
+        if (gpuTimingEnabled) {
+          for (
+            let queryIndex = 0;
+            queryIndex < GPU_TIMING_QUERY_POOL_SIZE;
+            queryIndex += 1
+          ) {
+            const query = gl.createQuery();
+            if (!query) {
+              gpuTimingEnabled = false;
+              break;
+            }
+            gpuTimerQueries.push(query);
+          }
+        }
+        if (!gpuTimingEnabled) {
+          for (const query of gpuTimerQueries) {
+            gl.deleteQuery(query);
+          }
+          gpuTimerQueries.length = 0;
+        }
+        canvas.dataset.gpuTiming = gpuTimingRequested
+          ? gpuTimingEnabled
+            ? "enabled"
+            : "unsupported"
+          : "disabled";
+        canvas.dataset.gpuTimingSampleInterval = String(
+          GPU_TIMING_SAMPLE_INTERVAL,
+        );
         const compactMedia = matchMedia("(max-width: 620px)");
         const isCompact = compactMedia.matches;
         canvas.dataset.runtimeCompact =
@@ -3508,7 +3556,7 @@
           gl.bindTexture(gl.TEXTURE_2D, texture);
         }
 
-        function render(time) {
+        function renderFrame(time) {
           resize();
           const texelX = 1 / pixelWidth;
           const texelY = 1 / pixelHeight;
@@ -3590,6 +3638,150 @@
           );
           gl.drawArrays(gl.TRIANGLES, 0, 3);
         }
+
+        const gpuTimerQueryStates = gpuTimingEnabled
+          ? new Uint8Array(GPU_TIMING_QUERY_POOL_SIZE)
+          : null;
+        const gpuTimerQueryInvalid = gpuTimingEnabled
+          ? new Uint8Array(GPU_TIMING_QUERY_POOL_SIZE)
+          : null;
+        let gpuTimingRenderedFrames = 0;
+        let gpuTimingQueryCursor = 0;
+        let gpuTimingSampleCount = 0;
+        let gpuTimingMeanMilliseconds = 0;
+        let gpuTimingPendingQueries = 0;
+        let gpuTimingDroppedSamples = 0;
+        let gpuTimingDisjointCount = 0;
+        let gpuTimingWasDisjoint = false;
+
+        function publishGpuTimingCounters() {
+          canvas.dataset.gpuTimingSamples = String(
+            gpuTimingSampleCount,
+          );
+          canvas.dataset.gpuTimingPending = String(
+            gpuTimingPendingQueries,
+          );
+          canvas.dataset.gpuTimingDroppedSamples = String(
+            gpuTimingDroppedSamples,
+          );
+          canvas.dataset.gpuTimingDisjointCount = String(
+            gpuTimingDisjointCount,
+          );
+        }
+
+        function pollGpuTimerQueries(checkDisjoint = false) {
+          if (gpuTimingPendingQueries === 0 && !checkDisjoint) {
+            return false;
+          }
+          const disjoint = Boolean(
+            gl.getParameter(gpuTimerExtension.GPU_DISJOINT_EXT),
+          );
+          if (disjoint) {
+            if (!gpuTimingWasDisjoint) {
+              gpuTimingDisjointCount += 1;
+            }
+            for (
+              let queryIndex = 0;
+              queryIndex < gpuTimerQueries.length;
+              queryIndex += 1
+            ) {
+              if (gpuTimerQueryStates[queryIndex] !== 0) {
+                gpuTimerQueryInvalid[queryIndex] = 1;
+              }
+            }
+          }
+          gpuTimingWasDisjoint = disjoint;
+
+          for (
+            let queryIndex = 0;
+            queryIndex < gpuTimerQueries.length;
+            queryIndex += 1
+          ) {
+            if (gpuTimerQueryStates[queryIndex] === 0) {
+              continue;
+            }
+            const query = gpuTimerQueries[queryIndex];
+            if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) {
+              continue;
+            }
+            if (!gpuTimerQueryInvalid[queryIndex] && !disjoint) {
+              const elapsedNanoseconds = Number(
+                gl.getQueryParameter(query, gl.QUERY_RESULT),
+              );
+              const elapsedMilliseconds = elapsedNanoseconds / 1e6;
+              gpuTimingSampleCount += 1;
+              gpuTimingMeanMilliseconds +=
+                (elapsedMilliseconds - gpuTimingMeanMilliseconds) /
+                gpuTimingSampleCount;
+              canvas.dataset.gpuMs = elapsedMilliseconds.toFixed(3);
+              canvas.dataset.gpuMsAverage =
+                gpuTimingMeanMilliseconds.toFixed(3);
+            }
+            gpuTimerQueryStates[queryIndex] = 0;
+            gpuTimerQueryInvalid[queryIndex] = 0;
+            gpuTimingPendingQueries -= 1;
+          }
+          publishGpuTimingCounters();
+          return disjoint;
+        }
+
+        function renderFrameWithGpuTiming(time) {
+          const shouldSample =
+            gpuTimingRenderedFrames % GPU_TIMING_SAMPLE_INTERVAL === 0;
+          gpuTimingRenderedFrames += 1;
+          const disjoint = pollGpuTimerQueries(shouldSample);
+          if (!shouldSample) {
+            renderFrame(time);
+            return;
+          }
+          if (disjoint) {
+            renderFrame(time);
+            return;
+          }
+
+          let availableQueryIndex = -1;
+          for (
+            let queryOffset = 0;
+            queryOffset < gpuTimerQueries.length;
+            queryOffset += 1
+          ) {
+            const queryIndex =
+              (gpuTimingQueryCursor + queryOffset) %
+              gpuTimerQueries.length;
+            if (gpuTimerQueryStates[queryIndex] === 0) {
+              availableQueryIndex = queryIndex;
+              break;
+            }
+          }
+          if (availableQueryIndex < 0) {
+            gpuTimingDroppedSamples += 1;
+            publishGpuTimingCounters();
+            renderFrame(time);
+            return;
+          }
+
+          gpuTimingQueryCursor =
+            (availableQueryIndex + 1) % gpuTimerQueries.length;
+          gl.beginQuery(
+            gpuTimerExtension.TIME_ELAPSED_EXT,
+            gpuTimerQueries[availableQueryIndex],
+          );
+          try {
+            renderFrame(time);
+          } finally {
+            gl.endQuery(gpuTimerExtension.TIME_ELAPSED_EXT);
+            gpuTimerQueryStates[availableQueryIndex] = 1;
+            gpuTimingPendingQueries += 1;
+            publishGpuTimingCounters();
+          }
+        }
+
+        if (gpuTimingEnabled) {
+          publishGpuTimingCounters();
+        }
+        const render = gpuTimingEnabled
+          ? renderFrameWithGpuTiming
+          : renderFrame;
 
         let lastTime =
           useManualAnimationFrame &&
