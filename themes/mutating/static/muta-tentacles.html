@@ -2291,6 +2291,7 @@
           pressDirection: 0,
           impulseStartedAt: -Infinity,
           impulsePending: false,
+          impulseDirection: 1,
           energy: 0,
         };
         let renderedInteractionPhase = "hover";
@@ -2400,8 +2401,9 @@
               : 0;
           pointer.pressed = pointer.pressDirection !== 0;
           if (wasPressed && !pointer.pressed) {
-            pointer.impulsePending = false;
-            settleReleasedPointer();
+            if (!pointer.impulsePending) {
+              settleReleasedPointer();
+            }
             return true;
           }
           return false;
@@ -2454,15 +2456,23 @@
 
         function currentPointerInteraction(time) {
           const impulsePending = pointer.impulsePending;
+          const interactionDirection = impulsePending
+            ? pointer.impulseDirection
+            : pointer.pressDirection;
           pointer.impulsePending = false;
-          return pointerInteractionAtAge(
-            pointer.pressed,
-            pointer.pressDirection,
+          const interaction = pointerInteractionAtAge(
+            pointer.pressed || impulsePending,
+            interactionDirection,
             impulsePending
               ? 0
               : PRESS_IMPULSE_TOTAL_SECONDS,
             impulsePending,
           );
+          interaction.direction =
+            pointer.pressed || impulsePending
+              ? interactionDirection
+              : 0;
+          return interaction;
         }
 
         if (interactionDiagnostics) {
@@ -2480,7 +2490,7 @@
         }
 
         function settleReleasedPointer() {
-          runImmediateInteractionFrame(true);
+          runImmediateReleaseFrame();
         }
 
         canvas.addEventListener("pointerenter", (event) => {
@@ -2507,12 +2517,14 @@
             }
             pointer.impulseStartedAt = performance.now() * 0.001;
             pointer.impulsePending = true;
+            pointer.impulseDirection = pointer.pressDirection;
             canvas.dataset.animationImpulseFramesSincePress = "0";
+            canvas.dataset.impulseFrameScheduling = "animation-frame";
+            canvas.dataset.immediateImpulseFrame = "disabled";
             pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
             updatePointer(event);
-            runImmediateInteractionFrame();
           },
           { passive: false },
         );
@@ -2529,6 +2541,9 @@
           releasePointerInteraction();
         });
         canvas.addEventListener("lostpointercapture", () => {
+          if (!pointer.pressed && pointer.impulsePending) {
+            return;
+          }
           releasePointerInteraction();
         });
         canvas.addEventListener("blur", () => {
@@ -2906,7 +2921,7 @@
             canvas.dataset.lastImpulsePeakForceMultiplier =
               pointerInteraction.forceMultiplier.toFixed(3);
             canvas.dataset.lastImpulseDirection =
-              String(pointer.pressDirection);
+              String(pointerInteraction.direction);
           }
           const collectDiagnostics =
             interactionDiagnostics ||
@@ -2938,7 +2953,7 @@
               pointerWorldY - skeleton.root.y,
             );
             if (
-              pointer.pressDirection >= 0 &&
+              pointerInteraction.direction >= 0 &&
               rootDistance <= skeleton.maximumGrabDistance
             ) {
               let insertionIndex = grabberCount;
@@ -3114,9 +3129,8 @@
               1,
             );
             const distanceFalloff = 1 - normalizedDistance;
-            const forceDirection = pointer.pressed
-              ? pointer.pressDirection
-              : 1;
+            const forceDirection =
+              pointerInteraction.direction || 1;
             const pointerForce =
               pointer.energy *
               distanceFalloff *
@@ -3816,19 +3830,11 @@
             diagnostics.maximumRestDisplacement.toFixed(5);
         }
 
-        function runImmediateInteractionFrame(
-          force = false,
-          minimumDelta = 0,
-        ) {
-          if (
-            immediateFrameInProgress ||
-            (!force && !pointer.impulsePending)
-          ) {
+        function runImmediateReleaseFrame(minimumDelta = 0) {
+          if (immediateFrameInProgress) {
             return;
           }
           immediateFrameInProgress = true;
-          const submitsInitialImpulse = pointer.impulsePending;
-          const inputStartedAt = pointer.impulseStartedAt;
           const now = performance.now() * 0.001;
           const elapsed = Math.max(0.001, now - lastTime);
           const delta = Math.min(
@@ -3844,18 +3850,9 @@
             performance.now() - physicsStartedAt;
           const renderStartedAt = performance.now();
           render(smoothedTime);
-          gl.flush();
           recordRenderedInteraction();
           lastRenderSubmissionDuration =
             performance.now() - renderStartedAt;
-          if (submitsInitialImpulse) {
-            canvas.dataset.inputToImpulseSubmissionMs =
-              (
-                performance.now() -
-                inputStartedAt * 1000
-              ).toFixed(1);
-            canvas.dataset.immediateImpulseFrame = "enabled";
-          }
           skipRedundantAnimationFrame = true;
           immediateFrameInProgress = false;
         }
@@ -3876,7 +3873,11 @@
             resetAnimationClockOnNextFrame = false;
           }
           canvas.dataset.runtimePaused = "false";
-          if (scrollRenderingSuppressed && !pointer.pressed) {
+          if (
+            scrollRenderingSuppressed &&
+            !pointer.pressed &&
+            !pointer.impulsePending
+          ) {
             // The last complete full-resolution texture is already held on
             // screen during a scroll burst. Advancing hundreds of invisible
             // Verlet chains here only competes with the parent page's scroll
@@ -3900,16 +3901,37 @@
             return;
           }
           skipRedundantAnimationFrame = false;
-          const delta = Math.min(
+          const previousFrameTime = lastTime;
+          const frameDelta = Math.min(
             0.033,
             Math.max(0.001, now - lastTime),
           );
           lastTime = now;
+          const submitsInitialImpulse = pointer.impulsePending;
+          const inputStartedAt = pointer.impulseStartedAt;
+          const delta = submitsInitialImpulse
+            ? Math.min(
+                0.033,
+                Math.max(
+                  1 / 90,
+                  inputStartedAt - previousFrameTime,
+                ),
+              )
+            : frameDelta;
           canvas.dataset.physicsSubsteps = "1";
           canvas.dataset.physicsElapsedMs =
             (delta * 1000).toFixed(1);
           const motionDelta =
             delta * (prefersReducedMotion ? 0.22 : 1);
+          if (submitsInitialImpulse) {
+            canvas.dataset.impulsePhysicsDeltaMs =
+              (delta * 1000).toFixed(1);
+            canvas.dataset.inputToImpulseRafStartMs =
+              (
+                performance.now() -
+                inputStartedAt * 1000
+              ).toFixed(1);
+          }
           const physicsStartedAt = performance.now();
           smoothedTime += motionDelta;
           updateSkeletons(smoothedTime, delta, now);
@@ -3925,12 +3947,23 @@
           }
           lastPhysicsDuration =
             performance.now() - physicsStartedAt;
-          if (!scrollRenderingSuppressed || pointer.pressed) {
+          if (
+            !scrollRenderingSuppressed ||
+            pointer.pressed ||
+            submitsInitialImpulse
+          ) {
             const renderStartedAt = performance.now();
             render(smoothedTime);
             recordRenderedInteraction();
             lastRenderSubmissionDuration =
               performance.now() - renderStartedAt;
+            if (submitsInitialImpulse) {
+              canvas.dataset.inputToImpulseSubmissionMs =
+                (
+                  performance.now() -
+                  inputStartedAt * 1000
+                ).toFixed(1);
+            }
             diagnosticFrames += 1;
           }
           if (now - diagnosticStart >= 1) {
