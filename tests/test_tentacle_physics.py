@@ -855,6 +855,164 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     assert elapsed_milliseconds == 33.0
 
 
+def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
+    driver: DriverFactory,
+) -> None:
+    """Stop scheduling callbacks completely, then resume without a dead loop."""
+
+    page = driver(
+        initial_path=(
+            "/muta-tentacles.html?max-tentacles=64"
+            "&render-supersample=0.5&generation-seed=12345"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeRequestAnimationFrame =
+                window.requestAnimationFrame.bind(window);
+              const nativeCancelAnimationFrame =
+                window.cancelAnimationFrame.bind(window);
+              let syntheticHidden = false;
+              let captureNextAnimationFrame = null;
+              Object.defineProperty(Document.prototype, "hidden", {
+                configurable: true,
+                get: () => syntheticHidden,
+              });
+              globalThis.__mutaSetSyntheticHidden = (hidden) => {
+                syntheticHidden = Boolean(hidden);
+                document.dispatchEvent(new Event("visibilitychange"));
+              };
+              globalThis.__mutaRafProbe = {
+                requests: 0,
+                callbacks: 0,
+                cancellations: 0,
+              };
+              globalThis.__mutaCaptureNextAnimationFrame = () =>
+                new Promise((resolve) => {
+                  captureNextAnimationFrame = resolve;
+                });
+              window.requestAnimationFrame = (callback) => {
+                globalThis.__mutaRafProbe.requests += 1;
+                return nativeRequestAnimationFrame((timestamp) => {
+                  globalThis.__mutaRafProbe.callbacks += 1;
+                  callback(timestamp);
+                  if (captureNextAnimationFrame) {
+                    const resolve = captureNextAnimationFrame;
+                    captureNextAnimationFrame = null;
+                    const data = document.querySelector("#muta").dataset;
+                    resolve({
+                      physicsElapsedMs: Number(data.physicsElapsedMs),
+                      physicsFrameId: Number(data.physicsFrameId),
+                    });
+                  }
+                });
+              };
+              window.cancelAnimationFrame = (request) => {
+                globalThis.__mutaRafProbe.cancellations += 1;
+                nativeCancelAnimationFrame(request);
+              };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    page.wait_for_function(
+        """
+        () => {
+          const data = document.querySelector("#muta")?.dataset;
+          return data?.aspectReady === "true" &&
+            data.animationLoop === "running" &&
+            data.animationFrameScheduled === "true" &&
+            Number(data.physicsFrameId) > 2;
+        }
+        """,
+        timeout=30_000,
+    )
+
+    def animation_state() -> dict[str, int]:
+        return canvas.evaluate(
+            """
+            (element) => ({
+              requests: globalThis.__mutaRafProbe.requests,
+              callbacks: globalThis.__mutaRafProbe.callbacks,
+              cancellations: globalThis.__mutaRafProbe.cancellations,
+              physics: Number(element.dataset.physicsFrameId || 0),
+              rendered: Number(element.dataset.renderedFrameId || 0),
+            })
+            """
+        )
+
+    def assert_animation_stays_stopped() -> dict[str, int]:
+        expect(canvas).to_have_attribute("data-animation-loop", "paused")
+        expect(canvas).to_have_attribute(
+            "data-animation-frame-scheduled",
+            "false",
+        )
+        expect(canvas).to_have_attribute("data-runtime-paused", "true")
+        stopped = animation_state()
+        page.wait_for_timeout(250)
+        assert animation_state() == stopped
+        return stopped
+
+    canvas.evaluate(
+        """
+        element => element.ownerDocument.defaultView
+          .__mutaTentaclesSetRuntimeState({
+            visible: false,
+            scrollActive: false,
+          })
+        """
+    )
+    offscreen_state = assert_animation_stays_stopped()
+    assert offscreen_state["cancellations"] >= 1
+
+    canvas.evaluate(
+        """
+        element => element.ownerDocument.defaultView
+          .__mutaTentaclesSetRuntimeState({
+            visible: true,
+            scrollActive: false,
+          })
+        """
+    )
+    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "true",
+    )
+    page.wait_for_function(
+        """
+        (previousPhysicsFrame) =>
+          Number(document.querySelector("#muta").dataset.physicsFrameId) >
+            previousPhysicsFrame
+        """,
+        arg=offscreen_state["physics"],
+    )
+
+    page.evaluate("globalThis.__mutaSetSyntheticHidden(true)")
+    hidden_state = assert_animation_stays_stopped()
+    assert hidden_state["cancellations"] > offscreen_state["cancellations"]
+
+    resumed_frame = page.evaluate(
+        """
+        async () => {
+          const firstFrame = globalThis.__mutaCaptureNextAnimationFrame();
+          globalThis.__mutaSetSyntheticHidden(false);
+          return firstFrame;
+        }
+        """
+    )
+    assert resumed_frame["physicsElapsedMs"] == 16.7
+    assert resumed_frame["physicsFrameId"] > hidden_state["physics"]
+    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "true",
+    )
+
+
 def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     driver: DriverFactory,
     base_url: str,
@@ -1195,6 +1353,90 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
         "true",
         timeout=30_000,
     )
+    expect(canvas).to_have_attribute("data-animation-loop", "paused")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "false",
+    )
+
+
+def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
+    driver: DriverFactory,
+) -> None:
+    """Prewarm at 200 px, but run RAF only after a real viewport intersection."""
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+        bounded_tentacle_rendering=True,
+    )
+    frame = page.locator(".contact__tentacles")
+    canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    expect(canvas).to_be_attached(timeout=30_000)
+
+    scroll_positions = frame.evaluate(
+        """
+        (element) => {
+          const documentTop =
+            element.getBoundingClientRect().top + scrollY;
+          return {
+            prewarmOnly: documentTop - innerHeight - 100,
+            onePixelVisible: documentTop - innerHeight + 1,
+          };
+        }
+        """
+    )
+    page.evaluate(
+        "position => scrollTo({top: position, behavior: 'instant'})",
+        scroll_positions["prewarmOnly"],
+    )
+    frame_top = frame.evaluate("element => element.getBoundingClientRect().top")
+    assert 720 <= frame_top < 920
+    expect(canvas).to_have_attribute("data-runtime-visible", "false")
+    expect(canvas).to_have_attribute("data-animation-loop", "paused")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "false",
+    )
+
+    page.evaluate(
+        "position => scrollTo({top: position, behavior: 'instant'})",
+        scroll_positions["onePixelVisible"],
+    )
+    expect(canvas).to_have_attribute("data-runtime-visible", "true")
+    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "true",
+    )
+    page.wait_for_function(
+        """
+        () => Number(
+          document.querySelector(".contact__tentacles")
+            ?.contentWindow?.document?.querySelector("#muta")
+            ?.dataset?.physicsFrameId || 0
+        ) > 2
+        """,
+        timeout=30_000,
+    )
+    page.evaluate(
+        "position => scrollTo({top: position, behavior: 'instant'})",
+        scroll_positions["prewarmOnly"],
+    )
+    expect(canvas).to_have_attribute("data-runtime-visible", "false")
+    expect(canvas).to_have_attribute("data-animation-loop", "paused")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "false",
+    )
+    paused_physics_frame = int(
+        canvas.get_attribute("data-physics-frame-id") or "0"
+    )
+    page.wait_for_timeout(250)
+    assert int(
+        canvas.get_attribute("data-physics-frame-id") or "0"
+    ) == paused_physics_frame
 
 
 def _open_contact_with_active_tentacle_runtime(
