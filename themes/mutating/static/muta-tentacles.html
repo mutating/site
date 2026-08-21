@@ -1360,6 +1360,11 @@
         let runtimeVisible = !isEmbeddedRuntime;
         let scrollRenderingSuppressed = false;
         let scrollSuppressionCount = 0;
+        let animationFrameRequest = null;
+        let reportedAnimationFrameScheduled = null;
+        let animationLoopReady = false;
+        let animationRuntimeActive = false;
+        let resetAnimationClockOnNextFrame = false;
         const SCROLL_IDLE_FALLBACK_MS = 320;
 
         function applyTheme(theme) {
@@ -1394,6 +1399,7 @@
             runtimeVisible ? "true" : "false";
           canvas.dataset.scrollRendering =
             scrollRenderingSuppressed ? "suppressed" : "active";
+          syncAnimationLoopState();
         }
         window.__mutaTentaclesSetRuntimeState = applyRuntimeState;
 
@@ -2559,6 +2565,7 @@
           if (document.hidden) {
             releaseFromOutsideCanvas();
           }
+          syncAnimationLoopState();
         });
         addEventListener("message", (event) => {
           if (!isTrustedParentMessage(event)) return;
@@ -3854,13 +3861,19 @@
         }
 
         function frame(nowMilliseconds) {
+          animationFrameRequest = null;
           const now = nowMilliseconds * 0.001;
-          if (!runtimeVisible) {
-            lastTime = now;
+          if (!runtimeVisible || document.hidden) {
             diagnosticStart = now;
             canvas.dataset.runtimePaused = "true";
-            scheduleFrame();
+            syncAnimationLoopState();
             return;
+          }
+          if (resetAnimationClockOnNextFrame) {
+            lastTime = now - 1 / 60;
+            diagnosticStart = now;
+            skipRedundantAnimationFrame = false;
+            resetAnimationClockOnNextFrame = false;
           }
           canvas.dataset.runtimePaused = "false";
           if (scrollRenderingSuppressed && !pointer.pressed) {
@@ -3978,14 +3991,66 @@
           scheduleFrame();
         }
 
+        function runtimeCanAnimate() {
+          return runtimeVisible && !document.hidden;
+        }
+
+        function cancelScheduledAnimationFrame() {
+          if (animationFrameRequest !== null) {
+            cancelAnimationFrame(animationFrameRequest);
+            animationFrameRequest = null;
+          }
+          if (reportedAnimationFrameScheduled !== false) {
+            reportedAnimationFrameScheduled = false;
+            canvas.dataset.animationFrameScheduled = "false";
+          }
+        }
+
+        function syncAnimationLoopState() {
+          const canAnimate = runtimeCanAnimate();
+          canvas.dataset.runtimePaused = canAnimate ? "false" : "true";
+          if (useManualAnimationFrame) {
+            animationRuntimeActive = canAnimate;
+            canvas.dataset.animationLoop = "manual";
+            cancelScheduledAnimationFrame();
+            return;
+          }
+          if (!canAnimate) {
+            if (animationRuntimeActive) {
+              resetAnimationClockOnNextFrame = true;
+            }
+            animationRuntimeActive = false;
+            canvas.dataset.animationLoop = "paused";
+            cancelScheduledAnimationFrame();
+            return;
+          }
+          if (!animationRuntimeActive) {
+            resetAnimationClockOnNextFrame = true;
+          }
+          animationRuntimeActive = true;
+          canvas.dataset.animationLoop = "running";
+          scheduleFrame();
+        }
+
         function scheduleFrame() {
-          if (!useManualAnimationFrame) {
-            requestAnimationFrame(frame);
+          if (
+            useManualAnimationFrame ||
+            !animationLoopReady ||
+            !runtimeCanAnimate() ||
+            animationFrameRequest !== null
+          ) {
+            return;
+          }
+          animationFrameRequest = requestAnimationFrame(frame);
+          if (reportedAnimationFrameScheduled !== true) {
+            reportedAnimationFrameScheduled = true;
+            canvas.dataset.animationFrameScheduled = "true";
           }
         }
 
         updateSkeletons(smoothedTime, 1 / 60, smoothedTime);
         resize();
+        animationLoopReady = true;
         if (useManualAnimationFrame) {
           window.__mutaTentaclesDebugSpatialGridRows =
             SPATIAL_GRID_ROWS;
@@ -3998,7 +4063,7 @@
             );
           };
         } else {
-          scheduleFrame();
+          syncAnimationLoopState();
         }
       })();
     </script>
