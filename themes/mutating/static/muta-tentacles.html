@@ -144,6 +144,17 @@
         const requestedGpuTimingInterval = Number(
           runtimeSearch.get("gpu-timing-interval"),
         );
+        const solverEarlyExitEnabled =
+          runtimeSearch.get("solver-early-exit") !== "0";
+        const pbdEarlyExitEnabled =
+          solverEarlyExitEnabled &&
+          runtimeSearch.get("pbd-early-exit") !== "0";
+        const fabrikEarlyExitEnabled =
+          solverEarlyExitEnabled &&
+          runtimeSearch.get("fabrik-early-exit") !== "0";
+        const fabrikVisualSkipEnabled =
+          solverEarlyExitEnabled &&
+          runtimeSearch.get("fabrik-visual-skip") !== "0";
         const GPU_TIMING_SAMPLE_INTERVAL =
           useManualAnimationFrame &&
           Number.isFinite(requestedGpuTimingInterval) &&
@@ -185,6 +196,20 @@
           (PRESS_IMPULSE_TOTAL_SECONDS * 1000).toFixed(1);
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
         const MAX_CURSOR_GRABBERS = 6;
+        const SOLVER_ERROR_TOLERANCE_PIXELS = 0.003;
+        const MIN_PBD_ITERATIONS = 4;
+        const MIN_FABRIK_ITERATIONS = 2;
+        canvas.dataset.solverEarlyExit =
+          solverEarlyExitEnabled ? "enabled" : "disabled";
+        canvas.dataset.pbdEarlyExit =
+          pbdEarlyExitEnabled ? "enabled" : "disabled";
+        canvas.dataset.fabrikEarlyExit =
+          fabrikEarlyExitEnabled ? "enabled" : "disabled";
+        canvas.dataset.fabrikVisualSkip =
+          fabrikVisualSkipEnabled ? "enabled" : "disabled";
+        canvas.dataset.solverErrorTolerancePixels = String(
+          SOLVER_ERROR_TOLERANCE_PIXELS,
+        );
         const PROJECTION_SCALE = 1.0;
         const HEIGHT_PERSPECTIVE = 0;
         const HEIGHT_OFFSET_X = 0;
@@ -2314,6 +2339,85 @@
           maximumGrabberError: 0,
           fps: 0,
         };
+        const solverDiagnostics = {
+          pbdChains: 0,
+          pbdIterations: 0,
+          pbdEarlyExits: 0,
+          fabrikAttempts: 0,
+          fabrikExactZeroSkips: 0,
+          fabrikVisualSkips: 0,
+          fabrikDirectSolves: 0,
+          fabrikIterativeSolves: 0,
+          fabrikIterations: 0,
+          fabrikGrabbedSolves: 0,
+          fabrikGrabbedIterations: 0,
+          fabrikOrdinarySolves: 0,
+          fabrikOrdinaryIterations: 0,
+          fabrikEarlyExits: 0,
+        };
+        function resetSolverDiagnostics() {
+          for (const key in solverDiagnostics) {
+            solverDiagnostics[key] = 0;
+          }
+        }
+        if (interactionDiagnostics) {
+          window.__mutaTentaclesDebugPhysicsSnapshot = () => {
+            const tips = new Array(skeletons.length);
+            let maximumLinkError = 0;
+            let squaredLinkError = 0;
+            let linkSamples = 0;
+            for (
+              let skeletonIndex = 0;
+              skeletonIndex < skeletons.length;
+              skeletonIndex++
+            ) {
+              const skeleton = skeletons[skeletonIndex];
+              const points = skeleton.points;
+              for (let joint = 0; joint < CHAIN_LINKS; joint++) {
+                const pointOffset = joint * POINT_STRIDE;
+                const nextOffset = pointOffset + POINT_STRIDE;
+                const error = Math.abs(
+                  length3(
+                    points[nextOffset + POINT_X] -
+                      points[pointOffset + POINT_X],
+                    points[nextOffset + POINT_Y] -
+                      points[pointOffset + POINT_Y],
+                    points[nextOffset + POINT_Z] -
+                      points[pointOffset + POINT_Z],
+                  ) - skeleton.linkLength,
+                );
+                maximumLinkError = Math.max(maximumLinkError, error);
+                squaredLinkError += error * error;
+                linkSamples += 1;
+              }
+              const tipOffset = CHAIN_LINKS * POINT_STRIDE;
+              const projectedTip = projectPointToCanvas({
+                x: points[tipOffset + POINT_X],
+                y: points[tipOffset + POINT_Y],
+                z: points[tipOffset + POINT_Z],
+              });
+              tips[skeletonIndex] = {
+                index: skeleton.index,
+                grabbed: skeleton.grabbed,
+                x: projectedTip.x * canvasRect.width,
+                y: projectedTip.y * canvasRect.height,
+                z: points[tipOffset + POINT_Z],
+              };
+            }
+            const worldToPixels =
+              canvasRect.height * PROJECTION_SCALE;
+            return {
+              tips,
+              solver: { ...solverDiagnostics },
+              maximumLinkErrorPixels:
+                maximumLinkError * worldToPixels,
+              rmsLinkErrorPixels:
+                Math.sqrt(
+                  squaredLinkError / Math.max(1, linkSamples),
+                ) * worldToPixels,
+            };
+          };
+        }
         const debugSearch = runtimeSearch;
         const debugTargets = debugSearch.has("debug-targets");
         const debugPointerX = Number(debugSearch.get("debug-x"));
@@ -2709,9 +2813,16 @@
           delta,
           pointerWorldX,
           pointerWorldY,
+          solverPixelScale,
         ) {
+          if (interactionDiagnostics) {
+            solverDiagnostics.fabrikAttempts += 1;
+          }
           const forceMagnitude = Math.abs(attraction);
           if (forceMagnitude <= 0) {
+            if (interactionDiagnostics) {
+              solverDiagnostics.fabrikExactZeroSkips += 1;
+            }
             return;
           }
           const forceDirection = Math.sign(attraction);
@@ -2770,6 +2881,30 @@
             points[tipOffset + POINT_Z] +
             (constrainedTargetZ - points[tipOffset + POINT_Z]) *
               verticalTargetBlend;
+          if (
+            fabrikVisualSkipEnabled &&
+            !skeleton.grabbed
+          ) {
+            const movementTolerance =
+              SOLVER_ERROR_TOLERANCE_PIXELS / solverPixelScale;
+            const requestedTipDeltaX =
+              targetX - points[tipOffset + POINT_X];
+            const requestedTipDeltaY =
+              targetY - points[tipOffset + POINT_Y];
+            const requestedTipDeltaZ =
+              targetZ - points[tipOffset + POINT_Z];
+            if (
+              requestedTipDeltaX * requestedTipDeltaX +
+                requestedTipDeltaY * requestedTipDeltaY +
+                requestedTipDeltaZ * requestedTipDeltaZ <=
+              movementTolerance * movementTolerance
+            ) {
+              if (interactionDiagnostics) {
+                solverDiagnostics.fabrikVisualSkips += 1;
+              }
+              return;
+            }
+          }
           const normalizedSolverForce = clamp(
             forceMagnitude / POINTER_SOLVER_FULL_BODY_FORCE,
             0,
@@ -2790,6 +2925,9 @@
           );
 
           if (rootToTarget >= skeleton.totalLength * 0.9995) {
+            if (interactionDiagnostics) {
+              solverDiagnostics.fabrikDirectSolves += 1;
+            }
             const stepScale = skeleton.linkLength / rootToTarget;
             const stepX = targetDeltaX * stepScale;
             const stepY = targetDeltaY * stepScale;
@@ -2817,7 +2955,10 @@
           }
 
           const solverIterations = skeleton.grabbed ? 20 : 7;
+          let completedSolverIterations = 0;
+          let solverExitedEarly = false;
           for (let iteration = 0; iteration < solverIterations; iteration++) {
+            completedSolverIterations = iteration + 1;
             points[tipOffset + POINT_X] = targetX;
             points[tipOffset + POINT_Y] = targetY;
             points[tipOffset + POINT_Z] = targetZ;
@@ -2875,6 +3016,47 @@
               points[childOffset + POINT_Z] =
                 points[parentOffset + POINT_Z] + dz * scale;
             }
+
+            if (
+              fabrikEarlyExitEnabled &&
+              !skeleton.grabbed &&
+              completedSolverIterations >= MIN_FABRIK_ITERATIONS
+            ) {
+              const convergenceTolerance =
+                SOLVER_ERROR_TOLERANCE_PIXELS / solverPixelScale;
+              const convergenceDeltaX =
+                points[tipOffset + POINT_X] - targetX;
+              const convergenceDeltaY =
+                points[tipOffset + POINT_Y] - targetY;
+              const convergenceDeltaZ =
+                points[tipOffset + POINT_Z] - targetZ;
+              if (
+                convergenceDeltaX * convergenceDeltaX +
+                  convergenceDeltaY * convergenceDeltaY +
+                  convergenceDeltaZ * convergenceDeltaZ <=
+                convergenceTolerance * convergenceTolerance
+              ) {
+                solverExitedEarly = true;
+                break;
+              }
+            }
+          }
+          if (interactionDiagnostics) {
+            solverDiagnostics.fabrikIterativeSolves += 1;
+            solverDiagnostics.fabrikIterations +=
+              completedSolverIterations;
+            if (skeleton.grabbed) {
+              solverDiagnostics.fabrikGrabbedSolves += 1;
+              solverDiagnostics.fabrikGrabbedIterations +=
+                completedSolverIterations;
+            } else {
+              solverDiagnostics.fabrikOrdinarySolves += 1;
+              solverDiagnostics.fabrikOrdinaryIterations +=
+                completedSolverIterations;
+            }
+            if (solverExitedEarly) {
+              solverDiagnostics.fabrikEarlyExits += 1;
+            }
           }
           blendPointerSolverBody(points, solverBodyBlend);
           stabilizePointerSolverVelocity(
@@ -2890,6 +3072,15 @@
         );
 
         function updateSkeletons(time, delta, wallTime) {
+          if (interactionDiagnostics) {
+            resetSolverDiagnostics();
+          }
+          const solverPixelScale = Math.max(
+            1,
+            canvasRect.height * PROJECTION_SCALE,
+          );
+          const solverErrorTolerance =
+            SOLVER_ERROR_TOLERANCE_PIXELS / solverPixelScale;
           if (debugPointerOverride) {
             pointer.targetX = clamp(debugPointerX, 0, 1);
             pointer.targetY = clamp(debugPointerY, 0, 1);
@@ -3157,7 +3348,14 @@
             points[tipOffset + POINT_Z] +=
               repulsion * repulsion * delta * 0.160;
 
+            let completedPbdIterations = 0;
+            let pbdExitedEarly = false;
             for (let iteration = 0; iteration < 8; iteration++) {
+              completedPbdIterations = iteration + 1;
+              let constraintsWithinTolerance =
+                pbdEarlyExitEnabled &&
+                completedPbdIterations >= MIN_PBD_ITERATIONS;
+              let tipHeightAdjusted = false;
               points[rootOffset + POINT_X] = skeleton.root.x;
               points[rootOffset + POINT_Y] = skeleton.root.y;
               points[rootOffset + POINT_Z] = skeleton.baseHeight;
@@ -3180,6 +3378,13 @@
                 );
                 const correction =
                   (distance - skeleton.linkLength) / distance;
+                if (
+                  constraintsWithinTolerance &&
+                  Math.abs(distance - skeleton.linkLength) >
+                    solverErrorTolerance
+                ) {
+                  constraintsWithinTolerance = false;
+                }
 
                 if (joint === 0) {
                   points[pointBOffset + POINT_X] -= dx * correction;
@@ -3207,14 +3412,30 @@
                 points[tipOffset + POINT_Z] <
                 skeleton.minimumTipHeight
               ) {
+                tipHeightAdjusted = true;
                 points[tipOffset + POINT_Z] +=
                   (
                     skeleton.minimumTipHeight -
                     points[tipOffset + POINT_Z]
                   ) *
-                  0.28;
+                    0.28;
               }
 
+              if (
+                constraintsWithinTolerance &&
+                !tipHeightAdjusted
+              ) {
+                pbdExitedEarly = true;
+                break;
+              }
+            }
+            if (interactionDiagnostics) {
+              solverDiagnostics.pbdChains += 1;
+              solverDiagnostics.pbdIterations +=
+                completedPbdIterations;
+              if (pbdExitedEarly) {
+                solverDiagnostics.pbdEarlyExits += 1;
+              }
             }
 
             solveChainTowardPointer(
@@ -3223,6 +3444,7 @@
               delta,
               pointerWorldX,
               pointerWorldY,
+              solverPixelScale,
             );
 
             if (collectDiagnostics) {
@@ -3483,6 +3705,62 @@
                 touchedSkeletonCells[touchedCell]
               ] = 0;
             }
+          }
+
+          if (interactionDiagnostics) {
+            canvas.dataset.pbdChains = String(
+              solverDiagnostics.pbdChains,
+            );
+            canvas.dataset.pbdIterations = String(
+              solverDiagnostics.pbdIterations,
+            );
+            canvas.dataset.pbdAverageIterations = (
+              solverDiagnostics.pbdIterations /
+              Math.max(1, solverDiagnostics.pbdChains)
+            ).toFixed(3);
+            canvas.dataset.pbdEarlyExits = String(
+              solverDiagnostics.pbdEarlyExits,
+            );
+            canvas.dataset.fabrikAttempts = String(
+              solverDiagnostics.fabrikAttempts,
+            );
+            canvas.dataset.fabrikExactZeroSkips = String(
+              solverDiagnostics.fabrikExactZeroSkips,
+            );
+            canvas.dataset.fabrikVisualSkips = String(
+              solverDiagnostics.fabrikVisualSkips,
+            );
+            canvas.dataset.fabrikDirectSolves = String(
+              solverDiagnostics.fabrikDirectSolves,
+            );
+            canvas.dataset.fabrikIterativeSolves = String(
+              solverDiagnostics.fabrikIterativeSolves,
+            );
+            canvas.dataset.fabrikIterations = String(
+              solverDiagnostics.fabrikIterations,
+            );
+            canvas.dataset.fabrikGrabbedSolves = String(
+              solverDiagnostics.fabrikGrabbedSolves,
+            );
+            canvas.dataset.fabrikGrabbedIterations = String(
+              solverDiagnostics.fabrikGrabbedIterations,
+            );
+            canvas.dataset.fabrikOrdinarySolves = String(
+              solverDiagnostics.fabrikOrdinarySolves,
+            );
+            canvas.dataset.fabrikOrdinaryIterations = String(
+              solverDiagnostics.fabrikOrdinaryIterations,
+            );
+            canvas.dataset.fabrikAverageIterations = (
+              solverDiagnostics.fabrikIterations /
+              Math.max(
+                1,
+                solverDiagnostics.fabrikIterativeSolves,
+              )
+            ).toFixed(3);
+            canvas.dataset.fabrikEarlyExits = String(
+              solverDiagnostics.fabrikEarlyExits,
+            );
           }
 
           if (debugTargets) {
