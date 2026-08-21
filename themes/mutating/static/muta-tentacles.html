@@ -141,6 +141,13 @@
           runtimeSearch.get("manual-animation-frame") === "1";
         const CHAIN_LINKS = 50;
         const RENDER_POINTS = 14;
+        const POINT_X = 0;
+        const POINT_Y = 1;
+        const POINT_Z = 2;
+        const POINT_PREVIOUS_X = 3;
+        const POINT_PREVIOUS_Y = 4;
+        const POINT_PREVIOUS_Z = 5;
+        const POINT_STRIDE = 6;
         const MAX_SKELETONS =
           Number.isFinite(requestedSkeletonLimit) &&
           requestedSkeletonLimit > 0
@@ -254,31 +261,35 @@
           maximumTextureDimension,
           gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
         );
-        const jointProfiles = Array.from(
-          { length: CHAIN_LINKS + 1 },
-          (_, joint) => {
-            const s = joint / CHAIN_LINKS;
-            return {
-              s,
-              bendFactor: s * s,
-              initialPhase: s * 4.2,
-              noisePhaseA: s * 5.3,
-              noisePhaseB: s * 9.1,
-              noisePhaseC: s * 14.7,
-              noisePhaseASine: Math.sin(s * 5.3),
-              noisePhaseACosine: Math.cos(s * 5.3),
-              noisePhaseBSine: Math.sin(-s * 9.1),
-              noisePhaseBCosine: Math.cos(-s * 9.1),
-              noisePhaseCSine: Math.sin(s * 14.7),
-              noisePhaseCCosine: Math.cos(s * 14.7),
-              noiseWeight: 0.28 + s * 0.72,
-              horizontalTaper: 1 - s * 0.08,
-              verticalPhase: s * 3.2,
-              verticalPhaseSine: Math.sin(s * 3.2),
-              verticalPhaseCosine: Math.cos(s * 3.2),
-            };
-          },
-        );
+        const jointS = new Float64Array(CHAIN_LINKS + 1);
+        const jointBendFactors = new Float64Array(CHAIN_LINKS + 1);
+        const jointInitialPhases = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseASines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseACosines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseBSines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseBCosines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseCSines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseCCosines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoiseWeights = new Float64Array(CHAIN_LINKS + 1);
+        const jointHorizontalTapers = new Float64Array(CHAIN_LINKS + 1);
+        const jointVerticalPhaseSines = new Float64Array(CHAIN_LINKS + 1);
+        const jointVerticalPhaseCosines = new Float64Array(CHAIN_LINKS + 1);
+        for (let joint = 0; joint <= CHAIN_LINKS; joint++) {
+          const s = joint / CHAIN_LINKS;
+          jointS[joint] = s;
+          jointBendFactors[joint] = s * s;
+          jointInitialPhases[joint] = s * 4.2;
+          jointNoisePhaseASines[joint] = Math.sin(s * 5.3);
+          jointNoisePhaseACosines[joint] = Math.cos(s * 5.3);
+          jointNoisePhaseBSines[joint] = Math.sin(-s * 9.1);
+          jointNoisePhaseBCosines[joint] = Math.cos(-s * 9.1);
+          jointNoisePhaseCSines[joint] = Math.sin(s * 14.7);
+          jointNoisePhaseCCosines[joint] = Math.cos(s * 14.7);
+          jointNoiseWeights[joint] = 0.28 + s * 0.72;
+          jointHorizontalTapers[joint] = 1 - s * 0.08;
+          jointVerticalPhaseSines[joint] = Math.sin(s * 3.2);
+          jointVerticalPhaseCosines[joint] = Math.cos(s * 3.2);
+        }
         const renderChainJoints = new Uint8Array(RENDER_POINTS);
         const renderRadiusScales = new Float64Array(RENDER_POINTS);
         const renderBoundScales = new Float64Array(RENDER_POINTS);
@@ -1763,7 +1774,12 @@
           const baseHeight = 0.043 + (peak.value - 0.45) * 0.018;
           const phase = random() * Math.PI * 2;
           const phase2 = random() * Math.PI * 2;
-          const points = [{ x: peak.x, y: peak.y, z: baseHeight }];
+          const points = new Float64Array(
+            (CHAIN_LINKS + 1) * POINT_STRIDE,
+          );
+          points[POINT_X] = peak.x;
+          points[POINT_Y] = peak.y;
+          points[POINT_Z] = baseHeight;
           const horizontalSteps = new Float64Array(
             CHAIN_LINKS + 1,
           );
@@ -1773,17 +1789,16 @@
           const linkLengthSquared = linkLength * linkLength;
 
           for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-            const profile = jointProfiles[joint];
             const angle =
               baseAngle +
-              bend * profile.bendFactor +
-              Math.sin(phase + profile.initialPhase) *
+              bend * jointBendFactors[joint] +
+              Math.sin(phase + jointInitialPhases[joint]) *
                 0.12 *
-                profile.s;
+                jointS[joint];
             const horizontalStep =
               linkLength *
               horizontalScale *
-              profile.horizontalTaper;
+              jointHorizontalTapers[joint];
             const verticalStep = Math.sqrt(
               Math.max(
                 0.000001,
@@ -1793,18 +1808,26 @@
             );
             horizontalSteps[joint] = horizontalStep;
             verticalSteps[joint] = verticalStep;
-            const previous = points[joint - 1];
-            points.push({
-              x: previous.x + Math.cos(angle) * horizontalStep,
-              y: previous.y + Math.sin(angle) * horizontalStep,
-              z: previous.z + verticalStep,
-            });
+            const previousOffset = (joint - 1) * POINT_STRIDE;
+            const pointOffset = joint * POINT_STRIDE;
+            points[pointOffset + POINT_X] =
+              points[previousOffset + POINT_X] +
+              Math.cos(angle) * horizontalStep;
+            points[pointOffset + POINT_Y] =
+              points[previousOffset + POINT_Y] +
+              Math.sin(angle) * horizontalStep;
+            points[pointOffset + POINT_Z] =
+              points[previousOffset + POINT_Z] + verticalStep;
           }
 
-          for (const point of points) {
-            point.px = point.x;
-            point.py = point.y;
-            point.pz = point.z;
+          for (let joint = 0; joint <= CHAIN_LINKS; joint++) {
+            const pointOffset = joint * POINT_STRIDE;
+            points[pointOffset + POINT_PREVIOUS_X] =
+              points[pointOffset + POINT_X];
+            points[pointOffset + POINT_PREVIOUS_Y] =
+              points[pointOffset + POINT_Y];
+            points[pointOffset + POINT_PREVIOUS_Z] =
+              points[pointOffset + POINT_Z];
           }
 
           const speed =
@@ -2516,11 +2539,14 @@
 
         function capturePointerSolverState(points) {
           for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-            const point = points[joint];
+            const pointOffset = joint * POINT_STRIDE;
             const offset = joint * 3;
-            pointerSolverOrigin[offset] = point.x;
-            pointerSolverOrigin[offset + 1] = point.y;
-            pointerSolverOrigin[offset + 2] = point.z;
+            pointerSolverOrigin[offset] =
+              points[pointOffset + POINT_X];
+            pointerSolverOrigin[offset + 1] =
+              points[pointOffset + POINT_Y];
+            pointerSolverOrigin[offset + 2] =
+              points[pointOffset + POINT_Z];
           }
         }
 
@@ -2529,19 +2555,28 @@
             return;
           }
           for (let joint = 1; joint < CHAIN_LINKS; joint++) {
-            const point = points[joint];
+            const pointOffset = joint * POINT_STRIDE;
             const offset = joint * 3;
-            point.x =
+            points[pointOffset + POINT_X] =
               pointerSolverOrigin[offset] +
-              (point.x - pointerSolverOrigin[offset]) *
+              (
+                points[pointOffset + POINT_X] -
+                pointerSolverOrigin[offset]
+              ) *
                 blend;
-            point.y =
+            points[pointOffset + POINT_Y] =
               pointerSolverOrigin[offset + 1] +
-              (point.y - pointerSolverOrigin[offset + 1]) *
+              (
+                points[pointOffset + POINT_Y] -
+                pointerSolverOrigin[offset + 1]
+              ) *
                 blend;
-            point.z =
+            points[pointOffset + POINT_Z] =
               pointerSolverOrigin[offset + 2] +
-              (point.z - pointerSolverOrigin[offset + 2]) *
+              (
+                points[pointOffset + POINT_Z] -
+                pointerSolverOrigin[offset + 2]
+              ) *
                 blend;
           }
         }
@@ -2558,22 +2593,43 @@
             );
 
           for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-            const point = points[joint];
+            const pointOffset = joint * POINT_STRIDE;
             const offset = joint * 3;
 
             // The IK displacement shapes the tentacle, but it must not become
             // Verlet velocity on the next frame. Otherwise the tip overshoots
             // a stationary pointer and is pulled back every other frame.
-            point.px += point.x - pointerSolverOrigin[offset];
-            point.py += point.y - pointerSolverOrigin[offset + 1];
-            point.pz += point.z - pointerSolverOrigin[offset + 2];
+            points[pointOffset + POINT_PREVIOUS_X] +=
+              points[pointOffset + POINT_X] -
+              pointerSolverOrigin[offset];
+            points[pointOffset + POINT_PREVIOUS_Y] +=
+              points[pointOffset + POINT_Y] -
+              pointerSolverOrigin[offset + 1];
+            points[pointOffset + POINT_PREVIOUS_Z] +=
+              points[pointOffset + POINT_Z] -
+              pointerSolverOrigin[offset + 2];
 
             const tipWeight = joint / CHAIN_LINKS;
             const damping =
               tipVelocityDamping * tipWeight * tipWeight;
-            point.px += (point.x - point.px) * damping;
-            point.py += (point.y - point.py) * damping;
-            point.pz += (point.z - point.pz) * damping;
+            points[pointOffset + POINT_PREVIOUS_X] +=
+              (
+                points[pointOffset + POINT_X] -
+                points[pointOffset + POINT_PREVIOUS_X]
+              ) *
+              damping;
+            points[pointOffset + POINT_PREVIOUS_Y] +=
+              (
+                points[pointOffset + POINT_Y] -
+                points[pointOffset + POINT_PREVIOUS_Y]
+              ) *
+              damping;
+            points[pointOffset + POINT_PREVIOUS_Z] +=
+              (
+                points[pointOffset + POINT_Z] -
+                points[pointOffset + POINT_PREVIOUS_Z]
+              ) *
+              damping;
           }
         }
 
@@ -2591,13 +2647,15 @@
           const forceDirection = Math.sign(attraction);
 
           const points = skeleton.points;
-          const root = points[0];
-          const tip = points[CHAIN_LINKS];
+          const rootOffset = 0;
+          const tipOffset = CHAIN_LINKS * POINT_STRIDE;
           const rootX = skeleton.root.x;
           const rootY = skeleton.root.y;
           const rootZ = skeleton.baseHeight;
-          const pointerDeltaX = pointerWorldX - tip.x;
-          const pointerDeltaY = pointerWorldY - tip.y;
+          const pointerDeltaX =
+            pointerWorldX - points[tipOffset + POINT_X];
+          const pointerDeltaY =
+            pointerWorldY - points[tipOffset + POINT_Y];
           const pointerDistance = length2(
             pointerDeltaX,
             pointerDeltaY,
@@ -2609,10 +2667,10 @@
               ? Math.min(1, maximumTipStep / pointerDistance)
               : 0;
           const targetX =
-            tip.x +
+            points[tipOffset + POINT_X] +
             pointerDeltaX * movementScale * forceDirection;
           const targetY =
-            tip.y +
+            points[tipOffset + POINT_Y] +
             pointerDeltaY * movementScale * forceDirection;
           const horizontalDistance = length2(
             targetX - rootX,
@@ -2626,7 +2684,7 @@
             ),
           );
           const desiredHeight = Math.max(
-            tip.z,
+            points[tipOffset + POINT_Z],
             skeleton.baseHeight + skeleton.tipClearance * 0.88,
           );
           const constrainedTargetZ = Math.min(
@@ -2639,8 +2697,8 @@
               Math.max(0.000001, skeleton.linkLength),
           );
           const targetZ =
-            tip.z +
-            (constrainedTargetZ - tip.z) *
+            points[tipOffset + POINT_Z] +
+            (constrainedTargetZ - points[tipOffset + POINT_Z]) *
               verticalTargetBlend;
           const normalizedSolverForce = clamp(
             forceMagnitude / POINTER_SOLVER_FULL_BODY_FORCE,
@@ -2666,15 +2724,18 @@
             const stepX = targetDeltaX * stepScale;
             const stepY = targetDeltaY * stepScale;
             const stepZ = targetDeltaZ * stepScale;
-            root.x = rootX;
-            root.y = rootY;
-            root.z = rootZ;
+            points[rootOffset + POINT_X] = rootX;
+            points[rootOffset + POINT_Y] = rootY;
+            points[rootOffset + POINT_Z] = rootZ;
             for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-              const previous = points[joint - 1];
-              const point = points[joint];
-              point.x = previous.x + stepX;
-              point.y = previous.y + stepY;
-              point.z = previous.z + stepZ;
+              const previousOffset = (joint - 1) * POINT_STRIDE;
+              const pointOffset = joint * POINT_STRIDE;
+              points[pointOffset + POINT_X] =
+                points[previousOffset + POINT_X] + stepX;
+              points[pointOffset + POINT_Y] =
+                points[previousOffset + POINT_Y] + stepY;
+              points[pointOffset + POINT_Z] =
+                points[previousOffset + POINT_Z] + stepZ;
             }
             blendPointerSolverBody(points, solverBodyBlend);
             stabilizePointerSolverVelocity(
@@ -2687,44 +2748,62 @@
 
           const solverIterations = skeleton.grabbed ? 20 : 7;
           for (let iteration = 0; iteration < solverIterations; iteration++) {
-            tip.x = targetX;
-            tip.y = targetY;
-            tip.z = targetZ;
+            points[tipOffset + POINT_X] = targetX;
+            points[tipOffset + POINT_Y] = targetY;
+            points[tipOffset + POINT_Z] = targetZ;
 
             for (let joint = CHAIN_LINKS - 1; joint >= 0; joint--) {
-              const parent = points[joint];
-              const child = points[joint + 1];
-              const dx = parent.x - child.x;
-              const dy = parent.y - child.y;
-              const dz = parent.z - child.z;
+              const parentOffset = joint * POINT_STRIDE;
+              const childOffset = parentOffset + POINT_STRIDE;
+              const dx =
+                points[parentOffset + POINT_X] -
+                points[childOffset + POINT_X];
+              const dy =
+                points[parentOffset + POINT_Y] -
+                points[childOffset + POINT_Y];
+              const dz =
+                points[parentOffset + POINT_Z] -
+                points[childOffset + POINT_Z];
               const distance = Math.max(
                 0.000001,
                 length3(dx, dy, dz),
               );
               const scale = skeleton.linkLength / distance;
-              parent.x = child.x + dx * scale;
-              parent.y = child.y + dy * scale;
-              parent.z = child.z + dz * scale;
+              points[parentOffset + POINT_X] =
+                points[childOffset + POINT_X] + dx * scale;
+              points[parentOffset + POINT_Y] =
+                points[childOffset + POINT_Y] + dy * scale;
+              points[parentOffset + POINT_Z] =
+                points[childOffset + POINT_Z] + dz * scale;
             }
 
-            root.x = rootX;
-            root.y = rootY;
-            root.z = rootZ;
+            points[rootOffset + POINT_X] = rootX;
+            points[rootOffset + POINT_Y] = rootY;
+            points[rootOffset + POINT_Z] = rootZ;
 
             for (let joint = 0; joint < CHAIN_LINKS; joint++) {
-              const parent = points[joint];
-              const child = points[joint + 1];
-              const dx = child.x - parent.x;
-              const dy = child.y - parent.y;
-              const dz = child.z - parent.z;
+              const parentOffset = joint * POINT_STRIDE;
+              const childOffset = parentOffset + POINT_STRIDE;
+              const dx =
+                points[childOffset + POINT_X] -
+                points[parentOffset + POINT_X];
+              const dy =
+                points[childOffset + POINT_Y] -
+                points[parentOffset + POINT_Y];
+              const dz =
+                points[childOffset + POINT_Z] -
+                points[parentOffset + POINT_Z];
               const distance = Math.max(
                 0.000001,
                 length3(dx, dy, dz),
               );
               const scale = skeleton.linkLength / distance;
-              child.x = parent.x + dx * scale;
-              child.y = parent.y + dy * scale;
-              child.z = parent.z + dz * scale;
+              points[childOffset + POINT_X] =
+                points[parentOffset + POINT_X] + dx * scale;
+              points[childOffset + POINT_Y] =
+                points[parentOffset + POINT_Y] + dy * scale;
+              points[childOffset + POINT_Z] =
+                points[parentOffset + POINT_Z] + dz * scale;
             }
           }
           blendPointerSolverBody(points, solverBodyBlend);
@@ -2855,17 +2934,21 @@
 
           for (const skeleton of skeletons) {
             const points = skeleton.points;
-            const root = points[0];
-            root.x = skeleton.root.x;
-            root.y = skeleton.root.y;
-            root.z = skeleton.baseHeight;
-            root.px = root.x;
-            root.py = root.y;
-            root.pz = root.z;
+            const rootOffset = 0;
+            const tipOffset = CHAIN_LINKS * POINT_STRIDE;
+            points[rootOffset + POINT_X] = skeleton.root.x;
+            points[rootOffset + POINT_Y] = skeleton.root.y;
+            points[rootOffset + POINT_Z] = skeleton.baseHeight;
+            points[rootOffset + POINT_PREVIOUS_X] =
+              points[rootOffset + POINT_X];
+            points[rootOffset + POINT_PREVIOUS_Y] =
+              points[rootOffset + POINT_Y];
+            points[rootOffset + POINT_PREVIOUS_Z] =
+              points[rootOffset + POINT_Z];
 
-            let restX = root.x;
-            let restY = root.y;
-            let restZ = root.z;
+            let restX = points[rootOffset + POINT_X];
+            let restY = points[rootOffset + POINT_Y];
+            let restZ = points[rootOffset + POINT_Z];
             const timeSpeed = time * skeleton.speed;
             const timeSpeedSecondary = timeSpeed * 0.47;
             const timeSpeedDetail = timeSpeed * 1.53;
@@ -2888,27 +2971,26 @@
             const verticalBaseCosine = Math.cos(verticalBase);
 
             for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-              const point = points[joint];
-              const profile = jointProfiles[joint];
+              const pointOffset = joint * POINT_STRIDE;
               const noiseA =
-                noiseABaseSine * profile.noisePhaseACosine +
-                noiseABaseCosine * profile.noisePhaseASine;
+                noiseABaseSine * jointNoisePhaseACosines[joint] +
+                noiseABaseCosine * jointNoisePhaseASines[joint];
               const noiseB =
-                noiseBBaseSine * profile.noisePhaseBCosine +
-                noiseBBaseCosine * profile.noisePhaseBSine;
+                noiseBBaseSine * jointNoisePhaseBCosines[joint] +
+                noiseBBaseCosine * jointNoisePhaseBSines[joint];
               const noiseC =
-                noiseCBaseSine * profile.noisePhaseCCosine +
-                noiseCBaseCosine * profile.noisePhaseCSine;
+                noiseCBaseSine * jointNoisePhaseCCosines[joint] +
+                noiseCBaseCosine * jointNoisePhaseCSines[joint];
               const spatialNoise =
                 noiseA * 0.62 +
                 noiseB * 0.27 +
                 noiseC * 0.11;
               const restAngle =
                 skeleton.baseAngle +
-                skeleton.bend * profile.bendFactor +
+                skeleton.bend * jointBendFactors[joint] +
                 spatialNoise *
                   skeleton.noiseStrength *
-                  profile.noiseWeight;
+                  jointNoiseWeights[joint];
               const horizontalStep =
                 skeleton.horizontalSteps[joint];
               const verticalStep =
@@ -2921,34 +3003,51 @@
                   0.96 +
                   (
                     verticalBaseSine *
-                      profile.verticalPhaseCosine +
+                      jointVerticalPhaseCosines[joint] +
                     verticalBaseCosine *
-                      profile.verticalPhaseSine
+                      jointVerticalPhaseSines[joint]
                   ) *
                     0.035
                 );
 
-              const velocityX = (point.x - point.px) * velocityDamping;
-              const velocityY = (point.y - point.py) * velocityDamping;
-              const velocityZ = (point.z - point.pz) * velocityDamping;
-              point.px = point.x;
-              point.py = point.y;
-              point.pz = point.z;
-              point.x +=
+              const velocityX =
+                (
+                  points[pointOffset + POINT_X] -
+                  points[pointOffset + POINT_PREVIOUS_X]
+                ) *
+                velocityDamping;
+              const velocityY =
+                (
+                  points[pointOffset + POINT_Y] -
+                  points[pointOffset + POINT_PREVIOUS_Y]
+                ) *
+                velocityDamping;
+              const velocityZ =
+                (
+                  points[pointOffset + POINT_Z] -
+                  points[pointOffset + POINT_PREVIOUS_Z]
+                ) *
+                velocityDamping;
+              points[pointOffset + POINT_PREVIOUS_X] =
+                points[pointOffset + POINT_X];
+              points[pointOffset + POINT_PREVIOUS_Y] =
+                points[pointOffset + POINT_Y];
+              points[pointOffset + POINT_PREVIOUS_Z] =
+                points[pointOffset + POINT_Z];
+              points[pointOffset + POINT_X] +=
                 velocityX +
-                (restX - point.x) * restResponse;
-              point.y +=
+                (restX - points[pointOffset + POINT_X]) * restResponse;
+              points[pointOffset + POINT_Y] +=
                 velocityY +
-                (restY - point.y) * restResponse;
-              point.z +=
+                (restY - points[pointOffset + POINT_Y]) * restResponse;
+              points[pointOffset + POINT_Z] +=
                 velocityZ +
-                (restZ - point.z) * restResponse;
+                (restZ - points[pointOffset + POINT_Z]) * restResponse;
             }
 
-            const tip = points[CHAIN_LINKS];
             const tipDistance = length2(
-              pointerWorldX - tip.x,
-              pointerWorldY - tip.y,
+              pointerWorldX - points[tipOffset + POINT_X],
+              pointerWorldY - points[tipOffset + POINT_Y],
             );
             const normalizedDistance = clamp(
               tipDistance /
@@ -2979,25 +3078,33 @@
                 forceMagnitude,
               );
             }
-            const surfaceDistance = tip.z - skeleton.baseHeight;
+            const surfaceDistance =
+              points[tipOffset + POINT_Z] - skeleton.baseHeight;
             const repulsion = clamp(
               1 - surfaceDistance / skeleton.tipClearance,
               0,
               1,
             );
-            tip.z += repulsion * repulsion * delta * 0.160;
+            points[tipOffset + POINT_Z] +=
+              repulsion * repulsion * delta * 0.160;
 
             for (let iteration = 0; iteration < 8; iteration++) {
-              root.x = skeleton.root.x;
-              root.y = skeleton.root.y;
-              root.z = skeleton.baseHeight;
+              points[rootOffset + POINT_X] = skeleton.root.x;
+              points[rootOffset + POINT_Y] = skeleton.root.y;
+              points[rootOffset + POINT_Z] = skeleton.baseHeight;
 
               for (let joint = 0; joint < CHAIN_LINKS; joint++) {
-                const a = points[joint];
-                const b = points[joint + 1];
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-                const dz = b.z - a.z;
+                const pointAOffset = joint * POINT_STRIDE;
+                const pointBOffset = pointAOffset + POINT_STRIDE;
+                const dx =
+                  points[pointBOffset + POINT_X] -
+                  points[pointAOffset + POINT_X];
+                const dy =
+                  points[pointBOffset + POINT_Y] -
+                  points[pointAOffset + POINT_Y];
+                const dz =
+                  points[pointBOffset + POINT_Z] -
+                  points[pointAOffset + POINT_Z];
                 const distance = Math.max(
                   0.000001,
                   length3(dx, dy, dz),
@@ -3006,29 +3113,35 @@
                   (distance - skeleton.linkLength) / distance;
 
                 if (joint === 0) {
-                  b.x -= dx * correction;
-                  b.y -= dy * correction;
-                  b.z -= dz * correction;
+                  points[pointBOffset + POINT_X] -= dx * correction;
+                  points[pointBOffset + POINT_Y] -= dy * correction;
+                  points[pointBOffset + POINT_Z] -= dz * correction;
                 } else {
                   const weightA = 0.48;
                   const weightB = 0.52;
-                  a.x += dx * correction * weightA;
-                  a.y += dy * correction * weightA;
-                  a.z += dz * correction * weightA;
-                  b.x -= dx * correction * weightB;
-                  b.y -= dy * correction * weightB;
-                  b.z -= dz * correction * weightB;
+                  points[pointAOffset + POINT_X] +=
+                    dx * correction * weightA;
+                  points[pointAOffset + POINT_Y] +=
+                    dy * correction * weightA;
+                  points[pointAOffset + POINT_Z] +=
+                    dz * correction * weightA;
+                  points[pointBOffset + POINT_X] -=
+                    dx * correction * weightB;
+                  points[pointBOffset + POINT_Y] -=
+                    dy * correction * weightB;
+                  points[pointBOffset + POINT_Z] -=
+                    dz * correction * weightB;
                 }
               }
 
-              const constrainedTip = points[CHAIN_LINKS];
               if (
-                constrainedTip.z < skeleton.minimumTipHeight
+                points[tipOffset + POINT_Z] <
+                skeleton.minimumTipHeight
               ) {
-                constrainedTip.z +=
+                points[tipOffset + POINT_Z] +=
                   (
                     skeleton.minimumTipHeight -
-                    constrainedTip.z
+                    points[tipOffset + POINT_Z]
                   ) *
                   0.28;
               }
@@ -3045,22 +3158,22 @@
 
             if (collectDiagnostics) {
               const forceMagnitude = Math.abs(pointerForce);
-              const finalTip = points[CHAIN_LINKS];
               diagnostics.maximumRestDisplacement = Math.max(
                 diagnostics.maximumRestDisplacement,
                 length3(
-                  (finalTip.x - restX) /
+                  (points[tipOffset + POINT_X] - restX) /
                     Math.max(0.001, surfaceAspect),
-                  finalTip.y - restY,
-                  finalTip.z - restZ,
+                  points[tipOffset + POINT_Y] - restY,
+                  points[tipOffset + POINT_Z] - restZ,
                 ),
               );
               const finalProjectedTipX =
-                finalTip.x / surfaceAspect;
-              const finalProjectedTipY = finalTip.y;
+                points[tipOffset + POINT_X] / surfaceAspect;
+              const finalProjectedTipY =
+                points[tipOffset + POINT_Y];
               const cursorDistance = length2(
-                pointerWorldX - finalTip.x,
-                pointerWorldY - finalTip.y,
+                pointerWorldX - points[tipOffset + POINT_X],
+                pointerWorldY - points[tipOffset + POINT_Y],
               );
               if (skeleton.grabbed) {
                 diagnostics.maximumGrabberError = Math.max(
@@ -3091,7 +3204,7 @@
               }
               diagnostics.minimumTipClearance = Math.min(
                 diagnostics.minimumTipClearance,
-                finalTip.z - skeleton.baseHeight,
+                points[tipOffset + POINT_Z] - skeleton.baseHeight,
               );
             }
 
@@ -3102,34 +3215,36 @@
             for (let renderJoint = 0; renderJoint < RENDER_POINTS; renderJoint++) {
               const chainJoint =
                 renderChainJoints[renderJoint];
-              const point = points[chainJoint];
+              const pointOffset = chainJoint * POINT_STRIDE;
               const radius =
                 skeleton.radius *
                 renderRadiusScales[renderJoint];
               const offset =
                 skeleton.pixelOffset + renderJoint * 4;
-              skeletonPixels[offset] = point.x;
-              skeletonPixels[offset + 1] = point.y;
-              skeletonPixels[offset + 2] = point.z;
+              skeletonPixels[offset] = points[pointOffset + POINT_X];
+              skeletonPixels[offset + 1] =
+                points[pointOffset + POINT_Y];
+              skeletonPixels[offset + 2] =
+                points[pointOffset + POINT_Z];
               skeletonPixels[offset + 3] = radius;
 
               const boundRadius =
                 radius * renderBoundScales[renderJoint];
               boundMinimumX = Math.min(
                 boundMinimumX,
-                point.x - boundRadius,
+                points[pointOffset + POINT_X] - boundRadius,
               );
               boundMinimumY = Math.min(
                 boundMinimumY,
-                point.y - boundRadius,
+                points[pointOffset + POINT_Y] - boundRadius,
               );
               boundMaximumX = Math.max(
                 boundMaximumX,
-                point.x + boundRadius,
+                points[pointOffset + POINT_X] + boundRadius,
               );
               boundMaximumY = Math.max(
                 boundMaximumY,
-                point.y + boundRadius,
+                points[pointOffset + POINT_Y] + boundRadius,
               );
             }
 
@@ -3140,10 +3255,10 @@
                 renderSegment < RENDER_POINTS - 1;
                 renderSegment++
               ) {
-                const pointA =
-                  points[renderChainJoints[renderSegment]];
-                const pointB =
-                  points[renderChainJoints[renderSegment + 1]];
+                const pointAOffset =
+                  renderChainJoints[renderSegment] * POINT_STRIDE;
+                const pointBOffset =
+                  renderChainJoints[renderSegment + 1] * POINT_STRIDE;
                 const radiusA =
                   skeleton.radius *
                   renderRadiusScales[renderSegment];
@@ -3162,7 +3277,10 @@
                   Math.floor(
                     (
                       (
-                        Math.min(pointA.x, pointB.x) -
+                        Math.min(
+                          points[pointAOffset + POINT_X],
+                          points[pointBOffset + POINT_X],
+                        ) -
                         segmentPadding
                       ) /
                       surfaceAspect
@@ -3175,7 +3293,10 @@
                 const segmentMinimumCellY = clamp(
                   Math.floor(
                     (
-                      Math.min(pointA.y, pointB.y) -
+                      Math.min(
+                        points[pointAOffset + POINT_Y],
+                        points[pointBOffset + POINT_Y],
+                      ) -
                       segmentPadding
                     ) *
                       SPATIAL_GRID_ROWS,
@@ -3187,7 +3308,10 @@
                   Math.floor(
                     (
                       (
-                        Math.max(pointA.x, pointB.x) +
+                        Math.max(
+                          points[pointAOffset + POINT_X],
+                          points[pointBOffset + POINT_X],
+                        ) +
                         segmentPadding
                       ) /
                       surfaceAspect
@@ -3200,7 +3324,10 @@
                 const segmentMaximumCellY = clamp(
                   Math.floor(
                     (
-                      Math.max(pointA.y, pointB.y) +
+                      Math.max(
+                        points[pointAOffset + POINT_Y],
+                        points[pointBOffset + POINT_Y],
+                      ) +
                       segmentPadding
                     ) *
                       SPATIAL_GRID_ROWS,
