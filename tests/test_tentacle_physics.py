@@ -484,8 +484,8 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
 
     The reported defect does not appear on every click because it requires a
     resize-related pause between animation frames. The WebGL surface submits a
-    strong impulse immediately on ``pointerdown``; if Chromium then postpones
-    its next ``requestAnimationFrame`` while recalculating the newly narrow
+    strong impulse in the first animation frame after ``pointerdown``. If
+    Chromium then postpones a later frame while recalculating the newly narrow
     layout, that strong image used to remain visible long after the mouse button
     had already been released. The force clock itself could already be expired,
     so tests that inspected only a later normal frame missed the visible bug.
@@ -563,6 +563,7 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     for _ in range(3):
         page.wait_for_timeout(35)
         page.mouse.down(button="left")
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
         expect(canvas).to_have_attribute(
             "data-pointer-interaction-phase",
             "impulse",
@@ -598,12 +599,13 @@ def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
     second render could occupy the main thread before a queued ``pointerup`` was
     handled, extending a quick click by hundreds of milliseconds or seconds.
 
-    This test deliberately disables regular animation frames, records the
-    immediate impulse frame id, and waits beyond the complete source envelope.
-    No hidden timer may submit another frame. It then advances one explicit
-    50 ms frame and verifies that the wall-clock force equation naturally
-    resolves to held mode. This preserves the original physics while proving
-    that the deadline itself can never insert blocking work ahead of release.
+    This test deliberately disables regular animation frames, verifies that
+    ``pointerdown`` itself submits nothing, explicitly advances the queued
+    impulse frame, and waits beyond the complete source envelope. No hidden
+    timer may submit another frame. It then advances one explicit 50 ms frame
+    and verifies that the wall-clock force equation naturally resolves to held
+    mode. This preserves the original physics while proving that the deadline
+    itself can never insert blocking work ahead of release.
     """
 
     page = driver(
@@ -622,7 +624,18 @@ def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
     page.mouse.move(120, 90)
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
     page.mouse.down(button="left")
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+    expect(canvas).to_have_attribute(
+        "data-immediate-impulse-frame",
+        "disabled",
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
 
     expect(canvas).to_have_attribute(
         "data-pointer-interaction-phase",
@@ -677,13 +690,14 @@ def test_full_density_surface_never_queues_a_deadline_render(
     the complete render pipeline before input; further idle frames would only
     repeat that workload. Normal animation is manually clocked so any
     unexpected frame can only come from an input/deadline callback. After one
-    real press, the initially submitted frame id and measured input latency
-    must remain unchanged for 120 ms—almost three complete impulse windows.
-    It then advances the first non-redundant physics frame by nine milliseconds and
-    verifies that the peak was not applied a second time. Release must then be
-    processed normally. This full-density assertion is the part the earlier
-    lightweight tests lacked: it catches the long visible deformation even
-    when the nominal force timer and low-density state tests look correct.
+    real press, ``pointerdown`` itself must not render; one explicit RAF then
+    submits the impulse. Its frame id and measured input latency must remain
+    unchanged for 120 ms—almost three complete impulse windows. The test then
+    advances another physics frame by nine milliseconds and verifies that the
+    peak was not applied a second time. Release must be processed normally.
+    This full-density assertion is the part the earlier lightweight tests
+    lacked: it catches the long visible deformation even when the nominal force
+    timer and low-density state tests look correct.
     """
 
     page = driver(
@@ -712,6 +726,10 @@ def test_full_density_surface_never_queues_a_deadline_render(
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     submitted = canvas.evaluate(
         """
         element => ({
@@ -753,7 +771,7 @@ def test_full_density_surface_never_queues_a_deadline_render(
         "phase": "held",
         "force": "2.000",
         "applications": "1",
-        "animationImpulseFrames": "0",
+        "animationImpulseFrames": "1",
     }
 
     page.mouse.up(button="left")
@@ -1942,16 +1960,16 @@ def test_click_impulse_is_applied_to_exactly_one_physics_frame(
 
     The source interaction describes a roughly 41.5 ms force envelope, but the
     rectangular production surface contains substantially more tentacles than
-    the original square. Reapplying its 13.333× peak on both the synchronous
-    input render and the following animation frame injects the strong force
-    twice; the resulting deformation survives much longer than the nominal
-    clock and is the user-visible defect reported repeatedly.
+    the original square. Reapplying its 13.333× peak on two consecutive
+    animation frames injects the strong force twice; the resulting deformation
+    survives much longer than the nominal clock and is the user-visible defect
+    reported repeatedly.
 
     This regression freezes normal animation, presses either mouse button, and
-    verifies that the immediate input render is the sole peak-force physics
-    application. It then advances the first non-redundant frame by only nine
-    milliseconds—well inside the old envelope, where the bug definitely
-    reproduced—and demands ordinary held force with the cumulative
+    verifies that ``pointerdown`` renders nothing and that the next animation
+    frame is the sole peak-force physics application. It then advances another
+    frame by only nine milliseconds—well inside the old envelope, where the bug
+    definitely reproduced—and demands ordinary held force with the cumulative
     impulse-application counter still equal to one. A duration-only or 100 ms
     sample would miss this exact double-kick.
     """
@@ -1978,13 +1996,24 @@ def test_click_impulse_is_applied_to_exactly_one_physics_frame(
     )
 
     page.mouse.move(120, 90)
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
     page.mouse.down(button=button)
 
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
     expect(canvas).to_have_attribute(
         "data-immediate-impulse-frame",
-        "enabled",
+        "disabled",
         timeout=1_000,
     )
+    expect(canvas).to_have_attribute(
+        "data-impulse-frame-scheduling",
+        "animation-frame",
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     expect(canvas).to_have_attribute(
         "data-impulse-physics-applications",
         "1",
@@ -2021,6 +2050,73 @@ def test_click_impulse_is_applied_to_exactly_one_physics_frame(
     )
 
     page.mouse.up(button=button)
+
+
+@pytest.mark.parametrize(
+    ("button", "direction"),
+    [("left", "1"), ("right", "-1")],
+)
+def test_release_before_the_next_raf_does_not_drop_the_queued_impulse(
+    driver: DriverFactory,
+    base_url: str,
+    button: str,
+    direction: str,
+) -> None:
+    """Keep one complete impulse even when down/up fit between two RAFs."""
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(240, 180),
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.mouse.move(120, 90)
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
+
+    page.mouse.down(button=button)
+    page.mouse.up(button=button)
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    queued_impulse = canvas.evaluate(
+        """
+        element => ({
+          phase: element.dataset.renderedInteractionPhase,
+          pressed: element.dataset.renderedPointerPressed,
+          direction: element.dataset.lastImpulseDirection,
+          applications: element.dataset.impulsePhysicsApplications,
+          submissionMs: Number(element.dataset.inputToImpulseSubmissionMs),
+        })
+        """
+    )
+    assert queued_impulse["phase"] == "impulse"
+    assert queued_impulse["pressed"] == "false"
+    assert queued_impulse["direction"] == direction
+    assert queued_impulse["applications"] == "1"
+    assert math.isfinite(queued_impulse["submissionMs"])
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    expect(canvas).to_have_attribute(
+        "data-rendered-interaction-phase",
+        "hover",
+    )
+    expect(canvas).to_have_attribute(
+        "data-impulse-physics-applications",
+        "1",
+    )
 
 
 @pytest.mark.parametrize(
@@ -2069,6 +2165,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     expect(canvas).to_be_visible(timeout=30_000)
     page.mouse.move(120, 90)
     page.mouse.down(button=button)
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
 
     expect(canvas).to_have_attribute(
         "data-last-impulse-peak-force-multiplier",
@@ -2267,6 +2364,7 @@ def _press_surface(page: Page, canvas: Page) -> tuple[float, float, float]:
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     peak = float(
         canvas.get_attribute(
             "data-rendered-maximum-rest-displacement"
@@ -2335,6 +2433,10 @@ def _assert_no_deadline_render(page: Page, canvas: Page) -> None:
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     submitted_frame = int(
         canvas.get_attribute("data-rendered-frame-id") or "0"
     )
@@ -2347,7 +2449,7 @@ def _assert_no_deadline_render(page: Page, canvas: Page) -> None:
 
 
 def _assert_single_peak_application(page: Page, canvas: Page) -> None:
-    """Assert that only the synchronous input frame receives peak force."""
+    """Assert that only the first animation frame receives peak force."""
 
     box = canvas.bounding_box()
     assert box is not None
@@ -2356,6 +2458,7 @@ def _assert_single_peak_application(page: Page, canvas: Page) -> None:
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     assert canvas.get_attribute(
         "data-impulse-physics-applications"
     ) == "1"
@@ -2376,7 +2479,7 @@ def _assert_single_peak_application(page: Page, canvas: Page) -> None:
         "phase": "held",
         "force": "2.000",
         "applications": "1",
-        "animationImpulseFrames": "0",
+        "animationImpulseFrames": "1",
     }
     page.mouse.up(button="left")
 
@@ -2507,10 +2610,12 @@ def _restore_legacy_release_recovery(source: str) -> str:
         ),
         (
             """          impulsePending: false,
+          impulseDirection: 1,
           energy: 0,
         };
         let renderedInteractionPhase = "hover";""",
             """          impulsePending: false,
+          impulseDirection: 1,
           releaseRecoveryUntil: -Infinity,
           energy: 0,
         };
@@ -2536,7 +2641,7 @@ def _restore_legacy_release_recovery(source: str) -> str:
             ) {
               return;
             }
-            runImmediateInteractionFrame(true);
+            runImmediateReleaseFrame();
           }, RELEASE_RECOVERY_SECONDS * 1000);
         }
 
@@ -2557,12 +2662,17 @@ def _restore_legacy_release_recovery(source: str) -> str:
         ),
         (
             """          if (wasPressed && !pointer.pressed) {
-            pointer.impulsePending = false;
-            settleReleasedPointer();""",
+            if (!pointer.impulsePending) {
+              settleReleasedPointer();
+            }
+            return true;
+          }""",
             """          if (wasPressed && !pointer.pressed) {
             pointer.impulsePending = false;
             startReleaseRecovery();
-            settleReleasedPointer();""",
+            settleReleasedPointer();
+            return true;
+          }""",
         ),
         (
             """          impulseAge,
@@ -2588,6 +2698,11 @@ def _restore_legacy_release_recovery(source: str) -> str:
         (
             """            impulsePending,
           );
+          interaction.direction =
+            pointer.pressed || impulsePending
+              ? interactionDirection
+              : 0;
+          return interaction;
         }
 
         if (interactionDiagnostics) {""",
@@ -2595,6 +2710,11 @@ def _restore_legacy_release_recovery(source: str) -> str:
             !pointer.pressed &&
               time < pointer.releaseRecoveryUntil,
           );
+          interaction.direction =
+            pointer.pressed || impulsePending
+              ? interactionDirection
+              : 0;
+          return interaction;
         }
 
         if (interactionDiagnostics) {""",
@@ -2605,14 +2725,14 @@ def _restore_legacy_release_recovery(source: str) -> str:
         }
 
         function settleReleasedPointer() {
-          runImmediateInteractionFrame(true);""",
+          runImmediateReleaseFrame();""",
             """              Boolean(impulsePending),
               false,
             );
         }
 
         function settleReleasedPointer() {
-          runImmediateInteractionFrame(true, 0.033);""",
+          runImmediateReleaseFrame(0.033);""",
         ),
         (
             """          const velocityDamping = Math.exp(-delta * 10.2);
@@ -2748,7 +2868,7 @@ TIMING_MUTATIONS = [
         id="raise-held-attraction",
     ),
     pytest.param(
-        "          runImmediateInteractionFrame(true);",
+        "          runImmediateReleaseFrame();",
         """          const releaseEnergy = pointer.energy;
           pointer.energy = -4;
           for (
@@ -2756,7 +2876,7 @@ TIMING_MUTATIONS = [
             recoveryFrame < 8;
             recoveryFrame++
           ) {
-            runImmediateInteractionFrame(true, 0.033);
+            runImmediateReleaseFrame(0.033);
           }
           pointer.energy = releaseEnergy;""",
         "release",
