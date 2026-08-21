@@ -139,8 +139,41 @@
           : Number.NaN;
         const useManualAnimationFrame =
           runtimeSearch.get("manual-animation-frame") === "1";
+        const gpuTimingRequested =
+          runtimeSearch.get("gpu-timing") === "1";
+        const requestedGpuTimingInterval = Number(
+          runtimeSearch.get("gpu-timing-interval"),
+        );
+        const solverEarlyExitEnabled =
+          runtimeSearch.get("solver-early-exit") !== "0";
+        const pbdEarlyExitEnabled =
+          solverEarlyExitEnabled &&
+          runtimeSearch.get("pbd-early-exit") !== "0";
+        const fabrikEarlyExitEnabled =
+          solverEarlyExitEnabled &&
+          runtimeSearch.get("fabrik-early-exit") !== "0";
+        const fabrikVisualSkipEnabled =
+          solverEarlyExitEnabled &&
+          runtimeSearch.get("fabrik-visual-skip") !== "0";
+        const GPU_TIMING_SAMPLE_INTERVAL =
+          useManualAnimationFrame &&
+          Number.isFinite(requestedGpuTimingInterval) &&
+          requestedGpuTimingInterval > 0
+            ? Math.min(
+                120,
+                Math.max(1, Math.floor(requestedGpuTimingInterval)),
+              )
+            : 30;
+        const GPU_TIMING_QUERY_POOL_SIZE = 4;
         const CHAIN_LINKS = 50;
         const RENDER_POINTS = 14;
+        const POINT_X = 0;
+        const POINT_Y = 1;
+        const POINT_Z = 2;
+        const POINT_PREVIOUS_X = 3;
+        const POINT_PREVIOUS_Y = 4;
+        const POINT_PREVIOUS_Z = 5;
+        const POINT_STRIDE = 6;
         const MAX_SKELETONS =
           Number.isFinite(requestedSkeletonLimit) &&
           requestedSkeletonLimit > 0
@@ -163,6 +196,20 @@
           (PRESS_IMPULSE_TOTAL_SECONDS * 1000).toFixed(1);
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
         const MAX_CURSOR_GRABBERS = 6;
+        const SOLVER_ERROR_TOLERANCE_PIXELS = 0.003;
+        const MIN_PBD_ITERATIONS = 4;
+        const MIN_FABRIK_ITERATIONS = 2;
+        canvas.dataset.solverEarlyExit =
+          solverEarlyExitEnabled ? "enabled" : "disabled";
+        canvas.dataset.pbdEarlyExit =
+          pbdEarlyExitEnabled ? "enabled" : "disabled";
+        canvas.dataset.fabrikEarlyExit =
+          fabrikEarlyExitEnabled ? "enabled" : "disabled";
+        canvas.dataset.fabrikVisualSkip =
+          fabrikVisualSkipEnabled ? "enabled" : "disabled";
+        canvas.dataset.solverErrorTolerancePixels = String(
+          SOLVER_ERROR_TOLERANCE_PIXELS,
+        );
         const PROJECTION_SCALE = 1.0;
         const HEIGHT_PERSPECTIVE = 0;
         const HEIGHT_OFFSET_X = 0;
@@ -200,6 +247,39 @@
             : 64;
         const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
         const floatColor = Boolean(gl.getExtension("EXT_color_buffer_float"));
+        const gpuTimerExtension = gpuTimingRequested
+          ? gl.getExtension("EXT_disjoint_timer_query_webgl2")
+          : null;
+        const gpuTimerQueries = [];
+        let gpuTimingEnabled = Boolean(gpuTimerExtension);
+        if (gpuTimingEnabled) {
+          for (
+            let queryIndex = 0;
+            queryIndex < GPU_TIMING_QUERY_POOL_SIZE;
+            queryIndex += 1
+          ) {
+            const query = gl.createQuery();
+            if (!query) {
+              gpuTimingEnabled = false;
+              break;
+            }
+            gpuTimerQueries.push(query);
+          }
+        }
+        if (!gpuTimingEnabled) {
+          for (const query of gpuTimerQueries) {
+            gl.deleteQuery(query);
+          }
+          gpuTimerQueries.length = 0;
+        }
+        canvas.dataset.gpuTiming = gpuTimingRequested
+          ? gpuTimingEnabled
+            ? "enabled"
+            : "unsupported"
+          : "disabled";
+        canvas.dataset.gpuTimingSampleInterval = String(
+          GPU_TIMING_SAMPLE_INTERVAL,
+        );
         const compactMedia = matchMedia("(max-width: 620px)");
         const isCompact = compactMedia.matches;
         canvas.dataset.runtimeCompact =
@@ -254,31 +334,35 @@
           maximumTextureDimension,
           gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
         );
-        const jointProfiles = Array.from(
-          { length: CHAIN_LINKS + 1 },
-          (_, joint) => {
-            const s = joint / CHAIN_LINKS;
-            return {
-              s,
-              bendFactor: s * s,
-              initialPhase: s * 4.2,
-              noisePhaseA: s * 5.3,
-              noisePhaseB: s * 9.1,
-              noisePhaseC: s * 14.7,
-              noisePhaseASine: Math.sin(s * 5.3),
-              noisePhaseACosine: Math.cos(s * 5.3),
-              noisePhaseBSine: Math.sin(-s * 9.1),
-              noisePhaseBCosine: Math.cos(-s * 9.1),
-              noisePhaseCSine: Math.sin(s * 14.7),
-              noisePhaseCCosine: Math.cos(s * 14.7),
-              noiseWeight: 0.28 + s * 0.72,
-              horizontalTaper: 1 - s * 0.08,
-              verticalPhase: s * 3.2,
-              verticalPhaseSine: Math.sin(s * 3.2),
-              verticalPhaseCosine: Math.cos(s * 3.2),
-            };
-          },
-        );
+        const jointS = new Float64Array(CHAIN_LINKS + 1);
+        const jointBendFactors = new Float64Array(CHAIN_LINKS + 1);
+        const jointInitialPhases = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseASines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseACosines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseBSines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseBCosines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseCSines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoisePhaseCCosines = new Float64Array(CHAIN_LINKS + 1);
+        const jointNoiseWeights = new Float64Array(CHAIN_LINKS + 1);
+        const jointHorizontalTapers = new Float64Array(CHAIN_LINKS + 1);
+        const jointVerticalPhaseSines = new Float64Array(CHAIN_LINKS + 1);
+        const jointVerticalPhaseCosines = new Float64Array(CHAIN_LINKS + 1);
+        for (let joint = 0; joint <= CHAIN_LINKS; joint++) {
+          const s = joint / CHAIN_LINKS;
+          jointS[joint] = s;
+          jointBendFactors[joint] = s * s;
+          jointInitialPhases[joint] = s * 4.2;
+          jointNoisePhaseASines[joint] = Math.sin(s * 5.3);
+          jointNoisePhaseACosines[joint] = Math.cos(s * 5.3);
+          jointNoisePhaseBSines[joint] = Math.sin(-s * 9.1);
+          jointNoisePhaseBCosines[joint] = Math.cos(-s * 9.1);
+          jointNoisePhaseCSines[joint] = Math.sin(s * 14.7);
+          jointNoisePhaseCCosines[joint] = Math.cos(s * 14.7);
+          jointNoiseWeights[joint] = 0.28 + s * 0.72;
+          jointHorizontalTapers[joint] = 1 - s * 0.08;
+          jointVerticalPhaseSines[joint] = Math.sin(s * 3.2);
+          jointVerticalPhaseCosines[joint] = Math.cos(s * 3.2);
+        }
         const renderChainJoints = new Uint8Array(RENDER_POINTS);
         const renderRadiusScales = new Float64Array(RENDER_POINTS);
         const renderBoundScales = new Float64Array(RENDER_POINTS);
@@ -1301,6 +1385,11 @@
         let runtimeVisible = !isEmbeddedRuntime;
         let scrollRenderingSuppressed = false;
         let scrollSuppressionCount = 0;
+        let animationFrameRequest = null;
+        let reportedAnimationFrameScheduled = null;
+        let animationLoopReady = false;
+        let animationRuntimeActive = false;
+        let resetAnimationClockOnNextFrame = false;
         const SCROLL_IDLE_FALLBACK_MS = 320;
 
         function applyTheme(theme) {
@@ -1335,6 +1424,7 @@
             runtimeVisible ? "true" : "false";
           canvas.dataset.scrollRendering =
             scrollRenderingSuppressed ? "suppressed" : "active";
+          syncAnimationLoopState();
         }
         window.__mutaTentaclesSetRuntimeState = applyRuntimeState;
 
@@ -1763,7 +1853,12 @@
           const baseHeight = 0.043 + (peak.value - 0.45) * 0.018;
           const phase = random() * Math.PI * 2;
           const phase2 = random() * Math.PI * 2;
-          const points = [{ x: peak.x, y: peak.y, z: baseHeight }];
+          const points = new Float64Array(
+            (CHAIN_LINKS + 1) * POINT_STRIDE,
+          );
+          points[POINT_X] = peak.x;
+          points[POINT_Y] = peak.y;
+          points[POINT_Z] = baseHeight;
           const horizontalSteps = new Float64Array(
             CHAIN_LINKS + 1,
           );
@@ -1773,17 +1868,16 @@
           const linkLengthSquared = linkLength * linkLength;
 
           for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-            const profile = jointProfiles[joint];
             const angle =
               baseAngle +
-              bend * profile.bendFactor +
-              Math.sin(phase + profile.initialPhase) *
+              bend * jointBendFactors[joint] +
+              Math.sin(phase + jointInitialPhases[joint]) *
                 0.12 *
-                profile.s;
+                jointS[joint];
             const horizontalStep =
               linkLength *
               horizontalScale *
-              profile.horizontalTaper;
+              jointHorizontalTapers[joint];
             const verticalStep = Math.sqrt(
               Math.max(
                 0.000001,
@@ -1793,18 +1887,26 @@
             );
             horizontalSteps[joint] = horizontalStep;
             verticalSteps[joint] = verticalStep;
-            const previous = points[joint - 1];
-            points.push({
-              x: previous.x + Math.cos(angle) * horizontalStep,
-              y: previous.y + Math.sin(angle) * horizontalStep,
-              z: previous.z + verticalStep,
-            });
+            const previousOffset = (joint - 1) * POINT_STRIDE;
+            const pointOffset = joint * POINT_STRIDE;
+            points[pointOffset + POINT_X] =
+              points[previousOffset + POINT_X] +
+              Math.cos(angle) * horizontalStep;
+            points[pointOffset + POINT_Y] =
+              points[previousOffset + POINT_Y] +
+              Math.sin(angle) * horizontalStep;
+            points[pointOffset + POINT_Z] =
+              points[previousOffset + POINT_Z] + verticalStep;
           }
 
-          for (const point of points) {
-            point.px = point.x;
-            point.py = point.y;
-            point.pz = point.z;
+          for (let joint = 0; joint <= CHAIN_LINKS; joint++) {
+            const pointOffset = joint * POINT_STRIDE;
+            points[pointOffset + POINT_PREVIOUS_X] =
+              points[pointOffset + POINT_X];
+            points[pointOffset + POINT_PREVIOUS_Y] =
+              points[pointOffset + POINT_Y];
+            points[pointOffset + POINT_PREVIOUS_Z] =
+              points[pointOffset + POINT_Z];
           }
 
           const speed =
@@ -2214,6 +2316,7 @@
           pressDirection: 0,
           impulseStartedAt: -Infinity,
           impulsePending: false,
+          impulseDirection: 1,
           energy: 0,
         };
         let renderedInteractionPhase = "hover";
@@ -2236,6 +2339,85 @@
           maximumGrabberError: 0,
           fps: 0,
         };
+        const solverDiagnostics = {
+          pbdChains: 0,
+          pbdIterations: 0,
+          pbdEarlyExits: 0,
+          fabrikAttempts: 0,
+          fabrikExactZeroSkips: 0,
+          fabrikVisualSkips: 0,
+          fabrikDirectSolves: 0,
+          fabrikIterativeSolves: 0,
+          fabrikIterations: 0,
+          fabrikGrabbedSolves: 0,
+          fabrikGrabbedIterations: 0,
+          fabrikOrdinarySolves: 0,
+          fabrikOrdinaryIterations: 0,
+          fabrikEarlyExits: 0,
+        };
+        function resetSolverDiagnostics() {
+          for (const key in solverDiagnostics) {
+            solverDiagnostics[key] = 0;
+          }
+        }
+        if (interactionDiagnostics) {
+          window.__mutaTentaclesDebugPhysicsSnapshot = () => {
+            const tips = new Array(skeletons.length);
+            let maximumLinkError = 0;
+            let squaredLinkError = 0;
+            let linkSamples = 0;
+            for (
+              let skeletonIndex = 0;
+              skeletonIndex < skeletons.length;
+              skeletonIndex++
+            ) {
+              const skeleton = skeletons[skeletonIndex];
+              const points = skeleton.points;
+              for (let joint = 0; joint < CHAIN_LINKS; joint++) {
+                const pointOffset = joint * POINT_STRIDE;
+                const nextOffset = pointOffset + POINT_STRIDE;
+                const error = Math.abs(
+                  length3(
+                    points[nextOffset + POINT_X] -
+                      points[pointOffset + POINT_X],
+                    points[nextOffset + POINT_Y] -
+                      points[pointOffset + POINT_Y],
+                    points[nextOffset + POINT_Z] -
+                      points[pointOffset + POINT_Z],
+                  ) - skeleton.linkLength,
+                );
+                maximumLinkError = Math.max(maximumLinkError, error);
+                squaredLinkError += error * error;
+                linkSamples += 1;
+              }
+              const tipOffset = CHAIN_LINKS * POINT_STRIDE;
+              const projectedTip = projectPointToCanvas({
+                x: points[tipOffset + POINT_X],
+                y: points[tipOffset + POINT_Y],
+                z: points[tipOffset + POINT_Z],
+              });
+              tips[skeletonIndex] = {
+                index: skeleton.index,
+                grabbed: skeleton.grabbed,
+                x: projectedTip.x * canvasRect.width,
+                y: projectedTip.y * canvasRect.height,
+                z: points[tipOffset + POINT_Z],
+              };
+            }
+            const worldToPixels =
+              canvasRect.height * PROJECTION_SCALE;
+            return {
+              tips,
+              solver: { ...solverDiagnostics },
+              maximumLinkErrorPixels:
+                maximumLinkError * worldToPixels,
+              rmsLinkErrorPixels:
+                Math.sqrt(
+                  squaredLinkError / Math.max(1, linkSamples),
+                ) * worldToPixels,
+            };
+          };
+        }
         const debugSearch = runtimeSearch;
         const debugTargets = debugSearch.has("debug-targets");
         const debugPointerX = Number(debugSearch.get("debug-x"));
@@ -2323,8 +2505,9 @@
               : 0;
           pointer.pressed = pointer.pressDirection !== 0;
           if (wasPressed && !pointer.pressed) {
-            pointer.impulsePending = false;
-            settleReleasedPointer();
+            if (!pointer.impulsePending) {
+              settleReleasedPointer();
+            }
             return true;
           }
           return false;
@@ -2377,15 +2560,23 @@
 
         function currentPointerInteraction(time) {
           const impulsePending = pointer.impulsePending;
+          const interactionDirection = impulsePending
+            ? pointer.impulseDirection
+            : pointer.pressDirection;
           pointer.impulsePending = false;
-          return pointerInteractionAtAge(
-            pointer.pressed,
-            pointer.pressDirection,
+          const interaction = pointerInteractionAtAge(
+            pointer.pressed || impulsePending,
+            interactionDirection,
             impulsePending
               ? 0
               : PRESS_IMPULSE_TOTAL_SECONDS,
             impulsePending,
           );
+          interaction.direction =
+            pointer.pressed || impulsePending
+              ? interactionDirection
+              : 0;
+          return interaction;
         }
 
         if (interactionDiagnostics) {
@@ -2403,7 +2594,7 @@
         }
 
         function settleReleasedPointer() {
-          runImmediateInteractionFrame(true);
+          runImmediateReleaseFrame();
         }
 
         canvas.addEventListener("pointerenter", (event) => {
@@ -2430,12 +2621,14 @@
             }
             pointer.impulseStartedAt = performance.now() * 0.001;
             pointer.impulsePending = true;
+            pointer.impulseDirection = pointer.pressDirection;
             canvas.dataset.animationImpulseFramesSincePress = "0";
+            canvas.dataset.impulseFrameScheduling = "animation-frame";
+            canvas.dataset.immediateImpulseFrame = "disabled";
             pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
             updatePointer(event);
-            runImmediateInteractionFrame();
           },
           { passive: false },
         );
@@ -2452,6 +2645,9 @@
           releasePointerInteraction();
         });
         canvas.addEventListener("lostpointercapture", () => {
+          if (!pointer.pressed && pointer.impulsePending) {
+            return;
+          }
           releasePointerInteraction();
         });
         canvas.addEventListener("blur", () => {
@@ -2488,6 +2684,7 @@
           if (document.hidden) {
             releaseFromOutsideCanvas();
           }
+          syncAnimationLoopState();
         });
         addEventListener("message", (event) => {
           if (!isTrustedParentMessage(event)) return;
@@ -2516,11 +2713,14 @@
 
         function capturePointerSolverState(points) {
           for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-            const point = points[joint];
+            const pointOffset = joint * POINT_STRIDE;
             const offset = joint * 3;
-            pointerSolverOrigin[offset] = point.x;
-            pointerSolverOrigin[offset + 1] = point.y;
-            pointerSolverOrigin[offset + 2] = point.z;
+            pointerSolverOrigin[offset] =
+              points[pointOffset + POINT_X];
+            pointerSolverOrigin[offset + 1] =
+              points[pointOffset + POINT_Y];
+            pointerSolverOrigin[offset + 2] =
+              points[pointOffset + POINT_Z];
           }
         }
 
@@ -2529,19 +2729,28 @@
             return;
           }
           for (let joint = 1; joint < CHAIN_LINKS; joint++) {
-            const point = points[joint];
+            const pointOffset = joint * POINT_STRIDE;
             const offset = joint * 3;
-            point.x =
+            points[pointOffset + POINT_X] =
               pointerSolverOrigin[offset] +
-              (point.x - pointerSolverOrigin[offset]) *
+              (
+                points[pointOffset + POINT_X] -
+                pointerSolverOrigin[offset]
+              ) *
                 blend;
-            point.y =
+            points[pointOffset + POINT_Y] =
               pointerSolverOrigin[offset + 1] +
-              (point.y - pointerSolverOrigin[offset + 1]) *
+              (
+                points[pointOffset + POINT_Y] -
+                pointerSolverOrigin[offset + 1]
+              ) *
                 blend;
-            point.z =
+            points[pointOffset + POINT_Z] =
               pointerSolverOrigin[offset + 2] +
-              (point.z - pointerSolverOrigin[offset + 2]) *
+              (
+                points[pointOffset + POINT_Z] -
+                pointerSolverOrigin[offset + 2]
+              ) *
                 blend;
           }
         }
@@ -2558,22 +2767,43 @@
             );
 
           for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-            const point = points[joint];
+            const pointOffset = joint * POINT_STRIDE;
             const offset = joint * 3;
 
             // The IK displacement shapes the tentacle, but it must not become
             // Verlet velocity on the next frame. Otherwise the tip overshoots
             // a stationary pointer and is pulled back every other frame.
-            point.px += point.x - pointerSolverOrigin[offset];
-            point.py += point.y - pointerSolverOrigin[offset + 1];
-            point.pz += point.z - pointerSolverOrigin[offset + 2];
+            points[pointOffset + POINT_PREVIOUS_X] +=
+              points[pointOffset + POINT_X] -
+              pointerSolverOrigin[offset];
+            points[pointOffset + POINT_PREVIOUS_Y] +=
+              points[pointOffset + POINT_Y] -
+              pointerSolverOrigin[offset + 1];
+            points[pointOffset + POINT_PREVIOUS_Z] +=
+              points[pointOffset + POINT_Z] -
+              pointerSolverOrigin[offset + 2];
 
             const tipWeight = joint / CHAIN_LINKS;
             const damping =
               tipVelocityDamping * tipWeight * tipWeight;
-            point.px += (point.x - point.px) * damping;
-            point.py += (point.y - point.py) * damping;
-            point.pz += (point.z - point.pz) * damping;
+            points[pointOffset + POINT_PREVIOUS_X] +=
+              (
+                points[pointOffset + POINT_X] -
+                points[pointOffset + POINT_PREVIOUS_X]
+              ) *
+              damping;
+            points[pointOffset + POINT_PREVIOUS_Y] +=
+              (
+                points[pointOffset + POINT_Y] -
+                points[pointOffset + POINT_PREVIOUS_Y]
+              ) *
+              damping;
+            points[pointOffset + POINT_PREVIOUS_Z] +=
+              (
+                points[pointOffset + POINT_Z] -
+                points[pointOffset + POINT_PREVIOUS_Z]
+              ) *
+              damping;
           }
         }
 
@@ -2583,21 +2813,30 @@
           delta,
           pointerWorldX,
           pointerWorldY,
+          solverPixelScale,
         ) {
+          if (interactionDiagnostics) {
+            solverDiagnostics.fabrikAttempts += 1;
+          }
           const forceMagnitude = Math.abs(attraction);
           if (forceMagnitude <= 0) {
+            if (interactionDiagnostics) {
+              solverDiagnostics.fabrikExactZeroSkips += 1;
+            }
             return;
           }
           const forceDirection = Math.sign(attraction);
 
           const points = skeleton.points;
-          const root = points[0];
-          const tip = points[CHAIN_LINKS];
+          const rootOffset = 0;
+          const tipOffset = CHAIN_LINKS * POINT_STRIDE;
           const rootX = skeleton.root.x;
           const rootY = skeleton.root.y;
           const rootZ = skeleton.baseHeight;
-          const pointerDeltaX = pointerWorldX - tip.x;
-          const pointerDeltaY = pointerWorldY - tip.y;
+          const pointerDeltaX =
+            pointerWorldX - points[tipOffset + POINT_X];
+          const pointerDeltaY =
+            pointerWorldY - points[tipOffset + POINT_Y];
           const pointerDistance = length2(
             pointerDeltaX,
             pointerDeltaY,
@@ -2609,10 +2848,10 @@
               ? Math.min(1, maximumTipStep / pointerDistance)
               : 0;
           const targetX =
-            tip.x +
+            points[tipOffset + POINT_X] +
             pointerDeltaX * movementScale * forceDirection;
           const targetY =
-            tip.y +
+            points[tipOffset + POINT_Y] +
             pointerDeltaY * movementScale * forceDirection;
           const horizontalDistance = length2(
             targetX - rootX,
@@ -2626,7 +2865,7 @@
             ),
           );
           const desiredHeight = Math.max(
-            tip.z,
+            points[tipOffset + POINT_Z],
             skeleton.baseHeight + skeleton.tipClearance * 0.88,
           );
           const constrainedTargetZ = Math.min(
@@ -2639,9 +2878,33 @@
               Math.max(0.000001, skeleton.linkLength),
           );
           const targetZ =
-            tip.z +
-            (constrainedTargetZ - tip.z) *
+            points[tipOffset + POINT_Z] +
+            (constrainedTargetZ - points[tipOffset + POINT_Z]) *
               verticalTargetBlend;
+          if (
+            fabrikVisualSkipEnabled &&
+            !skeleton.grabbed
+          ) {
+            const movementTolerance =
+              SOLVER_ERROR_TOLERANCE_PIXELS / solverPixelScale;
+            const requestedTipDeltaX =
+              targetX - points[tipOffset + POINT_X];
+            const requestedTipDeltaY =
+              targetY - points[tipOffset + POINT_Y];
+            const requestedTipDeltaZ =
+              targetZ - points[tipOffset + POINT_Z];
+            if (
+              requestedTipDeltaX * requestedTipDeltaX +
+                requestedTipDeltaY * requestedTipDeltaY +
+                requestedTipDeltaZ * requestedTipDeltaZ <=
+              movementTolerance * movementTolerance
+            ) {
+              if (interactionDiagnostics) {
+                solverDiagnostics.fabrikVisualSkips += 1;
+              }
+              return;
+            }
+          }
           const normalizedSolverForce = clamp(
             forceMagnitude / POINTER_SOLVER_FULL_BODY_FORCE,
             0,
@@ -2662,19 +2925,25 @@
           );
 
           if (rootToTarget >= skeleton.totalLength * 0.9995) {
+            if (interactionDiagnostics) {
+              solverDiagnostics.fabrikDirectSolves += 1;
+            }
             const stepScale = skeleton.linkLength / rootToTarget;
             const stepX = targetDeltaX * stepScale;
             const stepY = targetDeltaY * stepScale;
             const stepZ = targetDeltaZ * stepScale;
-            root.x = rootX;
-            root.y = rootY;
-            root.z = rootZ;
+            points[rootOffset + POINT_X] = rootX;
+            points[rootOffset + POINT_Y] = rootY;
+            points[rootOffset + POINT_Z] = rootZ;
             for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-              const previous = points[joint - 1];
-              const point = points[joint];
-              point.x = previous.x + stepX;
-              point.y = previous.y + stepY;
-              point.z = previous.z + stepZ;
+              const previousOffset = (joint - 1) * POINT_STRIDE;
+              const pointOffset = joint * POINT_STRIDE;
+              points[pointOffset + POINT_X] =
+                points[previousOffset + POINT_X] + stepX;
+              points[pointOffset + POINT_Y] =
+                points[previousOffset + POINT_Y] + stepY;
+              points[pointOffset + POINT_Z] =
+                points[previousOffset + POINT_Z] + stepZ;
             }
             blendPointerSolverBody(points, solverBodyBlend);
             stabilizePointerSolverVelocity(
@@ -2686,45 +2955,107 @@
           }
 
           const solverIterations = skeleton.grabbed ? 20 : 7;
+          let completedSolverIterations = 0;
+          let solverExitedEarly = false;
           for (let iteration = 0; iteration < solverIterations; iteration++) {
-            tip.x = targetX;
-            tip.y = targetY;
-            tip.z = targetZ;
+            completedSolverIterations = iteration + 1;
+            points[tipOffset + POINT_X] = targetX;
+            points[tipOffset + POINT_Y] = targetY;
+            points[tipOffset + POINT_Z] = targetZ;
 
             for (let joint = CHAIN_LINKS - 1; joint >= 0; joint--) {
-              const parent = points[joint];
-              const child = points[joint + 1];
-              const dx = parent.x - child.x;
-              const dy = parent.y - child.y;
-              const dz = parent.z - child.z;
+              const parentOffset = joint * POINT_STRIDE;
+              const childOffset = parentOffset + POINT_STRIDE;
+              const dx =
+                points[parentOffset + POINT_X] -
+                points[childOffset + POINT_X];
+              const dy =
+                points[parentOffset + POINT_Y] -
+                points[childOffset + POINT_Y];
+              const dz =
+                points[parentOffset + POINT_Z] -
+                points[childOffset + POINT_Z];
               const distance = Math.max(
                 0.000001,
                 length3(dx, dy, dz),
               );
               const scale = skeleton.linkLength / distance;
-              parent.x = child.x + dx * scale;
-              parent.y = child.y + dy * scale;
-              parent.z = child.z + dz * scale;
+              points[parentOffset + POINT_X] =
+                points[childOffset + POINT_X] + dx * scale;
+              points[parentOffset + POINT_Y] =
+                points[childOffset + POINT_Y] + dy * scale;
+              points[parentOffset + POINT_Z] =
+                points[childOffset + POINT_Z] + dz * scale;
             }
 
-            root.x = rootX;
-            root.y = rootY;
-            root.z = rootZ;
+            points[rootOffset + POINT_X] = rootX;
+            points[rootOffset + POINT_Y] = rootY;
+            points[rootOffset + POINT_Z] = rootZ;
 
             for (let joint = 0; joint < CHAIN_LINKS; joint++) {
-              const parent = points[joint];
-              const child = points[joint + 1];
-              const dx = child.x - parent.x;
-              const dy = child.y - parent.y;
-              const dz = child.z - parent.z;
+              const parentOffset = joint * POINT_STRIDE;
+              const childOffset = parentOffset + POINT_STRIDE;
+              const dx =
+                points[childOffset + POINT_X] -
+                points[parentOffset + POINT_X];
+              const dy =
+                points[childOffset + POINT_Y] -
+                points[parentOffset + POINT_Y];
+              const dz =
+                points[childOffset + POINT_Z] -
+                points[parentOffset + POINT_Z];
               const distance = Math.max(
                 0.000001,
                 length3(dx, dy, dz),
               );
               const scale = skeleton.linkLength / distance;
-              child.x = parent.x + dx * scale;
-              child.y = parent.y + dy * scale;
-              child.z = parent.z + dz * scale;
+              points[childOffset + POINT_X] =
+                points[parentOffset + POINT_X] + dx * scale;
+              points[childOffset + POINT_Y] =
+                points[parentOffset + POINT_Y] + dy * scale;
+              points[childOffset + POINT_Z] =
+                points[parentOffset + POINT_Z] + dz * scale;
+            }
+
+            if (
+              fabrikEarlyExitEnabled &&
+              !skeleton.grabbed &&
+              completedSolverIterations >= MIN_FABRIK_ITERATIONS
+            ) {
+              const convergenceTolerance =
+                SOLVER_ERROR_TOLERANCE_PIXELS / solverPixelScale;
+              const convergenceDeltaX =
+                points[tipOffset + POINT_X] - targetX;
+              const convergenceDeltaY =
+                points[tipOffset + POINT_Y] - targetY;
+              const convergenceDeltaZ =
+                points[tipOffset + POINT_Z] - targetZ;
+              if (
+                convergenceDeltaX * convergenceDeltaX +
+                  convergenceDeltaY * convergenceDeltaY +
+                  convergenceDeltaZ * convergenceDeltaZ <=
+                convergenceTolerance * convergenceTolerance
+              ) {
+                solverExitedEarly = true;
+                break;
+              }
+            }
+          }
+          if (interactionDiagnostics) {
+            solverDiagnostics.fabrikIterativeSolves += 1;
+            solverDiagnostics.fabrikIterations +=
+              completedSolverIterations;
+            if (skeleton.grabbed) {
+              solverDiagnostics.fabrikGrabbedSolves += 1;
+              solverDiagnostics.fabrikGrabbedIterations +=
+                completedSolverIterations;
+            } else {
+              solverDiagnostics.fabrikOrdinarySolves += 1;
+              solverDiagnostics.fabrikOrdinaryIterations +=
+                completedSolverIterations;
+            }
+            if (solverExitedEarly) {
+              solverDiagnostics.fabrikEarlyExits += 1;
             }
           }
           blendPointerSolverBody(points, solverBodyBlend);
@@ -2741,6 +3072,15 @@
         );
 
         function updateSkeletons(time, delta, wallTime) {
+          if (interactionDiagnostics) {
+            resetSolverDiagnostics();
+          }
+          const solverPixelScale = Math.max(
+            1,
+            canvasRect.height * PROJECTION_SCALE,
+          );
+          const solverErrorTolerance =
+            SOLVER_ERROR_TOLERANCE_PIXELS / solverPixelScale;
           if (debugPointerOverride) {
             pointer.targetX = clamp(debugPointerX, 0, 1);
             pointer.targetY = clamp(debugPointerY, 0, 1);
@@ -2772,7 +3112,7 @@
             canvas.dataset.lastImpulsePeakForceMultiplier =
               pointerInteraction.forceMultiplier.toFixed(3);
             canvas.dataset.lastImpulseDirection =
-              String(pointer.pressDirection);
+              String(pointerInteraction.direction);
           }
           const collectDiagnostics =
             interactionDiagnostics ||
@@ -2804,7 +3144,7 @@
               pointerWorldY - skeleton.root.y,
             );
             if (
-              pointer.pressDirection >= 0 &&
+              pointerInteraction.direction >= 0 &&
               rootDistance <= skeleton.maximumGrabDistance
             ) {
               let insertionIndex = grabberCount;
@@ -2855,17 +3195,21 @@
 
           for (const skeleton of skeletons) {
             const points = skeleton.points;
-            const root = points[0];
-            root.x = skeleton.root.x;
-            root.y = skeleton.root.y;
-            root.z = skeleton.baseHeight;
-            root.px = root.x;
-            root.py = root.y;
-            root.pz = root.z;
+            const rootOffset = 0;
+            const tipOffset = CHAIN_LINKS * POINT_STRIDE;
+            points[rootOffset + POINT_X] = skeleton.root.x;
+            points[rootOffset + POINT_Y] = skeleton.root.y;
+            points[rootOffset + POINT_Z] = skeleton.baseHeight;
+            points[rootOffset + POINT_PREVIOUS_X] =
+              points[rootOffset + POINT_X];
+            points[rootOffset + POINT_PREVIOUS_Y] =
+              points[rootOffset + POINT_Y];
+            points[rootOffset + POINT_PREVIOUS_Z] =
+              points[rootOffset + POINT_Z];
 
-            let restX = root.x;
-            let restY = root.y;
-            let restZ = root.z;
+            let restX = points[rootOffset + POINT_X];
+            let restY = points[rootOffset + POINT_Y];
+            let restZ = points[rootOffset + POINT_Z];
             const timeSpeed = time * skeleton.speed;
             const timeSpeedSecondary = timeSpeed * 0.47;
             const timeSpeedDetail = timeSpeed * 1.53;
@@ -2888,27 +3232,26 @@
             const verticalBaseCosine = Math.cos(verticalBase);
 
             for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-              const point = points[joint];
-              const profile = jointProfiles[joint];
+              const pointOffset = joint * POINT_STRIDE;
               const noiseA =
-                noiseABaseSine * profile.noisePhaseACosine +
-                noiseABaseCosine * profile.noisePhaseASine;
+                noiseABaseSine * jointNoisePhaseACosines[joint] +
+                noiseABaseCosine * jointNoisePhaseASines[joint];
               const noiseB =
-                noiseBBaseSine * profile.noisePhaseBCosine +
-                noiseBBaseCosine * profile.noisePhaseBSine;
+                noiseBBaseSine * jointNoisePhaseBCosines[joint] +
+                noiseBBaseCosine * jointNoisePhaseBSines[joint];
               const noiseC =
-                noiseCBaseSine * profile.noisePhaseCCosine +
-                noiseCBaseCosine * profile.noisePhaseCSine;
+                noiseCBaseSine * jointNoisePhaseCCosines[joint] +
+                noiseCBaseCosine * jointNoisePhaseCSines[joint];
               const spatialNoise =
                 noiseA * 0.62 +
                 noiseB * 0.27 +
                 noiseC * 0.11;
               const restAngle =
                 skeleton.baseAngle +
-                skeleton.bend * profile.bendFactor +
+                skeleton.bend * jointBendFactors[joint] +
                 spatialNoise *
                   skeleton.noiseStrength *
-                  profile.noiseWeight;
+                  jointNoiseWeights[joint];
               const horizontalStep =
                 skeleton.horizontalSteps[joint];
               const verticalStep =
@@ -2921,34 +3264,51 @@
                   0.96 +
                   (
                     verticalBaseSine *
-                      profile.verticalPhaseCosine +
+                      jointVerticalPhaseCosines[joint] +
                     verticalBaseCosine *
-                      profile.verticalPhaseSine
+                      jointVerticalPhaseSines[joint]
                   ) *
                     0.035
                 );
 
-              const velocityX = (point.x - point.px) * velocityDamping;
-              const velocityY = (point.y - point.py) * velocityDamping;
-              const velocityZ = (point.z - point.pz) * velocityDamping;
-              point.px = point.x;
-              point.py = point.y;
-              point.pz = point.z;
-              point.x +=
+              const velocityX =
+                (
+                  points[pointOffset + POINT_X] -
+                  points[pointOffset + POINT_PREVIOUS_X]
+                ) *
+                velocityDamping;
+              const velocityY =
+                (
+                  points[pointOffset + POINT_Y] -
+                  points[pointOffset + POINT_PREVIOUS_Y]
+                ) *
+                velocityDamping;
+              const velocityZ =
+                (
+                  points[pointOffset + POINT_Z] -
+                  points[pointOffset + POINT_PREVIOUS_Z]
+                ) *
+                velocityDamping;
+              points[pointOffset + POINT_PREVIOUS_X] =
+                points[pointOffset + POINT_X];
+              points[pointOffset + POINT_PREVIOUS_Y] =
+                points[pointOffset + POINT_Y];
+              points[pointOffset + POINT_PREVIOUS_Z] =
+                points[pointOffset + POINT_Z];
+              points[pointOffset + POINT_X] +=
                 velocityX +
-                (restX - point.x) * restResponse;
-              point.y +=
+                (restX - points[pointOffset + POINT_X]) * restResponse;
+              points[pointOffset + POINT_Y] +=
                 velocityY +
-                (restY - point.y) * restResponse;
-              point.z +=
+                (restY - points[pointOffset + POINT_Y]) * restResponse;
+              points[pointOffset + POINT_Z] +=
                 velocityZ +
-                (restZ - point.z) * restResponse;
+                (restZ - points[pointOffset + POINT_Z]) * restResponse;
             }
 
-            const tip = points[CHAIN_LINKS];
             const tipDistance = length2(
-              pointerWorldX - tip.x,
-              pointerWorldY - tip.y,
+              pointerWorldX - points[tipOffset + POINT_X],
+              pointerWorldY - points[tipOffset + POINT_Y],
             );
             const normalizedDistance = clamp(
               tipDistance /
@@ -2960,9 +3320,8 @@
               1,
             );
             const distanceFalloff = 1 - normalizedDistance;
-            const forceDirection = pointer.pressed
-              ? pointer.pressDirection
-              : 1;
+            const forceDirection =
+              pointerInteraction.direction || 1;
             const pointerForce =
               pointer.energy *
               distanceFalloff *
@@ -2979,60 +3338,104 @@
                 forceMagnitude,
               );
             }
-            const surfaceDistance = tip.z - skeleton.baseHeight;
+            const surfaceDistance =
+              points[tipOffset + POINT_Z] - skeleton.baseHeight;
             const repulsion = clamp(
               1 - surfaceDistance / skeleton.tipClearance,
               0,
               1,
             );
-            tip.z += repulsion * repulsion * delta * 0.160;
+            points[tipOffset + POINT_Z] +=
+              repulsion * repulsion * delta * 0.160;
 
+            let completedPbdIterations = 0;
+            let pbdExitedEarly = false;
             for (let iteration = 0; iteration < 8; iteration++) {
-              root.x = skeleton.root.x;
-              root.y = skeleton.root.y;
-              root.z = skeleton.baseHeight;
+              completedPbdIterations = iteration + 1;
+              let constraintsWithinTolerance =
+                pbdEarlyExitEnabled &&
+                completedPbdIterations >= MIN_PBD_ITERATIONS;
+              let tipHeightAdjusted = false;
+              points[rootOffset + POINT_X] = skeleton.root.x;
+              points[rootOffset + POINT_Y] = skeleton.root.y;
+              points[rootOffset + POINT_Z] = skeleton.baseHeight;
 
               for (let joint = 0; joint < CHAIN_LINKS; joint++) {
-                const a = points[joint];
-                const b = points[joint + 1];
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-                const dz = b.z - a.z;
+                const pointAOffset = joint * POINT_STRIDE;
+                const pointBOffset = pointAOffset + POINT_STRIDE;
+                const dx =
+                  points[pointBOffset + POINT_X] -
+                  points[pointAOffset + POINT_X];
+                const dy =
+                  points[pointBOffset + POINT_Y] -
+                  points[pointAOffset + POINT_Y];
+                const dz =
+                  points[pointBOffset + POINT_Z] -
+                  points[pointAOffset + POINT_Z];
                 const distance = Math.max(
                   0.000001,
                   length3(dx, dy, dz),
                 );
                 const correction =
                   (distance - skeleton.linkLength) / distance;
+                if (
+                  constraintsWithinTolerance &&
+                  Math.abs(distance - skeleton.linkLength) >
+                    solverErrorTolerance
+                ) {
+                  constraintsWithinTolerance = false;
+                }
 
                 if (joint === 0) {
-                  b.x -= dx * correction;
-                  b.y -= dy * correction;
-                  b.z -= dz * correction;
+                  points[pointBOffset + POINT_X] -= dx * correction;
+                  points[pointBOffset + POINT_Y] -= dy * correction;
+                  points[pointBOffset + POINT_Z] -= dz * correction;
                 } else {
                   const weightA = 0.48;
                   const weightB = 0.52;
-                  a.x += dx * correction * weightA;
-                  a.y += dy * correction * weightA;
-                  a.z += dz * correction * weightA;
-                  b.x -= dx * correction * weightB;
-                  b.y -= dy * correction * weightB;
-                  b.z -= dz * correction * weightB;
+                  points[pointAOffset + POINT_X] +=
+                    dx * correction * weightA;
+                  points[pointAOffset + POINT_Y] +=
+                    dy * correction * weightA;
+                  points[pointAOffset + POINT_Z] +=
+                    dz * correction * weightA;
+                  points[pointBOffset + POINT_X] -=
+                    dx * correction * weightB;
+                  points[pointBOffset + POINT_Y] -=
+                    dy * correction * weightB;
+                  points[pointBOffset + POINT_Z] -=
+                    dz * correction * weightB;
                 }
               }
 
-              const constrainedTip = points[CHAIN_LINKS];
               if (
-                constrainedTip.z < skeleton.minimumTipHeight
+                points[tipOffset + POINT_Z] <
+                skeleton.minimumTipHeight
               ) {
-                constrainedTip.z +=
+                tipHeightAdjusted = true;
+                points[tipOffset + POINT_Z] +=
                   (
                     skeleton.minimumTipHeight -
-                    constrainedTip.z
+                    points[tipOffset + POINT_Z]
                   ) *
-                  0.28;
+                    0.28;
               }
 
+              if (
+                constraintsWithinTolerance &&
+                !tipHeightAdjusted
+              ) {
+                pbdExitedEarly = true;
+                break;
+              }
+            }
+            if (interactionDiagnostics) {
+              solverDiagnostics.pbdChains += 1;
+              solverDiagnostics.pbdIterations +=
+                completedPbdIterations;
+              if (pbdExitedEarly) {
+                solverDiagnostics.pbdEarlyExits += 1;
+              }
             }
 
             solveChainTowardPointer(
@@ -3041,26 +3444,27 @@
               delta,
               pointerWorldX,
               pointerWorldY,
+              solverPixelScale,
             );
 
             if (collectDiagnostics) {
               const forceMagnitude = Math.abs(pointerForce);
-              const finalTip = points[CHAIN_LINKS];
               diagnostics.maximumRestDisplacement = Math.max(
                 diagnostics.maximumRestDisplacement,
                 length3(
-                  (finalTip.x - restX) /
+                  (points[tipOffset + POINT_X] - restX) /
                     Math.max(0.001, surfaceAspect),
-                  finalTip.y - restY,
-                  finalTip.z - restZ,
+                  points[tipOffset + POINT_Y] - restY,
+                  points[tipOffset + POINT_Z] - restZ,
                 ),
               );
               const finalProjectedTipX =
-                finalTip.x / surfaceAspect;
-              const finalProjectedTipY = finalTip.y;
+                points[tipOffset + POINT_X] / surfaceAspect;
+              const finalProjectedTipY =
+                points[tipOffset + POINT_Y];
               const cursorDistance = length2(
-                pointerWorldX - finalTip.x,
-                pointerWorldY - finalTip.y,
+                pointerWorldX - points[tipOffset + POINT_X],
+                pointerWorldY - points[tipOffset + POINT_Y],
               );
               if (skeleton.grabbed) {
                 diagnostics.maximumGrabberError = Math.max(
@@ -3091,7 +3495,7 @@
               }
               diagnostics.minimumTipClearance = Math.min(
                 diagnostics.minimumTipClearance,
-                finalTip.z - skeleton.baseHeight,
+                points[tipOffset + POINT_Z] - skeleton.baseHeight,
               );
             }
 
@@ -3102,34 +3506,36 @@
             for (let renderJoint = 0; renderJoint < RENDER_POINTS; renderJoint++) {
               const chainJoint =
                 renderChainJoints[renderJoint];
-              const point = points[chainJoint];
+              const pointOffset = chainJoint * POINT_STRIDE;
               const radius =
                 skeleton.radius *
                 renderRadiusScales[renderJoint];
               const offset =
                 skeleton.pixelOffset + renderJoint * 4;
-              skeletonPixels[offset] = point.x;
-              skeletonPixels[offset + 1] = point.y;
-              skeletonPixels[offset + 2] = point.z;
+              skeletonPixels[offset] = points[pointOffset + POINT_X];
+              skeletonPixels[offset + 1] =
+                points[pointOffset + POINT_Y];
+              skeletonPixels[offset + 2] =
+                points[pointOffset + POINT_Z];
               skeletonPixels[offset + 3] = radius;
 
               const boundRadius =
                 radius * renderBoundScales[renderJoint];
               boundMinimumX = Math.min(
                 boundMinimumX,
-                point.x - boundRadius,
+                points[pointOffset + POINT_X] - boundRadius,
               );
               boundMinimumY = Math.min(
                 boundMinimumY,
-                point.y - boundRadius,
+                points[pointOffset + POINT_Y] - boundRadius,
               );
               boundMaximumX = Math.max(
                 boundMaximumX,
-                point.x + boundRadius,
+                points[pointOffset + POINT_X] + boundRadius,
               );
               boundMaximumY = Math.max(
                 boundMaximumY,
-                point.y + boundRadius,
+                points[pointOffset + POINT_Y] + boundRadius,
               );
             }
 
@@ -3140,10 +3546,10 @@
                 renderSegment < RENDER_POINTS - 1;
                 renderSegment++
               ) {
-                const pointA =
-                  points[renderChainJoints[renderSegment]];
-                const pointB =
-                  points[renderChainJoints[renderSegment + 1]];
+                const pointAOffset =
+                  renderChainJoints[renderSegment] * POINT_STRIDE;
+                const pointBOffset =
+                  renderChainJoints[renderSegment + 1] * POINT_STRIDE;
                 const radiusA =
                   skeleton.radius *
                   renderRadiusScales[renderSegment];
@@ -3162,7 +3568,10 @@
                   Math.floor(
                     (
                       (
-                        Math.min(pointA.x, pointB.x) -
+                        Math.min(
+                          points[pointAOffset + POINT_X],
+                          points[pointBOffset + POINT_X],
+                        ) -
                         segmentPadding
                       ) /
                       surfaceAspect
@@ -3175,7 +3584,10 @@
                 const segmentMinimumCellY = clamp(
                   Math.floor(
                     (
-                      Math.min(pointA.y, pointB.y) -
+                      Math.min(
+                        points[pointAOffset + POINT_Y],
+                        points[pointBOffset + POINT_Y],
+                      ) -
                       segmentPadding
                     ) *
                       SPATIAL_GRID_ROWS,
@@ -3187,7 +3599,10 @@
                   Math.floor(
                     (
                       (
-                        Math.max(pointA.x, pointB.x) +
+                        Math.max(
+                          points[pointAOffset + POINT_X],
+                          points[pointBOffset + POINT_X],
+                        ) +
                         segmentPadding
                       ) /
                       surfaceAspect
@@ -3200,7 +3615,10 @@
                 const segmentMaximumCellY = clamp(
                   Math.floor(
                     (
-                      Math.max(pointA.y, pointB.y) +
+                      Math.max(
+                        points[pointAOffset + POINT_Y],
+                        points[pointBOffset + POINT_Y],
+                      ) +
                       segmentPadding
                     ) *
                       SPATIAL_GRID_ROWS,
@@ -3287,6 +3705,62 @@
                 touchedSkeletonCells[touchedCell]
               ] = 0;
             }
+          }
+
+          if (interactionDiagnostics) {
+            canvas.dataset.pbdChains = String(
+              solverDiagnostics.pbdChains,
+            );
+            canvas.dataset.pbdIterations = String(
+              solverDiagnostics.pbdIterations,
+            );
+            canvas.dataset.pbdAverageIterations = (
+              solverDiagnostics.pbdIterations /
+              Math.max(1, solverDiagnostics.pbdChains)
+            ).toFixed(3);
+            canvas.dataset.pbdEarlyExits = String(
+              solverDiagnostics.pbdEarlyExits,
+            );
+            canvas.dataset.fabrikAttempts = String(
+              solverDiagnostics.fabrikAttempts,
+            );
+            canvas.dataset.fabrikExactZeroSkips = String(
+              solverDiagnostics.fabrikExactZeroSkips,
+            );
+            canvas.dataset.fabrikVisualSkips = String(
+              solverDiagnostics.fabrikVisualSkips,
+            );
+            canvas.dataset.fabrikDirectSolves = String(
+              solverDiagnostics.fabrikDirectSolves,
+            );
+            canvas.dataset.fabrikIterativeSolves = String(
+              solverDiagnostics.fabrikIterativeSolves,
+            );
+            canvas.dataset.fabrikIterations = String(
+              solverDiagnostics.fabrikIterations,
+            );
+            canvas.dataset.fabrikGrabbedSolves = String(
+              solverDiagnostics.fabrikGrabbedSolves,
+            );
+            canvas.dataset.fabrikGrabbedIterations = String(
+              solverDiagnostics.fabrikGrabbedIterations,
+            );
+            canvas.dataset.fabrikOrdinarySolves = String(
+              solverDiagnostics.fabrikOrdinarySolves,
+            );
+            canvas.dataset.fabrikOrdinaryIterations = String(
+              solverDiagnostics.fabrikOrdinaryIterations,
+            );
+            canvas.dataset.fabrikAverageIterations = (
+              solverDiagnostics.fabrikIterations /
+              Math.max(
+                1,
+                solverDiagnostics.fabrikIterativeSolves,
+              )
+            ).toFixed(3);
+            canvas.dataset.fabrikEarlyExits = String(
+              solverDiagnostics.fabrikEarlyExits,
+            );
           }
 
           if (debugTargets) {
@@ -3381,7 +3855,7 @@
           gl.bindTexture(gl.TEXTURE_2D, texture);
         }
 
-        function render(time) {
+        function renderFrame(time) {
           resize();
           const texelX = 1 / pixelWidth;
           const texelY = 1 / pixelHeight;
@@ -3464,6 +3938,150 @@
           gl.drawArrays(gl.TRIANGLES, 0, 3);
         }
 
+        const gpuTimerQueryStates = gpuTimingEnabled
+          ? new Uint8Array(GPU_TIMING_QUERY_POOL_SIZE)
+          : null;
+        const gpuTimerQueryInvalid = gpuTimingEnabled
+          ? new Uint8Array(GPU_TIMING_QUERY_POOL_SIZE)
+          : null;
+        let gpuTimingRenderedFrames = 0;
+        let gpuTimingQueryCursor = 0;
+        let gpuTimingSampleCount = 0;
+        let gpuTimingMeanMilliseconds = 0;
+        let gpuTimingPendingQueries = 0;
+        let gpuTimingDroppedSamples = 0;
+        let gpuTimingDisjointCount = 0;
+        let gpuTimingWasDisjoint = false;
+
+        function publishGpuTimingCounters() {
+          canvas.dataset.gpuTimingSamples = String(
+            gpuTimingSampleCount,
+          );
+          canvas.dataset.gpuTimingPending = String(
+            gpuTimingPendingQueries,
+          );
+          canvas.dataset.gpuTimingDroppedSamples = String(
+            gpuTimingDroppedSamples,
+          );
+          canvas.dataset.gpuTimingDisjointCount = String(
+            gpuTimingDisjointCount,
+          );
+        }
+
+        function pollGpuTimerQueries(checkDisjoint = false) {
+          if (gpuTimingPendingQueries === 0 && !checkDisjoint) {
+            return false;
+          }
+          const disjoint = Boolean(
+            gl.getParameter(gpuTimerExtension.GPU_DISJOINT_EXT),
+          );
+          if (disjoint) {
+            if (!gpuTimingWasDisjoint) {
+              gpuTimingDisjointCount += 1;
+            }
+            for (
+              let queryIndex = 0;
+              queryIndex < gpuTimerQueries.length;
+              queryIndex += 1
+            ) {
+              if (gpuTimerQueryStates[queryIndex] !== 0) {
+                gpuTimerQueryInvalid[queryIndex] = 1;
+              }
+            }
+          }
+          gpuTimingWasDisjoint = disjoint;
+
+          for (
+            let queryIndex = 0;
+            queryIndex < gpuTimerQueries.length;
+            queryIndex += 1
+          ) {
+            if (gpuTimerQueryStates[queryIndex] === 0) {
+              continue;
+            }
+            const query = gpuTimerQueries[queryIndex];
+            if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) {
+              continue;
+            }
+            if (!gpuTimerQueryInvalid[queryIndex] && !disjoint) {
+              const elapsedNanoseconds = Number(
+                gl.getQueryParameter(query, gl.QUERY_RESULT),
+              );
+              const elapsedMilliseconds = elapsedNanoseconds / 1e6;
+              gpuTimingSampleCount += 1;
+              gpuTimingMeanMilliseconds +=
+                (elapsedMilliseconds - gpuTimingMeanMilliseconds) /
+                gpuTimingSampleCount;
+              canvas.dataset.gpuMs = elapsedMilliseconds.toFixed(3);
+              canvas.dataset.gpuMsAverage =
+                gpuTimingMeanMilliseconds.toFixed(3);
+            }
+            gpuTimerQueryStates[queryIndex] = 0;
+            gpuTimerQueryInvalid[queryIndex] = 0;
+            gpuTimingPendingQueries -= 1;
+          }
+          publishGpuTimingCounters();
+          return disjoint;
+        }
+
+        function renderFrameWithGpuTiming(time) {
+          const shouldSample =
+            gpuTimingRenderedFrames % GPU_TIMING_SAMPLE_INTERVAL === 0;
+          gpuTimingRenderedFrames += 1;
+          const disjoint = pollGpuTimerQueries(shouldSample);
+          if (!shouldSample) {
+            renderFrame(time);
+            return;
+          }
+          if (disjoint) {
+            renderFrame(time);
+            return;
+          }
+
+          let availableQueryIndex = -1;
+          for (
+            let queryOffset = 0;
+            queryOffset < gpuTimerQueries.length;
+            queryOffset += 1
+          ) {
+            const queryIndex =
+              (gpuTimingQueryCursor + queryOffset) %
+              gpuTimerQueries.length;
+            if (gpuTimerQueryStates[queryIndex] === 0) {
+              availableQueryIndex = queryIndex;
+              break;
+            }
+          }
+          if (availableQueryIndex < 0) {
+            gpuTimingDroppedSamples += 1;
+            publishGpuTimingCounters();
+            renderFrame(time);
+            return;
+          }
+
+          gpuTimingQueryCursor =
+            (availableQueryIndex + 1) % gpuTimerQueries.length;
+          gl.beginQuery(
+            gpuTimerExtension.TIME_ELAPSED_EXT,
+            gpuTimerQueries[availableQueryIndex],
+          );
+          try {
+            renderFrame(time);
+          } finally {
+            gl.endQuery(gpuTimerExtension.TIME_ELAPSED_EXT);
+            gpuTimerQueryStates[availableQueryIndex] = 1;
+            gpuTimingPendingQueries += 1;
+            publishGpuTimingCounters();
+          }
+        }
+
+        if (gpuTimingEnabled) {
+          publishGpuTimingCounters();
+        }
+        const render = gpuTimingEnabled
+          ? renderFrameWithGpuTiming
+          : renderFrame;
+
         let lastTime =
           useManualAnimationFrame &&
           Number.isFinite(requestedAnimationTimeOrigin)
@@ -3490,19 +4108,11 @@
             diagnostics.maximumRestDisplacement.toFixed(5);
         }
 
-        function runImmediateInteractionFrame(
-          force = false,
-          minimumDelta = 0,
-        ) {
-          if (
-            immediateFrameInProgress ||
-            (!force && !pointer.impulsePending)
-          ) {
+        function runImmediateReleaseFrame(minimumDelta = 0) {
+          if (immediateFrameInProgress) {
             return;
           }
           immediateFrameInProgress = true;
-          const submitsInitialImpulse = pointer.impulsePending;
-          const inputStartedAt = pointer.impulseStartedAt;
           const now = performance.now() * 0.001;
           const elapsed = Math.max(0.001, now - lastTime);
           const delta = Math.min(
@@ -3518,33 +4128,34 @@
             performance.now() - physicsStartedAt;
           const renderStartedAt = performance.now();
           render(smoothedTime);
-          gl.flush();
           recordRenderedInteraction();
           lastRenderSubmissionDuration =
             performance.now() - renderStartedAt;
-          if (submitsInitialImpulse) {
-            canvas.dataset.inputToImpulseSubmissionMs =
-              (
-                performance.now() -
-                inputStartedAt * 1000
-              ).toFixed(1);
-            canvas.dataset.immediateImpulseFrame = "enabled";
-          }
           skipRedundantAnimationFrame = true;
           immediateFrameInProgress = false;
         }
 
         function frame(nowMilliseconds) {
+          animationFrameRequest = null;
           const now = nowMilliseconds * 0.001;
-          if (!runtimeVisible) {
-            lastTime = now;
+          if (!runtimeVisible || document.hidden) {
             diagnosticStart = now;
             canvas.dataset.runtimePaused = "true";
-            scheduleFrame();
+            syncAnimationLoopState();
             return;
           }
+          if (resetAnimationClockOnNextFrame) {
+            lastTime = now - 1 / 60;
+            diagnosticStart = now;
+            skipRedundantAnimationFrame = false;
+            resetAnimationClockOnNextFrame = false;
+          }
           canvas.dataset.runtimePaused = "false";
-          if (scrollRenderingSuppressed && !pointer.pressed) {
+          if (
+            scrollRenderingSuppressed &&
+            !pointer.pressed &&
+            !pointer.impulsePending
+          ) {
             // The last complete full-resolution texture is already held on
             // screen during a scroll burst. Advancing hundreds of invisible
             // Verlet chains here only competes with the parent page's scroll
@@ -3568,16 +4179,37 @@
             return;
           }
           skipRedundantAnimationFrame = false;
-          const delta = Math.min(
+          const previousFrameTime = lastTime;
+          const frameDelta = Math.min(
             0.033,
             Math.max(0.001, now - lastTime),
           );
           lastTime = now;
+          const submitsInitialImpulse = pointer.impulsePending;
+          const inputStartedAt = pointer.impulseStartedAt;
+          const delta = submitsInitialImpulse
+            ? Math.min(
+                0.033,
+                Math.max(
+                  1 / 90,
+                  inputStartedAt - previousFrameTime,
+                ),
+              )
+            : frameDelta;
           canvas.dataset.physicsSubsteps = "1";
           canvas.dataset.physicsElapsedMs =
             (delta * 1000).toFixed(1);
           const motionDelta =
             delta * (prefersReducedMotion ? 0.22 : 1);
+          if (submitsInitialImpulse) {
+            canvas.dataset.impulsePhysicsDeltaMs =
+              (delta * 1000).toFixed(1);
+            canvas.dataset.inputToImpulseRafStartMs =
+              (
+                performance.now() -
+                inputStartedAt * 1000
+              ).toFixed(1);
+          }
           const physicsStartedAt = performance.now();
           smoothedTime += motionDelta;
           updateSkeletons(smoothedTime, delta, now);
@@ -3593,12 +4225,23 @@
           }
           lastPhysicsDuration =
             performance.now() - physicsStartedAt;
-          if (!scrollRenderingSuppressed || pointer.pressed) {
+          if (
+            !scrollRenderingSuppressed ||
+            pointer.pressed ||
+            submitsInitialImpulse
+          ) {
             const renderStartedAt = performance.now();
             render(smoothedTime);
             recordRenderedInteraction();
             lastRenderSubmissionDuration =
               performance.now() - renderStartedAt;
+            if (submitsInitialImpulse) {
+              canvas.dataset.inputToImpulseSubmissionMs =
+                (
+                  performance.now() -
+                  inputStartedAt * 1000
+                ).toFixed(1);
+            }
             diagnosticFrames += 1;
           }
           if (now - diagnosticStart >= 1) {
@@ -3659,14 +4302,66 @@
           scheduleFrame();
         }
 
+        function runtimeCanAnimate() {
+          return runtimeVisible && !document.hidden;
+        }
+
+        function cancelScheduledAnimationFrame() {
+          if (animationFrameRequest !== null) {
+            cancelAnimationFrame(animationFrameRequest);
+            animationFrameRequest = null;
+          }
+          if (reportedAnimationFrameScheduled !== false) {
+            reportedAnimationFrameScheduled = false;
+            canvas.dataset.animationFrameScheduled = "false";
+          }
+        }
+
+        function syncAnimationLoopState() {
+          const canAnimate = runtimeCanAnimate();
+          canvas.dataset.runtimePaused = canAnimate ? "false" : "true";
+          if (useManualAnimationFrame) {
+            animationRuntimeActive = canAnimate;
+            canvas.dataset.animationLoop = "manual";
+            cancelScheduledAnimationFrame();
+            return;
+          }
+          if (!canAnimate) {
+            if (animationRuntimeActive) {
+              resetAnimationClockOnNextFrame = true;
+            }
+            animationRuntimeActive = false;
+            canvas.dataset.animationLoop = "paused";
+            cancelScheduledAnimationFrame();
+            return;
+          }
+          if (!animationRuntimeActive) {
+            resetAnimationClockOnNextFrame = true;
+          }
+          animationRuntimeActive = true;
+          canvas.dataset.animationLoop = "running";
+          scheduleFrame();
+        }
+
         function scheduleFrame() {
-          if (!useManualAnimationFrame) {
-            requestAnimationFrame(frame);
+          if (
+            useManualAnimationFrame ||
+            !animationLoopReady ||
+            !runtimeCanAnimate() ||
+            animationFrameRequest !== null
+          ) {
+            return;
+          }
+          animationFrameRequest = requestAnimationFrame(frame);
+          if (reportedAnimationFrameScheduled !== true) {
+            reportedAnimationFrameScheduled = true;
+            canvas.dataset.animationFrameScheduled = "true";
           }
         }
 
         updateSkeletons(smoothedTime, 1 / 60, smoothedTime);
         resize();
+        animationLoopReady = true;
         if (useManualAnimationFrame) {
           window.__mutaTentaclesDebugSpatialGridRows =
             SPATIAL_GRID_ROWS;
@@ -3679,7 +4374,7 @@
             );
           };
         } else {
-          scheduleFrame();
+          syncAnimationLoopState();
         }
       })();
     </script>

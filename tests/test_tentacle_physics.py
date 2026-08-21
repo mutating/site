@@ -81,6 +81,116 @@ def test_tentacle_page_shows_accessible_fallback_without_webgl2(
     assert errors == []
 
 
+def test_gpu_timing_is_disabled_without_requesting_the_extension(
+    driver: DriverFactory,
+) -> None:
+    """The production-default path does not even request the timer extension."""
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              globalThis.__gpuTimerExtensionRequests = 0;
+              const nativeGetExtension =
+                WebGL2RenderingContext.prototype.getExtension;
+              WebGL2RenderingContext.prototype.getExtension = function (name) {
+                if (name === "EXT_disjoint_timer_query_webgl2") {
+                  globalThis.__gpuTimerExtensionRequests += 1;
+                }
+                return nativeGetExtension.call(this, name);
+              };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute("data-gpu-timing", "disabled")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+
+    assert page.evaluate("globalThis.__gpuTimerExtensionRequests") == 0
+    assert canvas.get_attribute("data-gpu-ms") is None
+
+
+def test_gpu_timing_degrades_to_unsupported_without_affecting_rendering(
+    driver: DriverFactory,
+) -> None:
+    """Missing timer support remains an ordinary, renderable runtime state."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}&gpu-timing=1"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetExtension =
+                WebGL2RenderingContext.prototype.getExtension;
+              WebGL2RenderingContext.prototype.getExtension = function (name) {
+                if (name === "EXT_disjoint_timer_query_webgl2") return null;
+                return nativeGetExtension.call(this, name);
+              };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute("data-gpu-timing", "unsupported")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "1")
+    assert canvas.get_attribute("data-gpu-ms") is None
+
+
+def test_gpu_timing_publishes_an_asynchronous_result_when_supported(
+    driver: DriverFactory,
+) -> None:
+    """A supported timer eventually reports finite GPU time without waiting."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
+            "&gpu-timing=1&gpu-timing-interval=1"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    status = canvas.get_attribute("data-gpu-timing")
+    assert status in {"enabled", "unsupported"}
+    if status == "unsupported":
+        pytest.skip("Browser GPU does not expose timer queries")
+
+    for _index in range(180):
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+        if int(canvas.get_attribute("data-gpu-timing-samples") or "0") > 0:
+            break
+        page.wait_for_timeout(2)
+
+    sample_count = int(
+        canvas.get_attribute("data-gpu-timing-samples") or "0"
+    )
+    latest_gpu_ms = float(canvas.get_attribute("data-gpu-ms") or "nan")
+    average_gpu_ms = float(
+        canvas.get_attribute("data-gpu-ms-average") or "nan"
+    )
+    assert sample_count > 0
+    assert math.isfinite(latest_gpu_ms) and latest_gpu_ms >= 0
+    assert math.isfinite(average_gpu_ms) and average_gpu_ms >= 0
+
+
 def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
     driver: DriverFactory,
 ) -> None:
@@ -374,8 +484,8 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
 
     The reported defect does not appear on every click because it requires a
     resize-related pause between animation frames. The WebGL surface submits a
-    strong impulse immediately on ``pointerdown``; if Chromium then postpones
-    its next ``requestAnimationFrame`` while recalculating the newly narrow
+    strong impulse in the first animation frame after ``pointerdown``. If
+    Chromium then postpones a later frame while recalculating the newly narrow
     layout, that strong image used to remain visible long after the mouse button
     had already been released. The force clock itself could already be expired,
     so tests that inspected only a later normal frame missed the visible bug.
@@ -453,6 +563,7 @@ def test_resized_contact_click_cannot_leave_a_stale_impulse_frame(
     for _ in range(3):
         page.wait_for_timeout(35)
         page.mouse.down(button="left")
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
         expect(canvas).to_have_attribute(
             "data-pointer-interaction-phase",
             "impulse",
@@ -488,12 +599,13 @@ def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
     second render could occupy the main thread before a queued ``pointerup`` was
     handled, extending a quick click by hundreds of milliseconds or seconds.
 
-    This test deliberately disables regular animation frames, records the
-    immediate impulse frame id, and waits beyond the complete source envelope.
-    No hidden timer may submit another frame. It then advances one explicit
-    50 ms frame and verifies that the wall-clock force equation naturally
-    resolves to held mode. This preserves the original physics while proving
-    that the deadline itself can never insert blocking work ahead of release.
+    This test deliberately disables regular animation frames, verifies that
+    ``pointerdown`` itself submits nothing, explicitly advances the queued
+    impulse frame, and waits beyond the complete source envelope. No hidden
+    timer may submit another frame. It then advances one explicit 50 ms frame
+    and verifies that the wall-clock force equation naturally resolves to held
+    mode. This preserves the original physics while proving that the deadline
+    itself can never insert blocking work ahead of release.
     """
 
     page = driver(
@@ -512,7 +624,18 @@ def test_impulse_deadline_does_not_submit_a_second_synchronous_frame(
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
     page.mouse.move(120, 90)
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
     page.mouse.down(button="left")
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+    expect(canvas).to_have_attribute(
+        "data-immediate-impulse-frame",
+        "disabled",
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
 
     expect(canvas).to_have_attribute(
         "data-pointer-interaction-phase",
@@ -567,13 +690,14 @@ def test_full_density_surface_never_queues_a_deadline_render(
     the complete render pipeline before input; further idle frames would only
     repeat that workload. Normal animation is manually clocked so any
     unexpected frame can only come from an input/deadline callback. After one
-    real press, the initially submitted frame id and measured input latency
-    must remain unchanged for 120 ms—almost three complete impulse windows.
-    It then advances the first non-redundant physics frame by nine milliseconds and
-    verifies that the peak was not applied a second time. Release must then be
-    processed normally. This full-density assertion is the part the earlier
-    lightweight tests lacked: it catches the long visible deformation even
-    when the nominal force timer and low-density state tests look correct.
+    real press, ``pointerdown`` itself must not render; one explicit RAF then
+    submits the impulse. Its frame id and measured input latency must remain
+    unchanged for 120 ms—almost three complete impulse windows. The test then
+    advances another physics frame by nine milliseconds and verifies that the
+    peak was not applied a second time. Release must be processed normally.
+    This full-density assertion is the part the earlier lightweight tests
+    lacked: it catches the long visible deformation even when the nominal force
+    timer and low-density state tests look correct.
     """
 
     page = driver(
@@ -602,6 +726,10 @@ def test_full_density_surface_never_queues_a_deadline_render(
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     submitted = canvas.evaluate(
         """
         element => ({
@@ -643,7 +771,7 @@ def test_full_density_surface_never_queues_a_deadline_render(
         "phase": "held",
         "force": "2.000",
         "applications": "1",
-        "animationImpulseFrames": "0",
+        "animationImpulseFrames": "1",
     }
 
     page.mouse.up(button="left")
@@ -743,6 +871,164 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
     )
 
     assert elapsed_milliseconds == 33.0
+
+
+def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
+    driver: DriverFactory,
+) -> None:
+    """Stop scheduling callbacks completely, then resume without a dead loop."""
+
+    page = driver(
+        initial_path=(
+            "/muta-tentacles.html?max-tentacles=64"
+            "&render-supersample=0.5&generation-seed=12345"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeRequestAnimationFrame =
+                window.requestAnimationFrame.bind(window);
+              const nativeCancelAnimationFrame =
+                window.cancelAnimationFrame.bind(window);
+              let syntheticHidden = false;
+              let captureNextAnimationFrame = null;
+              Object.defineProperty(Document.prototype, "hidden", {
+                configurable: true,
+                get: () => syntheticHidden,
+              });
+              globalThis.__mutaSetSyntheticHidden = (hidden) => {
+                syntheticHidden = Boolean(hidden);
+                document.dispatchEvent(new Event("visibilitychange"));
+              };
+              globalThis.__mutaRafProbe = {
+                requests: 0,
+                callbacks: 0,
+                cancellations: 0,
+              };
+              globalThis.__mutaCaptureNextAnimationFrame = () =>
+                new Promise((resolve) => {
+                  captureNextAnimationFrame = resolve;
+                });
+              window.requestAnimationFrame = (callback) => {
+                globalThis.__mutaRafProbe.requests += 1;
+                return nativeRequestAnimationFrame((timestamp) => {
+                  globalThis.__mutaRafProbe.callbacks += 1;
+                  callback(timestamp);
+                  if (captureNextAnimationFrame) {
+                    const resolve = captureNextAnimationFrame;
+                    captureNextAnimationFrame = null;
+                    const data = document.querySelector("#muta").dataset;
+                    resolve({
+                      physicsElapsedMs: Number(data.physicsElapsedMs),
+                      physicsFrameId: Number(data.physicsFrameId),
+                    });
+                  }
+                });
+              };
+              window.cancelAnimationFrame = (request) => {
+                globalThis.__mutaRafProbe.cancellations += 1;
+                nativeCancelAnimationFrame(request);
+              };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    page.wait_for_function(
+        """
+        () => {
+          const data = document.querySelector("#muta")?.dataset;
+          return data?.aspectReady === "true" &&
+            data.animationLoop === "running" &&
+            data.animationFrameScheduled === "true" &&
+            Number(data.physicsFrameId) > 2;
+        }
+        """,
+        timeout=30_000,
+    )
+
+    def animation_state() -> dict[str, int]:
+        return canvas.evaluate(
+            """
+            (element) => ({
+              requests: globalThis.__mutaRafProbe.requests,
+              callbacks: globalThis.__mutaRafProbe.callbacks,
+              cancellations: globalThis.__mutaRafProbe.cancellations,
+              physics: Number(element.dataset.physicsFrameId || 0),
+              rendered: Number(element.dataset.renderedFrameId || 0),
+            })
+            """
+        )
+
+    def assert_animation_stays_stopped() -> dict[str, int]:
+        expect(canvas).to_have_attribute("data-animation-loop", "paused")
+        expect(canvas).to_have_attribute(
+            "data-animation-frame-scheduled",
+            "false",
+        )
+        expect(canvas).to_have_attribute("data-runtime-paused", "true")
+        stopped = animation_state()
+        page.wait_for_timeout(250)
+        assert animation_state() == stopped
+        return stopped
+
+    canvas.evaluate(
+        """
+        element => element.ownerDocument.defaultView
+          .__mutaTentaclesSetRuntimeState({
+            visible: false,
+            scrollActive: false,
+          })
+        """
+    )
+    offscreen_state = assert_animation_stays_stopped()
+    assert offscreen_state["cancellations"] >= 1
+
+    canvas.evaluate(
+        """
+        element => element.ownerDocument.defaultView
+          .__mutaTentaclesSetRuntimeState({
+            visible: true,
+            scrollActive: false,
+          })
+        """
+    )
+    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "true",
+    )
+    page.wait_for_function(
+        """
+        (previousPhysicsFrame) =>
+          Number(document.querySelector("#muta").dataset.physicsFrameId) >
+            previousPhysicsFrame
+        """,
+        arg=offscreen_state["physics"],
+    )
+
+    page.evaluate("globalThis.__mutaSetSyntheticHidden(true)")
+    hidden_state = assert_animation_stays_stopped()
+    assert hidden_state["cancellations"] > offscreen_state["cancellations"]
+
+    resumed_frame = page.evaluate(
+        """
+        async () => {
+          const firstFrame = globalThis.__mutaCaptureNextAnimationFrame();
+          globalThis.__mutaSetSyntheticHidden(false);
+          return firstFrame;
+        }
+        """
+    )
+    assert resumed_frame["physicsElapsedMs"] == 16.7
+    assert resumed_frame["physicsFrameId"] > hidden_state["physics"]
+    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "true",
+    )
 
 
 def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
@@ -1085,6 +1371,90 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
         "true",
         timeout=30_000,
     )
+    expect(canvas).to_have_attribute("data-animation-loop", "paused")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "false",
+    )
+
+
+def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
+    driver: DriverFactory,
+) -> None:
+    """Prewarm at 200 px, but run RAF only after a real viewport intersection."""
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=True,
+        bounded_tentacle_rendering=True,
+    )
+    frame = page.locator(".contact__tentacles")
+    canvas = page.frame_locator(".contact__tentacles").locator("#muta")
+    expect(canvas).to_be_attached(timeout=30_000)
+
+    scroll_positions = frame.evaluate(
+        """
+        (element) => {
+          const documentTop =
+            element.getBoundingClientRect().top + scrollY;
+          return {
+            prewarmOnly: documentTop - innerHeight - 100,
+            onePixelVisible: documentTop - innerHeight + 1,
+          };
+        }
+        """
+    )
+    page.evaluate(
+        "position => scrollTo({top: position, behavior: 'instant'})",
+        scroll_positions["prewarmOnly"],
+    )
+    frame_top = frame.evaluate("element => element.getBoundingClientRect().top")
+    assert 720 <= frame_top < 920
+    expect(canvas).to_have_attribute("data-runtime-visible", "false")
+    expect(canvas).to_have_attribute("data-animation-loop", "paused")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "false",
+    )
+
+    page.evaluate(
+        "position => scrollTo({top: position, behavior: 'instant'})",
+        scroll_positions["onePixelVisible"],
+    )
+    expect(canvas).to_have_attribute("data-runtime-visible", "true")
+    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "true",
+    )
+    page.wait_for_function(
+        """
+        () => Number(
+          document.querySelector(".contact__tentacles")
+            ?.contentWindow?.document?.querySelector("#muta")
+            ?.dataset?.physicsFrameId || 0
+        ) > 2
+        """,
+        timeout=30_000,
+    )
+    page.evaluate(
+        "position => scrollTo({top: position, behavior: 'instant'})",
+        scroll_positions["prewarmOnly"],
+    )
+    expect(canvas).to_have_attribute("data-runtime-visible", "false")
+    expect(canvas).to_have_attribute("data-animation-loop", "paused")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "false",
+    )
+    paused_physics_frame = int(
+        canvas.get_attribute("data-physics-frame-id") or "0"
+    )
+    page.wait_for_timeout(250)
+    assert int(
+        canvas.get_attribute("data-physics-frame-id") or "0"
+    ) == paused_physics_frame
 
 
 def _open_contact_with_active_tentacle_runtime(
@@ -1590,16 +1960,16 @@ def test_click_impulse_is_applied_to_exactly_one_physics_frame(
 
     The source interaction describes a roughly 41.5 ms force envelope, but the
     rectangular production surface contains substantially more tentacles than
-    the original square. Reapplying its 13.333× peak on both the synchronous
-    input render and the following animation frame injects the strong force
-    twice; the resulting deformation survives much longer than the nominal
-    clock and is the user-visible defect reported repeatedly.
+    the original square. Reapplying its 13.333× peak on two consecutive
+    animation frames injects the strong force twice; the resulting deformation
+    survives much longer than the nominal clock and is the user-visible defect
+    reported repeatedly.
 
     This regression freezes normal animation, presses either mouse button, and
-    verifies that the immediate input render is the sole peak-force physics
-    application. It then advances the first non-redundant frame by only nine
-    milliseconds—well inside the old envelope, where the bug definitely
-    reproduced—and demands ordinary held force with the cumulative
+    verifies that ``pointerdown`` renders nothing and that the next animation
+    frame is the sole peak-force physics application. It then advances another
+    frame by only nine milliseconds—well inside the old envelope, where the bug
+    definitely reproduced—and demands ordinary held force with the cumulative
     impulse-application counter still equal to one. A duration-only or 100 ms
     sample would miss this exact double-kick.
     """
@@ -1626,13 +1996,24 @@ def test_click_impulse_is_applied_to_exactly_one_physics_frame(
     )
 
     page.mouse.move(120, 90)
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
     page.mouse.down(button=button)
 
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
     expect(canvas).to_have_attribute(
         "data-immediate-impulse-frame",
-        "enabled",
+        "disabled",
         timeout=1_000,
     )
+    expect(canvas).to_have_attribute(
+        "data-impulse-frame-scheduling",
+        "animation-frame",
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     expect(canvas).to_have_attribute(
         "data-impulse-physics-applications",
         "1",
@@ -1669,6 +2050,73 @@ def test_click_impulse_is_applied_to_exactly_one_physics_frame(
     )
 
     page.mouse.up(button=button)
+
+
+@pytest.mark.parametrize(
+    ("button", "direction"),
+    [("left", "1"), ("right", "-1")],
+)
+def test_release_before_the_next_raf_does_not_drop_the_queued_impulse(
+    driver: DriverFactory,
+    base_url: str,
+    button: str,
+    direction: str,
+) -> None:
+    """Keep one complete impulse even when down/up fit between two RAFs."""
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(240, 180),
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=64&render-supersample=0.5"
+            "&manual-animation-frame=1"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.mouse.move(120, 90)
+    baseline_frame = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
+
+    page.mouse.down(button=button)
+    page.mouse.up(button=button)
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    queued_impulse = canvas.evaluate(
+        """
+        element => ({
+          phase: element.dataset.renderedInteractionPhase,
+          pressed: element.dataset.renderedPointerPressed,
+          direction: element.dataset.lastImpulseDirection,
+          applications: element.dataset.impulsePhysicsApplications,
+          submissionMs: Number(element.dataset.inputToImpulseSubmissionMs),
+        })
+        """
+    )
+    assert queued_impulse["phase"] == "impulse"
+    assert queued_impulse["pressed"] == "false"
+    assert queued_impulse["direction"] == direction
+    assert queued_impulse["applications"] == "1"
+    assert math.isfinite(queued_impulse["submissionMs"])
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    expect(canvas).to_have_attribute(
+        "data-rendered-interaction-phase",
+        "hover",
+    )
+    expect(canvas).to_have_attribute(
+        "data-impulse-physics-applications",
+        "1",
+    )
 
 
 @pytest.mark.parametrize(
@@ -1717,6 +2165,7 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     expect(canvas).to_be_visible(timeout=30_000)
     page.mouse.move(120, 90)
     page.mouse.down(button=button)
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
 
     expect(canvas).to_have_attribute(
         "data-last-impulse-peak-force-multiplier",
@@ -1776,6 +2225,247 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
         "data-pointer-interaction-direction",
         "0",
     )
+
+
+@pytest.mark.parametrize("early_exit", [True, False])
+def test_solver_uses_conservative_adaptive_iteration_limits(
+    driver: DriverFactory,
+    base_url: str,
+    early_exit: bool,
+) -> None:
+    """Expose adaptive work while retaining full grabbed-tip convergence."""
+
+    disabled_query = "" if early_exit else "&solver-early-exit=0"
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(640, 360),
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=128&render-supersample=0.5"
+            "&manual-animation-frame=1&interaction-diagnostics=1"
+            "&generation-seed=12345&debug-targets=1"
+            "&debug-x=0.58&debug-y=0.52"
+            f"{disabled_query}"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 60; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    page.mouse.move(640 * 0.58, 360 * 0.52)
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 90; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    solver = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().solver"
+    )
+    page.mouse.up(button="left")
+
+    assert solver["pbdChains"] == 128
+    assert solver["fabrikGrabbedSolves"] == 4
+    assert solver["fabrikGrabbedIterations"] == 4 * 20
+    assert solver["fabrikOrdinarySolves"] > 0
+    if early_exit:
+        expect(canvas).to_have_attribute(
+            "data-solver-error-tolerance-pixels",
+            "0.003",
+        )
+        assert 4 * 128 <= solver["pbdIterations"] < 8 * 128
+        assert solver["pbdEarlyExits"] > 0
+        assert (
+            2 * solver["fabrikOrdinarySolves"]
+            <= solver["fabrikOrdinaryIterations"]
+            < 7 * solver["fabrikOrdinarySolves"]
+        )
+        assert solver["fabrikEarlyExits"] > 0
+    else:
+        assert solver["pbdIterations"] == 8 * 128
+        assert solver["pbdEarlyExits"] == 0
+        assert (
+            solver["fabrikOrdinaryIterations"]
+            == 7 * solver["fabrikOrdinarySolves"]
+        )
+        assert solver["fabrikEarlyExits"] == 0
+
+
+def test_stationary_grabbed_tips_do_not_jitter_between_frames(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Bound high-frequency tip motion before adapting solver iterations.
+
+    The cursor remains stationary while four deterministic tentacles stay
+    grabbed. Their procedural rest targets may move smoothly, so this contract
+    measures first and second finite differences rather than demanding a
+    frozen image. Link-error bounds independently prevent a quiet but stretched
+    chain from passing the trajectory checks.
+    """
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(640, 360),
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=128&render-supersample=0.5"
+            "&manual-animation-frame=1&interaction-diagnostics=1"
+            "&generation-seed=12345&debug-targets=1"
+            "&debug-x=0.58&debug-y=0.52"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 60; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    page.mouse.move(640 * 0.58, 360 * 0.52)
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 90; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+
+    metrics = page.evaluate(
+        """
+        () => {
+          const sampleCount = 180;
+          let previousTips = null;
+          const previousVelocities = new Map();
+          const grabbedIds = new Set();
+          let squaredStep = 0;
+          let squaredAcceleration = 0;
+          let stepSamples = 0;
+          let accelerationSamples = 0;
+          let maximumStep = 0;
+          let maximumAcceleration = 0;
+          let reversals = 0;
+          let maximumLinkError = 0;
+          let maximumRmsLinkError = 0;
+
+          for (let frame = 0; frame < sampleCount; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const snapshot =
+              window.__mutaTentaclesDebugPhysicsSnapshot();
+            maximumLinkError = Math.max(
+              maximumLinkError,
+              snapshot.maximumLinkErrorPixels,
+            );
+            maximumRmsLinkError = Math.max(
+              maximumRmsLinkError,
+              snapshot.rmsLinkErrorPixels,
+            );
+            const currentTips = new Map();
+            for (const tip of snapshot.tips) {
+              if (!tip.grabbed) continue;
+              grabbedIds.add(tip.index);
+              currentTips.set(tip.index, tip);
+              const previousTip = previousTips?.get(tip.index);
+              if (!previousTip) continue;
+              const velocityX = tip.x - previousTip.x;
+              const velocityY = tip.y - previousTip.y;
+              const step = Math.hypot(velocityX, velocityY);
+              squaredStep += step * step;
+              stepSamples += 1;
+              maximumStep = Math.max(maximumStep, step);
+
+              const previousVelocity =
+                previousVelocities.get(tip.index);
+              if (previousVelocity) {
+                const acceleration = Math.hypot(
+                  velocityX - previousVelocity.x,
+                  velocityY - previousVelocity.y,
+                );
+                squaredAcceleration += acceleration * acceleration;
+                accelerationSamples += 1;
+                maximumAcceleration = Math.max(
+                  maximumAcceleration,
+                  acceleration,
+                );
+                if (
+                  step > 0.002 &&
+                  previousVelocity.length > 0.002 &&
+                  velocityX * previousVelocity.x +
+                    velocityY * previousVelocity.y < 0
+                ) {
+                  reversals += 1;
+                }
+              }
+              previousVelocities.set(tip.index, {
+                x: velocityX,
+                y: velocityY,
+                length: step,
+              });
+            }
+            previousTips = currentTips;
+          }
+
+          return {
+            grabbedIds: [...grabbedIds],
+            stepSamples,
+            rmsStep: Math.sqrt(squaredStep / stepSamples),
+            maximumStep,
+            rmsAcceleration: Math.sqrt(
+              squaredAcceleration / accelerationSamples,
+            ),
+            maximumAcceleration,
+            reversals,
+            maximumLinkError,
+            maximumRmsLinkError,
+          };
+        }
+        """
+    )
+    page.mouse.up(button="left")
+
+    assert metrics["grabbedIds"] == [36, 86, 87, 106]
+    assert metrics["stepSamples"] == 4 * 179
+    assert metrics["reversals"] == 0
+    assert metrics["rmsStep"] < 0.001
+    assert metrics["maximumStep"] < 0.002
+    assert metrics["rmsAcceleration"] < 0.00002
+    assert metrics["maximumAcceleration"] < 0.00005
+    assert metrics["maximumLinkError"] < 1
+    assert metrics["maximumRmsLinkError"] < 0.03
 
 
 def _open_diagnostic_surface(
@@ -1915,6 +2605,7 @@ def _press_surface(page: Page, canvas: Page) -> tuple[float, float, float]:
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     peak = float(
         canvas.get_attribute(
             "data-rendered-maximum-rest-displacement"
@@ -1983,6 +2674,10 @@ def _assert_no_deadline_render(page: Page, canvas: Page) -> None:
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == baseline_frame
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     submitted_frame = int(
         canvas.get_attribute("data-rendered-frame-id") or "0"
     )
@@ -1995,7 +2690,7 @@ def _assert_no_deadline_render(page: Page, canvas: Page) -> None:
 
 
 def _assert_single_peak_application(page: Page, canvas: Page) -> None:
-    """Assert that only the synchronous input frame receives peak force."""
+    """Assert that only the first animation frame receives peak force."""
 
     box = canvas.bounding_box()
     assert box is not None
@@ -2004,6 +2699,7 @@ def _assert_single_peak_application(page: Page, canvas: Page) -> None:
         box["y"] + box["height"] * 0.66,
     )
     page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
     assert canvas.get_attribute(
         "data-impulse-physics-applications"
     ) == "1"
@@ -2024,7 +2720,7 @@ def _assert_single_peak_application(page: Page, canvas: Page) -> None:
         "phase": "held",
         "force": "2.000",
         "applications": "1",
-        "animationImpulseFrames": "0",
+        "animationImpulseFrames": "1",
     }
     page.mouse.up(button="left")
 
@@ -2155,10 +2851,12 @@ def _restore_legacy_release_recovery(source: str) -> str:
         ),
         (
             """          impulsePending: false,
+          impulseDirection: 1,
           energy: 0,
         };
         let renderedInteractionPhase = "hover";""",
             """          impulsePending: false,
+          impulseDirection: 1,
           releaseRecoveryUntil: -Infinity,
           energy: 0,
         };
@@ -2184,7 +2882,7 @@ def _restore_legacy_release_recovery(source: str) -> str:
             ) {
               return;
             }
-            runImmediateInteractionFrame(true);
+            runImmediateReleaseFrame();
           }, RELEASE_RECOVERY_SECONDS * 1000);
         }
 
@@ -2205,12 +2903,17 @@ def _restore_legacy_release_recovery(source: str) -> str:
         ),
         (
             """          if (wasPressed && !pointer.pressed) {
-            pointer.impulsePending = false;
-            settleReleasedPointer();""",
+            if (!pointer.impulsePending) {
+              settleReleasedPointer();
+            }
+            return true;
+          }""",
             """          if (wasPressed && !pointer.pressed) {
             pointer.impulsePending = false;
             startReleaseRecovery();
-            settleReleasedPointer();""",
+            settleReleasedPointer();
+            return true;
+          }""",
         ),
         (
             """          impulseAge,
@@ -2236,6 +2939,11 @@ def _restore_legacy_release_recovery(source: str) -> str:
         (
             """            impulsePending,
           );
+          interaction.direction =
+            pointer.pressed || impulsePending
+              ? interactionDirection
+              : 0;
+          return interaction;
         }
 
         if (interactionDiagnostics) {""",
@@ -2243,6 +2951,11 @@ def _restore_legacy_release_recovery(source: str) -> str:
             !pointer.pressed &&
               time < pointer.releaseRecoveryUntil,
           );
+          interaction.direction =
+            pointer.pressed || impulsePending
+              ? interactionDirection
+              : 0;
+          return interaction;
         }
 
         if (interactionDiagnostics) {""",
@@ -2253,14 +2966,14 @@ def _restore_legacy_release_recovery(source: str) -> str:
         }
 
         function settleReleasedPointer() {
-          runImmediateInteractionFrame(true);""",
+          runImmediateReleaseFrame();""",
             """              Boolean(impulsePending),
               false,
             );
         }
 
         function settleReleasedPointer() {
-          runImmediateInteractionFrame(true, 0.033);""",
+          runImmediateReleaseFrame(0.033);""",
         ),
         (
             """          const velocityDamping = Math.exp(-delta * 10.2);
@@ -2396,7 +3109,7 @@ TIMING_MUTATIONS = [
         id="raise-held-attraction",
     ),
     pytest.param(
-        "          runImmediateInteractionFrame(true);",
+        "          runImmediateReleaseFrame();",
         """          const releaseEnergy = pointer.energy;
           pointer.energy = -4;
           for (
@@ -2404,7 +3117,7 @@ TIMING_MUTATIONS = [
             recoveryFrame < 8;
             recoveryFrame++
           ) {
-            runImmediateInteractionFrame(true, 0.033);
+            runImmediateReleaseFrame(0.033);
           }
           pointer.energy = releaseEnergy;""",
         "release",

@@ -367,6 +367,10 @@ diagnostics:
 TEST_BASE_URL=http://127.0.0.1:1313 python -m pytest tests/test_blog.py
 ```
 
+Real asynchronous GPU timing for the Muta tentacle renderer is disabled by
+default. Its opt-in query parameter, output fields, and disable procedure are
+documented in [docs/tentacle-gpu-timing.md](docs/tentacle-gpu-timing.md).
+
 ## Continuous integration
 
 `.github/workflows/tests.yml` runs on every push to every branch. The GitHub

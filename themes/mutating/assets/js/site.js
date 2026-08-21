@@ -1263,6 +1263,7 @@
       textBlock.append(selectableText);
     });
     let contactIsNearViewport = false;
+    let contactIsVisible = false;
     let scrollIsActive = false;
     let scrollIdleTimer = 0;
     const scrollIdleFallbackMs = 320;
@@ -1300,7 +1301,7 @@
     };
     const sendRuntimeState = () => {
       const state = {
-        visible: contactIsNearViewport && !document.hidden,
+        visible: contactIsVisible && !document.hidden,
         scrollActive: scrollIsActive,
       };
       frame.dataset.scrollActive = String(scrollIsActive);
@@ -1377,7 +1378,7 @@
       return root.scrollTop > boundaryTolerance;
     };
     const handleScroll = () => {
-      if (!contactIsNearViewport) return;
+      if (!contactIsVisible) return;
       if (!scrollIsActive) {
         scrollIsActive = true;
         sendRuntimeState();
@@ -1440,13 +1441,19 @@
         contactIsNearViewport = entry.isIntersecting;
         if (contactIsNearViewport) {
           prewarm();
-        } else {
+        }
+      },
+      { rootMargin: "200px 0px" },
+    ).observe(frame);
+    new IntersectionObserver(
+      ([entry]) => {
+        contactIsVisible = entry.isIntersecting;
+        if (!contactIsVisible) {
           clearScrollIdleTimer();
           scrollIsActive = false;
         }
         sendRuntimeState();
       },
-      { rootMargin: "200px 0px" },
     ).observe(frame);
     frame.addEventListener("load", sendTheme);
     copy?.addEventListener("pointermove", relayPassivePointer, {
