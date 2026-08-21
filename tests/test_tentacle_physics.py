@@ -2227,6 +2227,247 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     )
 
 
+@pytest.mark.parametrize("early_exit", [True, False])
+def test_solver_uses_conservative_adaptive_iteration_limits(
+    driver: DriverFactory,
+    base_url: str,
+    early_exit: bool,
+) -> None:
+    """Expose adaptive work while retaining full grabbed-tip convergence."""
+
+    disabled_query = "" if early_exit else "&solver-early-exit=0"
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(640, 360),
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=128&render-supersample=0.5"
+            "&manual-animation-frame=1&interaction-diagnostics=1"
+            "&generation-seed=12345&debug-targets=1"
+            "&debug-x=0.58&debug-y=0.52"
+            f"{disabled_query}"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 60; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    page.mouse.move(640 * 0.58, 360 * 0.52)
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 90; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    solver = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().solver"
+    )
+    page.mouse.up(button="left")
+
+    assert solver["pbdChains"] == 128
+    assert solver["fabrikGrabbedSolves"] == 4
+    assert solver["fabrikGrabbedIterations"] == 4 * 20
+    assert solver["fabrikOrdinarySolves"] > 0
+    if early_exit:
+        expect(canvas).to_have_attribute(
+            "data-solver-error-tolerance-pixels",
+            "0.003",
+        )
+        assert 4 * 128 <= solver["pbdIterations"] < 8 * 128
+        assert solver["pbdEarlyExits"] > 0
+        assert (
+            2 * solver["fabrikOrdinarySolves"]
+            <= solver["fabrikOrdinaryIterations"]
+            < 7 * solver["fabrikOrdinarySolves"]
+        )
+        assert solver["fabrikEarlyExits"] > 0
+    else:
+        assert solver["pbdIterations"] == 8 * 128
+        assert solver["pbdEarlyExits"] == 0
+        assert (
+            solver["fabrikOrdinaryIterations"]
+            == 7 * solver["fabrikOrdinarySolves"]
+        )
+        assert solver["fabrikEarlyExits"] == 0
+
+
+def test_stationary_grabbed_tips_do_not_jitter_between_frames(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Bound high-frequency tip motion before adapting solver iterations.
+
+    The cursor remains stationary while four deterministic tentacles stay
+    grabbed. Their procedural rest targets may move smoothly, so this contract
+    measures first and second finite differences rather than demanding a
+    frozen image. Link-error bounds independently prevent a quiet but stretched
+    chain from passing the trajectory checks.
+    """
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(640, 360),
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            "?max-tentacles=128&render-supersample=0.5"
+            "&manual-animation-frame=1&interaction-diagnostics=1"
+            "&generation-seed=12345&debug-targets=1"
+            "&debug-x=0.58&debug-y=0.52"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 60; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    page.mouse.move(640 * 0.58, 360 * 0.52)
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 90; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+
+    metrics = page.evaluate(
+        """
+        () => {
+          const sampleCount = 180;
+          let previousTips = null;
+          const previousVelocities = new Map();
+          const grabbedIds = new Set();
+          let squaredStep = 0;
+          let squaredAcceleration = 0;
+          let stepSamples = 0;
+          let accelerationSamples = 0;
+          let maximumStep = 0;
+          let maximumAcceleration = 0;
+          let reversals = 0;
+          let maximumLinkError = 0;
+          let maximumRmsLinkError = 0;
+
+          for (let frame = 0; frame < sampleCount; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const snapshot =
+              window.__mutaTentaclesDebugPhysicsSnapshot();
+            maximumLinkError = Math.max(
+              maximumLinkError,
+              snapshot.maximumLinkErrorPixels,
+            );
+            maximumRmsLinkError = Math.max(
+              maximumRmsLinkError,
+              snapshot.rmsLinkErrorPixels,
+            );
+            const currentTips = new Map();
+            for (const tip of snapshot.tips) {
+              if (!tip.grabbed) continue;
+              grabbedIds.add(tip.index);
+              currentTips.set(tip.index, tip);
+              const previousTip = previousTips?.get(tip.index);
+              if (!previousTip) continue;
+              const velocityX = tip.x - previousTip.x;
+              const velocityY = tip.y - previousTip.y;
+              const step = Math.hypot(velocityX, velocityY);
+              squaredStep += step * step;
+              stepSamples += 1;
+              maximumStep = Math.max(maximumStep, step);
+
+              const previousVelocity =
+                previousVelocities.get(tip.index);
+              if (previousVelocity) {
+                const acceleration = Math.hypot(
+                  velocityX - previousVelocity.x,
+                  velocityY - previousVelocity.y,
+                );
+                squaredAcceleration += acceleration * acceleration;
+                accelerationSamples += 1;
+                maximumAcceleration = Math.max(
+                  maximumAcceleration,
+                  acceleration,
+                );
+                if (
+                  step > 0.002 &&
+                  previousVelocity.length > 0.002 &&
+                  velocityX * previousVelocity.x +
+                    velocityY * previousVelocity.y < 0
+                ) {
+                  reversals += 1;
+                }
+              }
+              previousVelocities.set(tip.index, {
+                x: velocityX,
+                y: velocityY,
+                length: step,
+              });
+            }
+            previousTips = currentTips;
+          }
+
+          return {
+            grabbedIds: [...grabbedIds],
+            stepSamples,
+            rmsStep: Math.sqrt(squaredStep / stepSamples),
+            maximumStep,
+            rmsAcceleration: Math.sqrt(
+              squaredAcceleration / accelerationSamples,
+            ),
+            maximumAcceleration,
+            reversals,
+            maximumLinkError,
+            maximumRmsLinkError,
+          };
+        }
+        """
+    )
+    page.mouse.up(button="left")
+
+    assert metrics["grabbedIds"] == [36, 86, 87, 106]
+    assert metrics["stepSamples"] == 4 * 179
+    assert metrics["reversals"] == 0
+    assert metrics["rmsStep"] < 0.001
+    assert metrics["maximumStep"] < 0.002
+    assert metrics["rmsAcceleration"] < 0.00002
+    assert metrics["maximumAcceleration"] < 0.00005
+    assert metrics["maximumLinkError"] < 1
+    assert metrics["maximumRmsLinkError"] < 0.03
+
+
 def _open_diagnostic_surface(
     page: Page,
     base_url: str,
