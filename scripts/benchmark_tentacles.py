@@ -18,6 +18,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TENTACLES_SOURCE = (
     PROJECT_ROOT / "themes" / "mutating" / "static" / "muta-tentacles.html"
 )
+GPU_BENCHMARK_FRAME_PERIOD_MS = 1000 / 60
+
+
+def wait_for_next_gpu_benchmark_frame(page: Any, started_at: float) -> None:
+    """Keep GPU command cadence independent of CPU-side frame duration."""
+
+    elapsed_milliseconds = (time.perf_counter() - started_at) * 1000
+    remaining_milliseconds = max(
+        0.0,
+        GPU_BENCHMARK_FRAME_PERIOD_MS - elapsed_milliseconds,
+    )
+    if remaining_milliseconds > 0:
+        page.wait_for_timeout(remaining_milliseconds)
 
 
 def summarize(values: list[float]) -> dict[str, float]:
@@ -46,6 +59,7 @@ def run_scenario(
     warmup_count: int,
     snapshot_path: Path | None,
     gpu_timing: bool,
+    solver_early_exit: bool,
 ) -> dict[str, Any]:
     context = browser.new_context(
         viewport={"width": 1280, "height": 720},
@@ -63,6 +77,8 @@ def run_scenario(
     }
     if gpu_timing:
         query_parameters["gpu-timing"] = "1"
+    if not solver_early_exit:
+        query_parameters["solver-early-exit"] = "0"
     query = urlencode(query_parameters)
     page.goto(f"{base_url}?{query}", wait_until="domcontentloaded")
     page.wait_for_function(
@@ -81,11 +97,13 @@ def run_scenario(
 
     if gpu_timing:
         for _index in range(warmup_count):
+            frame_started_at = time.perf_counter()
             page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
-            page.wait_for_timeout(2)
+            wait_for_next_gpu_benchmark_frame(page, frame_started_at)
         frame_milliseconds: list[float] = []
         physics_milliseconds: list[float] = []
         for _index in range(sample_count):
+            frame_started_at = time.perf_counter()
             sample = page.evaluate(
                 """
                 () => {
@@ -101,7 +119,7 @@ def run_scenario(
             )
             frame_milliseconds.append(sample["frame"])
             physics_milliseconds.append(sample["physics"])
-            page.wait_for_timeout(2)
+            wait_for_next_gpu_benchmark_frame(page, frame_started_at)
         samples = {
             "frameMilliseconds": frame_milliseconds,
             "physicsMilliseconds": physics_milliseconds,
@@ -158,6 +176,46 @@ def run_scenario(
             surfaceGrid: data.surfaceGrid,
             spatialShaderPath: data.surfaceShaderPath,
             maximumSpatialCellLoad: Number(data.maximumSpatialCellLoad),
+            solver: {
+              earlyExit: data.solverEarlyExit,
+              tolerancePixels: Number(data.solverErrorTolerancePixels),
+              pbdChains: Number(data.pbdChains || 0),
+              pbdIterations: Number(data.pbdIterations || 0),
+              pbdAverageIterations: Number(
+                data.pbdAverageIterations || 0,
+              ),
+              pbdEarlyExits: Number(data.pbdEarlyExits || 0),
+              fabrikAttempts: Number(data.fabrikAttempts || 0),
+              fabrikExactZeroSkips: Number(
+                data.fabrikExactZeroSkips || 0,
+              ),
+              fabrikVisualSkips: Number(
+                data.fabrikVisualSkips || 0,
+              ),
+              fabrikDirectSolves: Number(
+                data.fabrikDirectSolves || 0,
+              ),
+              fabrikIterativeSolves: Number(
+                data.fabrikIterativeSolves || 0,
+              ),
+              fabrikIterations: Number(data.fabrikIterations || 0),
+              fabrikGrabbedSolves: Number(
+                data.fabrikGrabbedSolves || 0,
+              ),
+              fabrikGrabbedIterations: Number(
+                data.fabrikGrabbedIterations || 0,
+              ),
+              fabrikOrdinarySolves: Number(
+                data.fabrikOrdinarySolves || 0,
+              ),
+              fabrikOrdinaryIterations: Number(
+                data.fabrikOrdinaryIterations || 0,
+              ),
+              fabrikAverageIterations: Number(
+                data.fabrikAverageIterations || 0,
+              ),
+              fabrikEarlyExits: Number(data.fabrikEarlyExits || 0),
+            },
             gpu: {
               status: data.gpuTiming,
               latestMs:
@@ -212,6 +270,7 @@ def measure_input_latency(
     sample_count: int,
     warmup_count: int,
     gpu_timing: bool,
+    solver_early_exit: bool,
 ) -> dict[str, Any]:
     context = browser.new_context(
         viewport={"width": 1280, "height": 720},
@@ -249,6 +308,8 @@ def measure_input_latency(
     }
     if gpu_timing:
         query_parameters["gpu-timing"] = "1"
+    if not solver_early_exit:
+        query_parameters["solver-early-exit"] = "0"
     query = urlencode(query_parameters)
     page.goto(f"{base_url}?{query}", wait_until="domcontentloaded")
     page.wait_for_function(
@@ -442,6 +503,54 @@ def measure_input_latency(
         })
         """
     )
+    solver = canvas.evaluate(
+        """
+        (element) => ({
+          earlyExit: element.dataset.solverEarlyExit,
+          tolerancePixels: Number(
+            element.dataset.solverErrorTolerancePixels,
+          ),
+          pbdChains: Number(element.dataset.pbdChains || 0),
+          pbdIterations: Number(element.dataset.pbdIterations || 0),
+          pbdAverageIterations: Number(
+            element.dataset.pbdAverageIterations || 0,
+          ),
+          pbdEarlyExits: Number(element.dataset.pbdEarlyExits || 0),
+          fabrikAttempts: Number(element.dataset.fabrikAttempts || 0),
+          fabrikExactZeroSkips: Number(
+            element.dataset.fabrikExactZeroSkips || 0,
+          ),
+          fabrikVisualSkips: Number(
+            element.dataset.fabrikVisualSkips || 0,
+          ),
+          fabrikDirectSolves: Number(
+            element.dataset.fabrikDirectSolves || 0,
+          ),
+          fabrikIterativeSolves: Number(
+            element.dataset.fabrikIterativeSolves || 0,
+          ),
+          fabrikIterations: Number(element.dataset.fabrikIterations || 0),
+          fabrikGrabbedSolves: Number(
+            element.dataset.fabrikGrabbedSolves || 0,
+          ),
+          fabrikGrabbedIterations: Number(
+            element.dataset.fabrikGrabbedIterations || 0,
+          ),
+          fabrikOrdinarySolves: Number(
+            element.dataset.fabrikOrdinarySolves || 0,
+          ),
+          fabrikOrdinaryIterations: Number(
+            element.dataset.fabrikOrdinaryIterations || 0,
+          ),
+          fabrikAverageIterations: Number(
+            element.dataset.fabrikAverageIterations || 0,
+          ),
+          fabrikEarlyExits: Number(
+            element.dataset.fabrikEarlyExits || 0,
+          ),
+        })
+        """
+    )
     cdp.send("Page.stopScreencast")
     context.close()
     result: dict[str, Any] = {
@@ -452,6 +561,7 @@ def measure_input_latency(
         "impulseApplications": summarize(impulse_applications),
         "compositorFrameMs": summarize(compositor_frame_milliseconds),
         "gpu": gpu,
+        "solver": solver,
         "pageErrors": errors,
     }
     return result
@@ -470,9 +580,11 @@ def main() -> None:
     parser.add_argument("--input-samples", type=int, default=0)
     parser.add_argument("--input-only", action="store_true")
     parser.add_argument("--gpu-timing", action="store_true")
+    parser.add_argument("--disable-solver-early-exit", action="store_true")
     parser.add_argument("--executable")
     parser.add_argument("--source", type=Path, default=TENTACLES_SOURCE)
     arguments = parser.parse_args()
+    solver_early_exit = not arguments.disable_solver_early_exit
 
     source_sha256 = hashlib.sha256(arguments.source.read_bytes()).hexdigest()
     with sync_playwright() as playwright:
@@ -494,6 +606,7 @@ def main() -> None:
                 warmup_count=arguments.warmup,
                 snapshot_path=arguments.snapshot,
                 gpu_timing=arguments.gpu_timing,
+                solver_early_exit=solver_early_exit,
             )
             scenarios["hover"] = run_scenario(
                 browser,
@@ -504,6 +617,7 @@ def main() -> None:
                 warmup_count=arguments.warmup,
                 snapshot_path=arguments.snapshot,
                 gpu_timing=arguments.gpu_timing,
+                solver_early_exit=solver_early_exit,
             )
         if arguments.input_samples > 0:
             scenarios["leftInput"] = measure_input_latency(
@@ -513,6 +627,7 @@ def main() -> None:
                 sample_count=arguments.input_samples,
                 warmup_count=arguments.warmup,
                 gpu_timing=arguments.gpu_timing,
+                solver_early_exit=solver_early_exit,
             )
             scenarios["rightInput"] = measure_input_latency(
                 browser,
@@ -521,6 +636,7 @@ def main() -> None:
                 sample_count=arguments.input_samples,
                 warmup_count=arguments.warmup,
                 gpu_timing=arguments.gpu_timing,
+                solver_early_exit=solver_early_exit,
             )
         result = {
             "benchmark": {
@@ -531,6 +647,7 @@ def main() -> None:
                 "seed": 12345,
                 "frameDelta": "33ms capped slow-frame path",
                 "gpuTiming": arguments.gpu_timing,
+                "solverEarlyExit": solver_early_exit,
                 "inputPhaseSweep": "deterministic 0-16ms",
             },
             "browserVersion": browser.version,
