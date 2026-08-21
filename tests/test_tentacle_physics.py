@@ -81,6 +81,116 @@ def test_tentacle_page_shows_accessible_fallback_without_webgl2(
     assert errors == []
 
 
+def test_gpu_timing_is_disabled_without_requesting_the_extension(
+    driver: DriverFactory,
+) -> None:
+    """The production-default path does not even request the timer extension."""
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              globalThis.__gpuTimerExtensionRequests = 0;
+              const nativeGetExtension =
+                WebGL2RenderingContext.prototype.getExtension;
+              WebGL2RenderingContext.prototype.getExtension = function (name) {
+                if (name === "EXT_disjoint_timer_query_webgl2") {
+                  globalThis.__gpuTimerExtensionRequests += 1;
+                }
+                return nativeGetExtension.call(this, name);
+              };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute("data-gpu-timing", "disabled")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+
+    assert page.evaluate("globalThis.__gpuTimerExtensionRequests") == 0
+    assert canvas.get_attribute("data-gpu-ms") is None
+
+
+def test_gpu_timing_degrades_to_unsupported_without_affecting_rendering(
+    driver: DriverFactory,
+) -> None:
+    """Missing timer support remains an ordinary, renderable runtime state."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}&gpu-timing=1"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              const nativeGetExtension =
+                WebGL2RenderingContext.prototype.getExtension;
+              WebGL2RenderingContext.prototype.getExtension = function (name) {
+                if (name === "EXT_disjoint_timer_query_webgl2") return null;
+                return nativeGetExtension.call(this, name);
+              };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute("data-gpu-timing", "unsupported")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "1")
+    assert canvas.get_attribute("data-gpu-ms") is None
+
+
+def test_gpu_timing_publishes_an_asynchronous_result_when_supported(
+    driver: DriverFactory,
+) -> None:
+    """A supported timer eventually reports finite GPU time without waiting."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
+            "&gpu-timing=1&gpu-timing-interval=1"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    status = canvas.get_attribute("data-gpu-timing")
+    assert status in {"enabled", "unsupported"}
+    if status == "unsupported":
+        pytest.skip("Browser GPU does not expose timer queries")
+
+    for _index in range(180):
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+        if int(canvas.get_attribute("data-gpu-timing-samples") or "0") > 0:
+            break
+        page.wait_for_timeout(2)
+
+    sample_count = int(
+        canvas.get_attribute("data-gpu-timing-samples") or "0"
+    )
+    latest_gpu_ms = float(canvas.get_attribute("data-gpu-ms") or "nan")
+    average_gpu_ms = float(
+        canvas.get_attribute("data-gpu-ms-average") or "nan"
+    )
+    assert sample_count > 0
+    assert math.isfinite(latest_gpu_ms) and latest_gpu_ms >= 0
+    assert math.isfinite(average_gpu_ms) and average_gpu_ms >= 0
+
+
 def test_tentacle_runtime_accepts_messages_only_from_its_same_origin_parent(
     driver: DriverFactory,
 ) -> None:
