@@ -144,6 +144,9 @@
         const requestedGpuTimingInterval = Number(
           runtimeSearch.get("gpu-timing-interval"),
         );
+        const requestedColorTargetFormat = runtimeSearch.get(
+          "color-target-format",
+        );
         const solverEarlyExitEnabled =
           runtimeSearch.get("solver-early-exit") !== "0";
         const pbdEarlyExitEnabled =
@@ -2129,7 +2132,7 @@
 
         const fullscreenVao = gl.createVertexArray();
 
-        function makeColorTexture(width, height, internalFormat, format, type) {
+        function makeColorTexture(width, height, internalFormat) {
           const texture = gl.createTexture();
           gl.bindTexture(gl.TEXTURE_2D, texture);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -2158,14 +2161,45 @@
         let resizeDirty = true;
         let canvasRect = canvas.getBoundingClientRect();
 
-        function createRenderTargets(width, height) {
-          deleteTargets(renderTargets);
-          const colorInternal = floatColor ? gl.RGBA16F : gl.RGBA8;
-          const colorType = floatColor ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
-          const sharp = makeColorTexture(width, height, colorInternal, gl.RGBA, colorType);
-          const geometry = makeColorTexture(width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
-          const scatterA = makeColorTexture(width, height, colorInternal, gl.RGBA, colorType);
-          const scatterB = makeColorTexture(width, height, colorInternal, gl.RGBA, colorType);
+        const colorTargetProfiles = {
+          "r11f-g11f-b10f": {
+            name: "r11f-g11f-b10f",
+            internalFormat: gl.R11F_G11F_B10F,
+            bytesPerPixel: 4,
+          },
+          rgba8: {
+            name: "rgba8",
+            internalFormat: gl.RGBA8,
+            bytesPerPixel: 4,
+          },
+          rgba16f: {
+            name: "rgba16f",
+            internalFormat: gl.RGBA16F,
+            bytesPerPixel: 8,
+          },
+        };
+
+        function makeRenderTargets(width, height, colorTargetProfile) {
+          const sharp = makeColorTexture(
+            width,
+            height,
+            colorTargetProfile.internalFormat,
+          );
+          const geometry = makeColorTexture(
+            width,
+            height,
+            gl.RGBA16F,
+          );
+          const scatterA = makeColorTexture(
+            width,
+            height,
+            colorTargetProfile.internalFormat,
+          );
+          const scatterB = makeColorTexture(
+            width,
+            height,
+            colorTargetProfile.internalFormat,
+          );
 
           const surfaceFramebuffer = gl.createFramebuffer();
           gl.bindFramebuffer(gl.FRAMEBUFFER, surfaceFramebuffer);
@@ -2207,6 +2241,7 @@
           );
           gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
 
+          let complete = true;
           for (const framebuffer of [
             surfaceFramebuffer,
             scatterFramebufferA,
@@ -2214,12 +2249,13 @@
           ]) {
             gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
             if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-              throw new Error("Не удалось создать поверхность рендера.");
+              complete = false;
+              break;
             }
           }
 
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-          renderTargets = {
+          const targets = {
             sharp,
             geometry,
             scatterA,
@@ -2229,7 +2265,55 @@
             scatterFramebufferB,
             textures: [sharp, geometry, scatterA, scatterB],
             framebuffers: [surfaceFramebuffer, scatterFramebufferA, scatterFramebufferB],
+            colorTargetProfile,
           };
+          if (!complete) {
+            deleteTargets(targets);
+            return null;
+          }
+          return targets;
+        }
+
+        function createRenderTargets(width, height) {
+          deleteTargets(renderTargets);
+          renderTargets = null;
+
+          const requestedProfile =
+            colorTargetProfiles[requestedColorTargetFormat];
+          const candidateProfiles = requestedProfile
+            ? requestedProfile.name === "r11f-g11f-b10f"
+              ? floatColor
+                ? [requestedProfile, colorTargetProfiles.rgba8]
+                : [colorTargetProfiles.rgba8]
+              : [requestedProfile]
+            : [colorTargetProfiles.rgba8];
+
+          for (const profile of candidateProfiles) {
+            renderTargets = makeRenderTargets(width, height, profile);
+            if (renderTargets) {
+              break;
+            }
+          }
+          if (!renderTargets) {
+            throw new Error("Не удалось создать поверхность рендера.");
+          }
+
+          const colorTargetBytes =
+            width *
+            height *
+            renderTargets.colorTargetProfile.bytesPerPixel *
+            3;
+          const geometryTargetBytes = width * height * 8;
+          canvas.dataset.colorTargetFormat =
+            renderTargets.colorTargetProfile.name;
+          canvas.dataset.geometryTargetFormat = "rgba16f";
+          canvas.dataset.colorTargetBytes = String(colorTargetBytes);
+          canvas.dataset.geometryTargetBytes = String(
+            geometryTargetBytes,
+          );
+          canvas.dataset.renderTargetBytes = String(
+            colorTargetBytes + geometryTargetBytes,
+          );
         }
 
         function resize() {
