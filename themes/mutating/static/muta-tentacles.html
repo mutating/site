@@ -4235,10 +4235,18 @@
             resetAnimationClockOnNextFrame = false;
           }
           canvas.dataset.runtimePaused = "false";
+          // A prewarmed embedded runtime owns allocated WebGL resources but no
+          // completed texture while it remains outside the viewport. If its
+          // first visible state arrives during an active scroll, allow exactly
+          // one ordinary physics-and-render frame before applying the scroll
+          // hold. Later scroll ticks see a nonzero renderedFrameId and keep the
+          // completed full-quality texture unchanged until scroll end.
+          const needsInitialPresentationFrame = renderedFrameId === 0;
           if (
             scrollRenderingSuppressed &&
             !pointer.pressed &&
-            !pointer.impulsePending
+            !pointer.impulsePending &&
+            !needsInitialPresentationFrame
           ) {
             // The last complete full-resolution texture is already held on
             // screen during a scroll burst. Advancing hundreds of invisible
@@ -4312,7 +4320,8 @@
           if (
             !scrollRenderingSuppressed ||
             pointer.pressed ||
-            submitsInitialImpulse
+            submitsInitialImpulse ||
+            needsInitialPresentationFrame
           ) {
             const renderStartedAt = performance.now();
             render(smoothedTime);
