@@ -186,6 +186,8 @@
               )
             : 900;
         const MOTION_SPEED_MULTIPLIER = (4 / 5) * 2 * 1.2;
+        const SCROLL_RESPONSE_BOOST_PER_OMITTED_FRAME = 0.4;
+        const MAXIMUM_SCROLL_REST_RESPONSE = 0.32;
         const TENTACLE_THICKNESS_MULTIPLIER = 1.5 * 1.3 * 1.3;
         const CURSOR_ATTRACTION_MULTIPLIER = 1 / 6 / 1.1;
         const LEFT_HELD_FORCE_MULTIPLIER = 2;
@@ -3155,7 +3157,13 @@
           MAX_CURSOR_GRABBERS,
         );
 
-        function updateSkeletons(time, delta, wallTime) {
+        function updateSkeletons(
+          time,
+          delta,
+          wallTime,
+          temporalDelta = delta,
+          incomingVelocityScale = 1,
+        ) {
           if (interactionDiagnostics) {
             resetSolverDiagnostics();
           }
@@ -3173,7 +3181,9 @@
           pointer.x = pointer.targetX;
           pointer.y = pointer.targetY;
           const targetEnergy = pointer.inside ? 1 : 0;
-          pointer.energy += (targetEnergy - pointer.energy) * (1 - Math.exp(-delta * 6));
+          pointer.energy +=
+            (targetEnergy - pointer.energy) *
+            (1 - Math.exp(-temporalDelta * 6));
           const pointerInteraction =
             currentPointerInteraction(wallTime);
           const pointerWorldX = pointer.x * surfaceAspect;
@@ -3273,8 +3283,26 @@
           spatialCountPixels.fill(0);
           spatialGridValid = true;
           maximumSpatialCellLoad = 0;
-          const velocityDamping = Math.exp(-delta * 10.2);
-          const restResponse = 72.0 * delta * delta;
+          const velocityDamping = Math.exp(-temporalDelta * 10.2);
+          // Ordinary frames retain the original integration exactly. A
+          // budgeted scroll frame represents several omitted RAF intervals.
+          // Start with the equivalent accumulated 60 Hz rest response rather
+          // than squaring a large delta (which would overshoot), then apply a
+          // bounded cadence compensation calibrated against sampled 60 FPS
+          // trajectories. Without it, one solver pass travels only about
+          // 54-78% as far as the visible reference path.
+          const restResponse =
+            temporalDelta === delta
+              ? 72.0 * delta * delta
+              : Math.min(
+                  MAXIMUM_SCROLL_REST_RESPONSE,
+                  (1 - Math.pow(0.98, temporalDelta * 60)) *
+                    (
+                      1 +
+                      SCROLL_RESPONSE_BOOST_PER_OMITTED_FRAME *
+                        Math.max(0, temporalDelta * 60 - 1)
+                    ),
+                );
           const verticalMotionTime = time * 0.31;
 
           for (const skeleton of skeletons) {
@@ -3360,19 +3388,22 @@
                   points[pointOffset + POINT_X] -
                   points[pointOffset + POINT_PREVIOUS_X]
                 ) *
-                velocityDamping;
+                velocityDamping *
+                incomingVelocityScale;
               const velocityY =
                 (
                   points[pointOffset + POINT_Y] -
                   points[pointOffset + POINT_PREVIOUS_Y]
                 ) *
-                velocityDamping;
+                velocityDamping *
+                incomingVelocityScale;
               const velocityZ =
                 (
                   points[pointOffset + POINT_Z] -
                   points[pointOffset + POINT_PREVIOUS_Z]
                 ) *
-                velocityDamping;
+                velocityDamping *
+                incomingVelocityScale;
               points[pointOffset + POINT_PREVIOUS_X] =
                 points[pointOffset + POINT_X];
               points[pointOffset + POINT_PREVIOUS_Y] =
@@ -3430,7 +3461,7 @@
               1,
             );
             points[tipOffset + POINT_Z] +=
-              repulsion * repulsion * delta * 0.160;
+              repulsion * repulsion * temporalDelta * 0.160;
 
             let completedPbdIterations = 0;
             let pbdExitedEarly = false;
@@ -3525,7 +3556,7 @@
             solveChainTowardPointer(
               skeleton,
               pointerForce,
-              delta,
+              temporalDelta,
               pointerWorldX,
               pointerWorldY,
               solverPixelScale,
@@ -4172,6 +4203,10 @@
             ? requestedAnimationTimeOrigin
             : performance.now() * 0.001;
         let smoothedTime = lastTime;
+        function advanceAnimationClock(elapsedSeconds) {
+          smoothedTime +=
+            elapsedSeconds * (prefersReducedMotion ? 0.22 : 1);
+        }
         let diagnosticStart = lastTime;
         let diagnosticFrames = 0;
         let immediateFrameInProgress = false;
@@ -4179,6 +4214,200 @@
         let lastPhysicsDuration = 0;
         let lastRenderSubmissionDuration = 0;
         let physicsFrameId = 0;
+        let previousPhysicsTemporalDelta = 1 / 60;
+        let scrollExitVelocityStabilizationFrames = 0;
+        canvas.dataset.scrollExitVelocityScale = "1.000";
+        function velocityScaleForPhysicsStep(delta, temporalDelta) {
+          const returnsToOrdinaryCadence =
+            temporalDelta <= delta + 0.000001 &&
+            previousPhysicsTemporalDelta > delta + 0.000001;
+          let velocityScale = 1;
+          if (returnsToOrdinaryCadence) {
+            const representedFrameCount =
+              previousPhysicsTemporalDelta / delta;
+            // Verlet stores displacement per solver step, not velocity per
+            // second. A compensated scroll step may represent 2-5 ordinary
+            // frames, so carrying its raw displacement into 60 FPS creates a
+            // visible acceleration burst. The calibrated 1.8 exponent removes
+            // that stored long-step energy without zeroing motion outright.
+            velocityScale = Math.min(
+              1,
+              Math.pow(1 / representedFrameCount, 1.8),
+            );
+            // Rest attraction in the first ordinary frames can recreate some
+            // of the removed displacement. Continue mild damping only for the
+            // excess represented frames; fast 30 FPS needs no continuation.
+            scrollExitVelocityStabilizationFrames = Math.max(
+              0,
+              Math.ceil(representedFrameCount) - 2,
+            );
+          } else if (
+            temporalDelta <= delta + 0.000001 &&
+            scrollExitVelocityStabilizationFrames > 0
+          ) {
+            velocityScale = 0.8;
+            scrollExitVelocityStabilizationFrames -= 1;
+          } else if (temporalDelta > delta + 0.000001) {
+            scrollExitVelocityStabilizationFrames = 0;
+          }
+          previousPhysicsTemporalDelta = temporalDelta;
+          if (velocityScale < 1) {
+            canvas.dataset.scrollExitVelocityScale =
+              velocityScale.toFixed(3);
+          }
+          return velocityScale;
+        }
+        // Passive scroll animation keeps the production render path and varies
+        // only cadence. Static profiles avoid allocations in the RAF loop; the
+        // resolver below chooses among them from smoothed cadence and frame cost.
+        const scrollAnimationBudgets = {
+          fast: {
+            name: "fast",
+            intervalMilliseconds: 1000 / 30,
+          },
+          balanced: {
+            name: "balanced",
+            intervalMilliseconds: 50,
+          },
+          conservative: {
+            name: "conservative",
+            intervalMilliseconds: 1000 / 12,
+          },
+          frozen: {
+            name: "frozen",
+            intervalMilliseconds: Infinity,
+          },
+        };
+        const minimumScrollBudgetCadenceSamples = 3;
+        const scrollBudgetAverageWeight = 0.2;
+        const scrollBudgetDeadlineToleranceMilliseconds = 0.01;
+        const maximumSkippedAnimationClockStepSeconds = 0.05;
+        let previousAnimationFrameAtMilliseconds = null;
+        let animationFrameCadenceAverageMilliseconds = 0;
+        let animationFrameCadenceSamples = 0;
+        let completeFrameCostAverageMilliseconds = 0;
+        let completeFrameCostSamples = 0;
+        let scrollAnimationLastFrameAtMilliseconds = -Infinity;
+        let deferredScrollPhysicsSeconds = 0;
+        let scrollSuppressionObservedByFrame = false;
+        let scrollBudgetSignalOverride = null;
+        let reportedScrollAnimationTier = null;
+        let reportedScrollAnimationInterval = null;
+
+        function recordAnimationFrameCadence(
+          nowMilliseconds,
+          resetSample,
+        ) {
+          if (
+            resetSample ||
+            previousAnimationFrameAtMilliseconds === null
+          ) {
+            previousAnimationFrameAtMilliseconds = nowMilliseconds;
+            return;
+          }
+          const cadenceMilliseconds =
+            nowMilliseconds - previousAnimationFrameAtMilliseconds;
+          previousAnimationFrameAtMilliseconds = nowMilliseconds;
+          if (
+            cadenceMilliseconds <= 0 ||
+            cadenceMilliseconds > 250
+          ) {
+            return;
+          }
+          if (animationFrameCadenceSamples === 0) {
+            animationFrameCadenceAverageMilliseconds =
+              cadenceMilliseconds;
+          } else {
+            animationFrameCadenceAverageMilliseconds +=
+              (
+                cadenceMilliseconds -
+                animationFrameCadenceAverageMilliseconds
+              ) * scrollBudgetAverageWeight;
+          }
+          animationFrameCadenceSamples += 1;
+        }
+
+        function recordCompleteFrameCost() {
+          const costMilliseconds =
+            lastPhysicsDuration + lastRenderSubmissionDuration;
+          if (!Number.isFinite(costMilliseconds) || costMilliseconds < 0) {
+            return;
+          }
+          if (completeFrameCostSamples === 0) {
+            completeFrameCostAverageMilliseconds = costMilliseconds;
+          } else {
+            completeFrameCostAverageMilliseconds +=
+              (costMilliseconds - completeFrameCostAverageMilliseconds) *
+              scrollBudgetAverageWeight;
+          }
+          completeFrameCostSamples += 1;
+        }
+
+        function resolveScrollAnimationBudget() {
+          const usesOverride = scrollBudgetSignalOverride !== null;
+          const cadenceMilliseconds = usesOverride
+            ? scrollBudgetSignalOverride.cadenceMilliseconds
+            : animationFrameCadenceAverageMilliseconds;
+          const measuredFrameCostMilliseconds = usesOverride
+            ? scrollBudgetSignalOverride.frameCostMilliseconds
+            : completeFrameCostAverageMilliseconds;
+          const estimatedFrameCostMilliseconds = usesOverride
+            ? measuredFrameCostMilliseconds
+            : Math.max(
+                measuredFrameCostMilliseconds,
+                gpuTimingSampleCount > 0
+                  ? gpuTimingMeanMilliseconds
+                  : 0,
+              );
+          if (
+            !usesOverride &&
+            (
+              animationFrameCadenceSamples <
+                minimumScrollBudgetCadenceSamples ||
+              completeFrameCostSamples < 1
+            )
+          ) {
+            return scrollAnimationBudgets.conservative;
+          }
+          if (
+            cadenceMilliseconds > 45 ||
+            estimatedFrameCostMilliseconds > 20
+          ) {
+            return scrollAnimationBudgets.frozen;
+          }
+          if (
+            cadenceMilliseconds > 28 ||
+            estimatedFrameCostMilliseconds > 12
+          ) {
+            return scrollAnimationBudgets.conservative;
+          }
+          if (
+            cadenceMilliseconds > 20 ||
+            estimatedFrameCostMilliseconds > 7
+          ) {
+            return scrollAnimationBudgets.balanced;
+          }
+          return scrollAnimationBudgets.fast;
+        }
+
+        function publishScrollAnimationBudget(budget) {
+          const tier = scrollRenderingSuppressed
+            ? budget.name
+            : "inactive";
+          const interval = scrollRenderingSuppressed
+            ? Number.isFinite(budget.intervalMilliseconds)
+              ? budget.intervalMilliseconds.toFixed(1)
+              : "paused"
+            : "0.0";
+          if (reportedScrollAnimationTier !== tier) {
+            reportedScrollAnimationTier = tier;
+            canvas.dataset.scrollAnimationTier = tier;
+          }
+          if (reportedScrollAnimationInterval !== interval) {
+            reportedScrollAnimationInterval = interval;
+            canvas.dataset.scrollAnimationIntervalMs = interval;
+          }
+        }
 
         function recordRenderedInteraction() {
           renderedFrameId += 1;
@@ -4204,10 +4433,17 @@
             Math.max(minimumDelta, 1 / 90, elapsed),
           );
           lastTime = now;
-          smoothedTime +=
-            delta * (prefersReducedMotion ? 0.22 : 1);
+          advanceAnimationClock(delta);
           const physicsStartedAt = performance.now();
-          updateSkeletons(smoothedTime, delta, now);
+          const incomingVelocityScale =
+            velocityScaleForPhysicsStep(delta, delta);
+          updateSkeletons(
+            smoothedTime,
+            delta,
+            now,
+            delta,
+            incomingVelocityScale,
+          );
           lastPhysicsDuration =
             performance.now() - physicsStartedAt;
           const renderStartedAt = performance.now();
@@ -4215,6 +4451,10 @@
           recordRenderedInteraction();
           lastRenderSubmissionDuration =
             performance.now() - renderStartedAt;
+          recordCompleteFrameCost();
+          if (scrollRenderingSuppressed) {
+            scrollAnimationLastFrameAtMilliseconds = now * 1000;
+          }
           skipRedundantAnimationFrame = true;
           immediateFrameInProgress = false;
         }
@@ -4224,36 +4464,97 @@
           const now = nowMilliseconds * 0.001;
           if (!runtimeVisible || document.hidden) {
             diagnosticStart = now;
+            previousAnimationFrameAtMilliseconds = null;
             canvas.dataset.runtimePaused = "true";
             syncAnimationLoopState();
             return;
           }
+          const resetsCadenceSample = resetAnimationClockOnNextFrame;
           if (resetAnimationClockOnNextFrame) {
             lastTime = now - 1 / 60;
             diagnosticStart = now;
             skipRedundantAnimationFrame = false;
             resetAnimationClockOnNextFrame = false;
           }
+          recordAnimationFrameCadence(
+            nowMilliseconds,
+            resetsCadenceSample,
+          );
           canvas.dataset.runtimePaused = "false";
           // A prewarmed embedded runtime owns allocated WebGL resources but no
           // completed texture while it remains outside the viewport. If its
           // first visible state arrives during an active scroll, allow exactly
           // one ordinary physics-and-render frame before applying the scroll
           // hold. Later scroll ticks see a nonzero renderedFrameId and keep the
-          // completed full-quality texture unchanged until scroll end.
+          // completed full-quality texture unchanged until the next adaptive
+          // budget deadline.
           const needsInitialPresentationFrame = renderedFrameId === 0;
-          if (
+          const passiveScrollAnimation =
             scrollRenderingSuppressed &&
             !pointer.pressed &&
-            !pointer.impulsePending &&
-            !needsInitialPresentationFrame
+            !pointer.impulsePending;
+          if (
+            scrollRenderingSuppressed !==
+            scrollSuppressionObservedByFrame
+          ) {
+            scrollSuppressionObservedByFrame =
+              scrollRenderingSuppressed;
+            if (scrollRenderingSuppressed) {
+              scrollAnimationLastFrameAtMilliseconds = nowMilliseconds;
+            } else {
+              deferredScrollPhysicsSeconds = 0;
+            }
+          }
+          let budgetPermitsScrollAnimationFrame = false;
+          let scrollAnimationBudget =
+            scrollAnimationBudgets.conservative;
+          if (scrollRenderingSuppressed) {
+            scrollAnimationBudget = resolveScrollAnimationBudget();
+            publishScrollAnimationBudget(scrollAnimationBudget);
+            budgetPermitsScrollAnimationFrame =
+              passiveScrollAnimation &&
+              Number.isFinite(
+                scrollAnimationBudget.intervalMilliseconds,
+              ) &&
+              nowMilliseconds -
+                  scrollAnimationLastFrameAtMilliseconds +
+                  scrollBudgetDeadlineToleranceMilliseconds >=
+                scrollAnimationBudget.intervalMilliseconds;
+          } else {
+            publishScrollAnimationBudget(
+              scrollAnimationBudgets.conservative,
+            );
+          }
+          if (
+            passiveScrollAnimation &&
+            !needsInitialPresentationFrame &&
+            !budgetPermitsScrollAnimationFrame
           ) {
             // The last complete full-resolution texture is already held on
-            // screen during a scroll burst. Advancing hundreds of invisible
-            // Verlet chains here only competes with the parent page's scroll
-            // frames, so keep the entire simulation state still until the
-            // scroll-end handoff. Updating the clock prevents a catch-up step
-            // when ordinary animation resumes.
+            // screen between budgeted scroll updates. Advancing hundreds of
+            // Verlet chains before the adaptive deadline only competes with
+            // the parent page's scroll frames. Updating the clock discards
+            // missed physics/render work instead of accumulating a catch-up
+            // step. The lightweight animation clock still follows ordinary
+            // RAF time: otherwise a 20 FPS budget would make the tentacles
+            // move at one third speed, and 8 FPS would look almost frozen.
+            // The 50 ms bound covers every finite cadence tier (up to 45 ms)
+            // but intentionally discards a genuine long-task gap
+            // rather than producing a sudden phase jump after a stalled page.
+            const skippedAnimationSeconds = Math.min(
+              maximumSkippedAnimationClockStepSeconds,
+              Math.max(0, now - lastTime),
+            );
+            advanceAnimationClock(skippedAnimationSeconds);
+            deferredScrollPhysicsSeconds = Number.isFinite(
+              scrollAnimationBudget.intervalMilliseconds,
+            )
+              ? Math.min(
+                  0.125,
+                  deferredScrollPhysicsSeconds +
+                    skippedAnimationSeconds,
+                )
+              : 0;
             lastTime = now;
             diagnosticStart = now;
             skipRedundantAnimationFrame = false;
@@ -4276,6 +4577,10 @@
             0.033,
             Math.max(0.001, now - lastTime),
           );
+          const elapsedSincePreviousRaf = Math.max(
+            0.001,
+            now - lastTime,
+          );
           lastTime = now;
           const submitsInitialImpulse = pointer.impulsePending;
           const inputStartedAt = pointer.impulseStartedAt;
@@ -4288,11 +4593,27 @@
                 ),
               )
             : frameDelta;
+          const scrollAnimationDelta =
+            passiveScrollAnimation &&
+            budgetPermitsScrollAnimationFrame
+              ? Math.min(
+                  maximumSkippedAnimationClockStepSeconds,
+                  elapsedSincePreviousRaf,
+                )
+              : delta;
+          const temporalDelta =
+            passiveScrollAnimation &&
+            budgetPermitsScrollAnimationFrame
+              ? Math.min(
+                  0.125,
+                  deferredScrollPhysicsSeconds +
+                    scrollAnimationDelta,
+                )
+              : delta;
+          deferredScrollPhysicsSeconds = 0;
           canvas.dataset.physicsSubsteps = "1";
           canvas.dataset.physicsElapsedMs =
-            (delta * 1000).toFixed(1);
-          const motionDelta =
-            delta * (prefersReducedMotion ? 0.22 : 1);
+            (temporalDelta * 1000).toFixed(1);
           if (submitsInitialImpulse) {
             canvas.dataset.impulsePhysicsDeltaMs =
               (delta * 1000).toFixed(1);
@@ -4303,8 +4624,16 @@
               ).toFixed(1);
           }
           const physicsStartedAt = performance.now();
-          smoothedTime += motionDelta;
-          updateSkeletons(smoothedTime, delta, now);
+          advanceAnimationClock(scrollAnimationDelta);
+          const incomingVelocityScale =
+            velocityScaleForPhysicsStep(delta, temporalDelta);
+          updateSkeletons(
+            smoothedTime,
+            delta,
+            now,
+            temporalDelta,
+            incomingVelocityScale,
+          );
           physicsFrameId += 1;
           canvas.dataset.physicsFrameId = String(physicsFrameId);
           if (canvas.dataset.pointerInteractionPhase === "impulse") {
@@ -4321,13 +4650,18 @@
             !scrollRenderingSuppressed ||
             pointer.pressed ||
             submitsInitialImpulse ||
-            needsInitialPresentationFrame
+            needsInitialPresentationFrame ||
+            budgetPermitsScrollAnimationFrame
           ) {
             const renderStartedAt = performance.now();
             render(smoothedTime);
             recordRenderedInteraction();
             lastRenderSubmissionDuration =
               performance.now() - renderStartedAt;
+            recordCompleteFrameCost();
+            if (scrollRenderingSuppressed) {
+              scrollAnimationLastFrameAtMilliseconds = nowMilliseconds;
+            }
             if (submitsInitialImpulse) {
               canvas.dataset.inputToImpulseSubmissionMs =
                 (
@@ -4463,8 +4797,68 @@
           ) => {
             frame(
               (lastTime + elapsedMilliseconds * 0.001) *
-                1000,
+              1000,
             );
+          };
+          window.__mutaTentaclesDebugSetScrollBudgetSignals = (
+            signals,
+          ) => {
+            const cadenceMilliseconds = Number(signals?.cadenceMs);
+            const frameCostMilliseconds = Number(signals?.frameCostMs);
+            if (
+              !Number.isFinite(cadenceMilliseconds) ||
+              cadenceMilliseconds <= 0 ||
+              !Number.isFinite(frameCostMilliseconds) ||
+              frameCostMilliseconds < 0
+            ) {
+              throw new TypeError(
+                "Scroll budget signals must be finite milliseconds.",
+              );
+            }
+            scrollBudgetSignalOverride = {
+              cadenceMilliseconds,
+              frameCostMilliseconds,
+            };
+          };
+          window.__mutaTentaclesDebugAnimationTimeSeconds = () =>
+            smoothedTime;
+          window.__mutaTentaclesDebugPointerState = () => ({
+            targetX: pointer.targetX,
+            targetY: pointer.targetY,
+            inside: pointer.inside,
+            inputSource: canvas.dataset.pointerInputSource || "none",
+          });
+          window.__mutaTentaclesDebugTrajectorySample = () => {
+            const sample = [];
+            const skeletonSampleCount = Math.min(12, skeletons.length);
+            const sampleJoints = [
+              Math.round(CHAIN_LINKS / 3),
+              Math.round((CHAIN_LINKS * 2) / 3),
+              CHAIN_LINKS,
+            ];
+            for (
+              let sampleIndex = 0;
+              sampleIndex < skeletonSampleCount;
+              sampleIndex++
+            ) {
+              const skeletonIndex =
+                skeletonSampleCount === 1
+                  ? 0
+                  : Math.round(
+                      (sampleIndex * (skeletons.length - 1)) /
+                        (skeletonSampleCount - 1),
+                    );
+              const points = skeletons[skeletonIndex].points;
+              for (const joint of sampleJoints) {
+                const pointOffset = joint * POINT_STRIDE;
+                sample.push(
+                  points[pointOffset + POINT_X],
+                  points[pointOffset + POINT_Y],
+                  points[pointOffset + POINT_Z],
+                );
+              }
+            }
+            return sample;
           };
         } else {
           syncAnimationLoopState();
