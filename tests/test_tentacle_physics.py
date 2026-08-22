@@ -81,6 +81,141 @@ def test_tentacle_page_shows_accessible_fallback_without_webgl2(
     assert errors == []
 
 
+@pytest.mark.parametrize(
+    ("requested_format", "expected_format", "color_bytes_per_pixel"),
+    [
+        ("rgba8", "rgba8", 4),
+        ("rgba16f", "rgba16f", 8),
+    ],
+)
+def test_color_render_target_format_is_selectable_for_ab_validation(
+    driver: DriverFactory,
+    requested_format: str,
+    expected_format: str,
+    color_bytes_per_pixel: int,
+) -> None:
+    """Keep the compact default measurable against the legacy float path."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
+            f"&color-target-format={requested_format}"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute(
+        "data-color-target-format",
+        expected_format,
+    )
+    expect(canvas).to_have_attribute(
+        "data-geometry-target-format",
+        "rgba16f",
+    )
+    dimensions = canvas.evaluate("element => [element.width, element.height]")
+    pixel_count = dimensions[0] * dimensions[1]
+    assert int(canvas.get_attribute("data-color-target-bytes")) == (
+        pixel_count * color_bytes_per_pixel * 3
+    )
+    assert int(canvas.get_attribute("data-geometry-target-bytes")) == (
+        pixel_count * 8
+    )
+
+
+def test_default_color_targets_use_compact_rgba8_format(
+    driver: DriverFactory,
+) -> None:
+    """Use the broadly optimized compact format on the production path."""
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => document.querySelector('#muta')?.dataset.colorTargetFormat"
+    )
+    assert canvas.get_attribute("data-color-target-format") == "rgba8"
+    dimensions = canvas.evaluate("element => [element.width, element.height]")
+    pixel_count = dimensions[0] * dimensions[1]
+    assert int(canvas.get_attribute("data-render-target-bytes")) == (
+        pixel_count * (3 * 4 + 8)
+    )
+
+
+def test_compact_hdr_color_targets_fall_back_to_rgba8(
+    driver: DriverFactory,
+) -> None:
+    """An unsupported packed-HDR framebuffer must not blank the hero."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
+            "&color-target-format=r11f-g11f-b10f"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              const textureFormats = new WeakMap();
+              const framebufferColorFormats = new WeakMap();
+              const nativeStorage =
+                WebGL2RenderingContext.prototype.texStorage2D;
+              const nativeAttach =
+                WebGL2RenderingContext.prototype.framebufferTexture2D;
+              const nativeStatus =
+                WebGL2RenderingContext.prototype.checkFramebufferStatus;
+
+              WebGL2RenderingContext.prototype.texStorage2D = function (
+                target, levels, internalFormat, width, height
+              ) {
+                const texture = this.getParameter(this.TEXTURE_BINDING_2D);
+                textureFormats.set(texture, internalFormat);
+                return nativeStorage.call(
+                  this, target, levels, internalFormat, width, height
+                );
+              };
+              WebGL2RenderingContext.prototype.framebufferTexture2D =
+                function (target, attachment, textarget, texture, level) {
+                  const framebuffer = this.getParameter(
+                    this.FRAMEBUFFER_BINDING
+                  );
+                  if (attachment === this.COLOR_ATTACHMENT0) {
+                    framebufferColorFormats.set(
+                      framebuffer,
+                      textureFormats.get(texture),
+                    );
+                  }
+                  return nativeAttach.call(
+                    this, target, attachment, textarget, texture, level
+                  );
+                };
+              WebGL2RenderingContext.prototype.checkFramebufferStatus =
+                function (target) {
+                  const framebuffer = this.getParameter(
+                    this.FRAMEBUFFER_BINDING
+                  );
+                  if (
+                    framebufferColorFormats.get(framebuffer) ===
+                    this.R11F_G11F_B10F
+                  ) {
+                    return this.FRAMEBUFFER_UNSUPPORTED;
+                  }
+                  return nativeStatus.call(this, target);
+                };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute("data-color-target-format", "rgba8")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "1")
+
+
 def test_gpu_timing_is_disabled_without_requesting_the_extension(
     driver: DriverFactory,
 ) -> None:
@@ -1031,11 +1166,763 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
     )
 
 
-def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
+def test_first_visible_scroll_tick_primes_exactly_one_complete_frame(
+    driver: DriverFactory,
+) -> None:
+    """Present the prewarmed surface once before scroll suppression takes over.
+
+    The embedded contact runtime is initialized while its iframe is far below
+    the viewport, but the offscreen lifecycle deliberately runs no RAF and
+    therefore owns no completed texture yet. If the iframe first intersects
+    the viewport in the middle of a wheel, trackpad, or touch scroll, the host
+    sends ``visible: true`` and ``scrollActive: true`` together. Applying the
+    ordinary scroll guard to that very first tick leaves the transparent canvas
+    on screen until native ``scrollend`` or the 320 ms quiet-period fallback;
+    with momentum still producing events, that startup blank can approach one
+    second even though all WebGL resources were prewarmed successfully.
+
+    This regression loads the real embedded WebGL runtime in its deterministic
+    manual-frame mode. A tick while still invisible must leave both the physics
+    and rendered-frame counters at zero. After the combined visible-and-scroll
+    handoff, the first tick must advance both counters exactly once so the
+    browser has a complete full-quality texture to composite. A second tick
+    only one refresh interval later must advance neither counter: the primer
+    bypasses the adaptive deadline once, but it does not restore continuous
+    animation. Separate budget coverage advances through the later 30, 20, and
+    12 FPS deadlines. Clearing ``scrollActive`` models the existing scroll-end
+    handoff and must restore one ordinary physics-and-render tick immediately.
+
+    Explicit ticks and counters make all three boundaries independent of wall
+    time, refresh rate, GPU speed, and Playwright scheduling. Removing the
+    primer leaves the first counters at zero; accidentally allowing animation
+    throughout the gesture increments them twice; and failing to resume after
+    scroll end leaves the final counters unchanged.
+    """
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}&embedded=1",
+        stored_theme="dark",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+
+    def frame_counters() -> dict[str, int]:
+        return canvas.evaluate(
+            """
+            element => ({
+              rendered: Number(element.dataset.renderedFrameId || 0),
+              physics: Number(element.dataset.physicsFrameId || 0),
+            })
+            """
+        )
+
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    assert frame_counters() == {"rendered": 0, "physics": 0}
+    expect(canvas).to_have_attribute("data-runtime-visible", "false")
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: true,
+        })
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    primed = frame_counters()
+    assert primed == {"rendered": 1, "physics": 1}
+
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    assert frame_counters() == primed
+    expect(canvas).to_have_attribute(
+        "data-scroll-animation-tier",
+        "conservative",
+    )
+    expect(canvas).to_have_attribute(
+        "data-scroll-animation-interval-ms",
+        "83.3",
+    )
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: false,
+        })
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "active")
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    assert frame_counters() == {"rendered": 2, "physics": 2}
+
+
+def test_scroll_animation_budget_adapts_and_never_catches_up(
+    driver: DriverFactory,
+) -> None:
+    """Keep passive motion alive only inside the page-scroll frame budget.
+
+    Freezing every physics and WebGL update made the contact surface look dead
+    throughout a long scroll, while restoring its ordinary 60 FPS loop would
+    return the main-thread and GPU contention that originally made the page
+    move in steps. The runtime therefore measures two signals from work it is
+    already doing: an exponential average of RAF cadence, which includes main-
+    thread and compositor pressure, and an exponential average of a complete
+    physics-plus-render submission. When optional GPU timer samples exist, the
+    larger of CPU submission cost and real GPU time is used as frame cost.
+
+    The passive-scroll tiers deliberately preserve every pixel of an admitted
+    frame and reduce only temporal cadence. ``fast`` permits one frame every
+    33.3 ms (30 FPS) when cadence is at most 20 ms and frame cost at most 7 ms;
+    ``balanced`` permits one every 50 ms (20 FPS) through 28/12 ms;
+    ``conservative`` permits one every 83.3 ms (12 FPS) through 45/20 ms. A
+    runtime without enough history starts conservatively. Anything slower than
+    the last boundary enters ``frozen``. A cadence-driven freeze may recover
+    during the same gesture because cheap RAF callbacks continue refreshing
+    that signal; a frame-cost-driven freeze intentionally remains until normal
+    frames after scroll end supply safer cost evidence. Pointer presses and
+    queued impulses retain their separate responsiveness exception and are not
+    throttled by this passive budget.
+
+    This deterministic regression injects each pair of performance signals
+    into the real manual-frame runtime. For every finite tier, a transition
+    tick establishes the scroll deadline, the millisecond immediately before
+    that deadline must do no work, and the deadline itself must advance physics
+    and rendering exactly once. Jumping forward by five intervals is then
+    allowed to submit only one frame: missed animation is discarded instead of
+    producing a catch-up burst that would stall scrolling. The frozen tier must
+    remain still across a full second; an explicit recovered-signal injection
+    then proves that no accumulated frame debt is released. Finally, clearing
+    ``scrollActive`` must bypass every scroll deadline and restore one ordinary
+    frame immediately.
+
+    Explicit timestamps, injected signals, semantic tier diagnostics, and
+    independent physics/render counters make the contract insensitive to the
+    test machine's CPU, GPU, refresh rate, or scheduler. Changing a threshold,
+    raising scroll cadence, accumulating debt, or forgetting the scroll-end
+    handoff therefore breaks a precise assertion rather than a subjective
+    animation check. Together with the adjacent full-density regression, the
+    quality-state assertions also lock backing dimensions and render-target
+    formats while this test changes tiers.
+    """
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        stored_theme="dark",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        """
+        () =>
+          typeof window.__mutaTentaclesDebugFrameAfter === "function" &&
+          typeof window.__mutaTentaclesDebugSetScrollBudgetSignals ===
+            "function"
+        """
+    )
+
+    def counters() -> dict[str, int]:
+        return canvas.evaluate(
+            """
+            element => ({
+              rendered: Number(element.dataset.renderedFrameId || 0),
+              physics: Number(element.dataset.physicsFrameId || 0),
+            })
+            """
+        )
+
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    assert counters() == {"rendered": 1, "physics": 1}
+    quality_baseline = canvas.evaluate(
+        """
+        element => ({
+          width: element.width,
+          height: element.height,
+          colorTargetFormat: element.dataset.colorTargetFormat,
+          geometryTargetFormat: element.dataset.geometryTargetFormat,
+        })
+        """
+    )
+
+    finite_tiers = [
+        ("fast", 20, 7, 1000 / 30),
+        ("balanced", 28, 12, 50.0),
+        ("conservative", 45, 20, 1000 / 12),
+    ]
+    for tier, cadence_ms, frame_cost_ms, interval_ms in finite_tiers:
+        page.evaluate(
+            """
+            signals =>
+              window.__mutaTentaclesDebugSetScrollBudgetSignals(signals)
+            """,
+            {
+                "cadenceMs": cadence_ms,
+                "frameCostMs": frame_cost_ms,
+            },
+        )
+        page.evaluate(
+            """
+            () => window.__mutaTentaclesSetRuntimeState({
+              visible: true,
+              scrollActive: true,
+            })
+            """
+        )
+        baseline = counters()
+        page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1)")
+        assert counters() == baseline
+        expect(canvas).to_have_attribute("data-scroll-animation-tier", tier)
+        expect(canvas).to_have_attribute(
+            "data-scroll-animation-interval-ms",
+            f"{interval_ms:.1f}",
+        )
+
+        page.evaluate(
+            "elapsed => window.__mutaTentaclesDebugFrameAfter(elapsed)",
+            interval_ms - 1,
+        )
+        assert counters() == baseline
+        page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1)")
+        admitted = counters()
+        assert admitted == {
+            "rendered": baseline["rendered"] + 1,
+            "physics": baseline["physics"] + 1,
+        }
+
+        page.evaluate(
+            "elapsed => window.__mutaTentaclesDebugFrameAfter(elapsed)",
+            interval_ms * 5,
+        )
+        after_long_gap = counters()
+        assert after_long_gap == {
+            "rendered": admitted["rendered"] + 1,
+            "physics": admitted["physics"] + 1,
+        }
+        page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1)")
+        assert counters() == after_long_gap
+
+        page.evaluate(
+            """
+            () => window.__mutaTentaclesSetRuntimeState({
+              visible: true,
+              scrollActive: false,
+            })
+            """
+        )
+        page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1)")
+        resumed = counters()
+        assert resumed == {
+            "rendered": after_long_gap["rendered"] + 1,
+            "physics": after_long_gap["physics"] + 1,
+        }
+        expect(canvas).to_have_attribute(
+            "data-scroll-animation-tier",
+            "inactive",
+        )
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesDebugSetScrollBudgetSignals({
+          cadenceMs: 45.1,
+          frameCostMs: 20,
+        })
+        """
+    )
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: true,
+        })
+        """
+    )
+    frozen_baseline = counters()
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1)")
+    expect(canvas).to_have_attribute("data-scroll-animation-tier", "frozen")
+    expect(canvas).to_have_attribute(
+        "data-scroll-animation-interval-ms",
+        "paused",
+    )
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000)")
+    assert counters() == frozen_baseline
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesDebugSetScrollBudgetSignals({
+          cadenceMs: 20,
+          frameCostMs: 7,
+        })
+        """
+    )
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1)")
+    recovered = counters()
+    assert recovered == {
+        "rendered": frozen_baseline["rendered"] + 1,
+        "physics": frozen_baseline["physics"] + 1,
+    }
+    expect(canvas).to_have_attribute("data-scroll-animation-tier", "fast")
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: false,
+        })
+        """
+    )
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1)")
+    assert counters() == {
+        "rendered": recovered["rendered"] + 1,
+        "physics": recovered["physics"] + 1,
+    }
+    assert canvas.evaluate(
+        """
+        element => ({
+          width: element.width,
+          height: element.height,
+          colorTargetFormat: element.dataset.colorTargetFormat,
+          geometryTargetFormat: element.dataset.geometryTargetFormat,
+        })
+        """
+    ) == quality_baseline
+
+
+def test_scroll_budget_reduces_frame_count_without_slowing_animation_time(
+    driver: DriverFactory,
+) -> None:
+    """Throttle expensive frames without turning cadence into slow motion.
+
+    The scroll budget intentionally admits only 30, 20, or 12 complete physics
+    and WebGL frames per second. Originally the skipped RAF callbacks also
+    discarded their elapsed animation time. Consequently the procedural rest
+    targets advanced only on admitted frames: a nominal 20 FPS tier moved at
+    roughly one third of normal speed, while 8 FPS looked practically frozen.
+    Frame throttling and animation speed are separate concerns, so cheap
+    skipped callbacks must advance only the autonomous animation clock while
+    continuing to omit Verlet solving, texture uploads, and all render passes.
+    The next admitted frame receives the bounded elapsed response time in one
+    solver pass, with a time-equivalent rest response; otherwise the targets
+    would move at the right rate while the visible chains still followed them
+    three to eight times too slowly. The response is capped at 125 ms and never
+    expands into multiple catch-up physics frames.
+
+    For every finite tier this regression feeds sixty regular 60 Hz RAF ticks
+    through the real manual-frame WebGL runtime. The animation clock must gain
+    one full second (or 0.22 seconds under the existing reduced-motion policy),
+    yet the independent physics and rendered counters must gain exactly 29,
+    19, and 11 frames for the 33.3, 50, and 83.3 ms deadlines. The final admitted
+    frame must report the corresponding bounded elapsed response. This proves
+    that the fix does not secretly recover motion by running expensive hidden
+    work while still preserving the visible chain response rate.
+    The adjacent deadline test separately verifies that a genuine long gap is
+    discarded rather than accumulated into a catch-up burst; this test models
+    the ordinary case where lightweight RAF callbacks continue during scroll.
+
+    The manual clock and exact counters make the assertion independent of wall
+    time, display refresh rate, test-machine performance, and GPU scheduling.
+    Removing the clock-only advancement recreates the reported slow motion;
+    advancing physics or rendering on skipped ticks breaks the frame counts;
+    changing the site's reduced-motion multiplier breaks the explicit policy
+    calculation instead of weakening the temporal guarantee. A final 25 Hz
+    callback sequence also exercises the slow end of the finite cadence range:
+    its 40 ms ticks must retain their complete time rather than being truncated
+    by the ordinary 33 ms physics-stability cap.
+    """
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        stored_theme="dark",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        """
+        () =>
+          typeof window.__mutaTentaclesDebugFrameAfter === "function" &&
+          typeof window.__mutaTentaclesDebugSetScrollBudgetSignals ===
+            "function" &&
+          typeof window.__mutaTentaclesDebugAnimationTimeSeconds ===
+            "function"
+        """
+    )
+
+    def counters() -> dict[str, int]:
+        return canvas.evaluate(
+            """
+            element => ({
+              rendered: Number(element.dataset.renderedFrameId || 0),
+              physics: Number(element.dataset.physicsFrameId || 0),
+            })
+            """
+        )
+
+    def animation_time() -> float:
+        return page.evaluate(
+            "() => window.__mutaTentaclesDebugAnimationTimeSeconds()"
+        )
+
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    reduced_motion_multiplier = page.evaluate(
+        """
+        () => matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? 0.22
+          : 1
+        """
+    )
+    tiers = [
+        ("fast", 20, 7, 29, 1000 / 30),
+        ("balanced", 28, 12, 19, 50.0),
+        ("conservative", 45, 20, 11, 1000 / 12),
+    ]
+
+    for (
+        tier,
+        cadence_ms,
+        frame_cost_ms,
+        expected_frames,
+        expected_response_ms,
+    ) in tiers:
+        page.evaluate(
+            """
+            signals =>
+              window.__mutaTentaclesDebugSetScrollBudgetSignals(signals)
+            """,
+            {
+                "cadenceMs": cadence_ms,
+                "frameCostMs": frame_cost_ms,
+            },
+        )
+        page.evaluate(
+            """
+            () => window.__mutaTentaclesSetRuntimeState({
+              visible: true,
+              scrollActive: true,
+            })
+            """
+        )
+        baseline_counters = counters()
+        baseline_time = animation_time()
+
+        for _ in range(60):
+            page.evaluate(
+                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+            )
+
+        admitted_counters = counters()
+        assert admitted_counters == {
+            "rendered": baseline_counters["rendered"] + expected_frames,
+            "physics": baseline_counters["physics"] + expected_frames,
+        }
+        assert animation_time() - baseline_time == pytest.approx(
+            reduced_motion_multiplier,
+            abs=1e-9,
+        )
+        assert float(
+            canvas.get_attribute("data-physics-elapsed-ms") or "0"
+        ) == pytest.approx(expected_response_ms, abs=0.1)
+        expect(canvas).to_have_attribute("data-scroll-animation-tier", tier)
+
+        page.evaluate(
+            """
+            () => window.__mutaTentaclesSetRuntimeState({
+              visible: true,
+              scrollActive: false,
+            })
+            """
+        )
+        page.evaluate(
+            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+        )
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesDebugSetScrollBudgetSignals({
+          cadenceMs: 40,
+          frameCostMs: 12,
+        })
+        """
+    )
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: true,
+        })
+        """
+    )
+    slow_cadence_baseline = counters()
+    slow_cadence_time = animation_time()
+    for _ in range(20):
+        page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(40)")
+    assert animation_time() - slow_cadence_time == pytest.approx(
+        0.8 * reduced_motion_multiplier,
+        abs=1e-9,
+    )
+    assert counters() == {
+        "rendered": slow_cadence_baseline["rendered"] + 6,
+        "physics": slow_cadence_baseline["physics"] + 6,
+    }
+    assert float(
+        canvas.get_attribute("data-physics-elapsed-ms") or "0"
+    ) == pytest.approx(120.0, abs=0.1)
+    expect(canvas).to_have_attribute(
+        "data-scroll-animation-tier",
+        "conservative",
+    )
+
+
+def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
+    driver: DriverFactory,
+) -> None:
+    """Keep visible chain motion close to the original 60 FPS trajectory.
+
+    Correct animation time alone is insufficient: a procedural rest target can
+    reach the proper phase while a sparsely updated Verlet chain visibly lags
+    behind it. This regression therefore compares actual point coordinates,
+    not clocks or frame counters. For each 30, 20, and 12 FPS scroll tier it
+    opens two independent real-WebGL runtimes with the same generation seed and
+    a zero animation-time origin. One runtime advances at the ordinary 60 Hz;
+    the other receives the production scroll budget and its single-pass
+    temporal compensation.
+
+    At every frame admitted by the scroll runtime, the test samples three
+    joints—the first third, second third, and tip—on twelve evenly distributed
+    skeletons. The corresponding reference coordinates are captured at the
+    same virtual wall time. RMS trajectory error detects general shape lag;
+    endpoint error catches a final phase offset; and the ratio of accumulated
+    point-path lengths detects motion whose positions are plausible but whose
+    visible travel is still unnaturally slow or over-amplified. Sampling only
+    admitted frames intentionally measures what a user can actually see.
+
+    The debug sampler exists only in manual-frame mode, allocates nothing in
+    production, and returns raw solver coordinates before projection. Fixed
+    time, seed, viewport profile, sample topology, and explicit RAF ticks make
+    the comparison deterministic across CPUs and GPUs. Raising cadence without
+    fixing chain response, weakening temporal compensation, adding hidden
+    physics frames, changing the sampled solver topology, or introducing
+    scroll-only jitter must therefore fail numerically rather than relying on a
+    subjective visual judgement.
+
+    The calibrated contract requires at least 85% and at most 110% of the
+    reference visible travel, RMS error below 0.003 surface units, maximum
+    sampled error below 0.005, and final offset below 0.003. Those bounds are
+    tight enough to reject the former unboosted single-pass response
+    (approximately 78/66/54% travel) while retaining small numerical freedom
+    for the deliberately lower temporal sampling rate.
+
+    Scroll exit has a separate velocity contract. Verlet stores displacement
+    per simulation step, so the final compensated 33–83 ms displacement cannot
+    be consumed unchanged by the next ordinary 16.7 ms step: that produced six
+    post-scroll frames travelling 1.70×, 2.32×, and 3.58× farther than the
+    continuous reference. Production rescales the incoming displacement by the
+    represented frame count and applies a short 0.8 continuation damping for
+    only the excess represented frames. Over the first six ordinary frames,
+    total travel must stay within 0.85–1.2×; every individual step must remain
+    within 0.6–1.25×. The lower bounds prevent replacing acceleration with a
+    visible stop, while the upper bounds catch both the original burst and a
+    subtler delayed overshoot.
+    """
+
+    def open_runtime() -> tuple[Page, Locator]:
+        page = driver(
+            initial_path=(
+                f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
+                "&animation-time-origin=0"
+            ),
+            stored_theme="dark",
+            load_interactive_visuals=True,
+            wait_for_theme_ready=False,
+        )
+        canvas = page.locator("#muta")
+        expect(canvas).to_be_visible(timeout=30_000)
+        page.wait_for_function(
+            """
+            () =>
+              typeof window.__mutaTentaclesDebugFrameAfter === "function" &&
+              typeof window.__mutaTentaclesDebugSetScrollBudgetSignals ===
+                "function" &&
+              typeof window.__mutaTentaclesDebugTrajectorySample ===
+                "function"
+            """
+        )
+        page.evaluate(
+            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+        )
+        return page, canvas
+
+    def sample(page: Page) -> list[float]:
+        values = page.evaluate(
+            "() => window.__mutaTentaclesDebugTrajectorySample()"
+        )
+        assert len(values) == 12 * 3 * 3
+        return [float(value) for value in values]
+
+    def point_rms(left: list[float], right: list[float]) -> float:
+        assert len(left) == len(right)
+        point_count = len(left) // 3
+        squared_distance = 0.0
+        for offset in range(0, len(left), 3):
+            squared_distance += sum(
+                (left[offset + axis] - right[offset + axis]) ** 2
+                for axis in range(3)
+            )
+        return math.sqrt(squared_distance / point_count)
+
+    def path_length(path: list[list[float]]) -> float:
+        return sum(
+            point_rms(previous, current)
+            for previous, current in zip(path, path[1:])
+        )
+
+    tiers = [
+        ("fast", 20, 7, 29),
+        ("balanced", 28, 12, 19),
+        ("conservative", 45, 20, 11),
+    ]
+    measured_metrics: dict[str, dict[str, float]] = {}
+
+    for tier, cadence_ms, frame_cost_ms, expected_frames in tiers:
+        reference_page, _ = open_runtime()
+        scroll_page, scroll_canvas = open_runtime()
+        scroll_page.evaluate(
+            """
+            signals =>
+              window.__mutaTentaclesDebugSetScrollBudgetSignals(signals)
+            """,
+            {
+                "cadenceMs": cadence_ms,
+                "frameCostMs": frame_cost_ms,
+            },
+        )
+        scroll_page.evaluate(
+            """
+            () => window.__mutaTentaclesSetRuntimeState({
+              visible: true,
+              scrollActive: true,
+            })
+            """
+        )
+        previous_rendered_frame = int(
+            scroll_canvas.get_attribute("data-rendered-frame-id") or "0"
+        )
+        reference_path = [sample(reference_page)]
+        scroll_path = [sample(scroll_page)]
+
+        for _ in range(60):
+            reference_page.evaluate(
+                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+            )
+            scroll_page.evaluate(
+                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+            )
+            rendered_frame = int(
+                scroll_canvas.get_attribute("data-rendered-frame-id") or "0"
+            )
+            if rendered_frame == previous_rendered_frame:
+                continue
+            assert rendered_frame == previous_rendered_frame + 1
+            previous_rendered_frame = rendered_frame
+            reference_path.append(sample(reference_page))
+            scroll_path.append(sample(scroll_page))
+
+        assert len(scroll_path) == expected_frames + 1
+        trajectory_errors = [
+            point_rms(reference, throttled)
+            for reference, throttled in zip(
+                reference_path,
+                scroll_path,
+                strict=True,
+            )
+        ]
+        reference_distance = path_length(reference_path)
+        scroll_distance = path_length(scroll_path)
+        reference_exit_path = [sample(reference_page)]
+        scroll_exit_path = [sample(scroll_page)]
+        scroll_page.evaluate(
+            """
+            () => window.__mutaTentaclesSetRuntimeState({
+              visible: true,
+              scrollActive: false,
+            })
+            """
+        )
+        for _ in range(6):
+            reference_page.evaluate(
+                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+            )
+            scroll_page.evaluate(
+                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+            )
+            reference_exit_path.append(sample(reference_page))
+            scroll_exit_path.append(sample(scroll_page))
+        reference_exit_steps = [
+            point_rms(previous, current)
+            for previous, current in zip(
+                reference_exit_path,
+                reference_exit_path[1:],
+            )
+        ]
+        scroll_exit_steps = [
+            point_rms(previous, current)
+            for previous, current in zip(
+                scroll_exit_path,
+                scroll_exit_path[1:],
+            )
+        ]
+        measured_metrics[tier] = {
+            "rms": math.sqrt(
+                sum(error * error for error in trajectory_errors)
+                / len(trajectory_errors)
+            ),
+            "maximum": max(trajectory_errors),
+            "endpoint": trajectory_errors[-1],
+            "path_ratio": scroll_distance / reference_distance,
+            "exit_path_ratio": (
+                path_length(scroll_exit_path) /
+                path_length(reference_exit_path)
+            ),
+            "minimum_exit_step_ratio": min(
+                scroll_step / reference_step
+                for scroll_step, reference_step in zip(
+                    scroll_exit_steps,
+                    reference_exit_steps,
+                    strict=True,
+                )
+            ),
+            "maximum_exit_step_ratio": max(
+                scroll_step / reference_step
+                for scroll_step, reference_step in zip(
+                    scroll_exit_steps,
+                    reference_exit_steps,
+                    strict=True,
+                )
+            ),
+        }
+
+    for metrics in measured_metrics.values():
+        assert metrics["rms"] < 0.003
+        assert metrics["maximum"] < 0.005
+        assert metrics["endpoint"] < 0.003
+        assert 0.85 < metrics["path_ratio"] < 1.1
+        assert 0.85 < metrics["exit_path_ratio"] < 1.2
+        assert metrics["minimum_exit_step_ratio"] > 0.6
+        assert metrics["maximum_exit_step_ratio"] < 1.25
+
+
+def test_scroll_mode_holds_the_complete_webgl_frame_between_budgeted_updates(
     driver: DriverFactory,
     base_url: str,
 ) -> None:
-    """Prevent invisible tentacle physics from stealing page-scroll frames.
+    """Prevent unbudgeted tentacle work between passive scroll updates.
 
     The contact surface renders a supersampled 2400-pixel-wide WebGL frame on a
     typical desktop viewport. The first scroll optimization correctly held its
@@ -1047,17 +1934,18 @@ def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
 
     This test activates that exact iframe runtime mode and records the canvas
     backing dimensions, rendered frame id, and independent physics frame id.
-    During active scrolling both counters must remain unchanged: Chromium can
-    composite the existing full-quality texture without any hidden JavaScript
-    physics or GPU work. Once scrolling ends, one ordinary frame must advance
-    both counters at the original backing dimensions. Pointer-press tests cover
-    the deliberate exception that keeps an active mouse interaction responsive.
+    Two ticks spanning only 68 ms remain below the conservative 83.3 ms startup
+    budget, so both counters must remain unchanged while Chromium composites
+    the existing full-quality texture. The adaptive-budget regression covers
+    the eventual sparse update. Once scrolling ends, one ordinary frame must
+    advance both counters at the original backing dimensions. Pointer-press
+    tests cover the deliberate responsiveness exception.
 
-    Reintroducing the former "render-only" suppression makes the physics id
-    advance and fails this regression; lowering resolution changes the stored
-    dimensions; and accidentally leaving the iframe paused after ``scrollend``
-    prevents the final frame from advancing. Together those assertions protect
-    smooth scrolling without allowing a visual-quality workaround.
+    Reintroducing full-rate or "render-only" work advances one of the counters
+    before its budget and fails this regression; lowering resolution changes
+    the stored dimensions; and accidentally leaving the iframe throttled after
+    ``scrollend`` prevents the final frame from advancing. Together those
+    assertions protect scrolling without allowing a visual-quality workaround.
     """
 
     page = driver(
@@ -1613,22 +2501,25 @@ def test_contact_scroll_quiet_period_has_exact_deterministic_boundaries(
     driver: DriverFactory,
     viewport: tuple[int, int],
 ) -> None:
-    """Keep heavy tentacle work paused for the complete scroll quiet period.
+    """Keep adaptive scroll mode active for the complete quiet period.
 
     The bottom-of-page hitch was caused by the full-density WebGL simulation
-    resuming between two events from one momentum-scroll gesture. The host now
-    treats 320 ms without another scroll event as a fallback end boundary while
-    native ``scrollend`` remains the preferred signal. This regression opens
-    the real contact iframe at both desktop and phone widths, freezes browser
-    time, dispatches the same top-level event as a physical page movement, and
-    proves that suppression is immediate, still active at exactly 319 ms, and
-    released at exactly 320 ms.
+    returning to its full-rate loop between two events from one momentum-scroll
+    gesture. The host now treats 320 ms without another scroll event as a
+    fallback end boundary while native ``scrollend`` remains the preferred
+    signal. While this state is marked ``suppressed``, the child may submit only
+    the sparse frames admitted by its independent adaptive budget; the marker
+    no longer means that every physics/render update is forbidden. This
+    regression opens the real contact iframe at desktop and phone widths,
+    freezes browser time, dispatches the same top-level event as physical page
+    movement, and proves that budget mode begins immediately, remains active at
+    exactly 319 ms, and returns to ordinary animation at exactly 320 ms.
 
     No wall-clock sleep participates in the assertions: Playwright advances the
     page's production ``setTimeout`` deterministically. Restoring the former
-    120 ms delay, rounding the boundary down, failing to start suppression, or
-    leaving the renderer paused forever therefore fails identically on a fast
-    workstation and a slow CI worker. The two viewport cases protect the
+    120 ms delay, rounding the boundary down, failing to start budget mode, or
+    leaving the renderer throttled forever therefore fails identically on a
+    fast workstation and a slow CI worker. The two viewport cases protect the
     responsive layout where the intermittent regression was most noticeable.
     """
 
@@ -1676,17 +2567,19 @@ def test_each_scroll_event_restarts_the_complete_quiet_period(
     A trackpad or touch gesture emits a burst of scroll events rather than one
     continuous event. The fallback deadline must be measured from the newest
     event in that burst. If the host forgets to cancel the earlier timer, the
-    tentacle renderer wakes 320 ms after the first event, performs an expensive
-    frame while the page is still moving, and recreates the intermittent
-    stutter even though the simple single-event boundary test still passes.
+    tentacle renderer returns to unrestricted animation 320 ms after the first
+    event while the page is still moving. Adaptive scroll frames are bounded;
+    a mistakenly restored 60 FPS loop is not, so the intermittent stutter can
+    return even though the simple single-event boundary test still passes.
 
     This scenario freezes time on the real desktop and mobile layouts, begins a
     scroll, advances 240 ms, then emits a second scroll event. It requires the
-    iframe to remain suppressed through 319 ms measured from that second event
-    and to resume only on its following millisecond. Because no real waiting or
-    measured FPS is involved, the test isolates timer replacement itself and
-    fails reliably if ``clearTimeout`` is removed, the old handle survives, or
-    the replacement deadline is calculated from the start of the gesture.
+    iframe to remain in budget mode through 319 ms measured from that second
+    event and to resume full-rate animation only on its following millisecond.
+    Because no real waiting or measured FPS is involved, the test isolates
+    timer replacement itself and fails reliably if ``clearTimeout`` is removed,
+    the old handle survives, or the replacement deadline is calculated from
+    the start of the gesture.
     """
 
     page, canvas = _open_contact_with_active_tentacle_runtime(
@@ -1727,12 +2620,13 @@ def test_scrollend_and_iframe_wheel_share_the_scroll_lifecycle(
     page ``scroll`` and ``scrollend`` events. When the cursor is over the
     iframe, its own document sees the wheel first and must notify the parent by
     ``postMessage``. A regression in either half can leave the high-cost
-    simulation running during the gesture or paused after it. This test first
-    proves that native ``scrollend`` resumes rendering immediately without
-    advancing the 320 ms fallback clock. It then dispatches a wheel event on the
-    real child canvas and requires the same immediate suppression, the same
-    319 ms protected interval, and the same fallback release at 320 ms. Both
-    halves also inspect the parent iframe's ``data-scroll-active`` state. That
+    simulation unrestricted during the gesture or throttled after it. This test
+    first proves that native ``scrollend`` resumes ordinary rendering
+    immediately without advancing the 320 ms fallback clock. It then dispatches
+    a wheel event on the real child canvas and requires the same immediate entry
+    into adaptive budget mode, the same 319 ms protected interval, and the same
+    fallback release at 320 ms. Both halves also inspect the parent iframe's
+    ``data-scroll-active`` state. That
     parent-side assertion is essential: the child has its own defensive idle
     timer, so observing only the canvas could pass even if its ``postMessage``
     relay had silently stopped reaching the page.
@@ -1809,11 +2703,12 @@ def test_outward_momentum_at_page_bottom_never_pauses_tentacles(
     This regression loads the real WebGL surface on desktop and phone layouts,
     moves the document to its exact lower boundary, and sends sixteen outward
     wheel events over 2.4 seconds of deterministic browser time. No event may
-    increment the suppression counter or pause rendering. It then sends one
-    negative delta, which can genuinely move the page upward, and requires the
-    normal compositor-friendly suppression to start. The final assertion is
-    essential: the boundary fix must remove only the false freeze and preserve
-    the existing smooth-scroll optimization whenever movement is possible.
+    increment the suppression counter or enter adaptive budget mode. It then
+    sends one negative delta, which can genuinely move the page upward, and
+    requires the compositor-friendly budget mode to start. The final assertion
+    is essential: the boundary fix must remove only the false throttle and
+    preserve the existing smooth-scroll optimization whenever movement is
+    possible.
 
     Playwright's frozen clock replaces all real waiting, so display refresh
     rate, WebGL speed, CPU load, and CI scheduling cannot hide or fabricate the
@@ -1870,14 +2765,15 @@ def test_bottom_boundary_input_cancels_an_inflight_scroll_pause(
     driver: DriverFactory,
     viewport: tuple[int, int],
 ) -> None:
-    """End an existing render pause as soon as scrolling becomes impossible.
+    """End adaptive scroll throttling as soon as movement becomes impossible.
 
     The last real scroll event can put the iframe into suppression immediately
     before the document reaches its lower limit. If the following momentum
     wheel event is merely ignored, the already-running parent and child timers
-    still hold the final tentacle texture for another 320 ms. Worse, a stale
-    parent state can reapply that pause after the child has locally resumed.
-    The visible result is a shorter version of the same bottom-of-page freeze.
+    keep the iframe in reduced-cadence budget mode for another 320 ms. Worse, a
+    stale parent state can reapply throttling after the child has locally
+    resumed. Historically this held one texture completely still; with adaptive
+    animation it would still make the bottom unnecessarily less responsive.
 
     At both responsive widths this test starts from the exact page bottom and
     emits an inward iframe wheel delta. Synthetic wheel events do not move the
@@ -1885,9 +2781,9 @@ def test_bottom_boundary_input_cancels_an_inflight_scroll_pause(
     places the real child-to-parent protocol into active-scroll mode without
     racing a browser-generated ``scrollend``. It then emits an outward delta
     that cannot change ``scrollTop``. The parent state and child renderer must
-    both become active immediately. Advancing the fake clock through the
-    discarded deadline must not produce a late state reversal. This catches
-    incomplete fixes that filter only new pauses, introduce another suppression
+    both return to ordinary mode immediately. Advancing the fake clock through
+    the discarded deadline must not produce a late state reversal. This catches
+    incomplete fixes that filter only new throttles, introduce another budget
     transition at the discarded deadline, or update the iframe without
     synchronizing the host lifecycle.
     """
@@ -2976,12 +3872,30 @@ def _restore_legacy_release_recovery(source: str) -> str:
           runImmediateReleaseFrame(0.033);""",
         ),
         (
-            """          const velocityDamping = Math.exp(-delta * 10.2);
-          const restResponse = 72.0 * delta * delta;""",
+            """          const velocityDamping = Math.exp(-temporalDelta * 10.2);
+          // Ordinary frames retain the original integration exactly. A
+          // budgeted scroll frame represents several omitted RAF intervals.
+          // Start with the equivalent accumulated 60 Hz rest response rather
+          // than squaring a large delta (which would overshoot), then apply a
+          // bounded cadence compensation calibrated against sampled 60 FPS
+          // trajectories. Without it, one solver pass travels only about
+          // 54-78% as far as the visible reference path.
+          const restResponse =
+            temporalDelta === delta
+              ? 72.0 * delta * delta
+              : Math.min(
+                  MAXIMUM_SCROLL_REST_RESPONSE,
+                  (1 - Math.pow(0.98, temporalDelta * 60)) *
+                    (
+                      1 +
+                      SCROLL_RESPONSE_BOOST_PER_OMITTED_FRAME *
+                        Math.max(0, temporalDelta * 60 - 1)
+                    ),
+                );""",
             """          const releaseRecoveryActive =
             pointerInteraction.phase === "recovering";
           const velocityDamping = Math.exp(
-            -delta *
+            -temporalDelta *
               (
                 releaseRecoveryActive
                   ? RELEASE_RECOVERY_DAMPING
@@ -2989,8 +3903,18 @@ def _restore_legacy_release_recovery(source: str) -> str:
               ),
           );
           const restResponse = releaseRecoveryActive
-            ? 1 - Math.exp(-delta * RELEASE_RECOVERY_RATE)
-            : 72.0 * delta * delta;""",
+            ? 1 - Math.exp(-temporalDelta * RELEASE_RECOVERY_RATE)
+            : temporalDelta === delta
+              ? 72.0 * delta * delta
+              : Math.min(
+                  MAXIMUM_SCROLL_REST_RESPONSE,
+                  (1 - Math.pow(0.98, temporalDelta * 60)) *
+                    (
+                      1 +
+                      SCROLL_RESPONSE_BOOST_PER_OMITTED_FRAME *
+                        Math.max(0, temporalDelta * 60 - 1)
+                    ),
+                );""",
         ),
     ]
 

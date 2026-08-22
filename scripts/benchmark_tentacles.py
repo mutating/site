@@ -60,6 +60,7 @@ def run_scenario(
     snapshot_path: Path | None,
     gpu_timing: bool,
     solver_early_exit: bool,
+    color_target_format: str | None,
 ) -> dict[str, Any]:
     context = browser.new_context(
         viewport={"width": 1280, "height": 720},
@@ -79,6 +80,8 @@ def run_scenario(
         query_parameters["gpu-timing"] = "1"
     if not solver_early_exit:
         query_parameters["solver-early-exit"] = "0"
+    if color_target_format is not None:
+        query_parameters["color-target-format"] = color_target_format
     query = urlencode(query_parameters)
     page.goto(f"{base_url}?{query}", wait_until="domcontentloaded")
     page.wait_for_function(
@@ -172,6 +175,13 @@ def run_scenario(
           return {
             canvas: `${canvas.width}x${canvas.height}`,
             renderer,
+            renderTargets: {
+              colorFormat: data.colorTargetFormat,
+              geometryFormat: data.geometryTargetFormat,
+              colorBytes: Number(data.colorTargetBytes),
+              geometryBytes: Number(data.geometryTargetBytes),
+              totalBytes: Number(data.renderTargetBytes),
+            },
             tentacles: Number(data.tentacles),
             surfaceGrid: data.surfaceGrid,
             spatialShaderPath: data.surfaceShaderPath,
@@ -271,6 +281,7 @@ def measure_input_latency(
     warmup_count: int,
     gpu_timing: bool,
     solver_early_exit: bool,
+    color_target_format: str | None,
 ) -> dict[str, Any]:
     context = browser.new_context(
         viewport={"width": 1280, "height": 720},
@@ -310,6 +321,8 @@ def measure_input_latency(
         query_parameters["gpu-timing"] = "1"
     if not solver_early_exit:
         query_parameters["solver-early-exit"] = "0"
+    if color_target_format is not None:
+        query_parameters["color-target-format"] = color_target_format
     query = urlencode(query_parameters)
     page.goto(f"{base_url}?{query}", wait_until="domcontentloaded")
     page.wait_for_function(
@@ -551,6 +564,17 @@ def measure_input_latency(
         })
         """
     )
+    render_targets = canvas.evaluate(
+        """
+        (element) => ({
+          colorFormat: element.dataset.colorTargetFormat,
+          geometryFormat: element.dataset.geometryTargetFormat,
+          colorBytes: Number(element.dataset.colorTargetBytes),
+          geometryBytes: Number(element.dataset.geometryTargetBytes),
+          totalBytes: Number(element.dataset.renderTargetBytes),
+        })
+        """
+    )
     cdp.send("Page.stopScreencast")
     context.close()
     result: dict[str, Any] = {
@@ -562,6 +586,7 @@ def measure_input_latency(
         "compositorFrameMs": summarize(compositor_frame_milliseconds),
         "gpu": gpu,
         "solver": solver,
+        "renderTargets": render_targets,
         "pageErrors": errors,
     }
     return result
@@ -581,6 +606,10 @@ def main() -> None:
     parser.add_argument("--input-only", action="store_true")
     parser.add_argument("--gpu-timing", action="store_true")
     parser.add_argument("--disable-solver-early-exit", action="store_true")
+    parser.add_argument(
+        "--color-target-format",
+        choices=("r11f-g11f-b10f", "rgba8", "rgba16f"),
+    )
     parser.add_argument("--executable")
     parser.add_argument("--source", type=Path, default=TENTACLES_SOURCE)
     arguments = parser.parse_args()
@@ -607,6 +636,7 @@ def main() -> None:
                 snapshot_path=arguments.snapshot,
                 gpu_timing=arguments.gpu_timing,
                 solver_early_exit=solver_early_exit,
+                color_target_format=arguments.color_target_format,
             )
             scenarios["hover"] = run_scenario(
                 browser,
@@ -618,6 +648,7 @@ def main() -> None:
                 snapshot_path=arguments.snapshot,
                 gpu_timing=arguments.gpu_timing,
                 solver_early_exit=solver_early_exit,
+                color_target_format=arguments.color_target_format,
             )
         if arguments.input_samples > 0:
             scenarios["leftInput"] = measure_input_latency(
@@ -628,6 +659,7 @@ def main() -> None:
                 warmup_count=arguments.warmup,
                 gpu_timing=arguments.gpu_timing,
                 solver_early_exit=solver_early_exit,
+                color_target_format=arguments.color_target_format,
             )
             scenarios["rightInput"] = measure_input_latency(
                 browser,
@@ -637,6 +669,7 @@ def main() -> None:
                 warmup_count=arguments.warmup,
                 gpu_timing=arguments.gpu_timing,
                 solver_early_exit=solver_early_exit,
+                color_target_format=arguments.color_target_format,
             )
         result = {
             "benchmark": {
@@ -648,6 +681,7 @@ def main() -> None:
                 "frameDelta": "33ms capped slow-frame path",
                 "gpuTiming": arguments.gpu_timing,
                 "solverEarlyExit": solver_early_exit,
+                "colorTargetFormat": arguments.color_target_format,
                 "inputPhaseSweep": "deterministic 0-16ms",
             },
             "browserVersion": browser.version,

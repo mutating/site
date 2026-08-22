@@ -1266,6 +1266,10 @@
     let contactIsVisible = false;
     let scrollIsActive = false;
     let scrollIdleTimer = 0;
+    let pointerRefreshFrame = 0;
+    let hasViewportPointer = false;
+    let lastPointerClientX = 0;
+    let lastPointerClientY = 0;
     const scrollIdleFallbackMs = 320;
 
     const prewarm = () => {
@@ -1323,24 +1327,65 @@
         location.origin,
       );
     };
-    const relayPassivePointer = (event) => {
+    const rememberViewportPointer = (clientX, clientY) => {
+      const numericX = Number(clientX);
+      const numericY = Number(clientY);
+      if (!Number.isFinite(numericX) || !Number.isFinite(numericY)) {
+        return false;
+      }
+      lastPointerClientX = numericX;
+      lastPointerClientY = numericY;
+      hasViewportPointer = true;
+      return true;
+    };
+    const refreshRelayedPointer = () => {
+      pointerRefreshFrame = 0;
+      if (!hasViewportPointer) return;
       const rect = frame.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
+      const inside =
+        lastPointerClientX >= rect.left &&
+        lastPointerClientX <= rect.right &&
+        lastPointerClientY >= rect.top &&
+        lastPointerClientY <= rect.bottom;
       frame.contentWindow?.postMessage(
-        {
-          type: "muta-tentacles-pointer-hover",
-          x: Math.max(
-            0,
-            Math.min(1, (event.clientX - rect.left) / rect.width),
-          ),
-          y: Math.max(
-            0,
-            Math.min(1, (event.clientY - rect.top) / rect.height),
-          ),
-          inside: true,
-        },
+        inside
+          ? {
+              type: "muta-tentacles-pointer-hover",
+              x: Math.max(
+                0,
+                Math.min(
+                  1,
+                  (lastPointerClientX - rect.left) / rect.width,
+                ),
+              ),
+              y: Math.max(
+                0,
+                Math.min(
+                  1,
+                  (lastPointerClientY - rect.top) / rect.height,
+                ),
+              ),
+              inside: true,
+            }
+          : {
+              type: "muta-tentacles-pointer-hover",
+              inside: false,
+            },
         location.origin,
       );
+    };
+    const schedulePointerRefresh = () => {
+      if (pointerRefreshFrame || !hasViewportPointer) return;
+      pointerRefreshFrame = requestAnimationFrame(refreshRelayedPointer);
+    };
+    const relayPassivePointer = (event) => {
+      if (!rememberViewportPointer(event.clientX, event.clientY)) return;
+      if (pointerRefreshFrame) {
+        cancelAnimationFrame(pointerRefreshFrame);
+        pointerRefreshFrame = 0;
+      }
+      refreshRelayedPointer();
     };
     const clearRelayedPointer = () => {
       frame.contentWindow?.postMessage(
@@ -1355,6 +1400,7 @@
     };
     const finishScroll = () => {
       clearScrollIdleTimer();
+      schedulePointerRefresh();
       if (!scrollIsActive) return;
       scrollIsActive = false;
       sendRuntimeState();
@@ -1379,6 +1425,7 @@
     };
     const handleScroll = () => {
       if (!contactIsVisible) return;
+      schedulePointerRefresh();
       if (!scrollIsActive) {
         scrollIsActive = true;
         sendRuntimeState();
@@ -1417,15 +1464,18 @@
           return;
         }
         const rect = frame.getBoundingClientRect();
+        const clientX =
+          rect.left +
+          Math.max(0, Math.min(1, normalizedX)) * rect.width;
+        const clientY =
+          rect.top +
+          Math.max(0, Math.min(1, normalizedY)) * rect.height;
+        rememberViewportPointer(clientX, clientY);
         dispatchEvent(
           new CustomEvent(TENTACLE_POINTER_RELAY_EVENT, {
             detail: {
-              clientX:
-                rect.left +
-                Math.max(0, Math.min(1, normalizedX)) * rect.width,
-              clientY:
-                rect.top +
-                Math.max(0, Math.min(1, normalizedY)) * rect.height,
+              clientX,
+              clientY,
             },
           }),
         );
@@ -1451,6 +1501,8 @@
         if (!contactIsVisible) {
           clearScrollIdleTimer();
           scrollIsActive = false;
+        } else {
+          schedulePointerRefresh();
         }
         sendRuntimeState();
       },
@@ -1459,12 +1511,20 @@
     copy?.addEventListener("pointermove", relayPassivePointer, {
       passive: true,
     });
+    addEventListener(
+      "pointermove",
+      (event) => {
+        rememberViewportPointer(event.clientX, event.clientY);
+      },
+      { passive: true },
+    );
     contact?.addEventListener("pointerleave", clearRelayedPointer, {
       passive: true,
     });
     addEventListener("message", handleMessage);
     addEventListener("scroll", handleScroll, { passive: true });
     addEventListener("scrollend", finishScroll, { passive: true });
+    addEventListener("resize", schedulePointerRefresh, { passive: true });
     addEventListener("pointerup", releaseTentacles, { passive: true });
     addEventListener("pointercancel", releaseTentacles, { passive: true });
     addEventListener("blur", releaseTentacles);

@@ -5568,6 +5568,191 @@ def test_header_eye_gaze_speed_is_stable_when_animation_frames_are_delayed(
     assert abs(sixty_hz_position - thirty_hz_position) <= 1
 
 
+@pytest.mark.interactive_visuals
+@pytest.mark.xdist_group(name="tentacle-webgl")
+def test_stationary_tentacle_pointer_is_reprojected_during_page_scroll(
+    driver: DriverFactory,
+) -> None:
+    """Keep attraction under a stationary viewport cursor while scrolling.
+
+    A pointer event inside the tentacle iframe reports coordinates relative to
+    that child document.  Those normalized coordinates cease to describe the
+    real cursor as soon as the parent page scrolls: the cursor remains fixed in
+    viewport coordinates while the iframe moves underneath it.  Waiting for a
+    new ``pointermove`` therefore leaves attraction aimed at the old point and
+    explains why moving the mouse by a single pixel appeared to repair it.
+
+    The host bridge must remember the last real viewport coordinate received
+    from either document.  Every visible-page scroll schedules at most one
+    animation-frame refresh, reads the iframe's *new* bounding rectangle, and
+    sends a fresh normalized hover target.  If scrolling moves the iframe away
+    from that viewport coordinate, the same refresh sends ``inside: false``.
+    Coalescing through ``requestAnimationFrame`` is part of the contract: a
+    burst of scroll events must not add synchronous layout reads and messages
+    for every event on older devices.
+
+    This regression uses the real same-origin WebGL child in its bounded manual
+    diagnostic mode.  It places one physical pointer over an iframe-owned part
+    of the contact surface, records the child's ``pointermove`` count, and then
+    scrolls the parent through the DOM without dispatching another pointer
+    event.  The child target must still equal the stationary viewport point
+    projected through the post-scroll iframe rectangle; its horizontal target
+    stays fixed and its vertical target advances by the scroll displacement.
+    Requiring the pointer-event count to remain unchanged prevents the test
+    from passing through the old one-pixel workaround instead of the bridge.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        bounded_tentacle_rendering=True,
+        manual_tentacle_rendering=True,
+    )
+    frame = page.locator(".contact__tentacles")
+    expect(frame).to_be_attached(timeout=30_000)
+    frame.evaluate(
+        "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
+    )
+    page.wait_for_function(
+        """
+        (selector) => {
+          const child = document.querySelector(selector)?.contentWindow;
+          const canvas = child?.document?.querySelector("#muta");
+          if (!child || !canvas) return false;
+          const source = new URL(child.location.href);
+          return source.searchParams.get("manual-animation-frame") === "1" &&
+            typeof child.__mutaTentaclesDebugPointerState === "function" &&
+            canvas.dataset.aspectReady === "true" &&
+            canvas.dataset.aspectReloading === "false" &&
+            canvas.dataset.runtimeVisible === "true";
+        }
+        """,
+        arg=".contact__tentacles",
+        timeout=30_000,
+    )
+    frame.evaluate(
+        """
+        element => {
+          const child = element.contentWindow;
+          child.__stationaryPointerMoveCount = 0;
+          child.addEventListener(
+            "pointermove",
+            () => {
+              child.__stationaryPointerMoveCount += 1;
+            },
+            { capture: true },
+          );
+        }
+        """
+    )
+    pointer = frame.evaluate(
+        """
+        element => {
+          const rect = element.getBoundingClientRect();
+          const candidates = [
+            [0.9, 0.45],
+            [0.85, 0.7],
+            [0.15, 0.55],
+            [0.9, 0.25],
+          ];
+          const candidate = candidates.find(([x, y]) =>
+            document.elementFromPoint(
+              rect.left + rect.width * x,
+              rect.top + rect.height * y,
+            ) === element,
+          );
+          if (!candidate) return null;
+          return {
+            x: rect.left + rect.width * candidate[0],
+            y: rect.top + rect.height * candidate[1],
+          };
+        }
+        """
+    )
+    assert pointer is not None
+
+    page.mouse.move(pointer["x"], pointer["y"])
+    initial_state = page.wait_for_function(
+        """
+        (selector) => {
+          const child = document.querySelector(selector)?.contentWindow;
+          const state = child?.__mutaTentaclesDebugPointerState?.();
+          return state?.inside && state.inputSource === "canvas"
+            ? {
+                ...state,
+                pointerMoveCount: child.__stationaryPointerMoveCount,
+              }
+            : false;
+        }
+        """,
+        arg=".contact__tentacles",
+    ).json_value()
+
+    scroll_before = page.evaluate("scrollY")
+    page.evaluate("scrollBy({top: 64, left: 0, behavior: 'instant'})")
+    page.wait_for_function("previous => scrollY > previous", arg=scroll_before)
+    projection = frame.evaluate(
+        """
+        (element, pointer) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            x: (pointer.x - rect.left) / rect.width,
+            y: (pointer.y - rect.top) / rect.height,
+            inside:
+              pointer.x >= rect.left && pointer.x <= rect.right &&
+              pointer.y >= rect.top && pointer.y <= rect.bottom,
+          };
+        }
+        """,
+        pointer,
+    )
+    assert projection["inside"] is True
+
+    refreshed_state = page.wait_for_function(
+        """
+        ({ selector, expectedX, expectedY }) => {
+          const child = document.querySelector(selector)?.contentWindow;
+          const state = child?.__mutaTentaclesDebugPointerState?.();
+          if (
+            !state?.inside ||
+            state.inputSource !== "host-overlay" ||
+            Math.abs(state.targetX - expectedX) > 0.0001 ||
+            Math.abs(state.targetY - expectedY) > 0.0001
+          ) {
+            return false;
+          }
+          return {
+            ...state,
+            pointerMoveCount: child.__stationaryPointerMoveCount,
+          };
+        }
+        """,
+        arg={
+            "selector": ".contact__tentacles",
+            "expectedX": projection["x"],
+            "expectedY": projection["y"],
+        },
+    ).json_value()
+
+    assert (
+        refreshed_state["pointerMoveCount"]
+        == initial_state["pointerMoveCount"]
+    )
+    assert refreshed_state["targetX"] == pytest.approx(
+        projection["x"],
+        abs=0.0001,
+    )
+    assert refreshed_state["targetY"] == pytest.approx(
+        projection["y"],
+        abs=0.0001,
+    )
+    assert refreshed_state["targetX"] == pytest.approx(
+        initial_state["targetX"],
+        abs=0.0001,
+    )
+    assert refreshed_state["targetY"] > initial_state["targetY"]
+
+
 @pytest.mark.parametrize(
     "viewport",
     [
