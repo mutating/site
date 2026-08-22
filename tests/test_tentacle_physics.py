@@ -81,6 +81,141 @@ def test_tentacle_page_shows_accessible_fallback_without_webgl2(
     assert errors == []
 
 
+@pytest.mark.parametrize(
+    ("requested_format", "expected_format", "color_bytes_per_pixel"),
+    [
+        ("rgba8", "rgba8", 4),
+        ("rgba16f", "rgba16f", 8),
+    ],
+)
+def test_color_render_target_format_is_selectable_for_ab_validation(
+    driver: DriverFactory,
+    requested_format: str,
+    expected_format: str,
+    color_bytes_per_pixel: int,
+) -> None:
+    """Keep the compact default measurable against the legacy float path."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
+            f"&color-target-format={requested_format}"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute(
+        "data-color-target-format",
+        expected_format,
+    )
+    expect(canvas).to_have_attribute(
+        "data-geometry-target-format",
+        "rgba16f",
+    )
+    dimensions = canvas.evaluate("element => [element.width, element.height]")
+    pixel_count = dimensions[0] * dimensions[1]
+    assert int(canvas.get_attribute("data-color-target-bytes")) == (
+        pixel_count * color_bytes_per_pixel * 3
+    )
+    assert int(canvas.get_attribute("data-geometry-target-bytes")) == (
+        pixel_count * 8
+    )
+
+
+def test_default_color_targets_use_compact_rgba8_format(
+    driver: DriverFactory,
+) -> None:
+    """Use the broadly optimized compact format on the production path."""
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => document.querySelector('#muta')?.dataset.colorTargetFormat"
+    )
+    assert canvas.get_attribute("data-color-target-format") == "rgba8"
+    dimensions = canvas.evaluate("element => [element.width, element.height]")
+    pixel_count = dimensions[0] * dimensions[1]
+    assert int(canvas.get_attribute("data-render-target-bytes")) == (
+        pixel_count * (3 * 4 + 8)
+    )
+
+
+def test_compact_hdr_color_targets_fall_back_to_rgba8(
+    driver: DriverFactory,
+) -> None:
+    """An unsupported packed-HDR framebuffer must not blank the hero."""
+
+    page = driver(
+        initial_path=(
+            f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
+            "&color-target-format=r11f-g11f-b10f"
+        ),
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            (() => {
+              const textureFormats = new WeakMap();
+              const framebufferColorFormats = new WeakMap();
+              const nativeStorage =
+                WebGL2RenderingContext.prototype.texStorage2D;
+              const nativeAttach =
+                WebGL2RenderingContext.prototype.framebufferTexture2D;
+              const nativeStatus =
+                WebGL2RenderingContext.prototype.checkFramebufferStatus;
+
+              WebGL2RenderingContext.prototype.texStorage2D = function (
+                target, levels, internalFormat, width, height
+              ) {
+                const texture = this.getParameter(this.TEXTURE_BINDING_2D);
+                textureFormats.set(texture, internalFormat);
+                return nativeStorage.call(
+                  this, target, levels, internalFormat, width, height
+                );
+              };
+              WebGL2RenderingContext.prototype.framebufferTexture2D =
+                function (target, attachment, textarget, texture, level) {
+                  const framebuffer = this.getParameter(
+                    this.FRAMEBUFFER_BINDING
+                  );
+                  if (attachment === this.COLOR_ATTACHMENT0) {
+                    framebufferColorFormats.set(
+                      framebuffer,
+                      textureFormats.get(texture),
+                    );
+                  }
+                  return nativeAttach.call(
+                    this, target, attachment, textarget, texture, level
+                  );
+                };
+              WebGL2RenderingContext.prototype.checkFramebufferStatus =
+                function (target) {
+                  const framebuffer = this.getParameter(
+                    this.FRAMEBUFFER_BINDING
+                  );
+                  if (
+                    framebufferColorFormats.get(framebuffer) ===
+                    this.R11F_G11F_B10F
+                  ) {
+                    return this.FRAMEBUFFER_UNSUPPORTED;
+                  }
+                  return nativeStatus.call(this, target);
+                };
+            })();
+            """,
+        ),
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_have_attribute("data-color-target-format", "rgba8")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "1")
+
+
 def test_gpu_timing_is_disabled_without_requesting_the_extension(
     driver: DriverFactory,
 ) -> None:
