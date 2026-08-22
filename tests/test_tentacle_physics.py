@@ -1166,6 +1166,93 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
     )
 
 
+def test_first_visible_scroll_tick_primes_exactly_one_complete_frame(
+    driver: DriverFactory,
+) -> None:
+    """Present the prewarmed surface once before scroll suppression takes over.
+
+    The embedded contact runtime is initialized while its iframe is far below
+    the viewport, but the offscreen lifecycle deliberately runs no RAF and
+    therefore owns no completed texture yet. If the iframe first intersects
+    the viewport in the middle of a wheel, trackpad, or touch scroll, the host
+    sends ``visible: true`` and ``scrollActive: true`` together. Applying the
+    ordinary scroll guard to that very first tick leaves the transparent canvas
+    on screen until native ``scrollend`` or the 320 ms quiet-period fallback;
+    with momentum still producing events, that startup blank can approach one
+    second even though all WebGL resources were prewarmed successfully.
+
+    This regression loads the real embedded WebGL runtime in its deterministic
+    manual-frame mode. A tick while still invisible must leave both the physics
+    and rendered-frame counters at zero. After the combined visible-and-scroll
+    handoff, the first tick must advance both counters exactly once so the
+    browser has a complete full-quality texture to composite. A second tick in
+    the same scroll burst must advance neither counter: the exception is only a
+    presentation primer, not permission to run continuous animation during
+    scrolling. Clearing ``scrollActive`` models the existing scroll-end handoff
+    and must restore one ordinary physics-and-render tick.
+
+    Explicit ticks and counters make all three boundaries independent of wall
+    time, refresh rate, GPU speed, and Playwright scheduling. Removing the
+    primer leaves the first counters at zero; accidentally allowing animation
+    throughout the gesture increments them twice; and failing to resume after
+    scroll end leaves the final counters unchanged.
+    """
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}&embedded=1",
+        stored_theme="dark",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+
+    def frame_counters() -> dict[str, int]:
+        return canvas.evaluate(
+            """
+            element => ({
+              rendered: Number(element.dataset.renderedFrameId || 0),
+              physics: Number(element.dataset.physicsFrameId || 0),
+            })
+            """
+        )
+
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    assert frame_counters() == {"rendered": 0, "physics": 0}
+    expect(canvas).to_have_attribute("data-runtime-visible", "false")
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: true,
+        })
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "suppressed")
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    primed = frame_counters()
+    assert primed == {"rendered": 1, "physics": 1}
+
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    assert frame_counters() == primed
+
+    page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: false,
+        })
+        """
+    )
+    expect(canvas).to_have_attribute("data-scroll-rendering", "active")
+    page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    assert frame_counters() == {"rendered": 2, "physics": 2}
+
+
 def test_scroll_mode_holds_the_complete_webgl_frame_and_physics_state(
     driver: DriverFactory,
     base_url: str,
