@@ -2116,7 +2116,10 @@
           return { vertices, indices };
         }
 
-        const grid = buildGrid(gridColumns, gridRows);
+        let grid = buildGrid(gridColumns, gridRows);
+        const surfaceIndexCount = grid.indices.length;
+        const surfaceGridCpuBytes =
+          grid.vertices.byteLength + grid.indices.byteLength;
         const surfaceVao = gl.createVertexArray();
         gl.bindVertexArray(surfaceVao);
 
@@ -2131,6 +2134,16 @@
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, grid.indices, gl.STATIC_DRAW);
         gl.bindVertexArray(null);
+        // WebGL owns independent copies after bufferData returns. Retaining the
+        // TypedArrays would keep several megabytes of CPU backing storage alive
+        // for the lifetime of the page even though rendering only needs the
+        // uploaded buffers and the index count. A restored WebGL context must
+        // regenerate this deterministic grid before re-uploading it.
+        grid = null;
+        canvas.dataset.surfaceGridCpuBytesReleased = String(
+          surfaceGridCpuBytes,
+        );
+        canvas.dataset.surfaceIndexCount = String(surfaceIndexCount);
 
         const fullscreenVao = gl.createVertexArray();
 
@@ -3997,7 +4010,12 @@
           );
           gl.uniform1f(activeSurfaceUniforms.time, time);
           gl.bindVertexArray(surfaceVao);
-          gl.drawElements(gl.TRIANGLES, grid.indices.length, gl.UNSIGNED_INT, 0);
+          gl.drawElements(
+            gl.TRIANGLES,
+            surfaceIndexCount,
+            gl.UNSIGNED_INT,
+            0,
+          );
 
           gl.bindVertexArray(fullscreenVao);
           gl.useProgram(scatterProgram);
