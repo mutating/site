@@ -471,6 +471,60 @@ def test_dense_surface_uses_the_bounded_spatial_shader(
     assert 0 < maximum_cell_load < 64
 
 
+def test_surface_grid_releases_cpu_upload_arrays(
+    driver: DriverFactory,
+) -> None:
+    """Retain only the GPU buffers and immutable draw count after upload.
+
+    ``WebGL2RenderingContext.bufferData`` copies the supplied typed-array
+    contents into the currently bound GPU buffer before it returns. The CPU
+    vertex and index arrays are therefore dead weight after initialization,
+    but keeping the original ``grid`` object reachable used to retain both
+    backing stores for the entire page lifetime. Rendering still needs the
+    index count, so the implementation records that scalar before releasing
+    the sole object reference.
+
+    This regression derives both expected byte size and triangle index count
+    from the runtime grid dimensions. It then advances a real manual WebGL
+    frame to prove the saved count continues to drive ``drawElements`` after
+    the arrays became collectable. A future context-restoration path must
+    regenerate this deterministic grid rather than depending on the released
+    arrays; documenting that constraint here prevents a memory regression from
+    being introduced as an accidental recovery mechanism.
+    """
+
+    page = driver(
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        load_interactive_visuals=True,
+        wait_for_theme_ready=False,
+    )
+    canvas = page.locator("#muta")
+    page.wait_for_function(
+        "() => typeof window.__mutaTentaclesDebugFrameAfter === 'function'"
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1100)")
+    columns, rows = (
+        canvas.get_attribute("data-surface-grid") or "0x0"
+    ).split("x")
+    grid_columns = int(columns)
+    grid_rows = int(rows)
+    expected_index_count = (grid_columns - 1) * (grid_rows - 1) * 6
+    expected_released_bytes = (
+        grid_columns * grid_rows * 2 * 4 + expected_index_count * 4
+    )
+
+    assert int(canvas.get_attribute("data-surface-index-count") or "0") == (
+        expected_index_count
+    )
+    assert int(
+        canvas.get_attribute("data-surface-grid-cpu-bytes-released") or "0"
+    ) == expected_released_bytes
+    expect(canvas).to_have_attribute(
+        "data-rendered-frame-id",
+        re.compile(r"^[1-9][0-9]*$"),
+    )
+
+
 def test_spatial_overflow_preserves_every_tentacle_via_full_fallback(
     driver: DriverFactory,
     base_url: str,
