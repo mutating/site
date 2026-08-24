@@ -3519,6 +3519,582 @@ def _assert_exact_impulse_envelope(page: Page) -> None:
         )
 
 
+def _read_complete_interaction_state(canvas: Locator) -> dict[str, object]:
+    """Read every field that a reused interaction scratch must overwrite."""
+
+    return canvas.evaluate(
+        """
+        element => ({
+          phase: element.dataset.renderedInteractionPhase,
+          livePhase: element.dataset.pointerInteractionPhase,
+          direction: Number(element.dataset.pointerInteractionDirection),
+          force: Number(element.dataset.pointerInteractionForceMultiplier),
+          radius: Number(element.dataset.pointerInteractionRadiusMultiplier),
+          pressed: element.dataset.renderedPointerPressed === "true",
+          applications: Number(
+            element.dataset.impulsePhysicsApplications || 0,
+          ),
+        })
+        """
+    )
+
+
+def test_interaction_state_overwrites_every_field_across_reused_transitions(
+    driver: DriverFactory,
+) -> None:
+    """Forbid stale scratch fields across hover, attraction, and repulsion.
+
+    The allocation optimization is expected to reuse one mutable interaction
+    result for every physics frame. That is safe only when every branch writes
+    every observable field: otherwise the right-button direction, enlarged
+    impulse radius, pressed flag, or phase from an earlier frame can leak into
+    a later hover. Separate one-shot tests can miss this because each starts
+    with a newly loaded document and therefore a freshly initialized scratch.
+
+    This regression deliberately drives one runtime through the complete state
+    cycle twice—left impulse/hold/release followed by right
+    impulse/hold/release—and checks phase, direction, force, radius, press state,
+    and cumulative impulse applications after every transition. Reordering the
+    consume-and-reset operation, failing to overwrite any scratch field, or
+    replaying one queued impulse makes a precise checkpoint fail.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(240, 180),
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    canvas = _open_diagnostic_surface(
+        page,
+        "",
+        navigate=False,
+    )
+    page.mouse.move(1, 1)
+    page.mouse.move(139, 94)
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    checkpoints = [_read_complete_interaction_state(canvas)]
+
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    checkpoints.append(_read_complete_interaction_state(canvas))
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+    checkpoints.append(_read_complete_interaction_state(canvas))
+    page.mouse.up(button="left")
+    checkpoints.append(_read_complete_interaction_state(canvas))
+
+    page.mouse.down(button="right")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    checkpoints.append(_read_complete_interaction_state(canvas))
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+    checkpoints.append(_read_complete_interaction_state(canvas))
+    page.mouse.up(button="right")
+    checkpoints.append(_read_complete_interaction_state(canvas))
+
+    assert checkpoints == [
+        {
+            "phase": "hover",
+            "livePhase": "hover",
+            "direction": 0,
+            "force": 1,
+            "radius": 1,
+            "pressed": False,
+            "applications": 0,
+        },
+        {
+            "phase": "impulse",
+            "livePhase": "impulse",
+            "direction": 1,
+            "force": 13.333,
+            "radius": 1.5,
+            "pressed": True,
+            "applications": 1,
+        },
+        {
+            "phase": "held",
+            "livePhase": "held",
+            "direction": 1,
+            "force": 2,
+            "radius": 1,
+            "pressed": True,
+            "applications": 1,
+        },
+        {
+            "phase": "hover",
+            "livePhase": "hover",
+            "direction": 0,
+            "force": 1,
+            "radius": 1,
+            "pressed": False,
+            "applications": 1,
+        },
+        {
+            "phase": "impulse",
+            "livePhase": "impulse",
+            "direction": -1,
+            "force": 13.333,
+            "radius": 1.5,
+            "pressed": True,
+            "applications": 2,
+        },
+        {
+            "phase": "held",
+            "livePhase": "held",
+            "direction": -1,
+            "force": 2,
+            "radius": 1,
+            "pressed": True,
+            "applications": 2,
+        },
+        {
+            "phase": "hover",
+            "livePhase": "hover",
+            "direction": 0,
+            "force": 1,
+            "radius": 1,
+            "pressed": False,
+            "applications": 2,
+        },
+    ]
+
+
+def test_debug_interaction_samples_never_alias_or_mutate_production_state(
+    driver: DriverFactory,
+) -> None:
+    """Keep diagnostic samples independent from the production scratch.
+
+    Reusing the production result in ``__mutaTentaclesDebugInteractionAt``
+    would create two subtle regressions. A retained object in DevTools would
+    mutate when another sample is requested, and an opposite-direction debug
+    query could contaminate the next real physics frame. The optimized hot path
+    may reuse storage, but this explicitly invoked diagnostic API must continue
+    to return stable, independently owned snapshots and remain observational.
+
+    The test retains an impulse sample, requests a conflicting held-repulsion
+    sample, and verifies identity plus the complete first value. It also checks
+    that no published production field changes synchronously and that the next
+    real frame is still ordinary hover with zero direction.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(240, 180),
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    canvas = _open_diagnostic_surface(
+        page,
+        "",
+        navigate=False,
+    )
+    result = page.evaluate(
+        """
+        () => {
+          const canvas = document.querySelector("#muta");
+          const productionBefore = {
+            phase: canvas.dataset.pointerInteractionPhase,
+            direction: canvas.dataset.pointerInteractionDirection,
+            force: canvas.dataset.pointerInteractionForceMultiplier,
+            radius: canvas.dataset.pointerInteractionRadiusMultiplier,
+          };
+          const first = window.__mutaTentaclesDebugInteractionAt(
+            0,
+            1,
+            true,
+          );
+          const retainedFirst = { ...first };
+          const second = window.__mutaTentaclesDebugInteractionAt(
+            80,
+            -1,
+            false,
+          );
+          const productionAfter = {
+            phase: canvas.dataset.pointerInteractionPhase,
+            direction: canvas.dataset.pointerInteractionDirection,
+            force: canvas.dataset.pointerInteractionForceMultiplier,
+            radius: canvas.dataset.pointerInteractionRadiusMultiplier,
+          };
+          return {
+            sameReference: first === second,
+            first,
+            retainedFirst,
+            second,
+            productionBefore,
+            productionAfter,
+          };
+        }
+        """
+    )
+
+    assert result["sameReference"] is False
+    assert result["first"] == result["retainedFirst"] == {
+        "forceMultiplier": 13.333333333333334,
+        "radiusMultiplier": 1.5,
+        "phase": "impulse",
+    }
+    assert result["second"] == {
+        "forceMultiplier": 2,
+        "radiusMultiplier": 1,
+        "phase": "held",
+    }
+    assert result["productionAfter"] == result["productionBefore"]
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    state = _read_complete_interaction_state(canvas)
+    assert state["phase"] == "hover"
+    assert state["livePhase"] == "hover"
+    assert state["direction"] == 0
+    assert state["force"] == 1
+    assert state["radius"] == 1
+
+
+LEGACY_POINTER_INTERACTION_HELPER = """        function pointerInteractionAtAge(
+          pressed,
+          direction,
+          impulseAge,
+          impulsePending,
+        ) {
+          if (!pressed) {
+            return {
+              forceMultiplier: 1,
+              radiusMultiplier: 1,
+              phase: "hover",
+            };
+          }
+          const heldMultiplier = heldPointerMultiplier(direction);
+          let impulseEnvelope = 0;
+          if (impulsePending) {
+            impulseEnvelope = 1;
+          } else if (impulseAge < PRESS_IMPULSE_TOTAL_SECONDS) {
+            const decayAge = Math.max(
+              0,
+              impulseAge - PRESS_IMPULSE_HOLD_SECONDS,
+            );
+            impulseEnvelope = Math.exp(
+              -decayAge * PRESS_IMPULSE_DECAY_RATE,
+            );
+          }
+          return {
+            forceMultiplier:
+              heldMultiplier +
+              (PRESS_IMPULSE_MULTIPLIER - heldMultiplier) *
+                impulseEnvelope,
+            radiusMultiplier:
+              1 +
+              (PRESS_IMPULSE_RADIUS_MULTIPLIER - 1) *
+                impulseEnvelope,
+            phase: impulseEnvelope > 0 ? "impulse" : "held",
+          };
+        }
+"""
+
+SCRATCH_POINTER_INTERACTION_HELPER = """        const pointerInteractionScratch = {
+          forceMultiplier: 1,
+          radiusMultiplier: 1,
+          phase: "hover",
+          direction: 0,
+        };
+
+        function writePointerInteractionAtAge(
+          result,
+          pressed,
+          direction,
+          impulseAge,
+          impulsePending,
+        ) {
+          if (!pressed) {
+            result.forceMultiplier = 1;
+            result.radiusMultiplier = 1;
+            result.phase = "hover";
+            return result;
+          }
+          const heldMultiplier = heldPointerMultiplier(direction);
+          let impulseEnvelope = 0;
+          if (impulsePending) {
+            impulseEnvelope = 1;
+          } else if (impulseAge < PRESS_IMPULSE_TOTAL_SECONDS) {
+            const decayAge = Math.max(
+              0,
+              impulseAge - PRESS_IMPULSE_HOLD_SECONDS,
+            );
+            impulseEnvelope = Math.exp(
+              -decayAge * PRESS_IMPULSE_DECAY_RATE,
+            );
+          }
+          result.forceMultiplier =
+            heldMultiplier +
+            (PRESS_IMPULSE_MULTIPLIER - heldMultiplier) *
+              impulseEnvelope;
+          result.radiusMultiplier =
+            1 +
+            (PRESS_IMPULSE_RADIUS_MULTIPLIER - 1) *
+              impulseEnvelope;
+          result.phase = impulseEnvelope > 0 ? "impulse" : "held";
+          return result;
+        }
+
+        function pointerInteractionAtAge(
+          pressed,
+          direction,
+          impulseAge,
+          impulsePending,
+        ) {
+          return writePointerInteractionAtAge(
+            {
+              forceMultiplier: 1,
+              radiusMultiplier: 1,
+              phase: "hover",
+            },
+            pressed,
+            direction,
+            impulseAge,
+            impulsePending,
+          );
+        }
+"""
+
+LEGACY_CURRENT_INTERACTION_CALL = """          const interaction = pointerInteractionAtAge(
+            pointer.pressed || impulsePending,"""
+
+SCRATCH_CURRENT_INTERACTION_CALL = """          const interaction = writePointerInteractionAtAge(
+            pointerInteractionScratch,
+            pointer.pressed || impulsePending,"""
+
+
+def _toggle_pointer_interaction_allocation_strategy(source: str) -> str:
+    """Return the same renderer with only the hot allocation strategy flipped."""
+
+    if LEGACY_POINTER_INTERACTION_HELPER in source:
+        assert source.count(LEGACY_POINTER_INTERACTION_HELPER) == 1
+        assert source.count(LEGACY_CURRENT_INTERACTION_CALL) == 1
+        transformed = source.replace(
+            LEGACY_POINTER_INTERACTION_HELPER,
+            SCRATCH_POINTER_INTERACTION_HELPER,
+            1,
+        )
+        return transformed.replace(
+            LEGACY_CURRENT_INTERACTION_CALL,
+            SCRATCH_CURRENT_INTERACTION_CALL,
+            1,
+        )
+
+    assert source.count(SCRATCH_POINTER_INTERACTION_HELPER) == 1
+    assert source.count(SCRATCH_CURRENT_INTERACTION_CALL) == 1
+    transformed = source.replace(
+        SCRATCH_POINTER_INTERACTION_HELPER,
+        LEGACY_POINTER_INTERACTION_HELPER,
+        1,
+    )
+    return transformed.replace(
+        SCRATCH_CURRENT_INTERACTION_CALL,
+        LEGACY_CURRENT_INTERACTION_CALL,
+        1,
+    )
+
+
+def test_preallocated_interaction_state_matches_allocating_reference_exactly(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Require allocation strategy to preserve trajectory and final pixels.
+
+    Avoiding one object per physics frame is an implementation detail, not a
+    license to approximate the simulation. This test reads the checked-in
+    renderer and serves a temporary same-origin document with only the
+    interaction allocation strategy toggled. The helper is deliberately
+    bidirectional: before the optimization production is the allocating
+    reference and the temporary page uses a reusable scratch; after the change
+    production becomes scratch and the temporary page reconstructs the legacy
+    allocating reference.
+
+    Both documents receive the same seed, clock, pointer coordinates, left and
+    right impulse/hold/release sequence, and manual frame deltas. Every
+    checkpoint compares all published interaction fields and a representative
+    Float64 trajectory sample. Release uses ``performance.now()``, so the two
+    serial page loads may differ by machine epsilon; trajectories therefore
+    use a strict ``1e-12`` absolute bound while state remains exactly equal.
+    The final WebGL buffers are read with dithering disabled and hashed in the
+    page, requiring byte-identical pixels without transferring a large image
+    through the test protocol. Any meaningful precision change, stale scratch
+    field, debug/production alias, or changed consume order therefore produces
+    a behavioral, geometric, or pixel mismatch.
+    """
+
+    source = (
+        THEME_STATIC_ROOT / "muta-tentacles.html"
+    ).read_text(encoding="utf-8")
+    alternate_source = _toggle_pointer_interaction_allocation_strategy(
+        source
+    )
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(240, 180),
+    )
+    page.context.route(
+        "**/muta-tentacles-alternate-allocation.html*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="text/html",
+            body=alternate_source,
+        ),
+    )
+
+    def capture(path: str) -> dict[str, object]:
+        page.goto(
+            (
+                f"{base_url}/{path}{DIAGNOSTIC_QUERY}"
+                "&animation-time-origin=0"
+            ),
+            wait_until="domcontentloaded",
+        )
+        canvas = page.locator("#muta")
+        expect(canvas).to_be_visible(timeout=30_000)
+        page.wait_for_function(
+            """
+            () =>
+              typeof window.__mutaTentaclesDebugFrameAfter === "function" &&
+              typeof window.__mutaTentaclesDebugTrajectorySample === "function"
+            """
+        )
+        page.mouse.move(1, 1)
+        page.mouse.move(139, 94)
+        page.evaluate(
+            """
+            () => {
+              for (let frame = 0; frame < 8; frame += 1) {
+                window.__mutaTentaclesDebugFrameAfter(16);
+              }
+            }
+            """
+        )
+
+        checkpoints = []
+
+        def checkpoint() -> None:
+            checkpoints.append(
+                page.evaluate(
+                    """
+                    () => {
+                      const canvas = document.querySelector("#muta");
+                      return {
+                        state: {
+                          phase: canvas.dataset.renderedInteractionPhase,
+                          livePhase: canvas.dataset.pointerInteractionPhase,
+                          direction: canvas.dataset.pointerInteractionDirection,
+                          force:
+                            canvas.dataset.pointerInteractionForceMultiplier,
+                          radius:
+                            canvas.dataset.pointerInteractionRadiusMultiplier,
+                          pressed: canvas.dataset.renderedPointerPressed,
+                          applications:
+                            canvas.dataset.impulsePhysicsApplications || "0",
+                        },
+                        trajectory:
+                          window.__mutaTentaclesDebugTrajectorySample(),
+                      };
+                    }
+                    """
+                )
+            )
+
+        checkpoint()
+        page.mouse.down(button="left")
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+        checkpoint()
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+        checkpoint()
+        page.mouse.up(button="left")
+        checkpoint()
+        page.evaluate(
+            """
+            () => {
+              for (let frame = 0; frame < 3; frame += 1) {
+                window.__mutaTentaclesDebugFrameAfter(16);
+              }
+            }
+            """
+        )
+        page.mouse.down(button="right")
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+        checkpoint()
+        page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+        checkpoint()
+        page.mouse.up(button="right")
+        checkpoint()
+        page.evaluate(
+            """
+            () => {
+              for (let frame = 0; frame < 4; frame += 1) {
+                window.__mutaTentaclesDebugFrameAfter(16);
+              }
+            }
+            """
+        )
+        checkpoint()
+
+        pixel_hash = page.evaluate(
+            """
+            async () => {
+              const canvas = document.querySelector("#muta");
+              const gl = canvas.getContext("webgl2");
+              gl.disable(gl.DITHER);
+              window.__mutaTentaclesDebugFrameAfter(16);
+              const pixels = new Uint8Array(
+                gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
+              );
+              gl.readPixels(
+                0,
+                0,
+                gl.drawingBufferWidth,
+                gl.drawingBufferHeight,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                pixels,
+              );
+              const digest = new Uint8Array(
+                await crypto.subtle.digest("SHA-256", pixels),
+              );
+              return Array.from(
+                digest,
+                byte => byte.toString(16).padStart(2, "0"),
+              ).join("");
+            }
+            """
+        )
+        return {
+            "checkpoints": checkpoints,
+            "pixelHash": pixel_hash,
+        }
+
+    allocating_or_current = capture("muta-tentacles.html")
+    alternate = capture("muta-tentacles-alternate-allocation.html")
+
+    assert len(allocating_or_current["checkpoints"]) == 8
+    assert len(allocating_or_current["pixelHash"]) == 64
+    assert alternate["pixelHash"] == allocating_or_current["pixelHash"]
+    for current_checkpoint, alternate_checkpoint in zip(
+        allocating_or_current["checkpoints"],
+        alternate["checkpoints"],
+        strict=True,
+    ):
+        assert alternate_checkpoint["state"] == current_checkpoint["state"]
+        current_trajectory = current_checkpoint["trajectory"]
+        alternate_trajectory = alternate_checkpoint["trajectory"]
+        assert len(alternate_trajectory) == len(current_trajectory)
+        for current_value, alternate_value in zip(
+            current_trajectory,
+            alternate_trajectory,
+            strict=True,
+        ):
+            assert math.isclose(
+                alternate_value,
+                current_value,
+                rel_tol=0,
+                abs_tol=1e-12,
+            )
+
+
 def _read_release_metrics(canvas: Page) -> dict[str, float | str]:
     """Return the rendered release state used by behavior and mutation tests."""
 
@@ -3870,21 +4446,59 @@ def _restore_legacy_release_recovery(source: str) -> str:
           impulsePending,
         ) {
           if (!pressed) {
-            return {
-              forceMultiplier: 1,
-              radiusMultiplier: 1,
-              phase: "hover",
-            };""",
+            result.forceMultiplier = 1;
+            result.radiusMultiplier = 1;
+            result.phase = "hover";
+            return result;""",
             """          impulseAge,
           impulsePending,
           recovering,
         ) {
           if (!pressed) {
-            return {
-              forceMultiplier: recovering ? 0 : 1,
+            result.forceMultiplier = recovering ? 0 : 1;
+            result.radiusMultiplier = 1;
+            result.phase = recovering ? "recovering" : "hover";
+            return result;""",
+        ),
+        (
+            """        function pointerInteractionAtAge(
+          pressed,
+          direction,
+          impulseAge,
+          impulsePending,
+        ) {
+          return writePointerInteractionAtAge(
+            {
+              forceMultiplier: 1,
               radiusMultiplier: 1,
-              phase: recovering ? "recovering" : "hover",
-            };""",
+              phase: "hover",
+            },
+            pressed,
+            direction,
+            impulseAge,
+            impulsePending,
+          );
+        }""",
+            """        function pointerInteractionAtAge(
+          pressed,
+          direction,
+          impulseAge,
+          impulsePending,
+          recovering,
+        ) {
+          return writePointerInteractionAtAge(
+            {
+              forceMultiplier: 1,
+              radiusMultiplier: 1,
+              phase: "hover",
+            },
+            pressed,
+            direction,
+            impulseAge,
+            impulsePending,
+            recovering,
+          );
+        }""",
         ),
         (
             """            impulsePending,
@@ -4102,16 +4716,14 @@ TIMING_MUTATIONS = [
         id="inject-reverse-force-on-release",
     ),
     pytest.param(
-        """            return {
-              forceMultiplier: 1,
-              radiusMultiplier: 1,
-              phase: "hover",
-            };""",
-        """            return {
-              forceMultiplier: 0,
-              radiusMultiplier: 1,
-              phase: "recovering",
-            };""",
+        """            result.forceMultiplier = 1;
+            result.radiusMultiplier = 1;
+            result.phase = "hover";
+            return result;""",
+        """            result.forceMultiplier = 0;
+            result.radiusMultiplier = 1;
+            result.phase = "recovering";
+            return result;""",
         "release",
         id="restore-zero-force-release-phase",
     ),
