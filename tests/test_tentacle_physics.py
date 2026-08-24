@@ -1065,7 +1065,17 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
 def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
     driver: DriverFactory,
 ) -> None:
-    """Stop scheduling callbacks completely, then resume without a dead loop."""
+    """Stop scheduling callbacks completely, then resume without a dead loop.
+
+    The lifecycle assertions begin only after the real continuously rendered
+    WebGL runtime has produced several physics frames. Linux CI uses SwiftShader,
+    whose cold shader compilation can exceed the usual 30-second browser wait
+    after earlier full-density WebGL cases. That startup is not the behavior
+    under test, so readiness receives 60 seconds while every pause/resume check
+    below keeps its short deterministic deadline. This still fails a genuinely
+    dead animation loop, but does not confuse slow software-GPU initialization
+    with a lifecycle regression.
+    """
 
     page = driver(
         initial_path=(
@@ -1074,6 +1084,7 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
         ),
         load_interactive_visuals=True,
         wait_for_theme_ready=False,
+        viewport=(320, 240),
         init_scripts=(
             """
             (() => {
@@ -1135,7 +1146,7 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
             Number(data.physicsFrameId) > 2;
         }
         """,
-        timeout=30_000,
+        timeout=60_000,
     )
 
     def animation_state() -> dict[str, int]:
@@ -1734,8 +1745,19 @@ def test_scroll_budget_reduces_frame_count_without_slowing_animation_time(
     )
 
 
+@pytest.mark.parametrize(
+    ("cadence_ms", "frame_cost_ms", "expected_frames"),
+    [
+        pytest.param(20, 7, 29, id="fast"),
+        pytest.param(28, 12, 19, id="balanced"),
+        pytest.param(45, 20, 11, id="conservative"),
+    ],
+)
 def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
     driver: DriverFactory,
+    cadence_ms: int,
+    frame_cost_ms: int,
+    expected_frames: int,
 ) -> None:
     """Keep visible chain motion close to the original 60 FPS trajectory.
 
@@ -1760,11 +1782,16 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
     The debug sampler exists only in manual-frame mode, allocates nothing in
     production, and returns raw solver coordinates before projection. Fixed
     time, seed, viewport profile, sample topology, and explicit RAF ticks make
-    the comparison deterministic across CPUs and GPUs. Raising cadence without
-    fixing chain response, weakening temporal compensation, adding hidden
-    physics frames, changing the sampled solver topology, or introducing
-    scroll-only jitter must therefore fail numerically rather than relying on a
-    subjective visual judgement.
+    the comparison deterministic across CPUs and GPUs. Each cadence tier is a
+    separate parametrized test item, so its two pages and WebGL contexts are
+    destroyed before the next tier starts. Keeping all three tiers in one item
+    retained six software-renderer contexts at once and could exceed CI's
+    120-second per-test limit, after which pytest-timeout could only report a
+    crashed xdist worker. Splitting resource ownership changes neither samples
+    nor numerical contracts. Raising cadence without fixing chain response,
+    weakening temporal compensation, adding hidden physics frames, changing the
+    sampled solver topology, or introducing scroll-only jitter must therefore
+    fail numerically rather than relying on a subjective visual judgement.
 
     The calibrated contract requires at least 85% and at most 110% of the
     reference visible travel, RMS error below 0.003 surface units, maximum
@@ -1837,139 +1864,129 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
             for previous, current in zip(path, path[1:])
         )
 
-    tiers = [
-        ("fast", 20, 7, 29),
-        ("balanced", 28, 12, 19),
-        ("conservative", 45, 20, 11),
-    ]
-    measured_metrics: dict[str, dict[str, float]] = {}
+    reference_page, _ = open_runtime()
+    scroll_page, scroll_canvas = open_runtime()
+    scroll_page.evaluate(
+        """
+        signals =>
+          window.__mutaTentaclesDebugSetScrollBudgetSignals(signals)
+        """,
+        {
+            "cadenceMs": cadence_ms,
+            "frameCostMs": frame_cost_ms,
+        },
+    )
+    scroll_page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: true,
+        })
+        """
+    )
+    previous_rendered_frame = int(
+        scroll_canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
+    reference_path = [sample(reference_page)]
+    scroll_path = [sample(scroll_page)]
 
-    for tier, cadence_ms, frame_cost_ms, expected_frames in tiers:
-        reference_page, _ = open_runtime()
-        scroll_page, scroll_canvas = open_runtime()
-        scroll_page.evaluate(
-            """
-            signals =>
-              window.__mutaTentaclesDebugSetScrollBudgetSignals(signals)
-            """,
-            {
-                "cadenceMs": cadence_ms,
-                "frameCostMs": frame_cost_ms,
-            },
+    for _ in range(60):
+        reference_page.evaluate(
+            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
         )
         scroll_page.evaluate(
-            """
-            () => window.__mutaTentaclesSetRuntimeState({
-              visible: true,
-              scrollActive: true,
-            })
-            """
+            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
         )
-        previous_rendered_frame = int(
+        rendered_frame = int(
             scroll_canvas.get_attribute("data-rendered-frame-id") or "0"
         )
-        reference_path = [sample(reference_page)]
-        scroll_path = [sample(scroll_page)]
+        if rendered_frame == previous_rendered_frame:
+            continue
+        assert rendered_frame == previous_rendered_frame + 1
+        previous_rendered_frame = rendered_frame
+        reference_path.append(sample(reference_page))
+        scroll_path.append(sample(scroll_page))
 
-        for _ in range(60):
-            reference_page.evaluate(
-                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-            )
-            scroll_page.evaluate(
-                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-            )
-            rendered_frame = int(
-                scroll_canvas.get_attribute("data-rendered-frame-id") or "0"
-            )
-            if rendered_frame == previous_rendered_frame:
-                continue
-            assert rendered_frame == previous_rendered_frame + 1
-            previous_rendered_frame = rendered_frame
-            reference_path.append(sample(reference_page))
-            scroll_path.append(sample(scroll_page))
-
-        assert len(scroll_path) == expected_frames + 1
-        trajectory_errors = [
-            point_rms(reference, throttled)
-            for reference, throttled in zip(
-                reference_path,
-                scroll_path,
+    assert len(scroll_path) == expected_frames + 1
+    trajectory_errors = [
+        point_rms(reference, throttled)
+        for reference, throttled in zip(
+            reference_path,
+            scroll_path,
+            strict=True,
+        )
+    ]
+    reference_distance = path_length(reference_path)
+    scroll_distance = path_length(scroll_path)
+    reference_exit_path = [sample(reference_page)]
+    scroll_exit_path = [sample(scroll_page)]
+    scroll_page.evaluate(
+        """
+        () => window.__mutaTentaclesSetRuntimeState({
+          visible: true,
+          scrollActive: false,
+        })
+        """
+    )
+    for _ in range(6):
+        reference_page.evaluate(
+            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+        )
+        scroll_page.evaluate(
+            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+        )
+        reference_exit_path.append(sample(reference_page))
+        scroll_exit_path.append(sample(scroll_page))
+    reference_exit_steps = [
+        point_rms(previous, current)
+        for previous, current in zip(
+            reference_exit_path,
+            reference_exit_path[1:],
+        )
+    ]
+    scroll_exit_steps = [
+        point_rms(previous, current)
+        for previous, current in zip(
+            scroll_exit_path,
+            scroll_exit_path[1:],
+        )
+    ]
+    metrics = {
+        "rms": math.sqrt(
+            sum(error * error for error in trajectory_errors)
+            / len(trajectory_errors)
+        ),
+        "maximum": max(trajectory_errors),
+        "endpoint": trajectory_errors[-1],
+        "path_ratio": scroll_distance / reference_distance,
+        "exit_path_ratio": (
+            path_length(scroll_exit_path) / path_length(reference_exit_path)
+        ),
+        "minimum_exit_step_ratio": min(
+            scroll_step / reference_step
+            for scroll_step, reference_step in zip(
+                scroll_exit_steps,
+                reference_exit_steps,
                 strict=True,
             )
-        ]
-        reference_distance = path_length(reference_path)
-        scroll_distance = path_length(scroll_path)
-        reference_exit_path = [sample(reference_page)]
-        scroll_exit_path = [sample(scroll_page)]
-        scroll_page.evaluate(
-            """
-            () => window.__mutaTentaclesSetRuntimeState({
-              visible: true,
-              scrollActive: false,
-            })
-            """
-        )
-        for _ in range(6):
-            reference_page.evaluate(
-                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+        ),
+        "maximum_exit_step_ratio": max(
+            scroll_step / reference_step
+            for scroll_step, reference_step in zip(
+                scroll_exit_steps,
+                reference_exit_steps,
+                strict=True,
             )
-            scroll_page.evaluate(
-                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-            )
-            reference_exit_path.append(sample(reference_page))
-            scroll_exit_path.append(sample(scroll_page))
-        reference_exit_steps = [
-            point_rms(previous, current)
-            for previous, current in zip(
-                reference_exit_path,
-                reference_exit_path[1:],
-            )
-        ]
-        scroll_exit_steps = [
-            point_rms(previous, current)
-            for previous, current in zip(
-                scroll_exit_path,
-                scroll_exit_path[1:],
-            )
-        ]
-        measured_metrics[tier] = {
-            "rms": math.sqrt(
-                sum(error * error for error in trajectory_errors)
-                / len(trajectory_errors)
-            ),
-            "maximum": max(trajectory_errors),
-            "endpoint": trajectory_errors[-1],
-            "path_ratio": scroll_distance / reference_distance,
-            "exit_path_ratio": (
-                path_length(scroll_exit_path) /
-                path_length(reference_exit_path)
-            ),
-            "minimum_exit_step_ratio": min(
-                scroll_step / reference_step
-                for scroll_step, reference_step in zip(
-                    scroll_exit_steps,
-                    reference_exit_steps,
-                    strict=True,
-                )
-            ),
-            "maximum_exit_step_ratio": max(
-                scroll_step / reference_step
-                for scroll_step, reference_step in zip(
-                    scroll_exit_steps,
-                    reference_exit_steps,
-                    strict=True,
-                )
-            ),
-        }
+        ),
+    }
 
-    for metrics in measured_metrics.values():
-        assert metrics["rms"] < 0.003
-        assert metrics["maximum"] < 0.005
-        assert metrics["endpoint"] < 0.003
-        assert 0.85 < metrics["path_ratio"] < 1.1
-        assert 0.85 < metrics["exit_path_ratio"] < 1.2
-        assert metrics["minimum_exit_step_ratio"] > 0.6
-        assert metrics["maximum_exit_step_ratio"] < 1.25
+    assert metrics["rms"] < 0.003
+    assert metrics["maximum"] < 0.005
+    assert metrics["endpoint"] < 0.003
+    assert 0.85 < metrics["path_ratio"] < 1.1
+    assert 0.85 < metrics["exit_path_ratio"] < 1.2
+    assert metrics["minimum_exit_step_ratio"] > 0.6
+    assert metrics["maximum_exit_step_ratio"] < 1.25
 
 
 def test_scroll_mode_holds_the_complete_webgl_frame_between_budgeted_updates(
@@ -3309,6 +3326,92 @@ def test_left_impulse_settles_to_true_double_hover_attraction(
     assert moved_state["radius"] == 1
     assert moved_state["pressed"] is True
     page.mouse.up(button="left")
+
+
+def test_queued_short_click_preserves_new_stationary_hover_attraction(
+    driver: DriverFactory,
+) -> None:
+    """Do not turn a down/up between RAFs into zero cursor attraction.
+
+    A very short click can begin and end before the next animation frame. Its
+    queued impulse is still required to run once. Reusing the long-hold release
+    cap in this path then freezes every tip at its weaker pre-click force for
+    500 ms, even though no held-force frame ever happened. Around the edge of a
+    tip's hover range that stale cap can make the post-click response effectively
+    vanish; moving the mouse cancels the cap and makes attraction suddenly return.
+
+    The deterministic pointer position below has real ordinary hover attraction
+    before the click and a stronger response during its queued impulse. The
+    following frame must be ordinary, unpressed hover, keep genuinely active tips
+    without another pointer event, and must not enter long-hold compensation.
+    This keeps the one-frame queued impulse guarantee while distinguishing a
+    click with no held physics frame from a longer press whose post-release
+    compensation remains necessary.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(320, 240),
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    canvas = _open_diagnostic_surface(
+        page,
+        "",
+        navigate=False,
+    )
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(
+        box["x"] + box["width"] * 0.58,
+        box["y"] + box["height"] * 0.52,
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 180; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    baseline = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert baseline["activeTips"] > 0
+    assert baseline["maximumAttraction"] > 0
+
+    rendered_before_click = int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    )
+    page.mouse.down(button="left")
+    page.mouse.up(button="left")
+    assert int(
+        canvas.get_attribute("data-rendered-frame-id") or "0"
+    ) == rendered_before_click
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    impulse = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert impulse["activeTips"] > 0
+    assert impulse["maximumAttraction"] > baseline["maximumAttraction"] * 2
+
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    hover = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    hover_state = _read_complete_interaction_state(canvas)
+    assert hover_state["phase"] == "hover"
+    assert hover_state["livePhase"] == "hover"
+    assert hover_state["direction"] == 0
+    assert hover_state["force"] == 1
+    assert hover_state["radius"] == 1
+    assert hover_state["pressed"] is False
+    assert hover["activeTips"] > 0
+    assert hover["maximumAttraction"] > 0
+    assert hover["releaseAttractionCompensationActive"] is False
+    assert hover["releaseAttractionCompensationPending"] is False
 
 
 @pytest.mark.parametrize("early_exit", [True, False])
@@ -4734,11 +4837,19 @@ def _restore_legacy_release_recovery(source: str) -> str:
         ),
         (
             """          if (wasPressed && !pointer.pressed) {
-            scheduleReleaseAttractionCompensation(
-              releasedDirection,
-              pointer.impulsePending,
-            );
-            if (!pointer.impulsePending) {
+            if (pointer.impulsePending) {
+              // A down/up pair that fits entirely between two animation
+              // frames has no held-force phase to recover from. Its queued
+              // impulse can recruit tips that had zero pre-press hover force;
+              // applying the long-hold release cap would clamp those tips
+              // back to zero until the pointer moved. Preserve the one queued
+              // peak, then let the next frame use ordinary hover immediately.
+              cancelReleaseAttractionCompensation();
+            } else {
+              scheduleReleaseAttractionCompensation(
+                releasedDirection,
+                false,
+              );
               settleReleasedPointer();
             }
             return true;
