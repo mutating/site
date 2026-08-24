@@ -2663,25 +2663,6 @@
           return result;
         }
 
-        function pointerInteractionAtAge(
-          pressed,
-          direction,
-          impulseAge,
-          impulsePending,
-        ) {
-          return writePointerInteractionAtAge(
-            {
-              forceMultiplier: 1,
-              radiusMultiplier: 1,
-              phase: "hover",
-            },
-            pressed,
-            direction,
-            impulseAge,
-            impulsePending,
-          );
-        }
-
         function currentPointerInteraction(time) {
           const impulsePending = pointer.impulsePending;
           const interactionDirection = impulsePending
@@ -2710,7 +2691,12 @@
             direction = 1,
             impulsePending = false,
           ) =>
-            pointerInteractionAtAge(
+            writePointerInteractionAtAge(
+              {
+                forceMultiplier: 1,
+                radiusMultiplier: 1,
+                phase: "hover",
+              },
               true,
               direction < 0 ? -1 : 1,
               Math.max(0, ageMilliseconds) * 0.001,
