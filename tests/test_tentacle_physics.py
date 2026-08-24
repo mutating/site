@@ -3832,25 +3832,6 @@ SCRATCH_POINTER_INTERACTION_HELPER = """        const pointerInteractionScratch 
           result.phase = impulseEnvelope > 0 ? "impulse" : "held";
           return result;
         }
-
-        function pointerInteractionAtAge(
-          pressed,
-          direction,
-          impulseAge,
-          impulsePending,
-        ) {
-          return writePointerInteractionAtAge(
-            {
-              forceMultiplier: 1,
-              radiusMultiplier: 1,
-              phase: "hover",
-            },
-            pressed,
-            direction,
-            impulseAge,
-            impulsePending,
-          );
-        }
 """
 
 LEGACY_CURRENT_INTERACTION_CALL = """          const interaction = pointerInteractionAtAge(
@@ -3860,6 +3841,19 @@ SCRATCH_CURRENT_INTERACTION_CALL = """          const interaction = writePointer
             pointerInteractionScratch,
             pointer.pressed || impulsePending,"""
 
+LEGACY_DEBUG_INTERACTION_CALL = """          ) =>
+            pointerInteractionAtAge(
+              true,"""
+
+SCRATCH_DEBUG_INTERACTION_CALL = """          ) =>
+            writePointerInteractionAtAge(
+              {
+                forceMultiplier: 1,
+                radiusMultiplier: 1,
+                phase: "hover",
+              },
+              true,"""
+
 
 def _toggle_pointer_interaction_allocation_strategy(source: str) -> str:
     """Return the same renderer with only the hot allocation strategy flipped."""
@@ -3867,27 +3861,39 @@ def _toggle_pointer_interaction_allocation_strategy(source: str) -> str:
     if LEGACY_POINTER_INTERACTION_HELPER in source:
         assert source.count(LEGACY_POINTER_INTERACTION_HELPER) == 1
         assert source.count(LEGACY_CURRENT_INTERACTION_CALL) == 1
+        assert source.count(LEGACY_DEBUG_INTERACTION_CALL) == 1
         transformed = source.replace(
             LEGACY_POINTER_INTERACTION_HELPER,
             SCRATCH_POINTER_INTERACTION_HELPER,
             1,
         )
-        return transformed.replace(
+        transformed = transformed.replace(
             LEGACY_CURRENT_INTERACTION_CALL,
             SCRATCH_CURRENT_INTERACTION_CALL,
+            1,
+        )
+        return transformed.replace(
+            LEGACY_DEBUG_INTERACTION_CALL,
+            SCRATCH_DEBUG_INTERACTION_CALL,
             1,
         )
 
     assert source.count(SCRATCH_POINTER_INTERACTION_HELPER) == 1
     assert source.count(SCRATCH_CURRENT_INTERACTION_CALL) == 1
+    assert source.count(SCRATCH_DEBUG_INTERACTION_CALL) == 1
     transformed = source.replace(
         SCRATCH_POINTER_INTERACTION_HELPER,
         LEGACY_POINTER_INTERACTION_HELPER,
         1,
     )
-    return transformed.replace(
+    transformed = transformed.replace(
         SCRATCH_CURRENT_INTERACTION_CALL,
         LEGACY_CURRENT_INTERACTION_CALL,
+        1,
+    )
+    return transformed.replace(
+        SCRATCH_DEBUG_INTERACTION_CALL,
+        LEGACY_DEBUG_INTERACTION_CALL,
         1,
     )
 
@@ -4459,46 +4465,6 @@ def _restore_legacy_release_recovery(source: str) -> str:
             result.radiusMultiplier = 1;
             result.phase = recovering ? "recovering" : "hover";
             return result;""",
-        ),
-        (
-            """        function pointerInteractionAtAge(
-          pressed,
-          direction,
-          impulseAge,
-          impulsePending,
-        ) {
-          return writePointerInteractionAtAge(
-            {
-              forceMultiplier: 1,
-              radiusMultiplier: 1,
-              phase: "hover",
-            },
-            pressed,
-            direction,
-            impulseAge,
-            impulsePending,
-          );
-        }""",
-            """        function pointerInteractionAtAge(
-          pressed,
-          direction,
-          impulseAge,
-          impulsePending,
-          recovering,
-        ) {
-          return writePointerInteractionAtAge(
-            {
-              forceMultiplier: 1,
-              radiusMultiplier: 1,
-              phase: "hover",
-            },
-            pressed,
-            direction,
-            impulseAge,
-            impulsePending,
-            recovering,
-          );
-        }""",
         ),
         (
             """            impulsePending,
