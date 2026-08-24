@@ -197,6 +197,9 @@
         const PRESS_IMPULSE_HOLD_SECONDS = 0.10 / 6.75;
         const PRESS_IMPULSE_DECAY_RATE = 26 * 6.75;
         const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+        const RELEASE_ATTRACTION_CAP_SECONDS = 0.5;
+        const RELEASE_ATTRACTION_BLEND_SECONDS = 0.25;
+        const RELEASE_ATTRACTION_CANCEL_DISTANCE_PIXELS = 1;
         canvas.dataset.pressImpulseTotalMs =
           (PRESS_IMPULSE_TOTAL_SECONDS * 1000).toFixed(1);
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
@@ -2418,6 +2421,107 @@
           impulseDirection: 1,
           energy: 0,
         };
+        const prePressHoverForceCaps = new Float64Array(
+          skeletons.length,
+        );
+        let prePressHoverForceCapsValid = false;
+        let releaseAttractionCompensationPending = false;
+        let releaseAttractionCompensationAge = Infinity;
+        let releaseAttractionAppliedBlend = 1;
+        let releaseAttractionPointerX = pointer.x;
+        let releaseAttractionPointerY = pointer.y;
+
+        function cancelReleaseAttractionCompensation() {
+          releaseAttractionCompensationPending = false;
+          releaseAttractionCompensationAge = Infinity;
+          releaseAttractionAppliedBlend = 1;
+        }
+
+        function capturePrePressHoverForceCaps() {
+          const pointerWorldX = pointer.targetX * surfaceAspect;
+          const pointerWorldY = pointer.targetY;
+          for (const skeleton of skeletons) {
+            const tipOffset = CHAIN_LINKS * POINT_STRIDE;
+            const tipDistance = length2(
+              pointerWorldX - skeleton.points[tipOffset + POINT_X],
+              pointerWorldY - skeleton.points[tipOffset + POINT_Y],
+            );
+            const normalizedDistance = clamp(
+              tipDistance / skeleton.projectedAttractionRadius,
+              0,
+              1,
+            );
+            const distanceFalloff = 1 - normalizedDistance;
+            prePressHoverForceCaps[skeleton.index] =
+              pointer.energy * distanceFalloff * distanceFalloff;
+          }
+          prePressHoverForceCapsValid = true;
+          releaseAttractionPointerX = pointer.targetX;
+          releaseAttractionPointerY = pointer.targetY;
+          cancelReleaseAttractionCompensation();
+        }
+
+        function beginReleaseAttractionCompensation() {
+          releaseAttractionCompensationPending = false;
+          if (!prePressHoverForceCapsValid) {
+            return;
+          }
+          releaseAttractionCompensationAge = 0;
+          releaseAttractionAppliedBlend = 0;
+          releaseAttractionPointerX = pointer.x;
+          releaseAttractionPointerY = pointer.y;
+        }
+
+        function scheduleReleaseAttractionCompensation(
+          direction,
+          waitsForImpulse,
+        ) {
+          if (direction <= 0 || !prePressHoverForceCapsValid) {
+            cancelReleaseAttractionCompensation();
+            return;
+          }
+          if (waitsForImpulse) {
+            releaseAttractionCompensationPending = true;
+            releaseAttractionCompensationAge = Infinity;
+            return;
+          }
+          beginReleaseAttractionCompensation();
+        }
+
+        function releaseAttractionBlend(temporalDelta) {
+          if (!Number.isFinite(releaseAttractionCompensationAge)) {
+            return 1;
+          }
+          const pointerMovementPixels = length2(
+            (pointer.x - releaseAttractionPointerX) * canvasRect.width,
+            (pointer.y - releaseAttractionPointerY) * canvasRect.height,
+          );
+          if (
+            pointerMovementPixels >
+            RELEASE_ATTRACTION_CANCEL_DISTANCE_PIXELS
+          ) {
+            cancelReleaseAttractionCompensation();
+            return 1;
+          }
+          const blendAge = Math.max(
+            0,
+            releaseAttractionCompensationAge -
+              RELEASE_ATTRACTION_CAP_SECONDS,
+          );
+          const linearBlend = clamp(
+            blendAge / RELEASE_ATTRACTION_BLEND_SECONDS,
+            0,
+            1,
+          );
+          const smoothBlend =
+            linearBlend * linearBlend * (3 - 2 * linearBlend);
+          releaseAttractionAppliedBlend = smoothBlend;
+          releaseAttractionCompensationAge += temporalDelta;
+          if (linearBlend >= 1) {
+            cancelReleaseAttractionCompensation();
+          }
+          return smoothBlend;
+        }
         let renderedInteractionPhase = "hover";
         let renderedFrameId = 0;
         let impulsePhysicsApplications = 0;
@@ -2508,6 +2612,24 @@
             return {
               tips,
               solver: { ...solverDiagnostics },
+              interaction: {
+                activeTips: diagnostics.activeTips,
+                strongTipCount: diagnostics.strongTipCount,
+                maximumAttraction: diagnostics.maximumAttraction,
+                maximumRestDisplacement:
+                  diagnostics.maximumRestDisplacement,
+                minimumCursorDistance:
+                  diagnostics.minimumCursorDistance,
+                grabberCount: diagnostics.grabberCount,
+                maximumGrabberError:
+                  diagnostics.maximumGrabberError,
+                releaseAttractionCompensationActive:
+                  Number.isFinite(releaseAttractionCompensationAge),
+                releaseAttractionCompensationPending:
+                  releaseAttractionCompensationPending,
+                releaseAttractionBlend:
+                  releaseAttractionAppliedBlend,
+              },
               maximumLinkErrorPixels:
                 maximumLinkError * worldToPixels,
               rmsLinkErrorPixels:
@@ -2581,6 +2703,10 @@
             pointer.pressed ||
             pointer.pressDirection !== 0 ||
             pointer.impulsePending;
+          const releasedDirection =
+            pointer.pressDirection ||
+            (pointer.impulsePending ? pointer.impulseDirection : 0);
+          const impulseWasApplied = !pointer.impulsePending;
           pointer.pressed = false;
           pointer.pressDirection = 0;
           pointer.impulsePending = false;
@@ -2589,12 +2715,20 @@
             return false;
           }
 
+          scheduleReleaseAttractionCompensation(
+            releasedDirection,
+            false,
+          );
+          if (!impulseWasApplied) {
+            cancelReleaseAttractionCompensation();
+          }
           settleReleasedPointer();
           return true;
         }
 
         function updatePointerPress(buttons) {
           const wasPressed = pointer.pressed;
+          const releasedDirection = pointer.pressDirection;
           const rightPressed = (buttons & 2) !== 0;
           const leftPressed = (buttons & 1) !== 0;
           pointer.pressDirection = rightPressed
@@ -2604,6 +2738,10 @@
               : 0;
           pointer.pressed = pointer.pressDirection !== 0;
           if (wasPressed && !pointer.pressed) {
+            scheduleReleaseAttractionCompensation(
+              releasedDirection,
+              pointer.impulsePending,
+            );
             if (!pointer.impulsePending) {
               settleReleasedPointer();
             }
@@ -2678,6 +2816,13 @@
               : PRESS_IMPULSE_TOTAL_SECONDS,
             impulsePending,
           );
+          if (
+            impulsePending &&
+            !pointer.pressed &&
+            releaseAttractionCompensationPending
+          ) {
+            beginReleaseAttractionCompensation();
+          }
           interaction.direction =
             pointer.pressed || impulsePending
               ? interactionDirection
@@ -2736,10 +2881,16 @@
             canvas.dataset.animationImpulseFramesSincePress = "0";
             canvas.dataset.impulseFrameScheduling = "animation-frame";
             canvas.dataset.immediateImpulseFrame = "disabled";
-            pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
             updatePointer(event);
+            if (pointer.pressDirection > 0) {
+              capturePrePressHoverForceCaps();
+            } else {
+              prePressHoverForceCapsValid = false;
+              cancelReleaseAttractionCompensation();
+            }
+            pointer.energy = 1;
           },
           { passive: false },
         );
@@ -3213,6 +3364,10 @@
             currentPointerInteraction(wallTime);
           const pointerWorldX = pointer.x * surfaceAspect;
           const pointerWorldY = pointer.y;
+          const postReleaseAttractionBlend =
+            pointerInteraction.direction === 0 && !pointer.pressed
+              ? releaseAttractionBlend(temporalDelta)
+              : 1;
           renderedInteractionPhase = pointerInteraction.phase;
           canvas.dataset.pointerInteractionPhase =
             pointerInteraction.phase;
@@ -3462,12 +3617,23 @@
             const distanceFalloff = 1 - normalizedDistance;
             const forceDirection =
               pointerInteraction.direction || 1;
-            const pointerForce =
+            let pointerForce =
               pointer.energy *
               distanceFalloff *
               distanceFalloff *
               pointerInteraction.forceMultiplier *
               forceDirection;
+            if (
+              postReleaseAttractionBlend < 1 &&
+              pointerForce > prePressHoverForceCaps[skeleton.index]
+            ) {
+              const cappedPointerForce =
+                prePressHoverForceCaps[skeleton.index];
+              pointerForce =
+                cappedPointerForce +
+                (pointerForce - cappedPointerForce) *
+                  postReleaseAttractionBlend;
+            }
             if (collectDiagnostics) {
               const forceMagnitude = Math.abs(pointerForce);
               if (forceMagnitude > 0.01) {
