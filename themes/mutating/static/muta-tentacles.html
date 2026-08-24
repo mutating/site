@@ -197,6 +197,8 @@
         const PRESS_IMPULSE_HOLD_SECONDS = 0.10 / 6.75;
         const PRESS_IMPULSE_DECAY_RATE = 26 * 6.75;
         const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+        const HELD_ATTRACTION_CAP_SECONDS = PRESS_IMPULSE_TOTAL_SECONDS;
+        const HELD_ATTRACTION_BLEND_SECONDS = 0.1;
         const RELEASE_ATTRACTION_CAP_SECONDS = 0.5;
         const RELEASE_ATTRACTION_BLEND_SECONDS = 0.25;
         const RELEASE_ATTRACTION_CANCEL_DISTANCE_PIXELS = 1;
@@ -2425,6 +2427,10 @@
           skeletons.length,
         );
         let prePressHoverForceCapsValid = false;
+        let maximumPrePressHoverForceCap = 0;
+        let stationaryHeldAttractionCapActive = false;
+        let stationaryHeldAttractionCapAge = Infinity;
+        let stationaryHeldAttractionCapBlend = 1;
         let releaseAttractionCompensationPending = false;
         let releaseAttractionCompensationAge = Infinity;
         let releaseAttractionAppliedBlend = 1;
@@ -2440,6 +2446,7 @@
         function capturePrePressHoverForceCaps() {
           const pointerWorldX = pointer.targetX * surfaceAspect;
           const pointerWorldY = pointer.targetY;
+          maximumPrePressHoverForceCap = 0;
           for (const skeleton of skeletons) {
             const tipOffset = CHAIN_LINKS * POINT_STRIDE;
             const tipDistance = length2(
@@ -2454,8 +2461,15 @@
             const distanceFalloff = 1 - normalizedDistance;
             prePressHoverForceCaps[skeleton.index] =
               pointer.energy * distanceFalloff * distanceFalloff;
+            maximumPrePressHoverForceCap = Math.max(
+              maximumPrePressHoverForceCap,
+              prePressHoverForceCaps[skeleton.index],
+            );
           }
           prePressHoverForceCapsValid = true;
+          stationaryHeldAttractionCapActive = false;
+          stationaryHeldAttractionCapAge = 0;
+          stationaryHeldAttractionCapBlend = 1;
           releaseAttractionPointerX = pointer.targetX;
           releaseAttractionPointerY = pointer.targetY;
           cancelReleaseAttractionCompensation();
@@ -2470,6 +2484,64 @@
           releaseAttractionAppliedBlend = 0;
           releaseAttractionPointerX = pointer.x;
           releaseAttractionPointerY = pointer.y;
+        }
+
+        function attractionCapPointerMovementPixels() {
+          return length2(
+            (pointer.x - releaseAttractionPointerX) * canvasRect.width,
+            (pointer.y - releaseAttractionPointerY) * canvasRect.height,
+          );
+        }
+
+        function currentStationaryHeldAttractionBlend(
+          pointerInteraction,
+          temporalDelta,
+        ) {
+          if (
+            !prePressHoverForceCapsValid ||
+            !pointer.pressed ||
+            pointerInteraction.direction <= 0
+          ) {
+            stationaryHeldAttractionCapActive = false;
+            stationaryHeldAttractionCapAge = Infinity;
+            stationaryHeldAttractionCapBlend = 1;
+            return 1;
+          }
+          if (pointerInteraction.phase !== "held") {
+            stationaryHeldAttractionCapActive = false;
+            stationaryHeldAttractionCapBlend = 1;
+            return 1;
+          }
+          if (
+            attractionCapPointerMovementPixels() >
+            RELEASE_ATTRACTION_CANCEL_DISTANCE_PIXELS
+          ) {
+            prePressHoverForceCapsValid = false;
+            stationaryHeldAttractionCapActive = false;
+            stationaryHeldAttractionCapAge = Infinity;
+            stationaryHeldAttractionCapBlend = 1;
+            cancelReleaseAttractionCompensation();
+            return 1;
+          }
+          const blendAge = Math.max(
+            0,
+            stationaryHeldAttractionCapAge -
+              HELD_ATTRACTION_CAP_SECONDS,
+          );
+          const linearBlend = clamp(
+            blendAge / HELD_ATTRACTION_BLEND_SECONDS,
+            0,
+            1,
+          );
+          stationaryHeldAttractionCapBlend =
+            linearBlend * linearBlend * (3 - 2 * linearBlend);
+          stationaryHeldAttractionCapAge += temporalDelta;
+          stationaryHeldAttractionCapActive = linearBlend < 1;
+          if (!stationaryHeldAttractionCapActive) {
+            stationaryHeldAttractionCapAge = Infinity;
+            stationaryHeldAttractionCapBlend = 1;
+          }
+          return stationaryHeldAttractionCapBlend;
         }
 
         function scheduleReleaseAttractionCompensation(
@@ -2492,12 +2564,8 @@
           if (!Number.isFinite(releaseAttractionCompensationAge)) {
             return 1;
           }
-          const pointerMovementPixels = length2(
-            (pointer.x - releaseAttractionPointerX) * canvasRect.width,
-            (pointer.y - releaseAttractionPointerY) * canvasRect.height,
-          );
           if (
-            pointerMovementPixels >
+            attractionCapPointerMovementPixels() >
             RELEASE_ATTRACTION_CANCEL_DISTANCE_PIXELS
           ) {
             cancelReleaseAttractionCompensation();
@@ -2616,6 +2684,9 @@
                 activeTips: diagnostics.activeTips,
                 strongTipCount: diagnostics.strongTipCount,
                 maximumAttraction: diagnostics.maximumAttraction,
+                maximumPrePressHoverForceCap,
+                stationaryHeldAttractionCapActive,
+                stationaryHeldAttractionCapBlend,
                 maximumRestDisplacement:
                   diagnostics.maximumRestDisplacement,
                 minimumCursorDistance:
@@ -2881,6 +2952,7 @@
             canvas.dataset.animationImpulseFramesSincePress = "0";
             canvas.dataset.impulseFrameScheduling = "animation-frame";
             canvas.dataset.immediateImpulseFrame = "disabled";
+            pointer.energy = 1;
             canvas.setPointerCapture?.(event.pointerId);
             pointer.inside = true;
             updatePointer(event);
@@ -2890,7 +2962,6 @@
               prePressHoverForceCapsValid = false;
               cancelReleaseAttractionCompensation();
             }
-            pointer.energy = 1;
           },
           { passive: false },
         );
@@ -3364,6 +3435,11 @@
             currentPointerInteraction(wallTime);
           const pointerWorldX = pointer.x * surfaceAspect;
           const pointerWorldY = pointer.y;
+          const heldAttractionBlend =
+            currentStationaryHeldAttractionBlend(
+              pointerInteraction,
+              temporalDelta,
+            );
           const postReleaseAttractionBlend =
             pointerInteraction.direction === 0 && !pointer.pressed
               ? releaseAttractionBlend(temporalDelta)
@@ -3623,6 +3699,22 @@
               distanceFalloff *
               pointerInteraction.forceMultiplier *
               forceDirection;
+            const prePressHoverForce =
+              prePressHoverForceCaps[skeleton.index];
+            if (
+              heldAttractionBlend < 1 &&
+              prePressHoverForce > 0.01
+            ) {
+              const heldAttractionCap =
+                prePressHoverForce *
+                pointerInteraction.forceMultiplier;
+              if (pointerForce > heldAttractionCap) {
+                pointerForce =
+                  heldAttractionCap +
+                  (pointerForce - heldAttractionCap) *
+                    heldAttractionBlend;
+              }
+            }
             if (
               postReleaseAttractionBlend < 1 &&
               pointerForce > prePressHoverForceCaps[skeleton.index]
