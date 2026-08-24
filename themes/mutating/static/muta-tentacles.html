@@ -2809,11 +2809,19 @@
               : 0;
           pointer.pressed = pointer.pressDirection !== 0;
           if (wasPressed && !pointer.pressed) {
-            scheduleReleaseAttractionCompensation(
-              releasedDirection,
-              pointer.impulsePending,
-            );
-            if (!pointer.impulsePending) {
+            if (pointer.impulsePending) {
+              // A down/up pair that fits entirely between two animation
+              // frames has no held-force phase to recover from. Its queued
+              // impulse can recruit tips that had zero pre-press hover force;
+              // applying the long-hold release cap would clamp those tips
+              // back to zero until the pointer moved. Preserve the one queued
+              // peak, then let the next frame use ordinary hover immediately.
+              cancelReleaseAttractionCompensation();
+            } else {
+              scheduleReleaseAttractionCompensation(
+                releasedDirection,
+                false,
+              );
               settleReleasedPointer();
             }
             return true;
