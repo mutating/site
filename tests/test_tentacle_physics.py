@@ -4193,6 +4193,176 @@ def _assert_release_continuity(
     assert settled["force"] == 1
 
 
+def test_release_does_not_retain_extra_strong_cursor_attraction(
+    driver: DriverFactory,
+) -> None:
+    """Return to the pre-press hover-force population after release.
+
+    A release can publish the correct ``hover`` phase and multiplier ``1``
+    while still feeling stronger than ordinary hover. The impulse moves tips
+    closer to the stationary cursor; because the normal force uses squared
+    distance falloff, those displaced tips can remain above the solver's
+    strong-force threshold after the button is up. State-only assertions over
+    phase and multiplier do not detect that physical positive feedback.
+
+    This regression settles a fixed-seed surface under an unmoving cursor,
+    records the number of tips whose real force exceeds ``0.48``, holds a left
+    press long enough to deform the local population, and releases it. During
+    the complete half-second cap and quarter-second blend back to uncapped
+    hover, no more tips may remain strongly attracted than immediately before
+    the press. The test also requires the public release state to stay ordinary
+    hover, so an implementation cannot pass by restoring the former zero-force
+    ``recovering`` phase that caused a visible reverse kick. Finally, the
+    diagnostic state must become fully inactive so the fix cannot trade
+    lingering extra attraction for lingering weakened attraction.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(320, 240),
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    canvas = _open_diagnostic_surface(
+        page,
+        "",
+        navigate=False,
+    )
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(
+        box["x"] + box["width"] * 0.58,
+        box["y"] + box["height"] * 0.52,
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 180; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    baseline = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+
+    page.mouse.down(button="left")
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 30; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    held = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert held["strongTipCount"] > baseline["strongTipCount"]
+    page.mouse.up(button="left")
+
+    released_state = _read_complete_interaction_state(canvas)
+    assert released_state["phase"] == "hover"
+    assert released_state["livePhase"] == "hover"
+    assert released_state["direction"] == 0
+    assert released_state["force"] == 1
+    assert released_state["radius"] == 1
+    assert released_state["pressed"] is False
+
+    post_release_strong_tip_counts = []
+    for _frame in range(50):
+        page.evaluate(
+            "window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
+        )
+        interaction = page.evaluate(
+            "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+        )
+        post_release_strong_tip_counts.append(
+            interaction["strongTipCount"]
+        )
+
+    assert max(post_release_strong_tip_counts) <= baseline["strongTipCount"]
+
+    expired = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert expired["releaseAttractionCompensationActive"] is False
+    assert expired["releaseAttractionCompensationPending"] is False
+    assert expired["releaseAttractionBlend"] == 1
+
+
+def test_pointer_motion_cancels_release_attraction_cap_immediately(
+    driver: DriverFactory,
+) -> None:
+    """Never let release compensation make a moved cursor feel sluggish.
+
+    The stationary-cursor fix temporarily caps each tip at its pre-press hover
+    force. Reusing those caps after the pointer moves would apply measurements
+    from the old location to a new target, weakening or delaying the response
+    for up to 750 ms. That would recreate the earlier class of bugs where the
+    simulation appeared to keep following a stale cursor until another event.
+
+    This test activates the cap with a real press and release, verifies through
+    the diagnostic snapshot that it is live, then moves the cursor by three CSS
+    pixels—above the documented one-pixel stationary tolerance. The very next
+    physics frame must report a fully uncapped ordinary-hover response. It
+    therefore pins both the cancellation threshold's purpose and the required
+    one-frame responsiveness without depending on a particular tentacle layout.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(320, 240),
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    canvas = _open_diagnostic_surface(
+        page,
+        "",
+        navigate=False,
+    )
+    box = canvas.bounding_box()
+    assert box is not None
+    pointer_x = box["x"] + box["width"] * 0.58
+    pointer_y = box["y"] + box["height"] * 0.52
+    page.mouse.move(pointer_x, pointer_y)
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 30; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    page.mouse.up(button="left")
+
+    released = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert released["releaseAttractionCompensationActive"] is True
+    assert released["releaseAttractionBlend"] == 0
+
+    page.mouse.move(pointer_x + 3, pointer_y)
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    moved = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert moved["releaseAttractionCompensationActive"] is False
+    assert moved["releaseAttractionCompensationPending"] is False
+    assert moved["releaseAttractionBlend"] == 1
+    state = _read_complete_interaction_state(canvas)
+    assert state["phase"] == "hover"
+    assert state["direction"] == 0
+    assert state["force"] == 1
+    assert state["radius"] == 1
+    assert state["pressed"] is False
+
+
 def _assert_no_deadline_render(page: Page, canvas: Page) -> None:
     """Assert elapsed impulse time never schedules synchronous rendering."""
 
@@ -4373,28 +4543,26 @@ def _restore_legacy_release_recovery(source: str) -> str:
 
     replacements = [
         (
-            """        const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
-        canvas.dataset.pressImpulseTotalMs =""",
-            """        const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
+            "const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;",
+            """const PRESS_IMPULSE_TOTAL_SECONDS = 0.28 / 6.75;
         const RELEASE_RECOVERY_SECONDS = 0.18;
         const RELEASE_RECOVERY_RATE = 34;
-        const RELEASE_RECOVERY_DAMPING = 42;
-        canvas.dataset.pressImpulseTotalMs =""",
+        const RELEASE_RECOVERY_DAMPING = 42;""",
         ),
         (
             """          impulsePending: false,
           impulseDirection: 1,
-          energy: 0,
-        };
-        let renderedInteractionPhase = "hover";""",
+          energy: 0,""",
             """          impulsePending: false,
           impulseDirection: 1,
           releaseRecoveryUntil: -Infinity,
-          energy: 0,
-        };
+          energy: 0,""",
+        ),
+        (
+            "        let releaseAttractionPointerY = pointer.y;",
+            """        let releaseAttractionPointerY = pointer.y;
         let releaseRecoveryTimer = 0;
-        let releaseRecoverySequence = 0;
-        let renderedInteractionPhase = "hover";""",
+        let releaseRecoverySequence = 0;""",
         ),
         (
             """        function releasePointerInteraction() {""",
@@ -4421,20 +4589,21 @@ def _restore_legacy_release_recovery(source: str) -> str:
         function releasePointerInteraction() {""",
         ),
         (
-            """          settleReleasedPointer();
-          return true;
-        }
-
-        function updatePointerPress(buttons) {""",
-            """          startReleaseRecovery();
-          settleReleasedPointer();
-          return true;
-        }
-
-        function updatePointerPress(buttons) {""",
+            """          scheduleReleaseAttractionCompensation(
+            releasedDirection,
+            false,
+          );
+          if (!impulseWasApplied) {
+            cancelReleaseAttractionCompensation();
+          }""",
+            "          startReleaseRecovery();",
         ),
         (
             """          if (wasPressed && !pointer.pressed) {
+            scheduleReleaseAttractionCompensation(
+              releasedDirection,
+              pointer.impulsePending,
+            );
             if (!pointer.impulsePending) {
               settleReleasedPointer();
             }
@@ -4467,28 +4636,26 @@ def _restore_legacy_release_recovery(source: str) -> str:
             return result;""",
         ),
         (
-            """            impulsePending,
-          );
-          interaction.direction =
-            pointer.pressed || impulsePending
-              ? interactionDirection
-              : 0;
-          return interaction;
-        }
-
-        if (interactionDiagnostics) {""",
-            """            impulsePending,
+            """          const interaction = writePointerInteractionAtAge(
+            pointerInteractionScratch,
+            pointer.pressed || impulsePending,
+            interactionDirection,
+            impulsePending
+              ? 0
+              : PRESS_IMPULSE_TOTAL_SECONDS,
+            impulsePending,
+          );""",
+            """          const interaction = writePointerInteractionAtAge(
+            pointerInteractionScratch,
+            pointer.pressed || impulsePending,
+            interactionDirection,
+            impulsePending
+              ? 0
+              : PRESS_IMPULSE_TOTAL_SECONDS,
+            impulsePending,
             !pointer.pressed &&
               time < pointer.releaseRecoveryUntil,
-          );
-          interaction.direction =
-            pointer.pressed || impulsePending
-              ? interactionDirection
-              : 0;
-          return interaction;
-        }
-
-        if (interactionDiagnostics) {""",
+          );""",
         ),
         (
             """              Boolean(impulsePending),
