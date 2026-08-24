@@ -3177,6 +3177,140 @@ def test_mouse_impulse_transitions_to_the_correct_held_force(
     )
 
 
+def test_left_impulse_settles_to_true_double_hover_attraction(
+    driver: DriverFactory,
+) -> None:
+    """Make the physical held force—not only its label—settle to 2×.
+
+    The interaction state can correctly switch from the short ``13.333×``
+    impulse to a published ``2×`` held multiplier while the motion still feels
+    as if the impulse never ended. The peak moves tips closer to the stationary
+    cursor and the distance falloff is recomputed from that new geometry. In
+    the regression this positive feedback made the first held frame reach about
+    ``2.8×`` the real pre-press hover force despite reporting multiplier ``2``.
+
+    This test settles a deterministic surface beneath an unmoving cursor and
+    records its actual maximum hover attraction. It submits exactly one peak
+    frame, then samples held frames across the remaining 41.5 ms envelope.
+    Each must report the ordinary held phase, radius ``1`` and multiplier ``2``,
+    while its real attraction never exceeds twice the pre-press value. The cap
+    then blends away over 100 ms and must become completely inactive, preserving
+    the original long-held solver and grabbed-tip stability. Geometry is allowed
+    to remain continuous, so the contract cannot be satisfied by snapping tips
+    back or injecting a reverse impulse. A second press finally moves the cursor
+    three CSS pixels and requires immediate cancellation of the stationary cap;
+    otherwise held dragging would become unresponsive.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(320, 240),
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    canvas = _open_diagnostic_surface(
+        page,
+        "",
+        navigate=False,
+    )
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(
+        box["x"] + box["width"] * 0.58,
+        box["y"] + box["height"] * 0.52,
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 180; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    baseline = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert baseline["maximumAttraction"] > 0
+
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    impulse = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert impulse["maximumAttraction"] > baseline["maximumAttraction"] * 2
+    true_held_force_limit = (
+        impulse["maximumPrePressHoverForceCap"] * 2
+    )
+
+    maximum_held_attraction = 0.0
+    for elapsed_milliseconds in (9, 9, 9, 9):
+        page.evaluate(
+            "elapsed => window.__mutaTentaclesDebugFrameAfter(elapsed)",
+            elapsed_milliseconds,
+        )
+        state = _read_complete_interaction_state(canvas)
+        assert state["phase"] == "held"
+        assert state["livePhase"] == "held"
+        assert state["direction"] == 1
+        assert state["force"] == 2
+        assert state["radius"] == 1
+        assert state["pressed"] is True
+        interaction = page.evaluate(
+            "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+        )
+        assert interaction["stationaryHeldAttractionCapActive"] is True
+        maximum_held_attraction = max(
+            maximum_held_attraction,
+            interaction["maximumAttraction"],
+        )
+
+    assert maximum_held_attraction <= true_held_force_limit
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 12; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    expired = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert expired["stationaryHeldAttractionCapActive"] is False
+    assert expired["stationaryHeldAttractionCapBlend"] == 1
+    expired_state = _read_complete_interaction_state(canvas)
+    assert expired_state["phase"] == "held"
+    assert expired_state["force"] == 2
+    assert expired_state["radius"] == 1
+    page.mouse.up(button="left")
+
+    page.mouse.down(button="left")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+    active_again = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert active_again["stationaryHeldAttractionCapActive"] is True
+    page.mouse.move(
+        box["x"] + box["width"] * 0.58 + 3,
+        box["y"] + box["height"] * 0.52,
+    )
+    page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+    moved = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+    assert moved["stationaryHeldAttractionCapActive"] is False
+    moved_state = _read_complete_interaction_state(canvas)
+    assert moved_state["phase"] == "held"
+    assert moved_state["direction"] == 1
+    assert moved_state["force"] == 2
+    assert moved_state["radius"] == 1
+    assert moved_state["pressed"] is True
+    page.mouse.up(button="left")
+
+
 @pytest.mark.parametrize("early_exit", [True, False])
 def test_solver_uses_conservative_adaptive_iteration_limits(
     driver: DriverFactory,
