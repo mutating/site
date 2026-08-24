@@ -2618,18 +2618,25 @@
             : LEFT_HELD_FORCE_MULTIPLIER;
         }
 
-        function pointerInteractionAtAge(
+        const pointerInteractionScratch = {
+          forceMultiplier: 1,
+          radiusMultiplier: 1,
+          phase: "hover",
+          direction: 0,
+        };
+
+        function writePointerInteractionAtAge(
+          result,
           pressed,
           direction,
           impulseAge,
           impulsePending,
         ) {
           if (!pressed) {
-            return {
-              forceMultiplier: 1,
-              radiusMultiplier: 1,
-              phase: "hover",
-            };
+            result.forceMultiplier = 1;
+            result.radiusMultiplier = 1;
+            result.phase = "hover";
+            return result;
           }
           const heldMultiplier = heldPointerMultiplier(direction);
           let impulseEnvelope = 0;
@@ -2644,17 +2651,35 @@
               -decayAge * PRESS_IMPULSE_DECAY_RATE,
             );
           }
-          return {
-            forceMultiplier:
-              heldMultiplier +
-              (PRESS_IMPULSE_MULTIPLIER - heldMultiplier) *
-                impulseEnvelope,
-            radiusMultiplier:
-              1 +
-              (PRESS_IMPULSE_RADIUS_MULTIPLIER - 1) *
-                impulseEnvelope,
-            phase: impulseEnvelope > 0 ? "impulse" : "held",
-          };
+          result.forceMultiplier =
+            heldMultiplier +
+            (PRESS_IMPULSE_MULTIPLIER - heldMultiplier) *
+              impulseEnvelope;
+          result.radiusMultiplier =
+            1 +
+            (PRESS_IMPULSE_RADIUS_MULTIPLIER - 1) *
+              impulseEnvelope;
+          result.phase = impulseEnvelope > 0 ? "impulse" : "held";
+          return result;
+        }
+
+        function pointerInteractionAtAge(
+          pressed,
+          direction,
+          impulseAge,
+          impulsePending,
+        ) {
+          return writePointerInteractionAtAge(
+            {
+              forceMultiplier: 1,
+              radiusMultiplier: 1,
+              phase: "hover",
+            },
+            pressed,
+            direction,
+            impulseAge,
+            impulsePending,
+          );
         }
 
         function currentPointerInteraction(time) {
@@ -2663,7 +2688,8 @@
             ? pointer.impulseDirection
             : pointer.pressDirection;
           pointer.impulsePending = false;
-          const interaction = pointerInteractionAtAge(
+          const interaction = writePointerInteractionAtAge(
+            pointerInteractionScratch,
             pointer.pressed || impulsePending,
             interactionDirection,
             impulsePending
