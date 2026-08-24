@@ -266,6 +266,8 @@ def run_scenario(
         "heap": {
             "usedBytes": heap["usedSize"],
             "totalBytes": heap["totalSize"],
+            "embedderBytes": heap.get("embedderHeapUsedSize"),
+            "backingStorageBytes": heap.get("backingStorageSize"),
         },
         "metadata": metadata,
         "pageErrors": errors,
