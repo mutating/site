@@ -41,7 +41,7 @@
             {{ range . }}
               {{- $label := .label -}}
               {{- with .labelKey }}{{ $label = T . }}{{ end -}}
-              <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ $label }} <span aria-hidden="true">↗</span></a>
+              <a href="{{ .url }}" target="_blank" rel="me noreferrer">{{ $label }} <span class="external-arrow" aria-hidden="true">↗&#xfe0e;</span></a>
             {{ end }}
           </nav>
         {{ end }}
@@ -92,7 +92,7 @@
       <h2 id="author-posts-heading">{{ T "author_posts_heading" }}</h2>
       {{ with $archive }}
         <a class="author-posts__archive" href="{{ .RelPermalink }}" aria-label="{{ T "view_every_post_by" (dict "author" $localizedAuthor.Title) }}">
-          <span>{{ T "all_field_notes" }}</span><b aria-hidden="true">↗</b>
+          <span>{{ T "all_field_notes" }}</span><b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b>
         </a>
       {{ end }}
     </header>
@@ -106,7 +106,7 @@
           </div>
           <h3>{{ $localizedPost.Title }}</h3>
           <p>{{ $localizedPost.Description | default $localizedPost.Summary }}</p>
-          <b aria-hidden="true">↗</b>
+          <b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b>
         </a>
       {{ end }}
     </div>

@@ -51,6 +51,25 @@ def test_home_page_renders_core_content(driver: DriverFactory) -> None:
     )
 
 
+def test_external_arrows_force_text_presentation(driver: DriverFactory) -> None:
+    """Keep diagonal arrows out of platform-specific color emoji fonts."""
+
+    page = driver(load_interactive_visuals=False)
+    origin = page.url.rstrip("/")
+    arrow_codepoints = (
+        "elements => elements.map(element => "
+        "Array.from(element.textContent, character => character.codePointAt(0)))"
+    )
+
+    for path, expected_count in (("/", 4), ("/authors/muta/", 4)):
+        page.goto(f"{origin}{path}", wait_until="domcontentloaded")
+        arrows = page.locator(".external-arrow")
+        expect(arrows).to_have_count(expected_count)
+        assert arrows.evaluate_all(arrow_codepoints) == [
+            [0x2197, 0xFE0E]
+        ] * expected_count
+
+
 @pytest.mark.parametrize(
     ("viewport_width", "should_be_visible"),
     [
