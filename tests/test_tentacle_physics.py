@@ -3399,15 +3399,7 @@ def test_left_impulse_settles_to_true_double_hover_attraction(
         box["x"] + box["width"] * 0.58,
         box["y"] + box["height"] * 0.52,
     )
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 180; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 180)
     baseline = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -3446,15 +3438,7 @@ def test_left_impulse_settles_to_true_double_hover_attraction(
         )
 
     assert maximum_held_attraction <= true_held_force_limit
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 12; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 12)
     expired = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -3530,15 +3514,7 @@ def test_queued_short_click_preserves_new_stationary_hover_attraction(
         box["x"] + box["width"] * 0.58,
         box["y"] + box["height"] * 0.52,
     )
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 180; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 180)
     baseline = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -3899,6 +3875,71 @@ def _open_diagnostic_surface(
         warmup_frames,
     )
     return canvas
+
+
+def _advance_diagnostic_physics_frames(
+    page: Page,
+    frame_count: int,
+    *,
+    presentation_interval: int = 30,
+    elapsed_milliseconds: float = 1000 / 60,
+) -> dict[str, int]:
+    """Advance every production physics frame with bounded WebGL checkpoints.
+
+    Long settling windows need every physics step but not an identical WebGL
+    presentation after every one. The final frame and each interval boundary
+    still exercise the complete production frame path. Exact counter deltas
+    make skipped physics or presentation checkpoints fail immediately.
+    """
+
+    assert frame_count > 0
+    assert presentation_interval > 0
+    expected_presentations = math.ceil(frame_count / presentation_interval)
+    deltas = page.evaluate(
+        """
+        ({ frameCount, presentationInterval, elapsedMilliseconds }) => {
+          const canvas = document.querySelector("#muta");
+          if (!canvas) throw new Error("Missing diagnostic canvas");
+          if (
+            typeof window.__mutaTentaclesDebugFrameAfter !== "function" ||
+            typeof window.__mutaTentaclesDebugPhysicsFrameAfter !== "function"
+          ) {
+            throw new Error("Missing manual diagnostic frame controls");
+          }
+
+          const physicsBefore = Number(canvas.dataset.physicsFrameId || 0);
+          const renderedBefore = Number(canvas.dataset.renderedFrameId || 0);
+          for (let frame = 0; frame < frameCount; frame += 1) {
+            const shouldPresent =
+              (frame + 1) % presentationInterval === 0 ||
+              frame === frameCount - 1;
+            if (shouldPresent) {
+              window.__mutaTentaclesDebugFrameAfter(elapsedMilliseconds);
+            } else {
+              window.__mutaTentaclesDebugPhysicsFrameAfter(
+                elapsedMilliseconds,
+              );
+            }
+          }
+          return {
+            physicsFrames:
+              Number(canvas.dataset.physicsFrameId || 0) - physicsBefore,
+            renderedFrames:
+              Number(canvas.dataset.renderedFrameId || 0) - renderedBefore,
+          };
+        }
+        """,
+        {
+            "frameCount": frame_count,
+            "presentationInterval": presentation_interval,
+            "elapsedMilliseconds": elapsed_milliseconds,
+        },
+    )
+    assert deltas == {
+        "physicsFrames": frame_count,
+        "renderedFrames": expected_presentations,
+    }
+    return deltas
 
 
 def _assert_exact_impulse_envelope(page: Page) -> None:
@@ -4681,29 +4722,13 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
         box["x"] + box["width"] * 0.58,
         box["y"] + box["height"] * 0.52,
     )
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 180; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 180)
     baseline = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
 
     page.mouse.down(button="left")
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 30; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 30)
     held = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -4718,21 +4743,38 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     assert released_state["radius"] == 1
     assert released_state["pressed"] is False
 
-    post_release_strong_tip_counts = page.evaluate(
+    post_release_samples = page.evaluate(
         """
         () => {
+          const canvas = document.querySelector("#muta");
+          const physicsBefore = Number(canvas.dataset.physicsFrameId || 0);
+          const renderedBefore = Number(canvas.dataset.renderedFrameId || 0);
           const counts = [];
           for (let frame = 0; frame < 50; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const shouldPresent = (frame + 1) % 30 === 0 || frame === 49;
+            if (shouldPresent) {
+              window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            } else {
+              window.__mutaTentaclesDebugPhysicsFrameAfter(1000 / 60);
+            }
             counts.push(
               window.__mutaTentaclesDebugPhysicsSnapshot()
                 .interaction.strongTipCount,
             );
           }
-          return counts;
+          return {
+            counts,
+            physicsFrames:
+              Number(canvas.dataset.physicsFrameId || 0) - physicsBefore,
+            renderedFrames:
+              Number(canvas.dataset.renderedFrameId || 0) - renderedBefore,
+          };
         }
         """
     )
+    assert post_release_samples["physicsFrames"] == 50
+    assert post_release_samples["renderedFrames"] == 2
+    post_release_strong_tip_counts = post_release_samples["counts"]
 
     assert max(post_release_strong_tip_counts) <= baseline["strongTipCount"]
 
