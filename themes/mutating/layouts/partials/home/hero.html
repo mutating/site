@@ -11,7 +11,7 @@
     <p class="hero__lede">{{ $content.lede }}</p>
     <div class="hero__actions">
       <a class="button button--primary" href="#sections">{{ $content.primary_action }} <span aria-hidden="true">↓</span></a>
-      <a class="text-link" href="{{ $openSourceURL }}">{{ $content.secondary_action }} <span aria-hidden="true">↗</span></a>
+      <a class="text-link" href="{{ $openSourceURL }}">{{ $content.secondary_action }} <span class="external-arrow" aria-hidden="true">↗&#xfe0e;</span></a>
     </div>
     <div class="hero__signal" aria-label="{{ $content.status_aria }}">
       <span class="signal-dot"></span><span>{{ $content.status }}</span><span>{{ $content.confidence }}</span>

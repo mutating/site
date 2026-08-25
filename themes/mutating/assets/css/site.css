@@ -167,6 +167,10 @@ a {
   text-decoration: none;
 }
 
+.external-arrow {
+  font-variant-emoji: text;
+}
+
 .inline-text-link {
   color: inherit;
   text-decoration: underline;
