@@ -462,7 +462,7 @@ def test_russian_author_profiles_use_localized_content_and_shared_metadata(
         "data-author-status", "human"
     )
     expect(page.locator(".author-profile__portrait img")).to_have_attribute(
-        "src", "https://pomponchik.org/41.png"
+        "src", "/author-evgeniy-blinov.png"
     )
     expect(page.locator(".author-profile__links a")).to_have_attribute(
         "href", "https://pomponchik.org/"
