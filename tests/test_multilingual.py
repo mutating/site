@@ -467,7 +467,7 @@ def test_russian_author_profiles_use_localized_content_and_shared_metadata(
     expect(page.locator(".author-profile__links a")).to_have_attribute(
         "href", "https://pomponchik.org/"
     )
-    expect(page.locator(".author-profile__links a")).to_have_text("Сайт ↗")
+    expect(page.locator(".author-profile__links a")).to_have_text("Сайт ↗\ufe0e")
     expect(page).to_have_title("Евгений Блинов — The Mutating Company")
 
     origin = page.url.split("/ru/", maxsplit=1)[0]
