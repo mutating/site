@@ -357,11 +357,17 @@ def driver(
         manual_tentacle_rendering: bool = False,
         animation_frame_interval_ms: float | None = None,
         controllable_animation_frames: bool = False,
+        steppable_animation_frames: bool = False,
         initial_path: str = "",
         wait_for_theme_ready: bool = True,
         init_scripts: tuple[str, ...] = (),
     ) -> Page:
         assert not initial_path or initial_path.startswith("/")
+        if controllable_animation_frames and steppable_animation_frames:
+            raise ValueError(
+                "controllable_animation_frames and "
+                "steppable_animation_frames are mutually exclusive"
+            )
         storage_state = {"cookies": [], "origins": []}
 
         local_storage: list[dict[str, str]] = []
@@ -573,6 +579,119 @@ def driver(
                       }
                       callback(timestamp);
                     });
+                })();
+                """
+            )
+
+        if steppable_animation_frames:
+            context.add_init_script(
+                """
+                (() => {
+                  const nativeRequestAnimationFrame =
+                    window.requestAnimationFrame.bind(window);
+                  const nativeCancelAnimationFrame =
+                    window.cancelAnimationFrame.bind(window);
+                  let animationFramesPaused = false;
+                  let nextRequestId = 1;
+                  let virtualTimestamp = performance.now();
+                  const requests = new Map();
+
+                  const scheduleNativeRequest = (requestId, request) => {
+                    request.queued = false;
+                    request.nativeId = nativeRequestAnimationFrame(
+                      (timestamp) => {
+                        request.nativeId = 0;
+                        if (!requests.has(requestId)) return;
+                        if (animationFramesPaused) {
+                          request.queued = true;
+                          request.timestamp = timestamp;
+                          return;
+                        }
+                        requests.delete(requestId);
+                        virtualTimestamp = Math.max(
+                          virtualTimestamp,
+                          timestamp,
+                        );
+                        request.callback(timestamp);
+                      },
+                    );
+                  };
+
+                  window.requestAnimationFrame = (callback) => {
+                    const requestId = nextRequestId;
+                    nextRequestId += 1;
+                    const request = {
+                      callback,
+                      nativeId: 0,
+                      queued: animationFramesPaused,
+                      timestamp: null,
+                    };
+                    requests.set(requestId, request);
+                    if (!animationFramesPaused) {
+                      scheduleNativeRequest(requestId, request);
+                    }
+                    return requestId;
+                  };
+
+                  window.cancelAnimationFrame = (requestId) => {
+                    const request = requests.get(requestId);
+                    if (!request) return;
+                    requests.delete(requestId);
+                    if (request.nativeId) {
+                      nativeCancelAnimationFrame(request.nativeId);
+                    }
+                  };
+
+                  window.__mutaTestSetAnimationFramesPaused = (paused) => {
+                    animationFramesPaused = Boolean(paused);
+                    if (animationFramesPaused) return;
+                    for (const [requestId, request] of requests) {
+                      if (request.queued && !request.nativeId) {
+                        scheduleNativeRequest(requestId, request);
+                      }
+                    }
+                  };
+
+                  window.__mutaTestFlushAnimationFrames = (
+                    count = 1,
+                    intervalMilliseconds = 1000 / 60,
+                  ) => {
+                    if (!animationFramesPaused) {
+                      throw new Error(
+                        'Animation frames must be paused before flushing',
+                      );
+                    }
+                    const requestedCount = Math.max(
+                      0,
+                      Math.floor(Number(count)),
+                    );
+                    const interval = Number(intervalMilliseconds);
+                    if (!Number.isFinite(interval) || interval <= 0) {
+                      throw new TypeError(
+                        'Animation frame interval must be positive',
+                      );
+                    }
+                    let executed = 0;
+                    while (executed < requestedCount) {
+                      const queuedRequest = [...requests].find(
+                        ([, request]) => request.queued,
+                      );
+                      if (!queuedRequest) break;
+                      const [requestId, request] = queuedRequest;
+                      requests.delete(requestId);
+                      virtualTimestamp = Math.max(
+                        virtualTimestamp + interval,
+                        request.timestamp || 0,
+                        performance.now(),
+                      );
+                      request.callback(virtualTimestamp);
+                      executed += 1;
+                    }
+                    return executed;
+                  };
+
+                  window.__mutaTestPendingAnimationFrameCount = () =>
+                    requests.size;
                 })();
                 """
             )

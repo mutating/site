@@ -4755,7 +4755,7 @@
           immediateFrameInProgress = false;
         }
 
-        function frame(nowMilliseconds) {
+        function frame(nowMilliseconds, presentationRequested = true) {
           animationFrameRequest = null;
           const now = nowMilliseconds * 0.001;
           if (!runtimeVisible || document.hidden) {
@@ -4943,11 +4943,14 @@
           lastPhysicsDuration =
             performance.now() - physicsStartedAt;
           if (
-            !scrollRenderingSuppressed ||
-            pointer.pressed ||
-            submitsInitialImpulse ||
-            needsInitialPresentationFrame ||
-            budgetPermitsScrollAnimationFrame
+            presentationRequested &&
+            (
+              !scrollRenderingSuppressed ||
+              pointer.pressed ||
+              submitsInitialImpulse ||
+              needsInitialPresentationFrame ||
+              budgetPermitsScrollAnimationFrame
+            )
           ) {
             const renderStartedAt = performance.now();
             render(smoothedTime);
@@ -5093,7 +5096,16 @@
           ) => {
             frame(
               (lastTime + elapsedMilliseconds * 0.001) *
-              1000,
+                1000,
+            );
+          };
+          window.__mutaTentaclesDebugPhysicsFrameAfter = (
+            elapsedMilliseconds,
+          ) => {
+            frame(
+              (lastTime + elapsedMilliseconds * 0.001) *
+                1000,
+              false,
             );
           };
           window.__mutaTentaclesDebugSetScrollBudgetSignals = (

@@ -19,6 +19,9 @@ DIAGNOSTIC_QUERY = (
     "&manual-animation-frame=1&interaction-diagnostics=1"
     "&generation-seed=12345"
 )
+NONCOMPACT_TEMPORAL_VIEWPORT = (1280, 720)
+TEMPORAL_TEST_DEVICE_SCALE_FACTOR = 0.5
+PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR = 0.5
 pytestmark = [
     pytest.mark.interactive_visuals,
     pytest.mark.xdist_group(name="tentacle-webgl"),
@@ -1065,16 +1068,15 @@ def test_slow_rendered_frame_matches_the_original_single_step_clock(
 def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
     driver: DriverFactory,
 ) -> None:
-    """Stop scheduling callbacks completely, then resume without a dead loop.
+    """Cancel the exact queued RAF, then resume without a dead loop.
 
-    The lifecycle assertions begin only after the real continuously rendered
-    WebGL runtime has produced several physics frames. Linux CI uses SwiftShader,
-    whose cold shader compilation can exceed the usual 30-second browser wait
-    after earlier full-density WebGL cases. That startup is not the behavior
-    under test, so readiness receives 60 seconds while every pause/resume check
-    below keeps its short deterministic deadline. This still fails a genuinely
-    dead animation loop, but does not confuse slow software-GPU initialization
-    with a lifecycle regression.
+    The runtime still executes its real physics and WebGL frame callback, but
+    the test owns the RAF queue and advances it explicitly. This preserves the
+    complete scheduling contract—one pending callback while active, none while
+    offscreen or hidden, an actual cancellation at each pause, and exactly one
+    fresh callback on resume—without making correctness depend on SwiftShader
+    completing three frames inside an arbitrary wall-clock window. It also
+    verifies the first resumed frame's clock reset against a known timestamp.
     """
 
     page = driver(
@@ -1088,13 +1090,11 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
         init_scripts=(
             """
             (() => {
-              const nativeRequestAnimationFrame =
-                window.requestAnimationFrame.bind(window);
-              const nativeCancelAnimationFrame =
-                window.cancelAnimationFrame.bind(window);
               let syntheticHidden = false;
-              let captureNextAnimationFrame = null;
-              Object.defineProperty(Document.prototype, "hidden", {
+              let nextAnimationFrameId = 1;
+              let virtualTimestamp = performance.now();
+              const queuedAnimationFrames = new Map();
+              Object.defineProperty(document, "hidden", {
                 configurable: true,
                 get: () => syntheticHidden,
               });
@@ -1107,47 +1107,63 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
                 callbacks: 0,
                 cancellations: 0,
               };
-              globalThis.__mutaCaptureNextAnimationFrame = () =>
-                new Promise((resolve) => {
-                  captureNextAnimationFrame = resolve;
-                });
               window.requestAnimationFrame = (callback) => {
                 globalThis.__mutaRafProbe.requests += 1;
-                return nativeRequestAnimationFrame((timestamp) => {
-                  globalThis.__mutaRafProbe.callbacks += 1;
-                  callback(timestamp);
-                  if (captureNextAnimationFrame) {
-                    const resolve = captureNextAnimationFrame;
-                    captureNextAnimationFrame = null;
-                    const data = document.querySelector("#muta").dataset;
-                    resolve({
-                      physicsElapsedMs: Number(data.physicsElapsedMs),
-                      physicsFrameId: Number(data.physicsFrameId),
-                    });
-                  }
-                });
+                const request = nextAnimationFrameId;
+                nextAnimationFrameId += 1;
+                queuedAnimationFrames.set(request, callback);
+                return request;
               };
               window.cancelAnimationFrame = (request) => {
                 globalThis.__mutaRafProbe.cancellations += 1;
-                nativeCancelAnimationFrame(request);
+                queuedAnimationFrames.delete(request);
+              };
+              globalThis.__mutaPendingAnimationFrameCount = () =>
+                queuedAnimationFrames.size;
+              globalThis.__mutaRunNextAnimationFrame = (
+                elapsedMilliseconds = 1000 / 60
+              ) => {
+                if (queuedAnimationFrames.size !== 1) {
+                  throw new Error(
+                    `Expected one queued RAF, found ${queuedAnimationFrames.size}.`
+                  );
+                }
+                const [request, callback] =
+                  queuedAnimationFrames.entries().next().value;
+                queuedAnimationFrames.delete(request);
+                virtualTimestamp += elapsedMilliseconds;
+                globalThis.__mutaRafProbe.callbacks += 1;
+                callback(virtualTimestamp);
+                const data = document.querySelector("#muta").dataset;
+                return {
+                  physicsElapsedMs: Number(data.physicsElapsedMs),
+                  physicsFrameId: Number(data.physicsFrameId),
+                  renderedFrameId: Number(data.renderedFrameId),
+                  pending: queuedAnimationFrames.size,
+                };
               };
             })();
             """,
         ),
     )
     canvas = page.locator("#muta")
-    page.wait_for_function(
-        """
-        () => {
-          const data = document.querySelector("#muta")?.dataset;
-          return data?.aspectReady === "true" &&
-            data.animationLoop === "running" &&
-            data.animationFrameScheduled === "true" &&
-            Number(data.physicsFrameId) > 2;
-        }
-        """,
-        timeout=60_000,
+    expect(canvas).to_have_attribute("data-aspect-ready", "true")
+    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    expect(canvas).to_have_attribute(
+        "data-animation-frame-scheduled",
+        "true",
     )
+    assert page.evaluate("globalThis.__mutaPendingAnimationFrameCount()") == 1
+    for expected_frame_id in range(1, 4):
+        initial_frame = page.evaluate(
+            "globalThis.__mutaRunNextAnimationFrame()"
+        )
+        assert initial_frame == {
+            "physicsElapsedMs": 16.7,
+            "physicsFrameId": expected_frame_id,
+            "renderedFrameId": expected_frame_id,
+            "pending": 1,
+        }
 
     def animation_state() -> dict[str, int]:
         return canvas.evaluate(
@@ -1156,6 +1172,7 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
               requests: globalThis.__mutaRafProbe.requests,
               callbacks: globalThis.__mutaRafProbe.callbacks,
               cancellations: globalThis.__mutaRafProbe.cancellations,
+              pending: globalThis.__mutaPendingAnimationFrameCount(),
               physics: Number(element.dataset.physicsFrameId || 0),
               rendered: Number(element.dataset.renderedFrameId || 0),
             })
@@ -1170,7 +1187,8 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
         )
         expect(canvas).to_have_attribute("data-runtime-paused", "true")
         stopped = animation_state()
-        page.wait_for_timeout(250)
+        assert stopped["pending"] == 0
+        page.wait_for_timeout(50)
         assert animation_state() == stopped
         return stopped
 
@@ -1200,30 +1218,23 @@ def test_runtime_cancels_raf_while_offscreen_or_document_hidden(
         "data-animation-frame-scheduled",
         "true",
     )
-    page.wait_for_function(
-        """
-        (previousPhysicsFrame) =>
-          Number(document.querySelector("#muta").dataset.physicsFrameId) >
-            previousPhysicsFrame
-        """,
-        arg=offscreen_state["physics"],
+    assert page.evaluate("globalThis.__mutaPendingAnimationFrameCount()") == 1
+    visible_frame = page.evaluate(
+        "globalThis.__mutaRunNextAnimationFrame()"
     )
+    assert visible_frame["physicsFrameId"] > offscreen_state["physics"]
+    assert visible_frame["pending"] == 1
 
     page.evaluate("globalThis.__mutaSetSyntheticHidden(true)")
     hidden_state = assert_animation_stays_stopped()
     assert hidden_state["cancellations"] > offscreen_state["cancellations"]
 
-    resumed_frame = page.evaluate(
-        """
-        async () => {
-          const firstFrame = globalThis.__mutaCaptureNextAnimationFrame();
-          globalThis.__mutaSetSyntheticHidden(false);
-          return firstFrame;
-        }
-        """
-    )
+    page.evaluate("globalThis.__mutaSetSyntheticHidden(false)")
+    assert page.evaluate("globalThis.__mutaPendingAnimationFrameCount()") == 1
+    resumed_frame = page.evaluate("globalThis.__mutaRunNextAnimationFrame()")
     assert resumed_frame["physicsElapsedMs"] == 16.7
     assert resumed_frame["physicsFrameId"] > hidden_state["physics"]
+    assert resumed_frame["pending"] == 1
     expect(canvas).to_have_attribute("data-animation-loop", "running")
     expect(canvas).to_have_attribute(
         "data-animation-frame-scheduled",
@@ -1604,6 +1615,8 @@ def test_scroll_budget_reduces_frame_count_without_slowing_animation_time(
     page = driver(
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         stored_theme="dark",
+        viewport=NONCOMPACT_TEMPORAL_VIEWPORT,
+        device_scale_factor=TEMPORAL_TEST_DEVICE_SCALE_FACTOR,
         load_interactive_visuals=True,
         wait_for_theme_ready=False,
     )
@@ -1677,10 +1690,15 @@ def test_scroll_budget_reduces_frame_count_without_slowing_animation_time(
         baseline_counters = counters()
         baseline_time = animation_time()
 
-        for _ in range(60):
-            page.evaluate(
-                "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-            )
+        page.evaluate(
+            """
+            () => {
+              for (let tick = 0; tick < 60; tick += 1) {
+                window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+              }
+            }
+            """
+        )
 
         admitted_counters = counters()
         assert admitted_counters == {
@@ -1726,8 +1744,15 @@ def test_scroll_budget_reduces_frame_count_without_slowing_animation_time(
     )
     slow_cadence_baseline = counters()
     slow_cadence_time = animation_time()
-    for _ in range(20):
-        page.evaluate("() => window.__mutaTentaclesDebugFrameAfter(40)")
+    page.evaluate(
+        """
+        () => {
+          for (let tick = 0; tick < 20; tick += 1) {
+            window.__mutaTentaclesDebugFrameAfter(40);
+          }
+        }
+        """
+    )
     assert animation_time() - slow_cadence_time == pytest.approx(
         0.8 * reduced_motion_multiplier,
         abs=1e-9,
@@ -1781,17 +1806,21 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
 
     The debug sampler exists only in manual-frame mode, allocates nothing in
     production, and returns raw solver coordinates before projection. Fixed
-    time, seed, viewport profile, sample topology, and explicit RAF ticks make
-    the comparison deterministic across CPUs and GPUs. Each cadence tier is a
-    separate parametrized test item, so its two pages and WebGL contexts are
-    destroyed before the next tier starts. Keeping all three tiers in one item
-    retained six software-renderer contexts at once and could exceed CI's
-    120-second per-test limit, after which pytest-timeout could only report a
-    crashed xdist worker. Splitting resource ownership changes neither samples
-    nor numerical contracts. Raising cadence without fixing chain response,
-    weakening temporal compensation, adding hidden physics frames, changing the
-    sampled solver topology, or introducing scroll-only jitter must therefore
-    fail numerically rather than relying on a subjective visual judgement.
+    time, seed, a fixed 16:9 noncompact viewport profile, sample topology, and
+    explicit RAF ticks make the comparison deterministic across CPUs and GPUs.
+    The CSS viewport remains the original 1280×720, retaining the same surface
+    aspect, compact breakpoint, and pixel-derived solver tolerance; only the
+    diagnostic backing-store scale is halved because this test reads raw solver
+    coordinates rather than rendered pixels. The complete 60 Hz reference
+    trajectory is captured first and its page is closed before the scroll
+    runtime opens, so SwiftShader never retains both WebGL contexts at once.
+    Each cadence tier is also a separate parametrized item. Batching the same
+    60 frame callbacks inside each page removes browser transport overhead
+    without removing a frame, joint, skeleton, or numerical assertion. Raising
+    cadence without fixing chain response, weakening temporal compensation,
+    adding hidden physics frames, changing the sampled solver topology, or
+    introducing scroll-only jitter must therefore fail numerically rather than
+    relying on a subjective visual judgement.
 
     The calibrated contract requires at least 85% and at most 110% of the
     reference visible travel, RMS error below 0.003 surface units, maximum
@@ -1820,6 +1849,8 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
                 "&animation-time-origin=0"
             ),
             stored_theme="dark",
+            viewport=NONCOMPACT_TEMPORAL_VIEWPORT,
+            device_scale_factor=TEMPORAL_TEST_DEVICE_SCALE_FACTOR,
             load_interactive_visuals=True,
             wait_for_theme_ready=False,
         )
@@ -1838,14 +1869,29 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
         page.evaluate(
             "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
         )
+        assert canvas.evaluate(
+            """
+            element => {
+              const rect = element.getBoundingClientRect();
+              return {
+                cssWidth: rect.width,
+                cssHeight: rect.height,
+                backingWidth: element.width,
+                backingHeight: element.height,
+                deviceScaleFactor: devicePixelRatio,
+                compact: element.dataset.runtimeCompact,
+              };
+            }
+            """
+        ) == {
+            "cssWidth": 1280,
+            "cssHeight": 720,
+            "backingWidth": 320,
+            "backingHeight": 180,
+            "deviceScaleFactor": TEMPORAL_TEST_DEVICE_SCALE_FACTOR,
+            "compact": "false",
+        }
         return page, canvas
-
-    def sample(page: Page) -> list[float]:
-        values = page.evaluate(
-            "() => window.__mutaTentaclesDebugTrajectorySample()"
-        )
-        assert len(values) == 12 * 3 * 3
-        return [float(value) for value in values]
 
     def point_rms(left: list[float], right: list[float]) -> float:
         assert len(left) == len(right)
@@ -1865,7 +1911,35 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
         )
 
     reference_page, _ = open_runtime()
-    scroll_page, scroll_canvas = open_runtime()
+    reference_run = reference_page.evaluate(
+        """
+        () => {
+          const sample = () =>
+            window.__mutaTentaclesDebugTrajectorySample();
+          const duringScroll = [sample()];
+          for (let tick = 0; tick < 60; tick += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            duringScroll.push(sample());
+          }
+          const afterScroll = [sample()];
+          for (let tick = 0; tick < 6; tick += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            afterScroll.push(sample());
+          }
+          return {duringScroll, afterScroll};
+        }
+        """
+    )
+    reference_page.close()
+
+    reference_frames = reference_run["duringScroll"]
+    reference_exit_path = reference_run["afterScroll"]
+    assert len(reference_frames) == 61
+    assert len(reference_exit_path) == 7
+    assert all(len(points) == 12 * 3 * 3 for points in reference_frames)
+    assert all(len(points) == 12 * 3 * 3 for points in reference_exit_path)
+
+    scroll_page, _ = open_runtime()
     scroll_page.evaluate(
         """
         signals =>
@@ -1884,30 +1958,62 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
         })
         """
     )
-    previous_rendered_frame = int(
-        scroll_canvas.get_attribute("data-rendered-frame-id") or "0"
-    )
-    reference_path = [sample(reference_page)]
-    scroll_path = [sample(scroll_page)]
+    scroll_run = scroll_page.evaluate(
+        """
+        () => {
+          const canvas = document.querySelector("#muta");
+          const sample = () =>
+            window.__mutaTentaclesDebugTrajectorySample();
+          let previousRenderedFrame = Number(
+            canvas.dataset.renderedFrameId || 0
+          );
+          const admitted = [{
+            tick: 0,
+            renderedFrameId: previousRenderedFrame,
+            points: sample(),
+          }];
+          for (let tick = 1; tick <= 60; tick += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const renderedFrame = Number(
+              canvas.dataset.renderedFrameId || 0
+            );
+            if (renderedFrame === previousRenderedFrame) continue;
+            if (renderedFrame !== previousRenderedFrame + 1) {
+              throw new Error(
+                `Rendered frame jumped from ${previousRenderedFrame} to ${renderedFrame}.`
+              );
+            }
+            previousRenderedFrame = renderedFrame;
+            admitted.push({
+              tick,
+              renderedFrameId: renderedFrame,
+              points: sample(),
+            });
+          }
 
-    for _ in range(60):
-        reference_page.evaluate(
-            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-        )
-        scroll_page.evaluate(
-            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-        )
-        rendered_frame = int(
-            scroll_canvas.get_attribute("data-rendered-frame-id") or "0"
-        )
-        if rendered_frame == previous_rendered_frame:
-            continue
-        assert rendered_frame == previous_rendered_frame + 1
-        previous_rendered_frame = rendered_frame
-        reference_path.append(sample(reference_page))
-        scroll_path.append(sample(scroll_page))
+          const afterScroll = [sample()];
+          window.__mutaTentaclesSetRuntimeState({
+            visible: true,
+            scrollActive: false,
+          });
+          for (let tick = 0; tick < 6; tick += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            afterScroll.push(sample());
+          }
+          return {admitted, afterScroll};
+        }
+        """
+    )
+    admitted = scroll_run["admitted"]
+    reference_path = [reference_frames[entry["tick"]] for entry in admitted]
+    scroll_path = [entry["points"] for entry in admitted]
 
     assert len(scroll_path) == expected_frames + 1
+    first_rendered_frame = admitted[0]["renderedFrameId"]
+    assert [entry["renderedFrameId"] for entry in admitted] == list(
+        range(first_rendered_frame, first_rendered_frame + len(admitted))
+    )
+    assert all(len(points) == 12 * 3 * 3 for points in scroll_path)
     trajectory_errors = [
         point_rms(reference, throttled)
         for reference, throttled in zip(
@@ -1918,25 +2024,9 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
     ]
     reference_distance = path_length(reference_path)
     scroll_distance = path_length(scroll_path)
-    reference_exit_path = [sample(reference_page)]
-    scroll_exit_path = [sample(scroll_page)]
-    scroll_page.evaluate(
-        """
-        () => window.__mutaTentaclesSetRuntimeState({
-          visible: true,
-          scrollActive: false,
-        })
-        """
-    )
-    for _ in range(6):
-        reference_page.evaluate(
-            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-        )
-        scroll_page.evaluate(
-            "() => window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-        )
-        reference_exit_path.append(sample(reference_page))
-        scroll_exit_path.append(sample(scroll_page))
+    scroll_exit_path = scroll_run["afterScroll"]
+    assert len(scroll_exit_path) == 7
+    assert all(len(points) == 12 * 3 * 3 for points in scroll_exit_path)
     reference_exit_steps = [
         point_rms(previous, current)
         for previous, current in zip(
@@ -2340,17 +2430,42 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
 def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
     driver: DriverFactory,
 ) -> None:
-    """Prewarm at 200 px, but run RAF only after a real viewport intersection."""
+    """Prewarm at 200 px, but run RAF only after a viewport intersection.
+
+    The visible transition must queue the production RAF, three explicitly
+    flushed callbacks must each complete a real physics-and-WebGL frame, and
+    leaving the viewport must cancel the next queued callback. Owning only the
+    delivery cadence prevents an otherwise unbounded SwiftShader loop from
+    starving the observer assertions while preserving every lifecycle state
+    and the original requirement for more than two completed physics frames.
+    """
 
     page = driver(
         stored_theme="dark",
         viewport=(1280, 720),
         load_interactive_visuals=True,
         bounded_tentacle_rendering=True,
+        steppable_animation_frames=True,
     )
     frame = page.locator(".contact__tentacles")
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
     expect(canvas).to_be_attached(timeout=30_000)
+    expect(canvas).to_have_attribute(
+        "data-aspect-ready",
+        "true",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-aspect-reloading",
+        "false",
+        timeout=30_000,
+    )
+    frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestSetAnimationFramesPaused(true)
+        """
+    )
 
     scroll_positions = frame.evaluate(
         """
@@ -2359,7 +2474,12 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
             element.getBoundingClientRect().top + scrollY;
           return {
             prewarmOnly: documentTop - innerHeight - 100,
-            onePixelVisible: documentTop - innerHeight + 1,
+            // scrollTop is quantized to device pixels. Round toward the
+            // section so the iframe has at least one complete CSS pixel in
+            // the viewport instead of occasionally landing exactly outside.
+            onePixelVisible: Math.ceil(
+              documentTop - innerHeight + 1,
+            ),
           };
         }
         """
@@ -2376,25 +2496,61 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
         "data-animation-frame-scheduled",
         "false",
     )
+    assert frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestPendingAnimationFrameCount()
+        """
+    ) == 0
 
     page.evaluate(
         "position => scrollTo({top: position, behavior: 'instant'})",
         scroll_positions["onePixelVisible"],
     )
-    expect(canvas).to_have_attribute("data-runtime-visible", "true")
-    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    visible_geometry = frame.evaluate(
+        """
+        element => ({
+          top: element.getBoundingClientRect().top,
+          viewportHeight: innerHeight,
+        })
+        """
+    )
+    visible_pixels = (
+        visible_geometry["viewportHeight"] - visible_geometry["top"]
+    )
+    assert 1 <= visible_pixels <= 2
+    expect(canvas).to_have_attribute(
+        "data-runtime-visible",
+        "true",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-animation-loop",
+        "running",
+        timeout=30_000,
+    )
     expect(canvas).to_have_attribute(
         "data-animation-frame-scheduled",
         "true",
     )
-    page.wait_for_function(
+    assert frame.evaluate(
         """
-        () => Number(
-          document.querySelector(".contact__tentacles")
-            ?.contentWindow?.document?.querySelector("#muta")
-            ?.dataset?.physicsFrameId || 0
-        ) > 2
-        """,
+        element =>
+          element.contentWindow.__mutaTestPendingAnimationFrameCount()
+        """
+    ) == 1
+    initial_physics_frame = int(
+        canvas.get_attribute("data-physics-frame-id") or "0"
+    )
+    assert frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestFlushAnimationFrames(3)
+        """
+    ) == 3
+    expect(canvas).to_have_attribute(
+        "data-physics-frame-id",
+        str(initial_physics_frame + 3),
         timeout=30_000,
     )
     page.evaluate(
@@ -2407,6 +2563,12 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
         "data-animation-frame-scheduled",
         "false",
     )
+    assert frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestPendingAnimationFrameCount()
+        """
+    ) == 0
     paused_physics_frame = int(
         canvas.get_attribute("data-physics-frame-id") or "0"
     )
@@ -3222,6 +3384,7 @@ def test_left_impulse_settles_to_true_double_hover_attraction(
     page = driver(
         stored_theme="dark",
         viewport=(320, 240),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         wait_for_theme_ready=False,
     )
@@ -3236,15 +3399,7 @@ def test_left_impulse_settles_to_true_double_hover_attraction(
         box["x"] + box["width"] * 0.58,
         box["y"] + box["height"] * 0.52,
     )
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 180; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 180)
     baseline = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -3283,15 +3438,7 @@ def test_left_impulse_settles_to_true_double_hover_attraction(
         )
 
     assert maximum_held_attraction <= true_held_force_limit
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 12; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 12)
     expired = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -3352,6 +3499,7 @@ def test_queued_short_click_preserves_new_stationary_hover_attraction(
     page = driver(
         stored_theme="dark",
         viewport=(320, 240),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         wait_for_theme_ready=False,
     )
@@ -3366,15 +3514,7 @@ def test_queued_short_click_preserves_new_stationary_hover_attraction(
         box["x"] + box["width"] * 0.58,
         box["y"] + box["height"] * 0.52,
     )
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 180; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 180)
     baseline = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -3420,13 +3560,20 @@ def test_solver_uses_conservative_adaptive_iteration_limits(
     base_url: str,
     early_exit: bool,
 ) -> None:
-    """Expose adaptive work while retaining full grabbed-tip convergence."""
+    """Expose adaptive work while retaining full grabbed-tip convergence.
+
+    Every one of the 151 physical frames uses the production frame path. The
+    six controlled presentation checkpoints keep the real WebGL upload and
+    shader path coupled to the solver without asking Linux SwiftShader to
+    repaint identical diagnostic pixels after every intermediate step.
+    """
 
     disabled_query = "" if early_exit else "&solver-early-exit=0"
     page = driver(
         initial_path="/blog/",
         stored_theme="dark",
         viewport=(640, 360),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
     )
     page.goto(
         (
@@ -3442,13 +3589,20 @@ def test_solver_uses_conservative_adaptive_iteration_limits(
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
     page.wait_for_function(
-        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+        """
+        () =>
+          typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function' &&
+          typeof window.__mutaTentaclesDebugPhysicsFrameAfter === 'function'
+        """
     )
     page.evaluate(
         """
         () => {
           for (let frame = 0; frame < 60; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
@@ -3460,11 +3614,16 @@ def test_solver_uses_conservative_adaptive_iteration_limits(
         """
         () => {
           for (let frame = 0; frame < 90; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
     )
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "6")
+    expect(canvas).to_have_attribute("data-physics-frame-id", "151")
     solver = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().solver"
     )
@@ -3507,13 +3666,17 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
     grabbed. Their procedural rest targets may move smoothly, so this contract
     measures first and second finite differences rather than demanding a
     frozen image. Link-error bounds independently prevent a quiet but stretched
-    chain from passing the trajectory checks.
+    chain from passing the trajectory checks. All 331 physical frames and all
+    180 samples remain mandatory; twelve controlled presentations keep WebGL
+    state synchronized without making repeated identical rasterization part of
+    this CPU-solver contract.
     """
 
     page = driver(
         initial_path="/blog/",
         stored_theme="dark",
         viewport=(640, 360),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
     )
     page.goto(
         (
@@ -3528,13 +3691,20 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
     page.wait_for_function(
-        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+        """
+        () =>
+          typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function' &&
+          typeof window.__mutaTentaclesDebugPhysicsFrameAfter === 'function'
+        """
     )
     page.evaluate(
         """
         () => {
           for (let frame = 0; frame < 60; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
@@ -3546,7 +3716,10 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
         """
         () => {
           for (let frame = 0; frame < 90; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
@@ -3570,7 +3743,10 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
           let maximumRmsLinkError = 0;
 
           for (let frame = 0; frame < sampleCount; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
             const snapshot =
               window.__mutaTentaclesDebugPhysicsSnapshot();
             maximumLinkError = Math.max(
@@ -3642,6 +3818,8 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
         }
         """
     )
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "12")
+    expect(canvas).to_have_attribute("data-physics-frame-id", "331")
     page.mouse.up(button="left")
 
     assert metrics["grabbedIds"] == [36, 86, 87, 106]
@@ -3697,6 +3875,71 @@ def _open_diagnostic_surface(
         warmup_frames,
     )
     return canvas
+
+
+def _advance_diagnostic_physics_frames(
+    page: Page,
+    frame_count: int,
+    *,
+    presentation_interval: int = 30,
+    elapsed_milliseconds: float = 1000 / 60,
+) -> dict[str, int]:
+    """Advance every production physics frame with bounded WebGL checkpoints.
+
+    Long settling windows need every physics step but not an identical WebGL
+    presentation after every one. The final frame and each interval boundary
+    still exercise the complete production frame path. Exact counter deltas
+    make skipped physics or presentation checkpoints fail immediately.
+    """
+
+    assert frame_count > 0
+    assert presentation_interval > 0
+    expected_presentations = math.ceil(frame_count / presentation_interval)
+    deltas = page.evaluate(
+        """
+        ({ frameCount, presentationInterval, elapsedMilliseconds }) => {
+          const canvas = document.querySelector("#muta");
+          if (!canvas) throw new Error("Missing diagnostic canvas");
+          if (
+            typeof window.__mutaTentaclesDebugFrameAfter !== "function" ||
+            typeof window.__mutaTentaclesDebugPhysicsFrameAfter !== "function"
+          ) {
+            throw new Error("Missing manual diagnostic frame controls");
+          }
+
+          const physicsBefore = Number(canvas.dataset.physicsFrameId || 0);
+          const renderedBefore = Number(canvas.dataset.renderedFrameId || 0);
+          for (let frame = 0; frame < frameCount; frame += 1) {
+            const shouldPresent =
+              (frame + 1) % presentationInterval === 0 ||
+              frame === frameCount - 1;
+            if (shouldPresent) {
+              window.__mutaTentaclesDebugFrameAfter(elapsedMilliseconds);
+            } else {
+              window.__mutaTentaclesDebugPhysicsFrameAfter(
+                elapsedMilliseconds,
+              );
+            }
+          }
+          return {
+            physicsFrames:
+              Number(canvas.dataset.physicsFrameId || 0) - physicsBefore,
+            renderedFrames:
+              Number(canvas.dataset.renderedFrameId || 0) - renderedBefore,
+          };
+        }
+        """,
+        {
+            "frameCount": frame_count,
+            "presentationInterval": presentation_interval,
+            "elapsedMilliseconds": elapsed_milliseconds,
+        },
+    )
+    assert deltas == {
+        "physicsFrames": frame_count,
+        "renderedFrames": expected_presentations,
+    }
+    return deltas
 
 
 def _assert_exact_impulse_envelope(page: Page) -> None:
@@ -4153,12 +4396,13 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
     Both documents receive the same seed, clock, pointer coordinates, left and
     right impulse/hold/release sequence, and manual frame deltas. Every
     checkpoint compares all published interaction fields and a representative
-    Float64 trajectory sample. Release uses ``performance.now()``, so the two
-    serial page loads may differ by machine epsilon; trajectories therefore
-    use a strict ``1e-12`` absolute bound while state remains exactly equal.
-    The final WebGL buffers are read with dithering disabled and hashed in the
-    page, requiring byte-identical pixels without transferring a large image
-    through the test protocol. Any meaningful precision change, stale scratch
+    Float64 trajectory sample. A test-owned ``performance.now()`` advances by
+    each explicit manual-frame delta, so pointer press and synchronous release
+    timestamps are identical across the two serial page loads. Trajectories
+    must therefore be exactly equal rather than hiding clock drift behind a
+    tolerance. The final WebGL buffers are read with dithering disabled and
+    hashed in the page, requiring byte-identical pixels without transferring a
+    large image through the test protocol. Any precision change, stale scratch
     field, debug/production alias, or changed consume order therefore produces
     a behavioral, geometric, or pixel mismatch.
     """
@@ -4173,6 +4417,23 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
         initial_path="/blog/",
         stored_theme="dark",
         viewport=(240, 180),
+        init_scripts=(
+            """
+            (() => {
+              let virtualPerformanceNow = 0;
+              Object.defineProperty(performance, "now", {
+                configurable: true,
+                value: () => virtualPerformanceNow,
+              });
+              globalThis.__mutaTestFrameAfter = (elapsedMilliseconds) => {
+                virtualPerformanceNow += Number(elapsedMilliseconds);
+                return globalThis.__mutaTentaclesDebugFrameAfter(
+                  elapsedMilliseconds
+                );
+              };
+            })();
+            """,
+        ),
     )
     page.context.route(
         "**/muta-tentacles-alternate-allocation.html*",
@@ -4206,7 +4467,7 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
             """
             () => {
               for (let frame = 0; frame < 8; frame += 1) {
-                window.__mutaTentaclesDebugFrameAfter(16);
+                window.__mutaTestFrameAfter(16);
               }
             }
             """
@@ -4243,9 +4504,9 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
 
         checkpoint()
         page.mouse.down(button="left")
-        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+        page.evaluate("window.__mutaTestFrameAfter(1000 / 60)")
         checkpoint()
-        page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+        page.evaluate("window.__mutaTestFrameAfter(9)")
         checkpoint()
         page.mouse.up(button="left")
         checkpoint()
@@ -4253,15 +4514,15 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
             """
             () => {
               for (let frame = 0; frame < 3; frame += 1) {
-                window.__mutaTentaclesDebugFrameAfter(16);
+                window.__mutaTestFrameAfter(16);
               }
             }
             """
         )
         page.mouse.down(button="right")
-        page.evaluate("window.__mutaTentaclesDebugFrameAfter(1000 / 60)")
+        page.evaluate("window.__mutaTestFrameAfter(1000 / 60)")
         checkpoint()
-        page.evaluate("window.__mutaTentaclesDebugFrameAfter(9)")
+        page.evaluate("window.__mutaTestFrameAfter(9)")
         checkpoint()
         page.mouse.up(button="right")
         checkpoint()
@@ -4269,7 +4530,7 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
             """
             () => {
               for (let frame = 0; frame < 4; frame += 1) {
-                window.__mutaTentaclesDebugFrameAfter(16);
+                window.__mutaTestFrameAfter(16);
               }
             }
             """
@@ -4282,7 +4543,7 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
               const canvas = document.querySelector("#muta");
               const gl = canvas.getContext("webgl2");
               gl.disable(gl.DITHER);
-              window.__mutaTentaclesDebugFrameAfter(16);
+              window.__mutaTestFrameAfter(16);
               const pixels = new Uint8Array(
                 gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
               );
@@ -4324,18 +4585,7 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
         assert alternate_checkpoint["state"] == current_checkpoint["state"]
         current_trajectory = current_checkpoint["trajectory"]
         alternate_trajectory = alternate_checkpoint["trajectory"]
-        assert len(alternate_trajectory) == len(current_trajectory)
-        for current_value, alternate_value in zip(
-            current_trajectory,
-            alternate_trajectory,
-            strict=True,
-        ):
-            assert math.isclose(
-                alternate_value,
-                current_value,
-                rel_tol=0,
-                abs_tol=1e-12,
-            )
+        assert alternate_trajectory == current_trajectory
 
 
 def _read_release_metrics(canvas: Page) -> dict[str, float | str]:
@@ -4457,6 +4707,7 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     page = driver(
         stored_theme="dark",
         viewport=(320, 240),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         wait_for_theme_ready=False,
     )
@@ -4471,29 +4722,13 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
         box["x"] + box["width"] * 0.58,
         box["y"] + box["height"] * 0.52,
     )
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 180; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 180)
     baseline = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
 
     page.mouse.down(button="left")
-    page.evaluate(
-        """
-        () => {
-          for (let frame = 0; frame < 30; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
-          }
-        }
-        """
-    )
+    _advance_diagnostic_physics_frames(page, 30)
     held = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -4508,17 +4743,38 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     assert released_state["radius"] == 1
     assert released_state["pressed"] is False
 
-    post_release_strong_tip_counts = []
-    for _frame in range(50):
-        page.evaluate(
-            "window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-        )
-        interaction = page.evaluate(
-            "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
-        )
-        post_release_strong_tip_counts.append(
-            interaction["strongTipCount"]
-        )
+    post_release_samples = page.evaluate(
+        """
+        () => {
+          const canvas = document.querySelector("#muta");
+          const physicsBefore = Number(canvas.dataset.physicsFrameId || 0);
+          const renderedBefore = Number(canvas.dataset.renderedFrameId || 0);
+          const counts = [];
+          for (let frame = 0; frame < 50; frame += 1) {
+            const shouldPresent = (frame + 1) % 30 === 0 || frame === 49;
+            if (shouldPresent) {
+              window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            } else {
+              window.__mutaTentaclesDebugPhysicsFrameAfter(1000 / 60);
+            }
+            counts.push(
+              window.__mutaTentaclesDebugPhysicsSnapshot()
+                .interaction.strongTipCount,
+            );
+          }
+          return {
+            counts,
+            physicsFrames:
+              Number(canvas.dataset.physicsFrameId || 0) - physicsBefore,
+            renderedFrames:
+              Number(canvas.dataset.renderedFrameId || 0) - renderedBefore,
+          };
+        }
+        """
+    )
+    assert post_release_samples["physicsFrames"] == 50
+    assert post_release_samples["renderedFrames"] == 2
+    post_release_strong_tip_counts = post_release_samples["counts"]
 
     assert max(post_release_strong_tip_counts) <= baseline["strongTipCount"]
 
