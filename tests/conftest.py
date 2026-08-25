@@ -27,52 +27,6 @@ ReducedMotion = Literal["reduce", "no-preference"]
 DriverFactory = Callable[..., Page]
 
 
-def _release_webgl_contexts(context: BrowserContext) -> None:
-    """Explicitly release renderer resources before closing a test context.
-
-    Chromium normally destroys WebGL contexts with their browser context. Its
-    Linux software renderer can defer that destruction, though, so one xdist
-    worker running the complete tentacle group gradually accumulates large
-    render targets and shader resources. Later tests then spend their whole
-    pytest timeout waiting on SwiftShader despite passing in isolation.
-
-    Every relevant document is same-origin in this suite. Losing the contexts
-    after the test's final assertion preserves test coverage while giving the
-    renderer a deterministic teardown boundary between tests.
-    """
-
-    for page in context.pages:
-        for frame in page.frames:
-            try:
-                frame.evaluate(
-                    """
-                    () => {
-                      for (const canvas of document.querySelectorAll('canvas')) {
-                        let renderingContext = null;
-                        try {
-                          renderingContext = canvas.getContext('webgl2');
-                        } catch (_) {}
-                        if (!renderingContext) {
-                          try {
-                            renderingContext =
-                              canvas.getContext('webgl') ||
-                              canvas.getContext('experimental-webgl');
-                          } catch (_) {}
-                        }
-                        renderingContext
-                          ?.getExtension('WEBGL_lose_context')
-                          ?.loseContext();
-                      }
-                    }
-                    """
-                )
-            except Exception:
-                # A page or child frame may detach naturally during teardown.
-                # Closing its BrowserContext below still releases its process
-                # resources, so there is nothing left for this helper to do.
-                pass
-
-
 def _write_paginated_tag_posts(temporary_content: Path) -> None:
     """Create a controlled tag collection that always spans two pages."""
 
@@ -403,11 +357,17 @@ def driver(
         manual_tentacle_rendering: bool = False,
         animation_frame_interval_ms: float | None = None,
         controllable_animation_frames: bool = False,
+        steppable_animation_frames: bool = False,
         initial_path: str = "",
         wait_for_theme_ready: bool = True,
         init_scripts: tuple[str, ...] = (),
     ) -> Page:
         assert not initial_path or initial_path.startswith("/")
+        if controllable_animation_frames and steppable_animation_frames:
+            raise ValueError(
+                "controllable_animation_frames and "
+                "steppable_animation_frames are mutually exclusive"
+            )
         storage_state = {"cookies": [], "origins": []}
 
         local_storage: list[dict[str, str]] = []
@@ -623,6 +583,119 @@ def driver(
                 """
             )
 
+        if steppable_animation_frames:
+            context.add_init_script(
+                """
+                (() => {
+                  const nativeRequestAnimationFrame =
+                    window.requestAnimationFrame.bind(window);
+                  const nativeCancelAnimationFrame =
+                    window.cancelAnimationFrame.bind(window);
+                  let animationFramesPaused = false;
+                  let nextRequestId = 1;
+                  let virtualTimestamp = performance.now();
+                  const requests = new Map();
+
+                  const scheduleNativeRequest = (requestId, request) => {
+                    request.queued = false;
+                    request.nativeId = nativeRequestAnimationFrame(
+                      (timestamp) => {
+                        request.nativeId = 0;
+                        if (!requests.has(requestId)) return;
+                        if (animationFramesPaused) {
+                          request.queued = true;
+                          request.timestamp = timestamp;
+                          return;
+                        }
+                        requests.delete(requestId);
+                        virtualTimestamp = Math.max(
+                          virtualTimestamp,
+                          timestamp,
+                        );
+                        request.callback(timestamp);
+                      },
+                    );
+                  };
+
+                  window.requestAnimationFrame = (callback) => {
+                    const requestId = nextRequestId;
+                    nextRequestId += 1;
+                    const request = {
+                      callback,
+                      nativeId: 0,
+                      queued: animationFramesPaused,
+                      timestamp: null,
+                    };
+                    requests.set(requestId, request);
+                    if (!animationFramesPaused) {
+                      scheduleNativeRequest(requestId, request);
+                    }
+                    return requestId;
+                  };
+
+                  window.cancelAnimationFrame = (requestId) => {
+                    const request = requests.get(requestId);
+                    if (!request) return;
+                    requests.delete(requestId);
+                    if (request.nativeId) {
+                      nativeCancelAnimationFrame(request.nativeId);
+                    }
+                  };
+
+                  window.__mutaTestSetAnimationFramesPaused = (paused) => {
+                    animationFramesPaused = Boolean(paused);
+                    if (animationFramesPaused) return;
+                    for (const [requestId, request] of requests) {
+                      if (request.queued && !request.nativeId) {
+                        scheduleNativeRequest(requestId, request);
+                      }
+                    }
+                  };
+
+                  window.__mutaTestFlushAnimationFrames = (
+                    count = 1,
+                    intervalMilliseconds = 1000 / 60,
+                  ) => {
+                    if (!animationFramesPaused) {
+                      throw new Error(
+                        'Animation frames must be paused before flushing',
+                      );
+                    }
+                    const requestedCount = Math.max(
+                      0,
+                      Math.floor(Number(count)),
+                    );
+                    const interval = Number(intervalMilliseconds);
+                    if (!Number.isFinite(interval) || interval <= 0) {
+                      throw new TypeError(
+                        'Animation frame interval must be positive',
+                      );
+                    }
+                    let executed = 0;
+                    while (executed < requestedCount) {
+                      const queuedRequest = [...requests].find(
+                        ([, request]) => request.queued,
+                      );
+                      if (!queuedRequest) break;
+                      const [requestId, request] = queuedRequest;
+                      requests.delete(requestId);
+                      virtualTimestamp = Math.max(
+                        virtualTimestamp + interval,
+                        request.timestamp || 0,
+                        performance.now(),
+                      );
+                      request.callback(virtualTimestamp);
+                      executed += 1;
+                    }
+                    return executed;
+                  };
+
+                  window.__mutaTestPendingAnimationFrameCount = () =>
+                    requests.size;
+                })();
+                """
+            )
+
         contexts.append(context)
         page = context.new_page()
         page.goto(f"{base_url}{initial_path}", wait_until="domcontentloaded")
@@ -635,5 +708,4 @@ def driver(
     yield create_driver
 
     for context in reversed(contexts):
-        _release_webgl_contexts(context)
         context.close()

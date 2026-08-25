@@ -2430,17 +2430,42 @@ def test_contact_surface_prewarms_before_the_user_reaches_the_footer(
 def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
     driver: DriverFactory,
 ) -> None:
-    """Prewarm at 200 px, but run RAF only after a real viewport intersection."""
+    """Prewarm at 200 px, but run RAF only after a viewport intersection.
+
+    The visible transition must queue the production RAF, three explicitly
+    flushed callbacks must each complete a real physics-and-WebGL frame, and
+    leaving the viewport must cancel the next queued callback. Owning only the
+    delivery cadence prevents an otherwise unbounded SwiftShader loop from
+    starving the observer assertions while preserving every lifecycle state
+    and the original requirement for more than two completed physics frames.
+    """
 
     page = driver(
         stored_theme="dark",
         viewport=(1280, 720),
         load_interactive_visuals=True,
         bounded_tentacle_rendering=True,
+        steppable_animation_frames=True,
     )
     frame = page.locator(".contact__tentacles")
     canvas = page.frame_locator(".contact__tentacles").locator("#muta")
     expect(canvas).to_be_attached(timeout=30_000)
+    expect(canvas).to_have_attribute(
+        "data-aspect-ready",
+        "true",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-aspect-reloading",
+        "false",
+        timeout=30_000,
+    )
+    frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestSetAnimationFramesPaused(true)
+        """
+    )
 
     scroll_positions = frame.evaluate(
         """
@@ -2471,6 +2496,12 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
         "data-animation-frame-scheduled",
         "false",
     )
+    assert frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestPendingAnimationFrameCount()
+        """
+    ) == 0
 
     page.evaluate(
         "position => scrollTo({top: position, behavior: 'instant'})",
@@ -2502,14 +2533,24 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
         "data-animation-frame-scheduled",
         "true",
     )
-    page.wait_for_function(
+    assert frame.evaluate(
         """
-        () => Number(
-          document.querySelector(".contact__tentacles")
-            ?.contentWindow?.document?.querySelector("#muta")
-            ?.dataset?.physicsFrameId || 0
-        ) > 2
-        """,
+        element =>
+          element.contentWindow.__mutaTestPendingAnimationFrameCount()
+        """
+    ) == 1
+    initial_physics_frame = int(
+        canvas.get_attribute("data-physics-frame-id") or "0"
+    )
+    assert frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestFlushAnimationFrames(3)
+        """
+    ) == 3
+    expect(canvas).to_have_attribute(
+        "data-physics-frame-id",
+        str(initial_physics_frame + 3),
         timeout=30_000,
     )
     page.evaluate(
@@ -2522,6 +2563,12 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
         "data-animation-frame-scheduled",
         "false",
     )
+    assert frame.evaluate(
+        """
+        element =>
+          element.contentWindow.__mutaTestPendingAnimationFrameCount()
+        """
+    ) == 0
     paused_physics_frame = int(
         canvas.get_attribute("data-physics-frame-id") or "0"
     )
