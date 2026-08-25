@@ -27,6 +27,52 @@ ReducedMotion = Literal["reduce", "no-preference"]
 DriverFactory = Callable[..., Page]
 
 
+def _release_webgl_contexts(context: BrowserContext) -> None:
+    """Explicitly release renderer resources before closing a test context.
+
+    Chromium normally destroys WebGL contexts with their browser context. Its
+    Linux software renderer can defer that destruction, though, so one xdist
+    worker running the complete tentacle group gradually accumulates large
+    render targets and shader resources. Later tests then spend their whole
+    pytest timeout waiting on SwiftShader despite passing in isolation.
+
+    Every relevant document is same-origin in this suite. Losing the contexts
+    after the test's final assertion preserves test coverage while giving the
+    renderer a deterministic teardown boundary between tests.
+    """
+
+    for page in context.pages:
+        for frame in page.frames:
+            try:
+                frame.evaluate(
+                    """
+                    () => {
+                      for (const canvas of document.querySelectorAll('canvas')) {
+                        let renderingContext = null;
+                        try {
+                          renderingContext = canvas.getContext('webgl2');
+                        } catch (_) {}
+                        if (!renderingContext) {
+                          try {
+                            renderingContext =
+                              canvas.getContext('webgl') ||
+                              canvas.getContext('experimental-webgl');
+                          } catch (_) {}
+                        }
+                        renderingContext
+                          ?.getExtension('WEBGL_lose_context')
+                          ?.loseContext();
+                      }
+                    }
+                    """
+                )
+            except Exception:
+                # A page or child frame may detach naturally during teardown.
+                # Closing its BrowserContext below still releases its process
+                # resources, so there is nothing left for this helper to do.
+                pass
+
+
 def _write_paginated_tag_posts(temporary_content: Path) -> None:
     """Create a controlled tag collection that always spans two pages."""
 
@@ -589,4 +635,5 @@ def driver(
     yield create_driver
 
     for context in reversed(contexts):
+        _release_webgl_contexts(context)
         context.close()

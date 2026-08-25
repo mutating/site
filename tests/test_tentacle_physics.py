@@ -21,6 +21,7 @@ DIAGNOSTIC_QUERY = (
 )
 NONCOMPACT_TEMPORAL_VIEWPORT = (1280, 720)
 TEMPORAL_TEST_DEVICE_SCALE_FACTOR = 0.5
+PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR = 0.5
 pytestmark = [
     pytest.mark.interactive_visuals,
     pytest.mark.xdist_group(name="tentacle-webgl"),
@@ -2448,7 +2449,12 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
             element.getBoundingClientRect().top + scrollY;
           return {
             prewarmOnly: documentTop - innerHeight - 100,
-            onePixelVisible: documentTop - innerHeight + 1,
+            // scrollTop is quantized to device pixels. Round toward the
+            // section so the iframe has at least one complete CSS pixel in
+            // the viewport instead of occasionally landing exactly outside.
+            onePixelVisible: Math.ceil(
+              documentTop - innerHeight + 1,
+            ),
           };
         }
         """
@@ -2470,8 +2476,28 @@ def test_contact_runtime_stays_paused_inside_only_the_prewarm_margin(
         "position => scrollTo({top: position, behavior: 'instant'})",
         scroll_positions["onePixelVisible"],
     )
-    expect(canvas).to_have_attribute("data-runtime-visible", "true")
-    expect(canvas).to_have_attribute("data-animation-loop", "running")
+    visible_geometry = frame.evaluate(
+        """
+        element => ({
+          top: element.getBoundingClientRect().top,
+          viewportHeight: innerHeight,
+        })
+        """
+    )
+    visible_pixels = (
+        visible_geometry["viewportHeight"] - visible_geometry["top"]
+    )
+    assert 1 <= visible_pixels <= 2
+    expect(canvas).to_have_attribute(
+        "data-runtime-visible",
+        "true",
+        timeout=30_000,
+    )
+    expect(canvas).to_have_attribute(
+        "data-animation-loop",
+        "running",
+        timeout=30_000,
+    )
     expect(canvas).to_have_attribute(
         "data-animation-frame-scheduled",
         "true",
@@ -3311,6 +3337,7 @@ def test_left_impulse_settles_to_true_double_hover_attraction(
     page = driver(
         stored_theme="dark",
         viewport=(320, 240),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         wait_for_theme_ready=False,
     )
@@ -3441,6 +3468,7 @@ def test_queued_short_click_preserves_new_stationary_hover_attraction(
     page = driver(
         stored_theme="dark",
         viewport=(320, 240),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         wait_for_theme_ready=False,
     )
@@ -3509,13 +3537,20 @@ def test_solver_uses_conservative_adaptive_iteration_limits(
     base_url: str,
     early_exit: bool,
 ) -> None:
-    """Expose adaptive work while retaining full grabbed-tip convergence."""
+    """Expose adaptive work while retaining full grabbed-tip convergence.
+
+    Every one of the 151 physical frames uses the production frame path. The
+    six controlled presentation checkpoints keep the real WebGL upload and
+    shader path coupled to the solver without asking Linux SwiftShader to
+    repaint identical diagnostic pixels after every intermediate step.
+    """
 
     disabled_query = "" if early_exit else "&solver-early-exit=0"
     page = driver(
         initial_path="/blog/",
         stored_theme="dark",
         viewport=(640, 360),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
     )
     page.goto(
         (
@@ -3531,13 +3566,20 @@ def test_solver_uses_conservative_adaptive_iteration_limits(
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
     page.wait_for_function(
-        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+        """
+        () =>
+          typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function' &&
+          typeof window.__mutaTentaclesDebugPhysicsFrameAfter === 'function'
+        """
     )
     page.evaluate(
         """
         () => {
           for (let frame = 0; frame < 60; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
@@ -3549,11 +3591,16 @@ def test_solver_uses_conservative_adaptive_iteration_limits(
         """
         () => {
           for (let frame = 0; frame < 90; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
     )
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "6")
+    expect(canvas).to_have_attribute("data-physics-frame-id", "151")
     solver = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().solver"
     )
@@ -3596,13 +3643,17 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
     grabbed. Their procedural rest targets may move smoothly, so this contract
     measures first and second finite differences rather than demanding a
     frozen image. Link-error bounds independently prevent a quiet but stretched
-    chain from passing the trajectory checks.
+    chain from passing the trajectory checks. All 331 physical frames and all
+    180 samples remain mandatory; twelve controlled presentations keep WebGL
+    state synchronized without making repeated identical rasterization part of
+    this CPU-solver contract.
     """
 
     page = driver(
         initial_path="/blog/",
         stored_theme="dark",
         viewport=(640, 360),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
     )
     page.goto(
         (
@@ -3617,13 +3668,20 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
     canvas = page.locator("#muta")
     expect(canvas).to_be_visible(timeout=30_000)
     page.wait_for_function(
-        "() => typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function'"
+        """
+        () =>
+          typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function' &&
+          typeof window.__mutaTentaclesDebugPhysicsFrameAfter === 'function'
+        """
     )
     page.evaluate(
         """
         () => {
           for (let frame = 0; frame < 60; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
@@ -3635,7 +3693,10 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
         """
         () => {
           for (let frame = 0; frame < 90; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
           }
         }
         """
@@ -3659,7 +3720,10 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
           let maximumRmsLinkError = 0;
 
           for (let frame = 0; frame < sampleCount; frame += 1) {
-            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
             const snapshot =
               window.__mutaTentaclesDebugPhysicsSnapshot();
             maximumLinkError = Math.max(
@@ -3731,6 +3795,8 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
         }
         """
     )
+    expect(canvas).to_have_attribute("data-rendered-frame-id", "12")
+    expect(canvas).to_have_attribute("data-physics-frame-id", "331")
     page.mouse.up(button="left")
 
     assert metrics["grabbedIds"] == [36, 86, 87, 106]
@@ -4553,6 +4619,7 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     page = driver(
         stored_theme="dark",
         viewport=(320, 240),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         wait_for_theme_ready=False,
     )
@@ -4604,17 +4671,21 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     assert released_state["radius"] == 1
     assert released_state["pressed"] is False
 
-    post_release_strong_tip_counts = []
-    for _frame in range(50):
-        page.evaluate(
-            "window.__mutaTentaclesDebugFrameAfter(1000 / 60)"
-        )
-        interaction = page.evaluate(
-            "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
-        )
-        post_release_strong_tip_counts.append(
-            interaction["strongTipCount"]
-        )
+    post_release_strong_tip_counts = page.evaluate(
+        """
+        () => {
+          const counts = [];
+          for (let frame = 0; frame < 50; frame += 1) {
+            window.__mutaTentaclesDebugFrameAfter(1000 / 60);
+            counts.push(
+              window.__mutaTentaclesDebugPhysicsSnapshot()
+                .interaction.strongTipCount,
+            );
+          }
+          return counts;
+        }
+        """
+    )
 
     assert max(post_release_strong_tip_counts) <= baseline["strongTipCount"]
 
