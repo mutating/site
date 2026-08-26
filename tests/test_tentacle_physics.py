@@ -3491,9 +3491,10 @@ def test_queued_short_click_preserves_new_stationary_hover_attraction(
     before the click and a stronger response during its queued impulse. The
     following frame must be ordinary, unpressed hover, keep genuinely active tips
     without another pointer event, and must not enter long-hold compensation.
-    This keeps the one-frame queued impulse guarantee while distinguishing a
-    click with no held physics frame from a longer press whose post-release
-    compensation remains necessary.
+    Its physical displacement and force population must also settle back near
+    the pre-click hover within half a second. This keeps the one-frame queued
+    impulse guarantee while distinguishing a click with no held physics frame
+    from a longer press whose post-release compensation remains necessary.
     """
 
     page = driver(
@@ -3552,6 +3553,285 @@ def test_queued_short_click_preserves_new_stationary_hover_attraction(
     assert hover["maximumAttraction"] > 0
     assert hover["releaseAttractionCompensationActive"] is False
     assert hover["releaseAttractionCompensationPending"] is False
+    samples = page.evaluate(
+        """
+        () => {
+          const values = [];
+          for (let frame = 0; frame < 30; frame += 1) {
+            window.__mutaTentaclesDebugPhysicsFrameAfter(1000 / 60);
+            const interaction =
+              window.__mutaTentaclesDebugPhysicsSnapshot().interaction;
+            values.push({
+              active: interaction.activeTips,
+              strong: interaction.strongTipCount,
+              maximum: interaction.maximumAttraction,
+              displacement: interaction.maximumRestDisplacement,
+            });
+          }
+          return values;
+        }
+        """
+    )
+    settled = samples[-1]
+    assert settled["active"] <= baseline["activeTips"]
+    assert settled["strong"] <= baseline["strongTipCount"]
+    assert settled["maximum"] < hover["maximumAttraction"]
+    assert settled["maximum"] <= baseline["maximumAttraction"] * 1.1
+    assert settled["displacement"] < hover["maximumRestDisplacement"]
+    assert settled["displacement"] <= (
+        baseline["maximumRestDisplacement"] + 0.005
+    )
+
+
+def test_stationary_hover_does_not_accumulate_attraction_or_reset_on_click(
+    driver: DriverFactory,
+) -> None:
+    """A stationary cursor must have one stable, click-independent response.
+
+    Pointer attraction and the tentacle's rest spring must converge together.
+    Excessive post-solver velocity damping instead erases the spring velocity:
+    hover then creeps toward the cursor for seconds, while a click temporarily
+    restores elasticity and looks like an attraction reset.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(320, 240),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
+        initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
+        wait_for_theme_ready=False,
+    )
+    canvas = _open_diagnostic_surface(page, "", navigate=False)
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(
+        box["x"] + box["width"] * 0.58,
+        box["y"] + box["height"] * 0.52,
+    )
+    _advance_diagnostic_physics_frames(page, 90)
+
+    before_click = page.evaluate(
+        """
+        () => {
+          const values = [];
+          for (let second = 0; second < 8; second += 1) {
+            for (let frame = 0; frame < 60; frame += 1) {
+              window.__mutaTentaclesDebugPhysicsFrameAfter(1000 / 60);
+            }
+            const interaction =
+              window.__mutaTentaclesDebugPhysicsSnapshot().interaction;
+            values.push({
+              active: interaction.activeTips,
+              strong: interaction.strongTipCount,
+              maximum: interaction.maximumAttraction,
+              displacement: interaction.maximumRestDisplacement,
+            });
+          }
+          return values;
+        }
+        """
+    )
+
+    page.mouse.down(button="left")
+    page.mouse.up(button="left")
+    _advance_diagnostic_physics_frames(page, 30)
+    after_click = page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
+    )
+
+    first_hover = before_click[0]
+    last_hover = before_click[-1]
+    assert last_hover["displacement"] <= (
+        first_hover["displacement"] * 1.1
+    )
+    assert after_click["activeTips"] == last_hover["active"]
+    assert after_click["strongTipCount"] == last_hover["strong"]
+    assert after_click["maximumAttraction"] == pytest.approx(
+        last_hover["maximum"],
+        rel=0.05,
+        abs=0.005,
+    )
+    assert after_click["maximumRestDisplacement"] >= (
+        last_hover["displacement"] * 0.85
+    )
+    assert after_click["maximumRestDisplacement"] <= (
+        last_hover["displacement"] + 0.005
+    )
+
+
+def test_first_contact_iframe_click_keeps_hover_and_one_frame_impulse(
+    driver: DriverFactory,
+) -> None:
+    """Treat the first focus transfer into the iframe as an internal click.
+
+    The first click blurs the parent window while focusing the child frame. A
+    generic parent-blur release used to mark the child pointer outside before
+    its queued impulse ran, leaving attraction off until another pointermove.
+    The focus transfer must instead preserve hover, submit exactly one impulse,
+    and return to physically weaker ordinary hover on the following frame.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        bounded_tentacle_rendering=True,
+        manual_tentacle_rendering=True,
+    )
+    frame = page.locator(".contact__tentacles")
+    expect(frame).to_be_attached(timeout=30_000)
+    frame.evaluate(
+        "element => element.scrollIntoView({block: 'center', behavior: 'instant'})"
+    )
+    page.wait_for_function(
+        """
+        (selector) => {
+          const frame = document.querySelector(selector);
+          const child = frame?.contentWindow;
+          return child &&
+            new URL(child.location.href).searchParams.get(
+              "manual-animation-frame"
+            ) === "1";
+        }
+        """,
+        arg=".contact__tentacles",
+        timeout=30_000,
+    )
+    frame.evaluate(
+        """
+        element => {
+          const source = new URL(element.src);
+          source.searchParams.set("interaction-diagnostics", "1");
+          element.src = source.href;
+        }
+        """
+    )
+    page.wait_for_function(
+        """
+        (selector) => {
+          const child = document.querySelector(selector)?.contentWindow;
+          const canvas = child?.document?.querySelector("#muta");
+          return canvas?.dataset.aspectReady === "true" &&
+            canvas.dataset.aspectReloading === "false" &&
+            canvas.dataset.runtimeVisible === "true" &&
+            typeof child.__mutaTentaclesDebugFrameAfter === "function" &&
+            typeof child.__mutaTentaclesDebugPhysicsSnapshot === "function" &&
+            typeof child.__mutaTentaclesDebugPointerState === "function";
+        }
+        """,
+        arg=".contact__tentacles",
+        timeout=30_000,
+    )
+    pointer = frame.evaluate(
+        """
+        element => {
+          const rect = element.getBoundingClientRect();
+          const candidates = [[0.9, 0.45], [0.85, 0.7], [0.15, 0.55]];
+          const candidate = candidates.find(([x, y]) =>
+            document.elementFromPoint(
+              rect.left + rect.width * x,
+              rect.top + rect.height * y,
+            ) === element
+          );
+          return candidate && {
+            x: rect.left + rect.width * candidate[0],
+            y: rect.top + rect.height * candidate[1],
+          };
+        }
+        """
+    )
+    assert pointer is not None
+    page.mouse.move(pointer["x"], pointer["y"])
+    frame.evaluate(
+        """
+        element => {
+          const child = element.contentWindow;
+          for (let frame = 0; frame < 180; frame += 1) {
+            child.__mutaTentaclesDebugPhysicsFrameAfter(1000 / 60);
+          }
+        }
+        """
+    )
+    baseline = frame.evaluate(
+        """
+        element => ({
+          pointer: element.contentWindow.__mutaTentaclesDebugPointerState(),
+          interaction:
+            element.contentWindow.__mutaTentaclesDebugPhysicsSnapshot()
+              .interaction,
+          applications: Number(
+            element.contentWindow.document.querySelector("#muta")
+              .dataset.impulsePhysicsApplications || 0
+          ),
+        })
+        """
+    )
+    assert baseline["pointer"]["inside"] is True
+    assert baseline["interaction"]["activeTips"] > 0
+
+    page.evaluate(
+        """
+        () => {
+          window.__mutaParentBlurCount = 0;
+          addEventListener("blur", () => {
+            window.__mutaParentBlurCount += 1;
+          }, {once: true});
+          document.body.tabIndex = -1;
+          document.body.focus();
+        }
+        """
+    )
+    page.mouse.down(button="left")
+    page.mouse.up(button="left")
+    page.evaluate("() => new Promise(resolve => setTimeout(resolve, 0))")
+    assert page.evaluate("window.__mutaParentBlurCount") == 1
+
+    impulse = frame.evaluate(
+        """
+        element => {
+          const child = element.contentWindow;
+          child.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          const canvas = child.document.querySelector("#muta");
+          return {
+            pointer: child.__mutaTentaclesDebugPointerState(),
+            interaction: child.__mutaTentaclesDebugPhysicsSnapshot().interaction,
+            phase: canvas.dataset.renderedInteractionPhase,
+            applications: Number(
+              canvas.dataset.impulsePhysicsApplications || 0
+            ),
+          };
+        }
+        """
+    )
+    assert impulse["pointer"]["inside"] is True
+    assert impulse["phase"] == "impulse"
+    assert impulse["applications"] == baseline["applications"] + 1
+
+    hover = frame.evaluate(
+        """
+        element => {
+          const child = element.contentWindow;
+          child.__mutaTentaclesDebugFrameAfter(1000 / 60);
+          const canvas = child.document.querySelector("#muta");
+          return {
+            pointer: child.__mutaTentaclesDebugPointerState(),
+            interaction: child.__mutaTentaclesDebugPhysicsSnapshot().interaction,
+            phase: canvas.dataset.renderedInteractionPhase,
+            force: canvas.dataset.pointerInteractionForceMultiplier,
+            applications: Number(
+              canvas.dataset.impulsePhysicsApplications || 0
+            ),
+          };
+        }
+        """
+    )
+    assert hover["pointer"]["inside"] is True
+    assert hover["phase"] == "hover"
+    assert hover["force"] == "1.000"
+    assert hover["applications"] == impulse["applications"]
+    assert hover["interaction"]["activeTips"] > 0
+    assert hover["interaction"]["maximumAttraction"] < (
+        impulse["interaction"]["maximumAttraction"] * 0.5
+    )
 
 
 @pytest.mark.parametrize("early_exit", [True, False])
@@ -3831,6 +4111,177 @@ def test_stationary_grabbed_tips_do_not_jitter_between_frames(
     assert metrics["maximumAcceleration"] < 0.00005
     assert metrics["maximumLinkError"] < 1
     assert metrics["maximumRmsLinkError"] < 0.03
+
+
+@pytest.mark.parametrize(
+    (
+        "tentacle_count",
+        "pointer_x",
+        "pointer_y",
+        "maximum_acceleration_limit",
+    ),
+    [
+        (64, 0.10, 0.25, 0.025),
+        (128, 0.58, 0.52, 0.015),
+        (900, 0.25, 0.25, 0.08),
+        (900, 0.50, 0.25, 0.08),
+        (900, 0.75, 0.80, 0.08),
+    ],
+)
+def test_stationary_peripheral_hover_tips_do_not_jitter_between_frames(
+    driver: DriverFactory,
+    base_url: str,
+    tentacle_count: int,
+    pointer_x: float,
+    pointer_y: float,
+    maximum_acceleration_limit: float,
+) -> None:
+    """Keep weak ordinary hover chains continuous at the reach boundary.
+
+    These layouts cover sparse and production-density fields. They catch both
+    the former straight/iterative FABRIK switch and constraint damage caused by
+    blending an already solved pose. With an unmoving pointer, acceleration and
+    link error must remain bounded throughout the sample.
+    """
+
+    page = driver(
+        initial_path="/blog/",
+        stored_theme="dark",
+        viewport=(640, 360),
+        device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
+    )
+    page.goto(
+        (
+            f"{base_url}/muta-tentacles.html"
+            f"?max-tentacles={tentacle_count}&render-supersample=0.5"
+            "&manual-animation-frame=1&interaction-diagnostics=1"
+            "&generation-seed=12345&debug-targets=1"
+            f"&debug-x={pointer_x}&debug-y={pointer_y}"
+        ),
+        wait_until="domcontentloaded",
+    )
+    canvas = page.locator("#muta")
+    expect(canvas).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        """
+        () =>
+          typeof window.__mutaTentaclesDebugPhysicsSnapshot === 'function' &&
+          typeof window.__mutaTentaclesDebugPhysicsFrameAfter === 'function'
+        """
+    )
+    page.evaluate(
+        """
+        () => {
+          for (let frame = 0; frame < 120; frame += 1) {
+            const advance = (frame + 1) % 30 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
+          }
+        }
+        """
+    )
+
+    metrics = page.evaluate(
+        """
+        () => {
+          const sampleCount = 400;
+          let previousTips = null;
+          const previousVelocities = new Map();
+          const ordinaryTipIds = new Set();
+          const previousReversalFrames = new Map();
+          let accelerationSamples = 0;
+          let maximumAcceleration = 0;
+          let maximumReversingAcceleration = 0;
+          let reversalClusters = 0;
+          let maximumLinkError = 0;
+
+          for (let frame = 0; frame < sampleCount; frame += 1) {
+            const advance = (frame + 1) % 40 === 0
+              ? window.__mutaTentaclesDebugFrameAfter
+              : window.__mutaTentaclesDebugPhysicsFrameAfter;
+            advance(1000 / 60);
+            const snapshot =
+              window.__mutaTentaclesDebugPhysicsSnapshot();
+            maximumLinkError = Math.max(
+              maximumLinkError,
+              snapshot.maximumLinkErrorPixels,
+            );
+            const currentTips = new Map();
+
+            for (const tip of snapshot.tips) {
+              if (tip.grabbed || Math.abs(tip.attraction) <= 0.01) {
+                previousVelocities.delete(tip.index);
+                previousReversalFrames.delete(tip.index);
+                continue;
+              }
+              ordinaryTipIds.add(tip.index);
+              currentTips.set(tip.index, tip);
+              const previousTip = previousTips?.get(tip.index);
+              if (!previousTip) continue;
+              const velocityX = tip.x - previousTip.x;
+              const velocityY = tip.y - previousTip.y;
+              const previousVelocity =
+                previousVelocities.get(tip.index);
+              if (previousVelocity) {
+                const acceleration = Math.hypot(
+                  velocityX - previousVelocity.x,
+                  velocityY - previousVelocity.y,
+                );
+                maximumAcceleration = Math.max(
+                  maximumAcceleration,
+                  acceleration,
+                );
+                const velocityDot =
+                  velocityX * previousVelocity.x +
+                  velocityY * previousVelocity.y;
+                if (velocityDot < 0) {
+                  maximumReversingAcceleration = Math.max(
+                    maximumReversingAcceleration,
+                    acceleration,
+                  );
+                }
+                if (velocityDot < -0.0001 && acceleration > 0.02) {
+                  const previousReversalFrame =
+                    previousReversalFrames.get(tip.index);
+                  if (
+                    previousReversalFrame !== undefined &&
+                    frame - previousReversalFrame <= 6
+                  ) {
+                    reversalClusters += 1;
+                  }
+                  previousReversalFrames.set(tip.index, frame);
+                }
+                accelerationSamples += 1;
+              }
+              previousVelocities.set(tip.index, {
+                x: velocityX,
+                y: velocityY,
+              });
+            }
+            previousTips = currentTips;
+          }
+
+          return {
+            ordinaryTipIds: [...ordinaryTipIds],
+            accelerationSamples,
+            maximumAcceleration,
+            maximumReversingAcceleration,
+            reversalClusters,
+            maximumLinkError,
+          };
+        }
+        """
+    )
+
+    assert metrics["ordinaryTipIds"]
+    assert metrics["accelerationSamples"] > 0
+    assert metrics["reversalClusters"] == 0
+    assert metrics["maximumReversingAcceleration"] < (
+        maximum_acceleration_limit
+    )
+    assert metrics["maximumAcceleration"] < 0.35
+    assert metrics["maximumLinkError"] < 0.6
 
 
 def _open_diagnostic_surface(
@@ -4686,15 +5137,12 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     """Return to the pre-press hover-force population after release.
 
     A release can publish the correct ``hover`` phase and multiplier ``1``
-    while still feeling stronger than ordinary hover. The impulse moves tips
-    closer to the stationary cursor; because the normal force uses squared
-    distance falloff, those displaced tips can remain above the solver's
-    strong-force threshold after the button is up. State-only assertions over
-    phase and multiplier do not detect that physical positive feedback.
+    while still feeling stronger than ordinary hover. State-only assertions
+    over phase and multiplier do not detect that physical mismatch.
 
     This regression settles a fixed-seed surface under an unmoving cursor,
-    records the number of tips whose real force exceeds ``0.48``, holds a left
-    press long enough to deform the local population, and releases it. During
+    records the ordinary force population, holds a left press long enough to
+    increase its measured force, and releases it. During
     the complete half-second cap and quarter-second blend back to uncapped
     hover, no more tips may remain strongly attracted than immediately before
     the press. The test also requires the public release state to stay ordinary
@@ -4719,8 +5167,8 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     box = canvas.bounding_box()
     assert box is not None
     page.mouse.move(
-        box["x"] + box["width"] * 0.58,
-        box["y"] + box["height"] * 0.52,
+        box["x"] + box["width"] * 0.4,
+        box["y"] + box["height"] * 0.4,
     )
     _advance_diagnostic_physics_frames(page, 180)
     baseline = page.evaluate(
@@ -4732,7 +5180,7 @@ def test_release_does_not_retain_extra_strong_cursor_attraction(
     held = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
-    assert held["strongTipCount"] > baseline["strongTipCount"]
+    assert held["maximumAttraction"] > baseline["maximumAttraction"] * 1.8
     page.mouse.up(button="left")
 
     released_state = _read_complete_interaction_state(canvas)
