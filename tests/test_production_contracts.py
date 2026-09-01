@@ -575,11 +575,15 @@ def test_production_head_exposes_canonical_and_complete_language_alternates(
     )
 
     assert canonical == [f"{TEST_ORIGIN}{path}"]
-    assert [language for language, _url in alternates] == ["en", "ru", "x-default"]
+    assert [language for language, _url in alternates] == [
+        "en-US",
+        "ru-RU",
+        "x-default",
+    ]
     assert len({language for language, _url in alternates}) == 3
     assert all(url.startswith(f"{TEST_ORIGIN}/") for _language, url in alternates)
     alternate_map = dict(alternates)
-    assert alternate_map["x-default"] == alternate_map["en"]
+    assert alternate_map["x-default"] == alternate_map["en-US"]
 
 
 def _write_controlled_author_content(
