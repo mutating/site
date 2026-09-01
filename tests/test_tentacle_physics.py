@@ -17,7 +17,7 @@ THEME_STATIC_ROOT = PROJECT_ROOT / "themes" / "mutating" / "static"
 DIAGNOSTIC_QUERY = (
     "?max-tentacles=64&render-supersample=0.5"
     "&manual-animation-frame=1&interaction-diagnostics=1"
-    "&generation-seed=12345"
+    "&generation-seed=12345&animation-time-origin=0"
 )
 NONCOMPACT_TEMPORAL_VIEWPORT = (1280, 720)
 TEMPORAL_TEST_DEVICE_SCALE_FACTOR = 0.5
@@ -1624,12 +1624,16 @@ def test_scroll_budget_reduces_frame_count_without_slowing_animation_time(
     expect(canvas).to_be_visible(timeout=30_000)
     page.wait_for_function(
         """
-        () =>
-          typeof window.__mutaTentaclesDebugFrameAfter === "function" &&
-          typeof window.__mutaTentaclesDebugSetScrollBudgetSignals ===
-            "function" &&
-          typeof window.__mutaTentaclesDebugAnimationTimeSeconds ===
-            "function"
+        () => {
+          const canvas = document.querySelector("#muta");
+          return canvas?.dataset.aspectReady === "true" &&
+            canvas.dataset.aspectReloading === "false" &&
+            typeof window.__mutaTentaclesDebugFrameAfter === "function" &&
+            typeof window.__mutaTentaclesDebugSetScrollBudgetSignals ===
+              "function" &&
+            typeof window.__mutaTentaclesDebugAnimationTimeSeconds ===
+              "function";
+        }
         """
     )
 
@@ -1844,10 +1848,7 @@ def test_scroll_budget_tracks_the_unthrottled_tentacle_trajectory(
 
     def open_runtime() -> tuple[Page, Locator]:
         page = driver(
-            initial_path=(
-                f"/muta-tentacles.html{DIAGNOSTIC_QUERY}"
-                "&animation-time-origin=0"
-            ),
+            initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
             stored_theme="dark",
             viewport=NONCOMPACT_TEMPORAL_VIEWPORT,
             device_scale_factor=TEMPORAL_TEST_DEVICE_SCALE_FACTOR,
@@ -4897,10 +4898,7 @@ def test_preallocated_interaction_state_matches_allocating_reference_exactly(
 
     def capture(path: str) -> dict[str, object]:
         page.goto(
-            (
-                f"{base_url}/{path}{DIAGNOSTIC_QUERY}"
-                "&animation-time-origin=0"
-            ),
+            f"{base_url}/{path}{DIAGNOSTIC_QUERY}",
             wait_until="domcontentloaded",
         )
         canvas = page.locator("#muta")
