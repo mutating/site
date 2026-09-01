@@ -205,6 +205,10 @@
         canvas.dataset.pressImpulseTotalMs =
           (PRESS_IMPULSE_TOTAL_SECONDS * 1000).toFixed(1);
         const POINTER_SOLVER_FULL_BODY_FORCE = 0.35;
+        // Preserve the natural spring response near the cursor and damp only
+        // weak peripheral corrections where solver noise can become visible.
+        const POINTER_MAXIMUM_VELOCITY_DAMPING_RATE = 512;
+        const POINTER_ELASTIC_VELOCITY_DAMPING_RATE = 32;
         const MAX_CURSOR_GRABBERS = 6;
         const SOLVER_ERROR_TOLERANCE_PIXELS = 0.003;
         const MIN_PBD_ITERATIONS = 4;
@@ -2423,6 +2427,8 @@
           impulseDirection: 1,
           energy: 0,
         };
+        const restTipXs = new Float64Array(skeletons.length);
+        const restTipYs = new Float64Array(skeletons.length);
         const prePressHoverForceCaps = new Float64Array(
           skeletons.length,
         );
@@ -2448,10 +2454,9 @@
           const pointerWorldY = pointer.targetY;
           maximumPrePressHoverForceCap = 0;
           for (const skeleton of skeletons) {
-            const tipOffset = CHAIN_LINKS * POINT_STRIDE;
             const tipDistance = length2(
-              pointerWorldX - skeleton.points[tipOffset + POINT_X],
-              pointerWorldY - skeleton.points[tipOffset + POINT_Y],
+              pointerWorldX - restTipXs[skeleton.index],
+              pointerWorldY - restTipYs[skeleton.index],
             );
             const normalizedDistance = clamp(
               tipDistance / skeleton.projectedAttractionRadius,
@@ -2610,6 +2615,9 @@
           maximumGrabberError: 0,
           fps: 0,
         };
+        const diagnosticPointerForces = interactionDiagnostics
+          ? new Float64Array(skeletons.length)
+          : null;
         const solverDiagnostics = {
           pbdChains: 0,
           pbdIterations: 0,
@@ -2670,6 +2678,7 @@
               tips[skeletonIndex] = {
                 index: skeleton.index,
                 grabbed: skeleton.grabbed,
+                attraction: diagnosticPointerForces[skeleton.index],
                 x: projectedTip.x * canvasRect.width,
                 y: projectedTip.y * canvasRect.height,
                 z: points[tipOffset + POINT_Z],
@@ -3065,46 +3074,36 @@
           }
         }
 
-        function blendPointerSolverBody(points, blend) {
-          if (blend >= 1) {
-            return;
-          }
-          for (let joint = 1; joint < CHAIN_LINKS; joint++) {
-            const pointOffset = joint * POINT_STRIDE;
-            const offset = joint * 3;
-            points[pointOffset + POINT_X] =
-              pointerSolverOrigin[offset] +
-              (
-                points[pointOffset + POINT_X] -
-                pointerSolverOrigin[offset]
-              ) *
-                blend;
-            points[pointOffset + POINT_Y] =
-              pointerSolverOrigin[offset + 1] +
-              (
-                points[pointOffset + POINT_Y] -
-                pointerSolverOrigin[offset + 1]
-              ) *
-                blend;
-            points[pointOffset + POINT_Z] =
-              pointerSolverOrigin[offset + 2] +
-              (
-                points[pointOffset + POINT_Z] -
-                pointerSolverOrigin[offset + 2]
-              ) *
-                blend;
-          }
-        }
-
         function stabilizePointerSolverVelocity(
           points,
           forceMagnitude,
           delta,
+          preservePressMomentum,
         ) {
+          // A fixed maximum damping rate also erases the rest spring and lets
+          // ordinary hover deformation accumulate. Fade that extra damping
+          // out continuously as attraction becomes a full-body response.
+          const normalizedForce = clamp(
+            forceMagnitude / POINTER_SOLVER_FULL_BODY_FORCE,
+            0,
+            1,
+          );
+          const fullBodyBlend =
+            normalizedForce *
+            normalizedForce *
+            (3 - 2 * normalizedForce);
+          const dampingRate = preservePressMomentum
+            ? POINTER_ELASTIC_VELOCITY_DAMPING_RATE
+            : POINTER_ELASTIC_VELOCITY_DAMPING_RATE +
+              (
+                POINTER_MAXIMUM_VELOCITY_DAMPING_RATE -
+                POINTER_ELASTIC_VELOCITY_DAMPING_RATE
+              ) *
+                (1 - fullBodyBlend);
           const tipVelocityDamping =
             1 -
             Math.exp(
-              -delta * Math.min(forceMagnitude, 2) * 32,
+              -delta * Math.min(forceMagnitude, 2) * dampingRate,
             );
 
           for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
@@ -3155,6 +3154,7 @@
           pointerWorldX,
           pointerWorldY,
           solverPixelScale,
+          preservePressMomentum,
         ) {
           if (interactionDiagnostics) {
             solverDiagnostics.fabrikAttempts += 1;
@@ -3167,6 +3167,19 @@
             return;
           }
           const forceDirection = Math.sign(attraction);
+          const normalizedSolverForce = clamp(
+            forceMagnitude / POINTER_SOLVER_FULL_BODY_FORCE,
+            0,
+            1,
+          );
+          // Fade the target displacement before FABRIK so every solved pose
+          // still satisfies the chain constraints. Blending joints afterward
+          // made the following PBD frame pull weak peripheral chains backward.
+          const pointerStepBlend = skeleton.grabbed
+            ? 1
+            : normalizedSolverForce *
+              normalizedSolverForce *
+              (3 - 2 * normalizedSolverForce);
 
           const points = skeleton.points;
           const rootOffset = 0;
@@ -3183,7 +3196,7 @@
             pointerDeltaY,
           );
           const maximumTipStep =
-            cursorTipSpeed(forceMagnitude) * delta;
+            cursorTipSpeed(forceMagnitude) * delta * pointerStepBlend;
           const movementScale =
             pointerDistance > 0
               ? Math.min(1, maximumTipStep / pointerDistance)
@@ -3246,55 +3259,10 @@
               return;
             }
           }
-          const normalizedSolverForce = clamp(
-            forceMagnitude / POINTER_SOLVER_FULL_BODY_FORCE,
-            0,
-            1,
-          );
-          const solverBodyBlend = skeleton.grabbed
-            ? 1
-            : normalizedSolverForce *
-              normalizedSolverForce *
-              (3 - 2 * normalizedSolverForce);
           capturePointerSolverState(points);
-          const targetDeltaX = targetX - rootX;
-          const targetDeltaY = targetY - rootY;
-          const targetDeltaZ = targetZ - rootZ;
-          const rootToTarget = Math.max(
-            0.000001,
-            length3(targetDeltaX, targetDeltaY, targetDeltaZ),
-          );
 
-          if (rootToTarget >= skeleton.totalLength * 0.9995) {
-            if (interactionDiagnostics) {
-              solverDiagnostics.fabrikDirectSolves += 1;
-            }
-            const stepScale = skeleton.linkLength / rootToTarget;
-            const stepX = targetDeltaX * stepScale;
-            const stepY = targetDeltaY * stepScale;
-            const stepZ = targetDeltaZ * stepScale;
-            points[rootOffset + POINT_X] = rootX;
-            points[rootOffset + POINT_Y] = rootY;
-            points[rootOffset + POINT_Z] = rootZ;
-            for (let joint = 1; joint <= CHAIN_LINKS; joint++) {
-              const previousOffset = (joint - 1) * POINT_STRIDE;
-              const pointOffset = joint * POINT_STRIDE;
-              points[pointOffset + POINT_X] =
-                points[previousOffset + POINT_X] + stepX;
-              points[pointOffset + POINT_Y] =
-                points[previousOffset + POINT_Y] + stepY;
-              points[pointOffset + POINT_Z] =
-                points[previousOffset + POINT_Z] + stepZ;
-            }
-            blendPointerSolverBody(points, solverBodyBlend);
-            stabilizePointerSolverVelocity(
-              points,
-              forceMagnitude,
-              delta,
-            );
-            return;
-          }
-
+          // Use one continuous solution around the reach boundary. The former
+          // straight-line shortcut jumped to a different pose at 99.95% reach.
           const solverIterations = skeleton.grabbed ? 20 : 7;
           let completedSolverIterations = 0;
           let solverExitedEarly = false;
@@ -3399,11 +3367,11 @@
               solverDiagnostics.fabrikEarlyExits += 1;
             }
           }
-          blendPointerSolverBody(points, solverBodyBlend);
           stabilizePointerSolverVelocity(
             points,
             forceMagnitude,
             delta,
+            preservePressMomentum,
           );
         }
 
@@ -3441,6 +3409,8 @@
             (1 - Math.exp(-temporalDelta * 6));
           const pointerInteraction =
             currentPointerInteraction(wallTime);
+          const preservePointerMomentum =
+            pointerInteraction.direction !== 0;
           const pointerWorldX = pointer.x * surfaceAspect;
           const pointerWorldY = pointer.y;
           const heldAttractionBlend =
@@ -3685,9 +3655,27 @@
                 (restZ - points[pointOffset + POINT_Z]) * restResponse;
             }
 
+            restTipXs[skeleton.index] = restX;
+            restTipYs[skeleton.index] = restY;
+            // Evaluate the field against the animated rest tip, not the tip
+            // already displaced by previous attraction frames. Otherwise
+            // moving closer increases next frame's force and creates a slow,
+            // click-resettable positive-feedback loop.
+            const useGrabbedTipDistance =
+              skeleton.grabbed && pointerInteraction.direction > 0;
             const tipDistance = length2(
-              pointerWorldX - points[tipOffset + POINT_X],
-              pointerWorldY - points[tipOffset + POINT_Y],
+              pointerWorldX -
+                (
+                  useGrabbedTipDistance
+                    ? points[tipOffset + POINT_X]
+                    : restX
+                ),
+              pointerWorldY -
+                (
+                  useGrabbedTipDistance
+                    ? points[tipOffset + POINT_Y]
+                    : restY
+                ),
             );
             const normalizedDistance = clamp(
               tipDistance /
@@ -3733,6 +3721,9 @@
                 cappedPointerForce +
                 (pointerForce - cappedPointerForce) *
                   postReleaseAttractionBlend;
+            }
+            if (diagnosticPointerForces) {
+              diagnosticPointerForces[skeleton.index] = pointerForce;
             }
             if (collectDiagnostics) {
               const forceMagnitude = Math.abs(pointerForce);
@@ -3851,6 +3842,7 @@
               pointerWorldX,
               pointerWorldY,
               solverPixelScale,
+              preservePointerMomentum,
             );
 
             if (collectDiagnostics) {

@@ -1327,6 +1327,15 @@
         location.origin,
       );
     };
+    const releaseTentaclesAfterBlur = () => {
+      setTimeout(() => {
+        // The first click inside an iframe blurs its parent window while making
+        // the iframe the active element. That is an internal focus transfer,
+        // not a pointer exit; the child will handle its own pointerup.
+        if (document.activeElement === frame) return;
+        releaseTentacles();
+      }, 0);
+    };
     const rememberViewportPointer = (clientX, clientY) => {
       const numericX = Number(clientX);
       const numericY = Number(clientY);
@@ -1527,7 +1536,7 @@
     addEventListener("resize", schedulePointerRefresh, { passive: true });
     addEventListener("pointerup", releaseTentacles, { passive: true });
     addEventListener("pointercancel", releaseTentacles, { passive: true });
-    addEventListener("blur", releaseTentacles);
+    addEventListener("blur", releaseTentaclesAfterBlur);
     addEventListener("pagehide", releaseTentacles);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) releaseTentacles();
