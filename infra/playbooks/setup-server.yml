@@ -12,6 +12,8 @@
   gather_facts: true
 
   vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: "-o ControlPath=~/.ansible/cp/mutating-tech-%C"
     site_domain: mutating.tech
     site_aliases:
       - www.mutating.tech
@@ -20,6 +22,7 @@
     deploy_group: user
     local_site_path: "{{ playbook_dir }}/../.."
     source_path: /opt/mutating.tech
+    source_staging_path: /var/tmp/mutating-tech-source-sync
     deploy_path: /var/www/mutating.tech
     acme_webroot: /var/www/letsencrypt
     nginx_site_name: mutating.tech
@@ -58,6 +61,7 @@
           - nginx
           - certbot
           - curl
+          - openssl
           - rsync
         state: present
         update_cache: true
@@ -66,18 +70,18 @@
     - name: Require a supported Hugo release architecture
       ansible.builtin.assert:
         that:
-          - ansible_architecture in hugo_debian_architectures
-        fail_msg: "Hugo {{ hugo_version }} is not configured for {{ ansible_architecture }}."
+          - ansible_facts.architecture in hugo_debian_architectures
+        fail_msg: "Hugo {{ hugo_version }} is not configured for {{ ansible_facts.architecture }}."
 
     - name: Download the pinned Hugo Extended package
       ansible.builtin.get_url:
-        url: "https://github.com/gohugoio/hugo/releases/download/v{{ hugo_version }}/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_architecture] }}.deb"
-        dest: "/var/tmp/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_architecture] }}.deb"
+        url: "https://github.com/gohugoio/hugo/releases/download/v{{ hugo_version }}/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_facts.architecture] }}.deb"
+        dest: "/var/tmp/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_facts.architecture] }}.deb"
         mode: '0644'
 
     - name: Install the pinned Hugo Extended package
       ansible.builtin.apt:
-        deb: "/var/tmp/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_architecture] }}.deb"
+        deb: "/var/tmp/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_facts.architecture] }}.deb"
         state: present
 
     - name: Read the installed Hugo version
@@ -118,13 +122,61 @@
         - { path: "{{ acme_webroot }}/.well-known/acme-challenge", owner: root, group: root, mode: '0755' }
         - { path: /etc/letsencrypt/renewal-hooks/deploy, owner: root, group: root, mode: '0755' }
 
-    - name: Copy the local site checkout to the server
-      ansible.builtin.copy:
+    - name: Create remote source synchronization staging directory
+      tags:
+        - source_sync
+      ansible.builtin.file:
+        path: "{{ source_staging_path }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: '0700'
+
+    - name: Synchronize the local site checkout to the server
+      tags:
+        - source_sync
+      become: false
+      ansible.posix.synchronize:
         src: "{{ local_site_path }}/"
-        dest: "{{ source_path }}/"
-        owner: "{{ deploy_user }}"
-        group: "{{ deploy_group }}"
-        mode: preserve
+        dest: "{{ source_staging_path }}/"
+        archive: true
+        checksum: true
+        compress: true
+        delete: true
+        owner: false
+        group: false
+        perms: false
+        times: false
+        use_ssh_args: true
+        ssh_connection_multiplexing: true
+        rsync_opts:
+          - --delete-excluded
+          - --exclude=/.git/
+          - --exclude=/public/
+          - --exclude=/resources/
+          - --exclude=/venv/
+          - --exclude=/.pytest_cache/
+          - --exclude=/.hugo_build.lock
+          - --exclude=/.DS_Store
+
+    - name: Promote the synchronized checkout into the source directory
+      tags:
+        - source_sync
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - --archive
+          - --checksum
+          - --delete-delay
+          - --delay-updates
+          - --no-times
+          - "--chown={{ deploy_user }}:{{ deploy_group }}"
+          - --chmod=D755,F644
+          - --itemize-changes
+          - --exclude=.hugo_build.lock
+          - "{{ source_staging_path }}/"
+          - "{{ source_path }}/"
+      register: source_promotion
+      changed_when: source_promotion.stdout_lines | length > 0
 
     - name: Install crawler-oriented nginx log format
       ansible.builtin.copy:
@@ -206,6 +258,8 @@
           WantedBy=timers.target
 
     - name: Install bootstrap HTTP nginx configuration
+      tags:
+        - nginx_config
       ansible.builtin.copy:
         dest: "{{ nginx_bootstrap_config }}"
         owner: root
@@ -251,8 +305,8 @@
                   return 308 https://{{ site_domain }}$uri$is_args$args;
               }
 
-              if ($request_uri ~ ^(.*/)index\.html$) {
-                  return 308 https://{{ site_domain }}$1;
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
               }
 
               location ^~ /.well-known/acme-challenge/ {
@@ -286,7 +340,7 @@
                   add_header Cache-Control "no-cache" always;
               }
 
-              location ~* ^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$ {
+              location ~* "^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
                   try_files $uri =404;
                   add_header Cache-Control "public, max-age=31536000, immutable" always;
                   add_header X-Content-Type-Options "nosniff" always;
@@ -305,6 +359,8 @@
       notify: nginx configuration changed
 
     - name: Install final HTTPS nginx configuration
+      tags:
+        - nginx_config
       ansible.builtin.copy:
         dest: "{{ nginx_tls_config }}"
         owner: root
@@ -327,8 +383,8 @@
                   return 308 https://{{ site_domain }}$uri$is_args$args;
               }
 
-              if ($request_uri ~ ^(.*/)index\.html$) {
-                  return 308 https://{{ site_domain }}$1;
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
               }
 
               location ^~ /.well-known/acme-challenge/ {
@@ -385,8 +441,8 @@
                   return 308 https://{{ site_domain }}$uri$is_args$args;
               }
 
-              if ($request_uri ~ ^(.*/)index\.html$) {
-                  return 308 https://{{ site_domain }}$1;
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
               }
 
               location = /en {
@@ -453,8 +509,8 @@
                   return 308 https://{{ site_domain }}$uri$is_args$args;
               }
 
-              if ($request_uri ~ ^(.*/)index\.html$) {
-                  return 308 https://{{ site_domain }}$1;
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
               }
 
               location = /en {
@@ -493,7 +549,7 @@
                   add_header Referrer-Policy "strict-origin-when-cross-origin" always;
               }
 
-              location ~* ^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$ {
+              location ~* "^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
                   try_files $uri =404;
                   add_header Cache-Control "public, max-age=31536000, immutable" always;
                   add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
@@ -566,29 +622,51 @@
           #!/bin/sh
           set -eu
           domain="{{ site_domain }}"
+          aliases="{{ site_aliases | join(' ') }}"
           certificate="/etc/letsencrypt/live/${domain}/fullchain.pem"
           tls_config="{{ nginx_tls_config }}"
           enabled_config="{{ nginx_enabled_config }}"
           marker="{{ acme_webroot }}/.well-known/acme-challenge/${domain}"
-          probe="http://${domain}/.well-known/acme-challenge/${domain}"
-          if [ -s "$certificate" ]; then
+
+          certificate_covers_all_names() {
+            [ -s "$certificate" ] || return 1
+            for name in "$domain" $aliases; do
+              openssl x509 \
+                -in "$certificate" \
+                -noout \
+                -checkhost "$name" >/dev/null 2>&1 || return 1
+            done
+          }
+
+          if certificate_covers_all_names; then
             ln -sfn "$tls_config" "$enabled_config"
             nginx -t
             systemctl reload nginx
             exit 0
           fi
+
           if [ ! -s "$marker" ]; then exit 0; fi
           expected="$(cat "$marker")"
-          observed="$(curl --fail --silent --show-error --max-time 20 "$probe" 2>/dev/null || true)"
-          [ "$observed" = "$expected" ] || exit 0
+          for name in "$domain" $aliases; do
+            probe="http://${name}/.well-known/acme-challenge/${domain}"
+            observed="$(curl --fail --silent --show-error --max-time 20 "$probe" 2>/dev/null || true)"
+            [ "$observed" = "$expected" ] || exit 0
+          done
+
+          set -- -d "$domain"
+          for name in $aliases; do
+            set -- "$@" -d "$name"
+          done
+
           certbot certonly \
             --webroot \
             --webroot-path "{{ acme_webroot }}" \
             --non-interactive \
             --agree-tos \
             --email "{{ certbot_email }}" \
-            -d "$domain"{% for alias in site_aliases %} \
-            -d "{{ alias }}"{% endfor %}
+            --cert-name "$domain" \
+            --expand \
+            "$@"
           ln -sfn "$tls_config" "$enabled_config"
           nginx -t
           systemctl reload nginx
@@ -607,10 +685,9 @@
         mode: '0644'
         content: |
           [Unit]
-          Description=Issue the initial TLS certificate for {{ site_domain }}
+          Description=Issue or reconcile the TLS certificate for {{ site_domain }}
           After=network-online.target nginx.service
           Wants=network-online.target
-          ConditionPathExists=!/etc/letsencrypt/live/{{ site_domain }}/fullchain.pem
           [Service]
           Type=oneshot
           ExecStart=/usr/local/sbin/mutating-cert-bootstrap
@@ -655,7 +732,7 @@
         - mutating-cert-bootstrap.timer
         - mutating-crawler-report.timer
 
-    - name: Try initial certificate issuance
+    - name: Reconcile certificate hostname coverage
       ansible.builtin.systemd:
         name: mutating-cert-bootstrap.service
         state: started

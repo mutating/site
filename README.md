@@ -399,15 +399,42 @@ copy of the generated site without deleting it before a successful transfer.
 ### Provision a fresh server with Ansible
 
 The repository includes `infra/playbooks/setup-server.yml`. Run it from a
-local checkout. The playbook copies that checkout to the server, installs Git,
-Hugo, nginx, and Certbot, performs the first Hugo build, and configures nginx
-and certificate renewal. The VPS does not need access to the private GitHub
+clean local checkout. The playbook supports Debian-based servers, copies the
+checkout to the server, installs Git, Hugo Extended, nginx, Certbot, OpenSSL,
+and rsync, performs a production Hugo build, and configures nginx, TLS
+certificate issuance/renewal, and the crawler-log report timer. The VPS needs
+outbound Internet access, but it does not need access to the private GitHub
 repository.
+
+Running the playbook also rebuilds `/var/www/mutating.tech` from the selected
+local checkout. Commit or stash unrelated local work first so that drafts and
+untracked files are not copied to production accidentally. The playbook can be
+run again safely after configuration changes; the Hugo build task intentionally
+reports `changed` on every run, so idempotence does not mean `changed=0` in the
+Ansible recap.
+
+Source synchronization uses rsync through `ansible.posix.synchronize`, with
+checksum comparison and SSH connection reuse. Generated output, local virtual
+environments, caches, and Git metadata are excluded. A small private staging
+tree under `/var/tmp` lets the same task work for both direct root access and an
+administrative SSH account using Ansible privilege escalation; the staged tree
+is then promoted into `/opt/mutating.tech` with normalized ownership and modes.
+On the production VPS, the first measured 149-file/26-MB synchronization took
+31 seconds; an unchanged repeat took 2.4 seconds and correctly reported `ok`
+instead of `changed`. The complete provisioning play took 5 minutes 51 seconds,
+with most of the remaining time spent in ordinary one-off Ansible modules over
+the approximately 240-ms SSH round trip.
+
+The regular GitHub deployment deliberately uses the unprivileged `user`
+account and cannot change nginx, certificates, or systemd units. Re-run this
+playbook with an administrative account whenever the playbook changes. The
+deployment workflow checks the live server contract before `rsync`, so stale
+server configuration fails without partially publishing the new build.
 
 #### 1. Clone the repository locally
 
 ```bash
-git clone https://github.com/pomponchik/site.git
+git clone https://github.com/mutating/site.git
 cd site
 ```
 
@@ -420,40 +447,78 @@ ansible-playbook --version
 On macOS, install it with `brew install ansible`. On Debian or Ubuntu, use:
 
 ```bash
-sudo apt-get update && sudo apt-get install -y ansible sshpass
+sudo apt-get update
+sudo apt-get install -y ansible rsync sshpass
 ```
 
-`sshpass` is required when the initial SSH login uses a password.
+Some OpenSSH-based Ansible installations need `sshpass` for password
+authentication. If `--ask-pass` reports that it is missing, install it on the
+machine from which Ansible is being run.
+
+Validate the playbook locally before connecting to the server:
+
+```bash
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
+  ansible-playbook --syntax-check \
+  -i 'localhost,' -c local \
+  infra/playbooks/setup-server.yml
+```
+
+The explicit locale avoids `unsupported locale setting` on macOS installations
+whose shell locale is not available to Homebrew's Python.
 
 #### 3. Run the setup playbook
 
-Replace the three values with the server's public IPv4 address, initial SSH
-username, and password:
+Use the server's public IPv4 address and an administrative SSH account. For a
+direct root login, run:
 
 ```bash
-ansible-playbook \
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
   -i 'SERVER_IP,' \
-  infra/playbooks/setup-server.yml \
-  -e "ansible_host=SERVER_IP ansible_user=SERVER_USER ansible_password=SERVER_PASSWORD"
+  -u root \
+  --ask-pass \
+  infra/playbooks/setup-server.yml
 ```
 
 For example:
 
 ```bash
-ansible-playbook \
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
   -i '203.0.113.10,' \
-  infra/playbooks/setup-server.yml \
-  -e "ansible_host=203.0.113.10 ansible_user=root ansible_password='change-me'"
+  -u root \
+  --ask-pass \
+  infra/playbooks/setup-server.yml
 ```
 
-The password is visible in shell history and process arguments while the
-command runs. For a safer interactive alternative, omit `ansible_password`
-and add `--ask-pass`.
+Enter the SSH password only at the prompt. Do not pass it through `-e`: doing so
+exposes it in shell history and process arguments. If direct root login is
+disabled, replace `root` with an account that can use sudo and add
+`--ask-become-pass`. The unprivileged deployment account `user` is not suitable
+unless it has explicitly been granted sudo access.
 
 The defaults use `/opt/mutating.tech` for the copied source checkout and
 `/var/www/mutating.tech` for the generated site served by nginx and updated
 by CI. They target `mutating.tech` and the deployment account `user`.
-Override these values with additional `-e` options for a different site.
+Override `local_site_path`, `site_domain`, `site_aliases`, `certbot_email`,
+`deploy_user`, `deploy_group`, `source_path`, `source_staging_path`, and
+`deploy_path` with additional variables when provisioning another site. Keep
+the domain-dependent values consistent; for structured values such as
+`site_aliases`, prefer a JSON extra variables file instead of shell quoting.
+
+A successful run ends with `failed=0` and `unreachable=0`. Verify the resulting
+server configuration and public origin:
+
+```bash
+ssh root@SERVER_IP 'nginx -t && systemctl is-active nginx certbot.timer mutating-cert-bootstrap.timer mutating-crawler-report.timer'
+curl -fsSI http://mutating.tech/
+curl -fsSI https://mutating.tech/
+curl -fsSI https://www.mutating.tech/
+```
+
+The HTTP and `www` requests should redirect to the canonical HTTPS origin, and
+the canonical HTTPS request should return `200`. Certificate issuance is
+deliberately deferred when DNS for every configured hostname does not yet reach
+the server; `mutating-cert-bootstrap.timer` retries it automatically.
 
 ### Prepare a fresh Debian server
 
@@ -884,11 +949,13 @@ Either push a commit to `main`, or open **Actions → Deploy production → Run
 workflow**. The workflow performs these operations in order:
 
 1. validates every required secret;
-2. installs Hugo Extended on the disposable runner;
+2. installs Hugo Extended and the deployment tooling on the disposable runner;
 3. builds a clean, minified production site into `public/`;
-4. checks that the SSH destination exists, is writable, and has `rsync`;
-5. uploads the build as `user` with directory mode `0755` and file mode `0644`;
-6. removes files that are no longer present in the Hugo build after a successful
+4. verifies redirects, TLS hostname coverage, HTTP/2, HSTS, and HTML caching
+   before touching the production files;
+5. checks that the SSH destination exists, is writable, and has `rsync`;
+6. uploads the build as `user` with directory mode `0755` and file mode `0644`;
+7. removes files that are no longer present in the Hugo build after a successful
    transfer.
 
 After the job succeeds, verify the deployed server:

@@ -431,10 +431,16 @@ def test_server_and_deploy_configuration_enforce_the_canonical_origin() -> None:
     assert "hugo_extended_{{ hugo_version }}" in playbook
     assert "certbot certonly" in playbook
     assert "--webroot" in playbook
-    assert '-d "{{ alias }}"' in playbook
+    assert 'set -- "$@" -d "$name"' in playbook
+    assert "certificate_covers_all_names" in playbook
+    assert "openssl x509" in playbook
+    assert '--cert-name "$domain"' in playbook
+    assert "ConditionPathExists" not in playbook
     assert "certbot --nginx" not in playbook
     assert "server_name {{ site_aliases | join(' ') }};" in playbook
     assert "return 308 https://{{ site_domain }}$request_uri;" in playbook
+    assert 'if ($request_uri ~ "^(.*/)index\\.html(?:\\?.*)?$")' in playbook
+    assert "return 308 https://{{ site_domain }}$1$is_args$args;" in playbook
     assert "listen 443 ssl default_server;" in playbook
     assert "return 444;" in playbook
     assert "http2 on;" in playbook
@@ -443,10 +449,42 @@ def test_server_and_deploy_configuration_enforce_the_canonical_origin() -> None:
     assert 'Cache-Control "public, max-age=604800"' in playbook
     assert "log_format seo_json" in playbook
     assert "mutating-crawler-report.timer" in playbook
+    assert "ansible.posix.synchronize:" in playbook
+    assert "- source_sync" in playbook
+    assert "ssh_connection_multiplexing: true" in playbook
+    assert "use_ssh_args: true" in playbook
+    assert "ControlPath=~/.ansible/cp/mutating-tech-%C" in playbook
+    assert "checksum: true" in playbook
+    assert "delete: true" in playbook
+    assert "--delete-excluded" in playbook
+    assert "--chown={{ deploy_user }}:{{ deploy_group }}" in playbook
+    assert "Copy the local site checkout to the server" not in playbook
 
     assert "SITE_BASE_URL: https://mutating.tech/" in deploy
+    assert "sudo apt-get install --yes ripgrep rsync sshpass" in deploy
+    assert "Verify the production server before upload" in deploy
     assert "--panicOnWarning" in deploy
     assert "needs: seo_contracts" in deploy
     assert "Verify the deployed content contracts" in deploy
     assert "openssl x509 -noout -checkhost www.mutating.tech" in deploy
     assert "ALPN protocol" in deploy
+
+
+def test_readme_documents_the_verified_ansible_invocation() -> None:
+    readme = (PROJECT_ROOT / "README.md").read_text()
+    ansible_instructions = readme.split(
+        "### Provision a fresh server with Ansible",
+        maxsplit=1,
+    )[1].split("### Prepare a fresh Debian server", maxsplit=1)[0]
+
+    assert "git clone https://github.com/mutating/site.git" in ansible_instructions
+    assert "LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook" in ansible_instructions
+    assert "-i 'SERVER_IP,'" in ansible_instructions
+    assert "-u root" in ansible_instructions
+    assert "--ask-pass" in ansible_instructions
+    assert "--ask-become-pass" in ansible_instructions
+    assert "ansible_password" not in ansible_instructions
+    assert "failed=0" in ansible_instructions
+    assert "ansible.posix.synchronize" in ansible_instructions
+    assert "ansible rsync sshpass" in ansible_instructions
+    assert "unchanged repeat took 2.4 seconds" in ansible_instructions

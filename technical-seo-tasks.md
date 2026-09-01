@@ -6,7 +6,7 @@ Backlog сформирован по итогам 20 независимых SEO-�
 
 ### Канонический хост, HTTPS и серверная конфигурация
 
-- [ ] Выпустить TLS-сертификат, покрывающий `mutating.tech` и `www.mutating.tech`.
+- [x] Выпустить TLS-сертификат, покрывающий `mutating.tech` и `www.mutating.tech`.
 - [x] Настроить однопереходный `301` или `308` с `http://mutating.tech/*` на `https://mutating.tech/*` с сохранением path и query string.
 - [x] Настроить однопереходный `301` или `308` с `http://www.mutating.tech/*` на `https://mutating.tech/*` с сохранением path и query string.
 - [x] Настроить однопереходный `301` или `308` с `https://www.mutating.tech/*` на `https://mutating.tech/*` с сохранением path и query string.
