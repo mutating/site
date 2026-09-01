@@ -5,6 +5,7 @@ enableRobotsTXT = true
 disableKinds = ["taxonomy"]
 defaultContentLanguage = "en"
 defaultContentLanguageInSubdir = false
+disableDefaultLanguageRedirect = true
 
 [languages]
   [languages.en]
@@ -31,6 +32,11 @@ defaultContentLanguageInSubdir = false
 
 [params]
   description = "Deterministic verification, interpretability, and testing infrastructure for the AI agents writing tomorrow’s software."
+  organizationName = "The Mutating Company"
+  organizationEmail = "contact@mutating.tech"
+  organizationLogo = "/apple-touch-icon.png"
+  organizationSameAs = ["https://github.com/mutating"]
+  socialImage = "/og.png"
 
 [[permalinks]]
   pattern = "/authors/:sections[last]/posts/"
@@ -52,6 +58,7 @@ defaultContentLanguageInSubdir = false
 
 [pagination]
   pagerSize = 10
+  disableAliases = true
 
 [markup]
   [markup.goldmark]

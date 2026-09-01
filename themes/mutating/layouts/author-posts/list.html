@@ -3,7 +3,13 @@
   {{- if and (not $authorSlug) .File -}}
     {{- $authorSlug = .File.ContentBaseName -}}
   {{- end -}}
+  {{- if not $authorSlug -}}
+    {{- errorf "author-posts page %q has no author slug" .Path -}}
+  {{- end -}}
   {{- $author := site.GetPage (printf "/authors/%s" $authorSlug) -}}
+  {{- if not $author -}}
+    {{- errorf "author-posts page %q references missing author %q" .Path $authorSlug -}}
+  {{- end -}}
   {{- $localizedAuthor := partial "localized-page.html" $author -}}
   {{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
   {{ partial "post-list.html" (dict

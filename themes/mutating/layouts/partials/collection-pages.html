@@ -1,0 +1,9 @@
+{{- $pages := .Pages -}}
+{{- if eq .Section "author-posts" -}}
+  {{- $authorSlug := .Params.author -}}
+  {{- if and (not $authorSlug) .File -}}
+    {{- $authorSlug = .File.ContentBaseName -}}
+  {{- end -}}
+  {{- $pages = where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
+{{- end -}}
+{{- return $pages.ByDate.Reverse -}}

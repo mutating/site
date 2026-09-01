@@ -1,0 +1,32 @@
+{{- printf "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>" | safeHTML }}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  {{- range .Pages }}
+  {{- if not .Sitemap.Disable }}
+  <url>
+    <loc>{{ .Permalink }}</loc>
+    {{- with .Lastmod }}
+    <lastmod>{{ .Format "2006-01-02T15:04:05Z07:00" }}</lastmod>
+    {{- end }}
+    {{- with .Sitemap.ChangeFreq }}
+    <changefreq>{{ . }}</changefreq>
+    {{- end }}
+    {{- if ge .Sitemap.Priority 0.0 }}
+    <priority>{{ .Sitemap.Priority }}</priority>
+    {{- end }}
+    {{- $page := . }}
+    {{- range hugo.Sites }}
+      {{- $language := .Language }}
+      {{- $languageURL := partial "language-url.html" (dict "context" $page "language" $language.Lang) }}
+      {{- with $languageURL }}
+    <xhtml:link rel="alternate" hreflang="{{ $language.Locale | default $language.Lang }}" href="{{ . | absURL }}" />
+      {{- end }}
+    {{- end }}
+    {{- $defaultURL := partial "language-url.html" (dict "context" $page "language" hugo.Sites.Default.Language.Lang) }}
+    {{- with $defaultURL }}
+    <xhtml:link rel="alternate" hreflang="x-default" href="{{ . | absURL }}" />
+    {{- end }}
+  </url>
+  {{- end }}
+  {{- end }}
+</urlset>
