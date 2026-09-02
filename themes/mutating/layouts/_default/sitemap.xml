@@ -27,6 +27,40 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="{{ . | absURL }}" />
     {{- end }}
   </url>
+  {{- $collectionPage := . }}
+  {{- $isPaginatedCollection := or (and (not .IsPage) (eq .Section "blog")) (eq .Kind "term") (eq .Section "author-posts") }}
+  {{- if $isPaginatedCollection }}
+    {{- $collectionPages := partial "collection-pages.html" . }}
+    {{- $paginator := .Paginate $collectionPages }}
+    {{- range $paginator.Pagers }}
+      {{- if gt .PageNumber 1 }}
+      {{- $pager := . }}
+  <url>
+    <loc>{{ $pager.URL | absURL }}</loc>
+        {{- with $collectionPage.Lastmod }}
+    <lastmod>{{ .Format "2006-01-02T15:04:05Z07:00" }}</lastmod>
+        {{- end }}
+        {{- with $collectionPage.Sitemap.ChangeFreq }}
+    <changefreq>{{ . }}</changefreq>
+        {{- end }}
+        {{- if ge $collectionPage.Sitemap.Priority 0.0 }}
+    <priority>{{ $collectionPage.Sitemap.Priority }}</priority>
+        {{- end }}
+        {{- range hugo.Sites }}
+          {{- $language := .Language }}
+          {{- $languageURL := partial "language-url.html" (dict "context" $collectionPage "language" $language.Lang) }}
+          {{- with $languageURL }}
+    <xhtml:link rel="alternate" hreflang="{{ $language.Locale | default $language.Lang }}" href="{{ (printf "%spage/%d/" . $pager.PageNumber) | absURL }}" />
+          {{- end }}
+        {{- end }}
+        {{- $defaultURL := partial "language-url.html" (dict "context" $collectionPage "language" hugo.Sites.Default.Language.Lang) }}
+        {{- with $defaultURL }}
+    <xhtml:link rel="alternate" hreflang="x-default" href="{{ (printf "%spage/%d/" . $pager.PageNumber) | absURL }}" />
+        {{- end }}
+  </url>
+      {{- end }}
+    {{- end }}
+  {{- end }}
   {{- end }}
   {{- end }}
 </urlset>

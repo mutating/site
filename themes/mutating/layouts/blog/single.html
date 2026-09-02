@@ -3,7 +3,18 @@
 <article class="post section-shell">
   <header class="post__header">
     <a class="section-index" href="{{ "/blog/" | relLangURL }}">{{ T "blog_label" }}</a>
-    <h1>{{ partial "title-with-period.html" $localizedPage.Title }}</h1>
+    {{ with .Params.logo }}
+      <div class="post__title-row post__title-row--with-logo">
+        {{ with $.Resources.GetMatch . }}
+        <span class="post__project-logo" aria-hidden="true">
+          <img src="{{ .RelPermalink }}" alt="" width="180" height="180">
+        </span>
+        {{ end }}
+        <h1>{{ partial "title-with-period.html" $localizedPage.Title }}</h1>
+      </div>
+    {{ else }}
+      <h1>{{ partial "title-with-period.html" $localizedPage.Title }}</h1>
+    {{ end }}
     <p class="post__description">{{ $localizedPage.Description }}</p>
     <div class="post__meta">
       <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date | time.Format "02 January 2006" }}</time>
