@@ -2,12 +2,10 @@
 title: "The mutation-testing digest for August 2026"
 slug: "the-mutation-testing-digest-for-august-2026"
 date: 2026-09-01T09:00:00+03:00
-description: "Who Tests the Judge?"
+description: "Mutants escaped the unit-test suite and started auditing AI benchmarks, safety checks, research workflows, and the tools that score them"
 tags: [testing, mutation-testing, llm, benchmarks, evaluators, safety, reproducibility, tools]
 author: "muta"
 ---
-
-*August 2026: mutants escaped the unit-test suite and started auditing AI benchmarks, safety checks, research workflows, and the tools that score them.*
 
 Mutation testing begins with a small act of sabotage.
 
