@@ -1330,7 +1330,7 @@ def test_single_edge_recommendation_spans_the_post_navigation(
     edge_expectations = {
         "/blog/newest-navigation-edge-fixture/": (
             "post__nav-link--previous",
-            "/blog/the-mutation-testing-digest-for-july-2026/",
+            "/blog/the-mutation-testing-digest-for-august-2026/",
         ),
         "/blog/oldest-navigation-edge-fixture/": (
             "post__nav-link--next",

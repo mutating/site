@@ -15,7 +15,7 @@ from conftest import DriverFactory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MAY_POST_PATH = "/blog/the-mutation-testing-digest-for-may-2026/"
-LATEST_DIGEST_PATH = "/blog/the-mutation-testing-digest-for-july-2026/"
+LATEST_DIGEST_PATH = "/blog/the-mutation-testing-digest-for-august-2026/"
 JUNE_DIGEST_PATH = "/blog/the-mutation-testing-digest-for-june-2026/"
 
 
@@ -82,29 +82,32 @@ def test_latest_source_article_also_has_russian_content(
         load_interactive_visuals=False,
     )
 
-    expect(page).to_have_url(re.compile(r"/ru/blog/the-mutation-testing-digest-for-july-2026/$"))
+    expect(page).to_have_url(
+        re.compile(r"/ru/blog/the-mutation-testing-digest-for-august-2026/$")
+    )
     expect(page.locator("html")).to_have_attribute("lang", "ru")
     expect(page.locator(".post__header h1")).to_have_text(
-        "Дайджест мутационного тестирования за июль 2026 года."
+        "Дайджест мутационного тестирования за август 2026 года."
     )
     expect(page.locator(".post__content > p").first).to_contain_text(
-        "Прототип на большой языковой модели"
+        "Мутационное тестирование начинается с маленькой диверсии."
     )
-    expect(page.locator("time")).to_have_attribute("datetime", "2026-08-01")
+    expect(page.locator("time")).to_have_attribute("datetime", "2026-09-01")
     expect(page.locator(".post__author")).to_have_attribute(
         "href", "/ru/authors/muta/"
     )
     tag_links = page.locator(".post__tags a")
-    expect(tag_links).to_have_count(7)
+    expect(tag_links).to_have_count(8)
     assert set(tag_links.evaluate_all(
         "elements => elements.map(element => element.getAttribute('href'))"
     )) == {
         "/ru/tags/testing/",
         "/ru/tags/mutation-testing/",
         "/ru/tags/llm/",
-        "/ru/tags/adoption/",
-        "/ru/tags/real-world/",
-        "/ru/tags/survivor-investigation/",
+        "/ru/tags/benchmarks/",
+        "/ru/tags/evaluators/",
+        "/ru/tags/safety/",
+        "/ru/tags/reproducibility/",
         "/ru/tags/tools/",
     }
 
@@ -266,10 +269,12 @@ def test_russian_home_localizes_interface_and_marketing_content(
         f'.dispatch-card[href="/ru{LATEST_DIGEST_PATH}"]'
     )
     expect(localized_card.locator("h3")).to_have_text(
-        "Дайджест мутационного тестирования за июль 2026 года"
+        "Дайджест мутационного тестирования за август 2026 года"
     )
     expect(localized_card.locator(".dispatch-card__description")).to_have_text(
-        "Выжившие мутанты как рабочие задания, оценки проходят проверку"
+        "Мутанты вырвались за пределы модульных тестов и начали проверять "
+        "ИИ-бенчмарки, проверки безопасности, исследовательские процессы и "
+        "сами инструменты оценки."
     )
     expect(russian.locator("#contact h2")).to_have_text(
         "Создаёте серьёзную агентную инфраструктуру?"
@@ -559,6 +564,7 @@ def test_translation_resources_do_not_duplicate_canonical_front_matter() -> None
         Path("mt-state-may-2026/translation.ru.md"),
         Path("mt-state-june-2026/translation.ru.md"),
         Path("mt-state-july-2026/translation.ru.md"),
+        Path("mt-state-august-2026/translation.ru.md"),
     }
     translation_root = PROJECT_ROOT / "content" / "blog"
     assert {
