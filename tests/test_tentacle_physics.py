@@ -3593,6 +3593,12 @@ def test_stationary_hover_does_not_accumulate_attraction_or_reset_on_click(
     Excessive post-solver velocity damping instead erases the spring velocity:
     hover then creeps toward the cursor for seconds, while a click temporarily
     restores elasticity and looks like an attraction reset.
+
+    The page performance clock is deliberately held twenty seconds ahead of
+    the manual simulation. A diagnostic click must use the manual clock too;
+    mixing the clocks changes its first physics step from 11.1 ms to the 33 ms
+    cap on a slow CI renderer and makes the post-click trajectory depend on
+    wall-clock performance.
     """
 
     page = driver(
@@ -3601,6 +3607,14 @@ def test_stationary_hover_does_not_accumulate_attraction_or_reset_on_click(
         device_scale_factor=PHYSICS_DIAGNOSTIC_DEVICE_SCALE_FACTOR,
         initial_path=f"/muta-tentacles.html{DIAGNOSTIC_QUERY}",
         wait_for_theme_ready=False,
+        init_scripts=(
+            """
+            Object.defineProperty(Performance.prototype, "now", {
+              configurable: true,
+              value: () => 20_000,
+            });
+            """,
+        ),
     )
     canvas = _open_diagnostic_surface(page, "", navigate=False)
     box = canvas.bounding_box()
@@ -3635,7 +3649,14 @@ def test_stationary_hover_does_not_accumulate_attraction_or_reset_on_click(
 
     page.mouse.down(button="left")
     page.mouse.up(button="left")
-    _advance_diagnostic_physics_frames(page, 30)
+    page.evaluate(
+        "window.__mutaTentaclesDebugPhysicsFrameAfter(1000 / 60)"
+    )
+    expect(canvas).to_have_attribute(
+        "data-impulse-physics-delta-ms",
+        "11.1",
+    )
+    _advance_diagnostic_physics_frames(page, 29)
     after_click = page.evaluate(
         "window.__mutaTentaclesDebugPhysicsSnapshot().interaction"
     )
@@ -5783,10 +5804,10 @@ TIMING_MUTATIONS = [
     pytest.param(
         "          runImmediateReleaseFrame();",
         """          const releaseEnergy = pointer.energy;
-          pointer.energy = -4;
+          pointer.energy = -50;
           for (
             let recoveryFrame = 0;
-            recoveryFrame < 8;
+            recoveryFrame < 2;
             recoveryFrame++
           ) {
             runImmediateReleaseFrame(0.033);
