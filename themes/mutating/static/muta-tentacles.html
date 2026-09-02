@@ -2964,7 +2964,13 @@
             if (!pointer.pressed) {
               return;
             }
-            pointer.impulseStartedAt = performance.now() * 0.001;
+            // Manual-frame diagnostics own the complete simulation timeline.
+            // Mixing their virtual lastTime with the real performance clock
+            // makes an identical click use an 11.1 ms physics step on a fast
+            // machine and a capped 33 ms step under a slow software renderer.
+            pointer.impulseStartedAt = useManualAnimationFrame
+              ? lastTime
+              : performance.now() * 0.001;
             pointer.impulsePending = true;
             pointer.impulseDirection = pointer.pressDirection;
             canvas.dataset.animationImpulseFramesSincePress = "0";

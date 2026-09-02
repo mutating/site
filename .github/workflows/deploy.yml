@@ -86,14 +86,15 @@ jobs:
           hugo-version: "0.164.0"
           extended: true
 
-      - name: Install password-based SSH support
+      - name: Install deployment tooling
         run: |
           sudo apt-get update
-          sudo apt-get install --yes rsync sshpass
+          sudo apt-get install --yes ripgrep rsync sshpass
 
       - name: Build the production site
         run: |
           set -euo pipefail
+          command -v rg >/dev/null
           if [[ "$SITE_BASE_URL" != "https://mutating.tech/" ]]; then
             echo "SITE_BASE_URL must be exactly https://mutating.tech/." >&2
             exit 1
@@ -110,6 +111,45 @@ jobs:
             echo "Production output contains a forbidden origin." >&2
             exit 1
           fi
+
+      - name: Verify the production server before upload
+        run: |
+          set -euo pipefail
+          trap 'echo "::error title=Production server contract failed::Apply infra/playbooks/setup-server.yml with an administrative account before rerunning deployment."' ERR
+
+          assert_redirect() {
+            local source_url="$1"
+            local expected_location="$2"
+            local headers
+            local location
+            headers="$(curl --silent --show-error --head --max-time 30 "$source_url")"
+            printf '%s' "$headers" | rg --quiet '^HTTP/[^ ]+ 308'
+            location="$(printf '%s' "$headers" | rg --ignore-case '^location: ' | cut -d' ' -f2- | tr -d '\r')"
+            [[ "$location" == "$expected_location" ]]
+          }
+
+          assert_redirect "http://mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
+          assert_redirect "http://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
+          assert_redirect "https://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
+
+          unknown_host_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --header 'Host: seo-invalid.invalid' --max-time 30 http://mutating.tech/ || true)"
+          [[ "$unknown_host_status" == "000" || "$unknown_host_status" == "404" ]]
+
+          printf '' | openssl s_client \
+            -connect www.mutating.tech:443 \
+            -servername www.mutating.tech \
+            2>/dev/null | openssl x509 -noout -checkhost www.mutating.tech
+
+          alpn="$(printf '' | openssl s_client \
+            -connect mutating.tech:443 \
+            -servername mutating.tech \
+            -alpn h2 \
+            2>/dev/null | sed -n 's/^ALPN protocol: //p')"
+          [[ "$alpn" == "h2" ]]
+
+          root_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/)"
+          printf '%s' "$root_headers" | rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$'
+          printf '%s' "$root_headers" | rg --quiet --ignore-case '^cache-control: no-cache\r?$'
 
       - name: Replace the deployed site
         env:
