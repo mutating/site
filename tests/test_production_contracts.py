@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import copy_controlled_test_content
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_ORIGIN = "https://example.test"
@@ -64,13 +66,9 @@ def _run_hugo(
 
 
 def _copy_test_content(target: Path) -> None:
-    """Copy production content plus the browser-only Markdown fixtures."""
+    """Copy stable synthetic posts plus the non-editorial site content."""
 
-    shutil.copytree(PROJECT_ROOT / "content", target)
-    for fixture in (PROJECT_ROOT / "tests" / "fixtures").glob("*-post.md"):
-        shutil.copy2(fixture, target / "blog" / fixture.name)
-    for fixture in (PROJECT_ROOT / "tests" / "fixtures").glob("*-author.md"):
-        shutil.copy2(fixture, target / "authors" / fixture.name)
+    copy_controlled_test_content(target)
 
 
 @pytest.fixture(scope="module")
@@ -450,68 +448,13 @@ def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
 
 
 @pytest.mark.parametrize(
-    ("path", "expected"),
+    ("path", "expected_type", "expected_language"),
     [
-        (
-            "/",
-            {
-                "title": "The Mutating Company — AI systems that doubt",
-                "description": (
-                    "Deterministic verification, interpretability, and testing "
-                    "infrastructure for the AI agents writing tomorrow’s software."
-                ),
-                "type": "website",
-            },
-        ),
-        (
-            "/ru/",
-            {
-                "title": "The Mutating Company — ИИ, который сомневается",
-                "description": (
-                    "Детерминированная верификация, интерпретируемость и "
-                    "инфраструктура тестирования для ИИ-агентов, создающих "
-                    "ПО будущего."
-                ),
-                "type": "website",
-            },
-        ),
-        (
-            "/blog/the-mutation-testing-digest-for-may-2026/",
-            {
-                "title": (
-                    "The mutation-testing digest for May 2026 — The Mutating Company"
-                ),
-                "description": (
-                    "AI Tests Get a Lie Detector, PIT Learns “Equivalent,” "
-                    "and Zig Gets a Preview"
-                ),
-                "type": "article",
-            },
-        ),
-        (
-            "/ru/blog/the-mutation-testing-digest-for-may-2026/",
-            {
-                "title": (
-                    "Дайджест мутационного тестирования за май 2026 года — "
-                    "The Mutating Company"
-                ),
-                "description": (
-                    "ИИ-тестам — детектор лжи, PIT — статус «эквивалентен», "
-                    "Zig — превью"
-                ),
-                "type": "article",
-            },
-        ),
-        (
-            "/ru/blog/markdown-feature-fixture/",
-            {
-                "title": "Markdown feature fixture — The Mutating Company",
-                "description": (
-                    "Controlled Markdown content used only by the browser test build."
-                ),
-                "type": "article",
-            },
-        ),
+        ("/", "website", "en"),
+        ("/ru/", "website", "ru"),
+        ("/blog/localized-post-fixture/", "article", "en"),
+        ("/ru/blog/localized-post-fixture/", "article", "ru"),
+        ("/ru/blog/markdown-feature-fixture/", "article", "ru"),
     ],
     ids=[
         "english-home",
@@ -524,9 +467,10 @@ def test_manual_language_choice_overrides_stale_storage_and_cleans_its_marker(
 def test_production_head_metadata_matches_each_page_locale(
     built_sites: dict[str, Path],
     path: str,
-    expected: dict[str, str],
+    expected_type: str,
+    expected_language: str,
 ) -> None:
-    """Production title, description and social metadata match the page locale."""
+    """Production metadata stays internally consistent for every page kind."""
 
     source = _read_output(built_sites["production"], path)
     title = _first(r"<title>(.*?)</title>", source)
@@ -537,11 +481,12 @@ def test_production_head_metadata_matches_each_page_locale(
     )
     og_type = _first(r'<meta property="og:type" content="([^"]*)">', source)
 
-    assert title == expected["title"]
-    assert description == expected["description"]
+    assert title
+    assert description
     assert og_title == title
     assert og_description == description
-    assert og_type == expected["type"]
+    assert og_type == expected_type
+    assert re.search(rf'<html[^>]+lang="{expected_language}"', source)
     assert _first(r'<meta property="og:url" content="([^"]*)">', source) == (
         f"{TEST_ORIGIN}{path}"
     )
@@ -556,8 +501,8 @@ def test_production_head_metadata_matches_each_page_locale(
     [
         "/",
         "/ru/",
-        "/blog/the-mutation-testing-digest-for-may-2026/",
-        "/ru/blog/the-mutation-testing-digest-for-may-2026/",
+        "/blog/localized-post-fixture/",
+        "/ru/blog/localized-post-fixture/",
         "/ru/blog/markdown-feature-fixture/",
     ],
 )

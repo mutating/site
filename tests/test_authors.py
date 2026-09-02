@@ -591,12 +591,12 @@ def test_robot_profile_reuses_the_home_mascot_surface(
 def test_author_tags_pack_four_items_into_a_wide_row(
     driver: DriverFactory,
 ) -> None:
-    """Tighten responsive gaps before wrapping tags on wide profiles."""
+    """Tighten responsive gaps before wrapping controlled tags on wide profiles."""
 
     page = driver(
         viewport=(1600, 1000),
         load_interactive_visuals=False,
-        initial_path="/authors/muta/",
+        initial_path="/authors/test-robot-author/",
     )
 
     geometry = page.evaluate(

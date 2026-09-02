@@ -27,6 +27,45 @@ ReducedMotion = Literal["reduce", "no-preference"]
 DriverFactory = Callable[..., Page]
 
 
+def copy_controlled_test_content(target: Path) -> None:
+    """Create a test content tree that is independent of live editorial posts.
+
+    Browser and template-contract tests need stable documents to exercise, but
+    they must not acquire expectations about whichever articles happen to be
+    published in ``content/blog``.  Keep the real section pages and author
+    profiles, remove the editorial post inventory from the copy, and replace it
+    with versioned synthetic fixtures.
+    """
+
+    shutil.copytree(PROJECT_ROOT / "content", target)
+    blog_directory = target / "blog"
+    for content_entry in blog_directory.iterdir():
+        if content_entry.name.startswith("_index."):
+            continue
+        if content_entry.is_dir():
+            shutil.rmtree(content_entry)
+        else:
+            content_entry.unlink()
+
+    fixture_directory = PROJECT_ROOT / "tests" / "fixtures"
+    for fixture_post in fixture_directory.glob("*-post.md"):
+        shutil.copy2(fixture_post, blog_directory / fixture_post.name)
+    for fixture_bundle in fixture_directory.glob("*-post"):
+        if fixture_bundle.is_dir():
+            shutil.copytree(
+                fixture_bundle,
+                blog_directory / fixture_bundle.name,
+            )
+    for fixture_author in fixture_directory.glob("*-author.md"):
+        shutil.copy2(fixture_author, target / "authors" / fixture_author.name)
+    for fixture_bundle in fixture_directory.glob("*-author"):
+        if fixture_bundle.is_dir():
+            shutil.copytree(
+                fixture_bundle,
+                target / "authors" / fixture_bundle.name,
+            )
+
+
 def _write_paginated_tag_posts(temporary_content: Path) -> None:
     """Create a controlled tag collection that always spans two pages."""
 
@@ -289,21 +328,7 @@ def base_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     temporary_root = tmp_path_factory.mktemp("mutating-hugo")
     temporary_content = temporary_root / "content"
     cache_directory = temporary_root / "cache"
-    shutil.copytree(PROJECT_ROOT / "content", temporary_content)
-    for fixture_post in (
-        PROJECT_ROOT / "tests" / "fixtures"
-    ).glob("*-post.md"):
-        shutil.copy2(
-            fixture_post,
-            temporary_content / "blog" / fixture_post.name,
-        )
-    for fixture_author in (
-        PROJECT_ROOT / "tests" / "fixtures"
-    ).glob("*-author.md"):
-        shutil.copy2(
-            fixture_author,
-            temporary_content / "authors" / fixture_author.name,
-        )
+    copy_controlled_test_content(temporary_content)
     _write_paginated_tag_posts(temporary_content)
     _write_paginated_author_posts(temporary_content)
     _write_author_archive(temporary_content, "test-robot-author")

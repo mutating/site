@@ -458,11 +458,12 @@ def test_multiline_post_heading_chain_follows_the_last_line(
         viewport=viewport,
         load_interactive_visuals=False,
         reduced_motion="reduce",
-        initial_path="/blog/the-mutation-testing-digest-for-june-2026/",
+        initial_path="/blog/localized-post-fixture/",
     )
 
     heading = page.locator(
-        "#new-tools-widened-the-map-established-tools-smoothed-the-workflow"
+        "#a-deliberately-extended-controlled-heading-that-wraps-across-"
+        "every-supported-article-viewport"
     )
     link = heading.locator(":scope > .post__heading-anchor")
     chain = link.locator(".post__heading-chain")
@@ -1313,12 +1314,9 @@ def test_single_edge_recommendation_spans_the_post_navigation(
 ) -> None:
     """Expand lone Previous and Next recommendations across the full nav width.
 
-    The temporary test site contains many posts with tied dates, so deriving
-    an "edge" from whichever cards happen to appear first on the paginated
-    index is not a stable contract: Hugo's tie ordering can legitimately put a
-    middle post first. Two dedicated fixtures pin one post far beyond each
-    end of the collection, making the one-link navigation invariant explicit
-    while still exercising the real rendered post template and CSS.
+    The temporary test site contains only synthetic posts. Dedicated fixtures
+    pin both ends of that controlled collection, so publishing or reordering a
+    real article cannot change this layout contract.
     """
 
     page = driver(
@@ -1330,7 +1328,7 @@ def test_single_edge_recommendation_spans_the_post_navigation(
     edge_expectations = {
         "/blog/newest-navigation-edge-fixture/": (
             "post__nav-link--previous",
-            "/blog/the-mutation-testing-digest-for-august-2026/",
+            "/blog/localized-post-fixture/",
         ),
         "/blog/oldest-navigation-edge-fixture/": (
             "post__nav-link--next",
