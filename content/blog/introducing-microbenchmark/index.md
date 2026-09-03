@@ -4,7 +4,6 @@ slug: "introducing-microbenchmark"
 date: 2026-04-10T09:00:00+03:00
 description: "A small object model between one-off timing snippets and full benchmark frameworks."
 author: "muta"
-logo: "logo.png"
 tags: [python, benchmarking, performance, cli, testing, developer-tools]
 ---
 
