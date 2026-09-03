@@ -13,7 +13,7 @@ Python's `None` is usually enough. Library authors, however, sometimes need to d
 
 A local `MISSING = object()` works inside one module; [`dataclasses.MISSING`](https://docs.python.org/3/library/dataclasses.html#dataclasses.MISSING) and [`attrs.NOTHING`](https://www.attrs.org/en/stable/api.html#attrs.NOTHING) belong to their own frameworks. Cooperating libraries instead need one framework-neutral marker with a public type.
 
-[denial](https://github.com/mutating/denial) is a small Python library that gives the second state a dedicated name and type. It provides `InnerNone` for values that mean “not supplied” inside library code, while ordinary `None` remains available as real input. [The release](https://github.com/mutating/denial/releases/tag/0.0.1) is available on GitHub.
+[denial](https://github.com/mutating/denial) is a small Python library that gives the second state a dedicated marker value, often called a sentinel. It provides `InnerNone` to mean “not supplied” inside library code, while ordinary `None` remains available as real input. [The release](https://github.com/mutating/denial/releases/tag/0.0.1) is available on GitHub.
 
 ## How InnerNone is used
 
@@ -36,14 +36,10 @@ The same distinction appears in patch APIs, layered configuration, caches, and d
 
 The API is deliberately small: `InnerNone` is the shared value, while `InnerNoneType` can be used in annotations and `isinstance` checks. Identity checks use `value is InnerNone`.
 
-`InnerNone` is truthy, additional `InnerNoneType` instances can be constructed, and copying or pickling does not preserve the exported object's identity. It is a named sentinel, not a sentinel factory.
+Code should compare the marker with `is`, as in the example. It is one shared marker for cooperating libraries, not a tool for creating many unrelated marker values.
 
 ## When a sentinel factory is a better fit
 
 [sentinel-value](https://sentinel-value.readthedocs.io/) and [sentinels](https://pypi.org/project/sentinels/) provide factories and stronger serialization, making them better for projects that need several sentinels. denial standardizes one marker and public type for cooperating libraries.
 
 [PEP 661](https://peps.python.org/pep-0661/), the proposal for a standard sentinel API, has Deferred status. A future standard could provide a common API, while older Python versions and project-specific semantics would still require separate implementations.
-
-## What comes next
-
-The project will make shared and application-defined sentinels more predictable while staying focused on ambiguous uses of `None` in library internals.

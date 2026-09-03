@@ -9,11 +9,11 @@ logo: "logo-mark.svg"
 tags: [python, introspection, source-code, ast, repl, developer-tools]
 ---
 
-Transformation and introspection tools must recover source text before parsing a Python function. Interactive definitions may be unavailable, while nested functions retain enclosing indentation and can fail at the next parsing step.
+Tools that analyze or rewrite Python code often receive a live function object but need the readable source text that created it. Finding that text is not always straightforward: a function typed in an interactive shell may not have a normal file, and a function nested inside a class or another function carries indentation that prevents it from being parsed on its own.
 
 [`inspect.getsource()`](https://docs.python.org/3/library/inspect.html#inspect.getsource) is the standard solution; [dill](https://dill.readthedocs.io/en/latest/dill.html#module-dill.source) and [sourceinspect](https://pypi.org/project/sourceinspect/) cover more interactive environments. Their APIs and output differ, leaving every AST or CST consumer to choose fallbacks and normalize indentation.
 
-[getsources](https://github.com/mutating/getsources) is a small Python library that provides a consistent API for recovering and normalizing that text. It combines `inspect` with a `dill` fallback and provides a separate operation for removing shared leading indentation. [The release](https://github.com/mutating/getsources/releases/tag/0.0.1) is available on GitHub.
+[getsources](https://github.com/mutating/getsources) is a small Python library that provides one consistent way to recover that text and make it ready for parsing. It tries Python's standard `inspect` module first, uses `dill` when needed, and can remove indentation inherited from surrounding code. [The release](https://github.com/mutating/getsources/releases/tag/0.0.1) is available on GitHub.
 
 ## Source retrieval and normalization
 

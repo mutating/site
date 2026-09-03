@@ -9,11 +9,11 @@ logo: "logo-mark.svg"
 tags: [python, plugins, extensibility, type-safety, architecture, developer-tools]
 ---
 
-To support separately installed plugins, a Python library must define a contract, discover implementations, handle an empty registry, and combine results. For one synchronous extension point, that infrastructure can become more complex than the function being extended.
+A plugin lets an optional package add behavior without changing the main library. Supporting separately installed plugins still requires the library to define what a plugin must do, find installed implementations, decide what happens when none are present, and combine their results. For one simple extension point, that infrastructure can become more complex than the function being extended.
 
-Python entry points handle discovery but not callable contracts or result aggregation. [Pluggy](https://pluggy.readthedocs.io/en/stable/) supplies a mature plugin manager, but its ordering, wrappers, tracing, and lifecycle controls may be unnecessary for one typed synchronous hook.
+Python entry points—the package metadata commonly used to advertise installed plugins—handle discovery but not function signatures or result collection. [Pluggy](https://pluggy.readthedocs.io/en/stable/) supplies a mature plugin manager, but many projects do not need all of its controls for one ordinary function call.
 
-[pristan](https://github.com/mutating/pristan) is a compact Python plugin library that keeps the extension contract centred on an ordinary typed function. That function serves as the slot, registry, fallback, and call site, while installed plugins are discovered lazily through standard Python entry points. [The release](https://github.com/mutating/pristan/releases/tag/0.0.1) is available on GitHub.
+[pristan](https://github.com/mutating/pristan) is a compact Python plugin library built around an ordinary function with type hints. The same function defines the plugin contract, stores registered plugins, provides default behavior, and calls the plugins. Separately installed plugins are found through standard Python entry points only when first needed. [The release](https://github.com/mutating/pristan/releases/tag/0.0.1) is available on GitHub.
 
 ## How function-based slots work
 

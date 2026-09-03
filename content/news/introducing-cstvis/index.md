@@ -9,11 +9,11 @@ logo: "logo-mark.svg"
 tags: [python, cst, source-transformation, mutation-testing, static-analysis, developer-tools]
 ---
 
-Mutation testing must find every possible edit in a Python file, then apply and test each one independently. Conventional tree transformers rewrite every matching node in one pass, which prevents that separation.
+Mutation testing checks a test suite by making small changes to a program and seeing whether the tests notice. To do this well, a tool must find every place where a change is possible, then apply and test one change at a time. Ordinary syntax-tree transformers usually rewrite every matching piece in one pass, so they do not provide this separation by themselves.
 
-[LibCST](https://libcst.readthedocs.io/) preserves formatting and comments but does not make potential edits independently addressable. Complete systems such as [mutmut](https://github.com/boxed/mutmut) add test execution and session management. A smaller transformation layer is useful between them.
+[LibCST](https://libcst.readthedocs.io/) represents Python code as a tree while preserving its formatting and comments. It can rewrite that tree, but it does not number all possible edits so that a caller can choose exactly one. Complete mutation-testing systems such as [mutmut](https://github.com/boxed/mutmut) also run tests and manage sessions. A smaller library is useful when another system already handles those jobs.
 
-[cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. It discovers source-aware transformation coordinates and can replay any one of them independently against the original module. [The release](https://github.com/mutating/cstvis/releases/tag/0.0.1) is available on GitHub.
+[cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. It finds and records every place where a requested source-code change can happen, then applies any one of those changes to the original file. [The release](https://github.com/mutating/cstvis/releases/tag/0.0.1) is available on GitHub.
 
 ## Discovering independent transformations
 

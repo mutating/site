@@ -8,11 +8,11 @@ author: "muta"
 tags: [python, benchmarking, performance, cli, testing, developer-tools]
 ---
 
-A `timeit` snippet becomes awkward when several measurements need names, shared execution, machine-readable results, and a failure threshold. Full benchmark suites may require more setup and statistical machinery than a small library check needs.
+A benchmark repeatedly measures how long an operation takes. Python's `timeit` is convenient for one quick measurement, but a project may need several named checks, reusable settings, saved results, and a clear failure when an operation becomes too slow. Full benchmark suites can require more setup and statistical machinery than a small library needs.
 
 [`timeit`](https://docs.python.org/3/library/timeit.html) provides timing primitives but no scenario model or CI budget. [pyperf](https://pyperf.readthedocs.io/) and [pytest-benchmark](https://pytest-benchmark.readthedocs.io/en/latest/) provide stronger statistics and isolation. Smaller projects may need named, serializable measurements without a full harness.
 
-[microbenchmark](https://github.com/mutating/microbenchmark) is a lightweight Python library for structured, small-scale measurements. It represents benchmark scenarios, groups, and results as ordinary Python objects that can be combined, inspected, serialized, and checked against a basic performance budget. [The release](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) is available on GitHub.
+[microbenchmark](https://github.com/mutating/microbenchmark) is a lightweight Python library for organizing small performance checks. Each measurement and its result is an ordinary Python object, so checks can be grouped, inspected, saved as JSON, and compared with a simple time limit. [The release](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) is available on GitHub.
 
 ## Core API
 
@@ -51,7 +51,3 @@ Timing every call separately adds timer and Python-call overhead. There is no au
 ## Intended users
 
 microbenchmark is for library authors who want a few reusable performance scenarios beside their code. Work requiring stronger statistical guarantees should use a full benchmark system.
-
-## What comes next
-
-The project will simplify Python and command-line use while remaining a lightweight tool rather than a statistical benchmarking system.

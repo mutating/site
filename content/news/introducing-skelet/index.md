@@ -9,11 +9,11 @@ logo: "logo-mark.svg"
 tags: [python, configuration, type-safety, validation, secrets, thread-safety]
 ---
 
-Python applications combine defaults, constructor arguments, environment variables, files, and secrets. Long-running programs may also change settings after startup. If loading and assignment follow different rules, invalid values can reach the application and errors may expose secrets.
+A Python application may read a retry limit from a file, an API token from an environment variable, and a one-off override from application code. It needs a clear rule for which source wins. A long-running service may also change settings after startup, and those later changes should obey the same type and value checks without exposing secret values in errors.
 
 [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/), [Dynaconf](https://www.dynaconf.com/), and [Hydra](https://hydra.cc/docs/intro/) provide powerful loading and override systems. They do not combine per-field source selection with coordinated runtime assignments, explicit conflicts, callbacks, and secret-aware errors in one object.
 
-[skelet](https://github.com/mutating/skelet) is a Python configuration library for settings that can change after they are loaded. It combines typed fields, ordered sources, guarded assignment, per-field locking, explicit conflicts, and secret-aware error reporting. [The release](https://github.com/mutating/skelet/releases/tag/0.0.1) is available on GitHub.
+[skelet](https://github.com/mutating/skelet) is a Python configuration library for settings that can change after they are loaded. It declares where each setting may come from, which source has priority, how the value is checked, and what must happen when it changes. Related updates are coordinated, conflicting settings can be rejected, and secret values are hidden from standard errors. [The release](https://github.com/mutating/skelet/releases/tag/0.0.1) is available on GitHub.
 
 ## Validated runtime updates
 

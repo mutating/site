@@ -9,11 +9,11 @@ logo: "logo-mark.svg"
 tags: [python, source-code, comments, metadata, static-analysis, developer-tools]
 ---
 
-Python tools use incompatible machine-readable comments: `noqa`, `type: ignore`, `fmt: off`, `pragma: no cover`, and others. Each has separate parsing and escaping rules, so new analyzers repeat the same work and tools may misread one another's comments.
+Developers often need to place a small instruction beside one line of code: ignore this warning, stop formatting here, or exclude this line from coverage. Python tools express these instructions through comments such as `noqa`, `type: ignore`, and `fmt: off`. Each tool has its own syntax and parser, so new analyzers repeat the same work and can misread comments intended for another tool.
 
 Decorators, `typing.Annotated`, and project configuration work at other scopes. Inline instructions need a shared syntax that leaves their meaning to each tool.
 
-[metacode](https://github.com/mutating/metacode) is a Python library for parsing machine-readable instructions from comments through one compact grammar. It defines the common `key: command[arguments]` shape on which source-aware tools can build their own directives. [The release](https://github.com/mutating/metacode/releases/tag/0.0.1) is available on GitHub.
+[metacode](https://github.com/mutating/metacode) is a Python library for reading specially formatted instructions from comments. It defines one compact `key: command[arguments]` shape that different source-code tools can share while giving each tool its own key and commands. [The release](https://github.com/mutating/metacode/releases/tag/0.0.1) is available on GitHub.
 
 ## Syntax and responsibilities
 
@@ -58,4 +58,4 @@ Until independent tools adopt the grammar, metacode is a reusable convention and
 
 ## What comes next
 
-The project will grow into a bidirectional layer for comment metadata while preserving ordinary comments and consistent parsing across environments.
+The project will add reliable ways to both read and write these instructions without damaging ordinary comments.
