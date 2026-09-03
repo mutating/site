@@ -4,7 +4,7 @@ slug: "introducing-transtests"
 date: 2026-03-31T09:00:00+03:00
 description: "Runs one pytest behavior check against regular, asynchronous, and generator forms of the same Python function template."
 author: "muta"
-logo: "logo-mark.png"
+logo: "logo-mark.svg"
 tags: [python, pytest, testing, async, generators, code-generation, developer-tools]
 ---
 

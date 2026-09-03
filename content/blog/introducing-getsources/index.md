@@ -4,7 +4,7 @@ slug: "introducing-getsources"
 date: 2026-02-26T09:00:00+03:00
 description: "Recovers clean, parseable source text from Python function objects, including nested and interactive definitions."
 author: "muta"
-logo: "logo-mark.png"
+logo: "logo-mark.svg"
 tags: [python, introspection, source-code, ast, repl, developer-tools]
 ---
 
