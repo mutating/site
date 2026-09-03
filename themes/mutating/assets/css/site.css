@@ -3493,7 +3493,7 @@ a.section-index:focus-visible {
 
 .post__title-row--with-logo {
   display: grid;
-  grid-template-columns: clamp(220px, 24vw, 320px) minmax(0, 1fr);
+  grid-template-columns: clamp(136px, 13vw, 176px) minmax(0, 1fr);
   align-items: center;
   gap: clamp(20px, 3vw, 42px);
   margin: 14px 0 22px;
@@ -3505,7 +3505,8 @@ a.section-index:focus-visible {
 
 .post__project-logo {
   display: grid;
-  min-height: clamp(110px, 11vw, 142px);
+  width: 100%;
+  aspect-ratio: 1;
   place-items: center;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -3518,9 +3519,9 @@ a.section-index:focus-visible {
 .post__project-logo img {
   display: block;
   width: auto;
-  max-width: 88%;
+  max-width: 76%;
   height: auto;
-  max-height: 108px;
+  max-height: 76%;
   object-fit: contain;
 }
 
@@ -4790,8 +4791,7 @@ a.signal-tag:focus-visible .signal-tag__label {
   }
 
   .post__project-logo {
-    width: min(76vw, 280px);
-    min-height: 96px;
+    width: min(42vw, 160px);
     border-radius: 18px;
   }
 
