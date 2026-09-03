@@ -1,5 +1,5 @@
 ---
-title: "Introducing denial: a second None for library internals"
+title: "Introducing denial: a sentinel for omitted values"
 slug: "introducing-denial"
 date: 2026-01-17T09:00:00+03:00
 description: "A tiny named sentinel for distinguishing an omitted value from an explicitly supplied None."
@@ -12,7 +12,7 @@ Python's `None` is usually enough. Library authors, however, sometimes need to d
 
 [denial](https://github.com/mutating/denial) is a tiny Python library that gives the second state a dedicated name and type. Its [first release](https://github.com/mutating/denial/releases/tag/0.0.1) provides `InnerNone` for values that mean “not supplied” inside library code while leaving ordinary `None` available as real input.
 
-## A control state, not another spelling
+## How InnerNone is used
 
 The strongest use case is an API where omission means “inherit the current value” while `None` means “clear it explicitly”:
 
@@ -29,13 +29,13 @@ def resolve_timeout(value: Timeout = InnerNone):
     return value  # None means explicitly disabled.
 ```
 
-The same distinction appears in patch APIs, layered configuration, caches, lazy computation, and defaults. `InnerNone` belongs to the control plane inside a library; it should normally not leak into the caller's value space.
+The same distinction appears in patch APIs, layered configuration, caches, lazy computation, and defaults. `InnerNone` is intended for internal library state and should normally not be returned as application data.
 
 The API is deliberately small: `InnerNone` is the shared value, while `InnerNoneType` can be used in annotations and `isinstance` checks. Identity checks use `value is InnerNone`.
 
 “A second `None`” describes purpose, not Python language semantics. In the first release, `InnerNone` is truthy, additional `InnerNoneType` instances can be constructed, and copying or pickling does not preserve the exported object's identity. It is a named minimal sentinel, not yet a hardened universal sentinel factory.
 
-## A very old problem
+## Existing alternatives
 
 The one-line local idiom `MISSING = object()` is often the right answer. denial adds a stable import and a dedicated public type, but the first release does not yet improve that idiom's representation, copy, or serialization behavior.
 
@@ -53,4 +53,4 @@ The next releases will give the marker a stable readable representation and allo
 
 This progression matters: first name the missing state, then make its behavior robust enough for richer uses. The package can remain tiny while becoming less surprising across diagnostics, typing, copying, and serialization.
 
-Within a wider family of infrastructure, denial is meant to stay nearly invisible. Its success is not becoming a framework; it is preventing one ambiguous `None` from leaking into the frameworks built above it.
+denial is intended to remain a small dependency. Its role is simply to prevent ambiguous uses of `None` in libraries that depend on it.

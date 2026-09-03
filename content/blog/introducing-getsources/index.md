@@ -8,7 +8,7 @@ logo: "logo.png"
 tags: [python, introspection, source-code, ast, repl, developer-tools]
 ---
 
-Mutation, transformation, and introspection tools begin with a deceptively simple question: what source belongs to this live Python function? The standard library answers well for ordinary modules, but interactive definitions and indentation inherited from an enclosing scope make the boundary less predictable.
+Mutation, transformation, and introspection tools need to determine which source belongs to a live Python function. The standard library answers well for ordinary modules, but interactive definitions and indentation inherited from an enclosing scope make the result less predictable.
 
 [getsources](https://github.com/mutating/getsources) is a small Python library that gives syntax tools one place to recover and normalize that text. Its [first release](https://github.com/mutating/getsources/releases/tag/0.0.1) combines `inspect` with a `dill` fallback and provides a separate operation for removing shared leading indentation.
 
@@ -36,7 +36,7 @@ Interactive recovery remains best-effort. Dynamic `exec` or `eval` code may have
 
 The package is aimed at AST- and CST-based libraries whose users may pass a live function from a module, nested scope, or classic REPL. Keeping recovery and normalization in one small project prevents each consumer from depending directly on environment-specific inspection behavior.
 
-It also creates a quiet seam for a larger toolchain: components above this one can ask for source without needing to know how it was found.
+Other components can therefore request source without depending on the details of how it was recovered.
 
 ## What comes next
 

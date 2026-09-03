@@ -11,7 +11,7 @@ A quick `timeit` snippet is easy to write, but it becomes awkward when several s
 
 [microbenchmark](https://github.com/mutating/microbenchmark) is a lightweight Python library between those two extremes. Its [first release](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) represents benchmark scenarios, groups, and results as ordinary Python objects that can be combined, inspected, serialized, and checked against a basic performance budget.
 
-## Three small building blocks
+## Core API
 
 A `Scenario` keeps a callable, positional arguments, a name, documentation, and the number of observations together. `run()` performs optional warmup calls, then times every invocation separately with `perf_counter()` by default.
 
@@ -23,7 +23,7 @@ The same object can expose a small command-line interface from a benchmark scrip
 
 The first release is typed, supports Python 3.8 and newer, and has no runtime dependencies.
 
-## The missing middle
+## Alternatives and trade-offs
 
 [`timeit`](https://docs.python.org/3/library/timeit.html) is the better stopwatch for a tiny expression. It ships with Python, batches operations, can autorange to a meaningful duration, and reduces timer overhead. It does not provide named scenario groups, a domain result object, JSON round trips, or a CI ceiling.
 

@@ -22,9 +22,9 @@ Before a value is stored, skelet can convert it, check its runtime type, and run
 
 The unusual part is that these rules still apply when values change later. Writes to a field are serialized, and fields that conflict share coordination so their relationship is checked consistently. This is not a transactional database: changes inside a stored mutable object bypass the field, and a failed callback does not roll an assignment back. It does, however, give ordinary assignments a clear lifecycle.
 
-## Secrets without mythology
+## Handling secret values
 
-`secret=True` redacts a field from the storage representation and from standard error messages produced by skelet. That is useful, but deliberately modest. The first release does not encrypt the object, erase it from memory, enforce access control, or fetch values from a vault. Application code can still read and leak the original value.
+`secret=True` redacts a field from the storage representation and from standard error messages produced by skelet. It does not encrypt the object, erase it from memory, enforce access control, or fetch values from a vault. Application code can still read and expose the original value.
 
 This distinction matters because secret-safe diagnostics and secret management are separate jobs. Version 0.0.1 addresses the former.
 

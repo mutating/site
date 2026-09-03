@@ -12,7 +12,7 @@ Adding third-party extensions to a Python library usually means assembling sever
 
 [pristan](https://github.com/mutating/pristan) is a compact Python plugin library that keeps the extension contract centred on an ordinary typed function. Its [first release](https://github.com/mutating/pristan/releases/tag/0.0.1) turns that function into the slot, registry, fallback, and call site while retaining lazy discovery through standard Python entry points.
 
-## A function becomes the extension point
+## How function-based slots work
 
 Decorate a host function with `@slot` and it becomes the contract, registry, fallback implementation, and call site. A plugin is another ordinary function decorated with that exact slot:
 
@@ -58,4 +58,4 @@ pristan is aimed at library authors who want independently packaged extensions w
 
 Planned releases will simplify version constraints, add run-once plugins, permit removal, and allow a slot to enforce unique or explicitly provided names. Multiple expected signatures and a concise `.one` selection will make strict single-provider contracts clearer.
 
-The registry will also gain stronger locking and snapshot-based dispatch so user code can execute outside internal locks. These are not cosmetic extras: a plugin system earns trust by making discovery and concurrency failures boring.
+The registry will also gain stronger locking and snapshot-based dispatch so user code can execute outside internal locks. The goal is predictable behavior when discovery or concurrent registration fails.
