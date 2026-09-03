@@ -545,7 +545,7 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   flex: 0 0 auto;
 }
 
-@media (min-width: 1041px) {
+@media (min-width: 1121px) {
   .header-actions {
     gap: 35px;
   }
@@ -2678,7 +2678,7 @@ a.section-index:focus-visible {
   }
 }
 
-@media (max-width: 1040px) {
+@media (max-width: 1120px) {
   .main-nav {
     display: none;
   }

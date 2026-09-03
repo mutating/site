@@ -84,6 +84,7 @@ def test_multilingual_collections_never_repeat_an_article(
 
     for path in (
         "/ru/blog/",
+        "/ru/news/",
         "/ru/tags/testing/",
         "/ru/authors/test-author/posts/",
     ):
@@ -239,6 +240,15 @@ def test_russian_collection_headers_use_localized_copy(
             ),
         ),
         (
+            "/news/",
+            "/ru/news/",
+            (
+                ".blog-index__header > .section-index",
+                ".blog-index__header h1",
+                ".blog-index__intro",
+            ),
+        ),
+        (
             "/tags/testing/",
             "/ru/tags/testing/",
             (
@@ -276,7 +286,7 @@ def test_collection_translation_resources_only_contain_localized_fields() -> Non
 
     translations = sorted(
         translation
-        for collection in ("blog", "authors", "author-posts")
+        for collection in ("blog", "news", "authors", "author-posts")
         for translation in (PROJECT_ROOT / "content" / collection).glob(
             "**/_index.ru.md"
         )
@@ -352,7 +362,7 @@ def test_russian_article_localizes_shared_interface(
     )
     expect(page.locator(".post__toc-label--mobile")).to_have_text("2 раздела")
     expect(page.locator(".post__tags")).to_have_attribute(
-        "aria-label", "Темы этой заметки"
+        "aria-label", "Темы этой публикации"
     )
     expect(page.locator(".post__nav")).to_have_attribute(
         "aria-label", "Навигация по публикациям"

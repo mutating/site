@@ -3,7 +3,8 @@
 {{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" $localizedPage.Title) -}}
 {{- $canonicalURL := .Permalink -}}
 {{- $pageNumber := 1 -}}
-{{- $isPaginatedCollection := or (and (not .IsPage) (eq .Section "blog")) (eq .Kind "term") (eq .Section "author-posts") -}}
+{{- $isArticle := and .IsPage (or (eq .Section "blog") (eq .Section "news")) -}}
+{{- $isPaginatedCollection := or (and (not .IsPage) (or (eq .Section "blog") (eq .Section "news"))) (eq .Kind "term") (eq .Section "author-posts") -}}
 {{- if $isPaginatedCollection -}}
   {{- $collectionPages := partial "collection-pages.html" . -}}
   {{- $paginator := .Paginate $collectionPages -}}
@@ -18,7 +19,7 @@
 {{- $socialImage := site.Params.socialImage | default "/og.png" | absURL -}}
 {{- $socialImageAlt := cond (eq site.Language.Lang "ru") "The Mutating Company — ИИ, который сомневается" "The Mutating Company — AI systems that doubt" -}}
 {{- $ogType := "website" -}}
-{{- if and .IsPage (eq .Section "blog") -}}
+{{- if $isArticle -}}
   {{- $ogType = "article" -}}
 {{- else if and .IsPage (eq .Section "authors") -}}
   {{- $ogType = "profile" -}}
@@ -132,7 +133,7 @@
 <title>{{ $title }}</title>
 <meta name="description" content="{{ $description }}">
 <meta name="theme-color" content="#ff3e9d">
-{{- if and .IsPage (eq .Section "blog") }}
+{{- if $isArticle }}
 <meta name="robots" content="max-image-preview:large">
 {{- end }}
 <meta property="og:title" content="{{ $title }}">
@@ -147,9 +148,9 @@
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1672">
 <meta property="og:image:height" content="941">
-{{- if and .IsPage (eq .Section "blog") }}
+{{- if $isArticle }}
 <meta property="article:published_time" content="{{ .Date.Format "2006-01-02T15:04:05Z07:00" }}">
-<meta property="article:section" content="Blog">
+<meta property="article:section" content="{{ cond (eq .Section "news") "News" "Blog" }}">
   {{- with .Params.author }}
     {{- with site.GetPage (printf "/authors/%s" .) }}
 <meta property="article:author" content="{{ .Permalink }}">
@@ -201,7 +202,7 @@
     "publisher" (dict "@id" $organizationID)
   -}}
 <script type="application/ld+json">{{ slice $organization $website | jsonify | safeJS }}</script>
-{{- else if and .IsPage (eq .Section "blog") }}
+{{- else if $isArticle }}
   {{- $authorName := site.Params.organizationName -}}
   {{- $authorURL := $siteURL -}}
   {{- $contributor := dict -}}
@@ -221,7 +222,7 @@
   {{- end -}}
   {{- $article := dict
     "@context" "https://schema.org"
-    "@type" "BlogPosting"
+    "@type" (cond (eq .Section "news") "NewsArticle" "BlogPosting")
     "@id" (printf "%s#article" $canonicalURL)
     "mainEntityOfPage" $canonicalURL
     "headline" $localizedPage.Title

@@ -2,7 +2,8 @@
 {{- $localizedAuthor := partial "localized-page.html" . -}}
 {{- $authorSlug := .File.ContentBaseName -}}
 {{- $status := partial "author-kind.html" . -}}
-{{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
+{{- $publications := where site.RegularPages "Section" "in" (slice "blog" "news") -}}
+{{- $posts := where $publications "Params.author" $authorSlug -}}
 {{- $posts = $posts.ByDate.Reverse -}}
 {{- $archive := site.GetPage (printf "/author-posts/%s" $authorSlug) -}}
 {{- $tagScratch := newScratch -}}

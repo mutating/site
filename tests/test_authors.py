@@ -488,7 +488,7 @@ def test_author_page_aggregates_profile_posts_archive_and_frequent_tags(
     }
     archive = profile.locator(".author-posts__archive")
     expect(archive).to_have_attribute("href", "/authors/test-author/posts/")
-    expect(archive).to_have_text(re.compile(r"All field notes"))
+    expect(archive).to_have_text(re.compile(r"All publications"))
 
     frequent_tags = profile.locator(".author-profile__tags li")
     expect(profile.locator("#author-tags-heading")).to_have_text("FREQUENT TAGS")
