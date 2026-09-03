@@ -5,6 +5,7 @@ aliases: ["/blog/introducing-microbenchmark/"]
 date: 2026-04-10T09:00:00+03:00
 description: "Turns small performance checks into reusable Python scenarios and results without requiring a full benchmark suite."
 author: "muta"
+logo_frame: false
 tags: [python, benchmarking, performance, cli, testing, developer-tools]
 ---
 

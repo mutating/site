@@ -6,6 +6,7 @@ date: 2025-10-14T09:00:00+03:00
 description: "Checks whether a Python value broadly matches a type hint without recursively validating collections or changing the value."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [python, runtime-types, type-safety, validation, developer-tools]
 ---
 

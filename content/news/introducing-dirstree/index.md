@@ -6,6 +6,7 @@ date: 2025-09-29T09:00:00+03:00
 description: "Selects local source files through reusable extension and exclusion rules and returns ordinary Python Path objects."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [python, filesystem, directory-traversal, developer-tools, orchestration]
 ---
 

@@ -6,6 +6,7 @@ date: 2026-01-17T09:00:00+03:00
 description: "Lets Python libraries distinguish a missing argument from a deliberate None value."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [python, sentinels, api-design, type-safety, developer-tools]
 ---
 

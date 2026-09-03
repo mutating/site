@@ -6,6 +6,7 @@ date: 2026-08-21T09:00:00+03:00
 description: "Keeps the maximum number of Fission function copies aligned with the free capacity of a Kubernetes cluster."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [kubernetes, fission, autoscaling, distributed-computing, infrastructure, scheduling]
 ---
 

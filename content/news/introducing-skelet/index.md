@@ -6,6 +6,7 @@ date: 2025-11-11T09:00:00+03:00
 description: "Loads typed Python settings from several sources, validates later changes, and reports errors without exposing secrets."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [python, configuration, type-safety, validation, secrets, thread-safety]
 ---
 

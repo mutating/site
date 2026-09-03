@@ -6,6 +6,7 @@ date: 2025-12-09T09:00:00+03:00
 description: "Gives Python tools one shared syntax for machine-readable instructions placed directly in source comments."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [python, source-code, comments, metadata, static-analysis, developer-tools]
 ---
 

@@ -158,7 +158,7 @@ def test_blog_cards_open_individual_posts(driver: DriverFactory) -> None:
 
 
 def test_project_release_post_template_places_logo_in_heading() -> None:
-    """Keep optional release artwork decorative, square, and next to the title."""
+    """Keep optional release artwork decorative, square, and wrapped by the title."""
 
     template = (
         PROJECT_ROOT / "themes/mutating/layouts/news/single.html"
@@ -169,10 +169,25 @@ def test_project_release_post_template_places_logo_in_heading() -> None:
     assert 'with .Params.logo' in template
     assert 'post__title-row--with-logo' in template
     assert '.Resources.GetMatch .' in template
-    assert 'class="post__project-logo" aria-hidden="true"' in template
+    assert 'class="post__project-logo{{ $logoFrameClass }}"' in template
     assert 'alt=""' in template
     assert ".post__project-logo {" in stylesheet
     assert "aspect-ratio: 1;" in stylesheet
+    assert "display: flow-root;" in stylesheet
+    assert "float: left;" in stylesheet
+    assert "width: clamp(180px, 17vw, 230px);" in stylesheet
+    assert 'isset .Params "logo_frame"' in template
+    assert ".post__project-logo--frameless {" in stylesheet
+
+
+def test_all_release_announcements_disable_the_logo_frame() -> None:
+    """Let individual articles override the framed-logo default."""
+
+    announcements = sorted((PROJECT_ROOT / "content" / "news").glob("introducing-*"))
+    assert len(announcements) == 11
+    for announcement in announcements:
+        front_matter = (announcement / "index.md").read_text().split("---", 2)[1]
+        assert "logo_frame: false" in front_matter
 
 
 def test_skelet_release_uses_the_full_color_mark_without_its_wordmark() -> None:
