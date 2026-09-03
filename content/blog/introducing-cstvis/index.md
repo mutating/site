@@ -1,5 +1,5 @@
 ---
-title: "Introducing cstvis: independent LibCST transformations"
+title: "Introducing cstvis: independent changes to Python source code"
 slug: "introducing-cstvis"
 date: 2025-12-17T09:00:00+03:00
 description: "Finds every possible change in Python source and applies candidates one at a time without losing formatting or comments."

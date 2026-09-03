@@ -1,5 +1,5 @@
 ---
-title: "Представляем autofission: динамический MaxScale для Fission"
+title: "Представляем autofission: пределы масштабирования Fission по ёмкости кластера"
 description: "Подстраивает предел масштабирования Fission Functions под ёмкость, доступную в Kubernetes-кластере прямо сейчас."
 ---
 

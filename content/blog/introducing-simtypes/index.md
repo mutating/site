@@ -1,5 +1,5 @@
 ---
-title: "Introducing simtypes: lightweight runtime type checks"
+title: "Introducing simtypes: lightweight runtime checks for Python type hints"
 slug: "introducing-simtypes"
 date: 2025-10-14T09:00:00+03:00
 description: "Checks whether a Python value broadly matches a type hint without recursively validating collections or changing the value."

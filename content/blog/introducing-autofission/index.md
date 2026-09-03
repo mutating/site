@@ -1,5 +1,5 @@
 ---
-title: "Introducing autofission: dynamic MaxScale for Fission"
+title: "Introducing autofission: Fission scaling limits based on cluster capacity"
 slug: "introducing-autofission"
 date: 2026-08-21T09:00:00+03:00
 description: "Keeps the scaling limit of Fission Functions aligned with the capacity currently available in a Kubernetes cluster."

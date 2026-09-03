@@ -1,5 +1,5 @@
 ---
-title: "Introducing metacode: one grammar for machine-readable comments"
+title: "Introducing metacode: machine-readable instructions in comments"
 slug: "introducing-metacode"
 date: 2025-12-09T09:00:00+03:00
 description: "Gives Python tools one shared syntax for machine-readable instructions placed directly in source comments."

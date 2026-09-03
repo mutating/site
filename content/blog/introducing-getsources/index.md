@@ -1,5 +1,5 @@
 ---
-title: "Introducing getsources: recovering Python function source"
+title: "Introducing getsources: getting source code from Python functions"
 slug: "introducing-getsources"
 date: 2026-02-26T09:00:00+03:00
 description: "Recovers clean, parseable source text from Python function objects, including nested and interactive definitions."
