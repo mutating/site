@@ -3491,6 +3491,39 @@ a.section-index:focus-visible {
   max-width: 1160px;
 }
 
+.post__title-row--with-logo {
+  display: grid;
+  grid-template-columns: clamp(220px, 24vw, 320px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(20px, 3vw, 42px);
+  margin: 14px 0 22px;
+}
+
+.post__title-row--with-logo h1 {
+  margin: 0;
+}
+
+.post__project-logo {
+  display: grid;
+  min-height: clamp(110px, 11vw, 142px);
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 84%, transparent), var(--surface));
+  box-shadow: var(--shadow);
+}
+
+.post__project-logo img {
+  display: block;
+  width: auto;
+  max-width: 88%;
+  height: auto;
+  max-height: 108px;
+  object-fit: contain;
+}
+
 .post__description {
   margin: 0 0 34px;
 }
@@ -4743,6 +4776,23 @@ a.signal-tag:focus-visible .signal-tag__label {
   .authors-index__header h1,
   .author-profile__intro h1 {
     font-size: clamp(44px, 15vw, 68px);
+  }
+
+  .post__title-row--with-logo {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+    margin: 12px 0 20px;
+  }
+
+  .post__title-row--with-logo h1 {
+    font-size: clamp(36px, 10vw, 54px);
+  }
+
+  .post__project-logo {
+    width: min(76vw, 280px);
+    min-height: 96px;
+    border-radius: 18px;
   }
 
   .blog-card__link::before {

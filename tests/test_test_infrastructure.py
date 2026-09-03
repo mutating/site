@@ -2,7 +2,33 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+
+from conftest import PROJECT_ROOT, copy_controlled_test_content
+
+
+def test_controlled_test_content_excludes_published_articles(
+    tmp_path: Path,
+) -> None:
+    """Keep future editorial additions out of browser-test ordering."""
+
+    published_blog = PROJECT_ROOT / "content" / "blog"
+    published_entries = {
+        entry.name
+        for entry in published_blog.iterdir()
+        if not entry.name.startswith("_index.")
+    }
+    target = tmp_path / "content"
+    copy_controlled_test_content(target)
+
+    controlled_entries = {
+        entry.name
+        for entry in (target / "blog").iterdir()
+        if not entry.name.startswith("_index.")
+    }
+    assert published_entries.isdisjoint(controlled_entries)
 
 
 def test_every_test_has_a_bounded_runtime(pytestconfig: pytest.Config) -> None:

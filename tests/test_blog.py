@@ -124,6 +124,19 @@ def test_blog_cards_open_individual_posts(driver: DriverFactory) -> None:
     expect(page).to_have_url(re.compile(r"/blog/[^/]+/$"))
 
 
+def test_project_release_post_template_places_logo_in_heading() -> None:
+    """Keep optional release artwork decorative and next to the title."""
+
+    template = (
+        PROJECT_ROOT / "themes/mutating/layouts/blog/single.html"
+    ).read_text()
+    assert 'with .Params.logo' in template
+    assert 'post__title-row--with-logo' in template
+    assert '.Resources.GetMatch .' in template
+    assert 'class="post__project-logo" aria-hidden="true"' in template
+    assert 'alt=""' in template
+
+
 def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
     """Keep separate collection templates while sharing all list markup."""
 
@@ -458,11 +471,12 @@ def test_multiline_post_heading_chain_follows_the_last_line(
         viewport=viewport,
         load_interactive_visuals=False,
         reduced_motion="reduce",
-        initial_path="/blog/the-mutation-testing-digest-for-june-2026/",
+        initial_path="/blog/localized-post-fixture/",
     )
 
     heading = page.locator(
-        "#new-tools-widened-the-map-established-tools-smoothed-the-workflow"
+        "#a-deliberately-extended-controlled-heading-that-wraps-across-"
+        "every-supported-article-viewport"
     )
     link = heading.locator(":scope > .post__heading-anchor")
     chain = link.locator(".post__heading-chain")
@@ -1313,12 +1327,9 @@ def test_single_edge_recommendation_spans_the_post_navigation(
 ) -> None:
     """Expand lone Previous and Next recommendations across the full nav width.
 
-    The temporary test site contains many posts with tied dates, so deriving
-    an "edge" from whichever cards happen to appear first on the paginated
-    index is not a stable contract: Hugo's tie ordering can legitimately put a
-    middle post first. Two dedicated fixtures pin one post far beyond each
-    end of the collection, making the one-link navigation invariant explicit
-    while still exercising the real rendered post template and CSS.
+    The temporary test site contains only synthetic posts. Dedicated fixtures
+    pin both ends of that controlled collection, so publishing or reordering a
+    real article cannot change this layout contract.
     """
 
     page = driver(
@@ -1330,7 +1341,7 @@ def test_single_edge_recommendation_spans_the_post_navigation(
     edge_expectations = {
         "/blog/newest-navigation-edge-fixture/": (
             "post__nav-link--previous",
-            "/blog/the-mutation-testing-digest-for-july-2026/",
+            "/blog/localized-post-fixture/",
         ),
         "/blog/oldest-navigation-edge-fixture/": (
             "post__nav-link--next",

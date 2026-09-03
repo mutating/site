@@ -292,18 +292,28 @@ def test_language_sitemaps_include_the_complete_hreflang_cluster(
 
 
 def test_structured_data_matches_supported_page_types(production_site: Path) -> None:
-    cases = {
-        "/index.html": {"Organization", "WebSite"},
-        "/blog/the-mutation-testing-digest-for-july-2026/index.html": {
-            "Organization",
-            "BlogPosting",
-        },
-        "/authors/main/index.html": {"Organization", "ProfilePage", "Person"},
-        "/authors/muta/index.html": {"Organization", "ProfilePage", "Thing"},
-    }
-    for relative_path, expected_types in cases.items():
-        document = _document(production_site / relative_path.lstrip("/"))
-        assert expected_types <= _schema_types(document), relative_path
+    home = _document(production_site / "index.html")
+    assert {"Organization", "WebSite"} <= _schema_types(home)
+
+    article_pages = sorted(production_site.glob("blog/*/index.html"))
+    article_pages += sorted(production_site.glob("ru/blog/*/index.html"))
+    assert article_pages
+    for article_page in article_pages:
+        document = _document(article_page)
+        assert {"Organization", "BlogPosting"} <= _schema_types(document), (
+            article_page
+        )
+        for raw_schema in document.json_ld:
+            json.loads(raw_schema)
+
+    author_pages = sorted(production_site.glob("authors/*/index.html"))
+    author_pages += sorted(production_site.glob("ru/authors/*/index.html"))
+    assert author_pages
+    for author_page in author_pages:
+        document = _document(author_page)
+        schema_types = _schema_types(document)
+        assert {"Organization", "ProfilePage"} <= schema_types, author_page
+        assert {"Person", "Thing"} & schema_types, author_page
         for raw_schema in document.json_ld:
             json.loads(raw_schema)
 
