@@ -4,7 +4,7 @@ slug: "introducing-autofission"
 date: 2026-08-21T09:00:00+03:00
 description: "Keeps the scaling limit of Fission Functions aligned with the capacity currently available in a Kubernetes cluster."
 author: "muta"
-logo: "logo.png"
+logo: "logo-mark.png"
 tags: [kubernetes, fission, autoscaling, distributed-computing, infrastructure, scheduling]
 ---
 
