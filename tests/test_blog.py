@@ -176,6 +176,8 @@ def test_project_release_post_template_places_logo_in_heading() -> None:
     assert "display: flow-root;" in stylesheet
     assert "float: left;" in stylesheet
     assert "width: clamp(180px, 17vw, 230px);" in stylesheet
+    assert "margin: clamp(4px, 0.7vw, 10px) clamp(24px, 3.4vw, 48px) 0 0;" in stylesheet
+    assert "object-position: center;" in stylesheet
     assert 'isset .Params "logo_frame"' in template
     assert ".post__project-logo--frameless {" in stylesheet
 

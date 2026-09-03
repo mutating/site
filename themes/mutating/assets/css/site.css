@@ -3500,7 +3500,7 @@ a.section-index:focus-visible {
   float: left;
   width: clamp(180px, 17vw, 230px);
   aspect-ratio: 1;
-  margin: clamp(4px, 0.7vw, 10px) clamp(24px, 3.4vw, 48px) clamp(16px, 2vw, 28px) 0;
+  margin: clamp(4px, 0.7vw, 10px) clamp(24px, 3.4vw, 48px) 0 0;
   place-items: center;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -3517,11 +3517,12 @@ a.section-index:focus-visible {
 
 .post__project-logo img {
   display: block;
-  width: auto;
-  max-width: 88%;
-  height: auto;
-  max-height: 88%;
+  width: 88%;
+  max-width: none;
+  height: 88%;
+  max-height: none;
   object-fit: contain;
+  object-position: center;
 }
 
 .post__description {
