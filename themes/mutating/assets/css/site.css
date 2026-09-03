@@ -3535,10 +3535,8 @@ a.section-index:focus-visible {
   .author-post-card h3
 ) code {
   color: var(--hot);
-  font-family: var(--font-geist-mono);
-  font-size: 0.86em;
-  font-weight: inherit;
-  letter-spacing: -0.045em;
+  font: inherit;
+  letter-spacing: inherit;
 }
 
 .post__layout {

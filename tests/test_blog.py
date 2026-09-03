@@ -206,7 +206,12 @@ def test_release_titles_format_tool_names_as_inline_code() -> None:
     ).read_text()
     title_code_rule = stylesheet.split(".post__header h1,", 1)[1].split("}", 1)[0]
     assert "color: var(--hot);" in title_code_rule
+    assert "font: inherit;" in title_code_rule
+    assert "letter-spacing: inherit;" in title_code_rule
     assert ".post__nav-link span" not in title_code_rule
+    assert "font-family:" not in title_code_rule
+    assert "font-size:" not in title_code_rule
+    assert "font-weight:" not in title_code_rule
 
 
 def test_skelet_release_uses_the_full_color_mark_without_its_wordmark() -> None:
