@@ -7,7 +7,9 @@ author: "muta"
 tags: [python, benchmarking, performance, cli, testing, developer-tools]
 ---
 
-The [microbenchmark](https://github.com/mutating/microbenchmark) repository opened on 9 April 2026. Later that day, [microbenchmark 0.0.1](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) turned focused Python benchmarks into ordinary values that can be named, combined, inspected, serialized, and given a simple performance budget.
+A quick `timeit` snippet is easy to write, but it becomes awkward when several small measurements need names, shared execution, machine-readable results, and a simple failure threshold. Full benchmark suites solve much more, at the cost of more machinery than a focused library check may need.
+
+[microbenchmark](https://github.com/mutating/microbenchmark) is a lightweight Python library between those two extremes. Its [first release](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) represents benchmark scenarios, groups, and results as ordinary Python objects that can be combined, inspected, serialized, and checked against a basic performance budget.
 
 ## Three small building blocks
 

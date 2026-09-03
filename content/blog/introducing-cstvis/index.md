@@ -8,7 +8,9 @@ logo: "logo.png"
 tags: [python, cst, source-transformation, mutation-testing, static-analysis, developer-tools]
 ---
 
-The [cstvis](https://github.com/mutating/cstvis) repository opened on 26 November 2025. On 16 December, [cstvis 0.0.1](https://github.com/mutating/cstvis/releases/tag/0.0.1) introduced a small execution model for a job that ordinary tree transformers make surprisingly awkward: discover every possible change, then materialize exactly one of them.
+Source-transformation tools often need to find every possible edit in a Python file but apply only one candidate at a time. Conventional tree transformers are designed to rewrite every matching node in one pass, which makes isolated mutations surprisingly awkward.
+
+[cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. Its [first release](https://github.com/mutating/cstvis/releases/tag/0.0.1) discovers source-aware transformation coordinates and can replay any one of them independently against the original module.
 
 ## From a rewrite to a catalogue
 

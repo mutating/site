@@ -8,7 +8,9 @@ logo: "logo.png"
 tags: [python, plugins, extensibility, type-safety, architecture, developer-tools]
 ---
 
-The [pristan](https://github.com/mutating/pristan) repository opened on 2 February 2026. On 10 March, [pristan 0.0.1](https://github.com/mutating/pristan/releases/tag/0.0.1) released a compact function-first model for Python plugins.
+Adding third-party extensions to a Python library usually means assembling several separate pieces: a hook specification, a registry or manager, discovery through package metadata, fallback behavior, and rules for collecting results. For a small synchronous extension point, that infrastructure can overshadow the function being extended.
+
+[pristan](https://github.com/mutating/pristan) is a compact Python plugin library that keeps the extension contract centred on an ordinary typed function. Its [first release](https://github.com/mutating/pristan/releases/tag/0.0.1) turns that function into the slot, registry, fallback, and call site while retaining lazy discovery through standard Python entry points.
 
 ## A function becomes the extension point
 

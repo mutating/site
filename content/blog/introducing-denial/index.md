@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [python, sentinels, api-design, type-safety, developer-tools]
 ---
 
-Python's `None` is usually enough. Library authors, however, sometimes need to distinguish two different events: the caller explicitly passed `None`, or the caller passed nothing at all.
+Python's `None` is usually enough. Library authors, however, sometimes need to distinguish two different events: the caller explicitly passed `None`, or the caller passed nothing at all. Reusing `None` for both makes defaults, patch operations, and layered settings ambiguous.
 
-The [denial](https://github.com/mutating/denial) repository opened on 15 January 2026. The next day, [denial 0.0.1](https://github.com/mutating/denial/releases/tag/0.0.1) gave that second state a name: `InnerNone`.
+[denial](https://github.com/mutating/denial) is a tiny Python library that gives the second state a dedicated name and type. Its [first release](https://github.com/mutating/denial/releases/tag/0.0.1) provides `InnerNone` for values that mean “not supplied” inside library code while leaving ordinary `None` available as real input.
 
 ## A control state, not another spelling
 

@@ -8,7 +8,9 @@ logo: "logo.png"
 tags: [python, runtime-types, type-safety, validation, developer-tools]
 ---
 
-The [simtypes](https://github.com/mutating/simtypes) repository opened on 11 October 2025. Two days later, [simtypes 0.0.1](https://github.com/mutating/simtypes/releases/tag/0.0.1) reduced runtime type matching to one deliberately narrow operation.
+Python type hints describe more than `isinstance()` can check directly, yet many runtime components need only a cheap yes-or-no compatibility test—not recursive validation, coercion, decorators, or an entire schema system.
+
+[simtypes](https://github.com/mutating/simtypes) is a dependency-free Python library for that narrow question. Its [first release](https://github.com/mutating/simtypes/releases/tag/0.0.1) exposes one predicate that understands ordinary classes, unions, optionals, `Any`, `None`, and the observable outer type of parameterized annotations.
 
 ## A predicate, not a type system
 
