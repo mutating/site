@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [kubernetes, fission, autoscaling, distributed-computing, infrastructure, scheduling]
 ---
 
-The [autofission](https://github.com/mutating/autofission) repository opened on 19 August 2026. On 20 August, I tagged the [0.0.1 source release](https://github.com/mutating/autofission/releases/tag/0.0.1): a small Kubernetes controller built around a specific gap in Fission's scaling model.
+A Fission Function can scale with demand, but its maximum replica count is fixed in advance—even when the capacity of the Kubernetes cluster changes underneath it. That leaves operators choosing between an artificially low ceiling and a ceiling the scheduler may never be able to satisfy.
 
-The source release included the controller, CLI, container and Helm definitions, but 0.0.1 was not published to PyPI because the initial workflow expected a differently prefixed tag. The first packaged artifact followed with 0.0.2. The GitHub release remains the first product milestone described here.
+[autofission](https://github.com/mutating/autofission) is an open-source Python controller and library that calculates a safer ceiling from the CPU, memory, and Pod capacity currently left on each node. Its [first release](https://github.com/mutating/autofission/releases/tag/0.0.1) includes the controller, CLI, container, and Helm definitions needed to apply that calculation continuously to opted-in Fission Functions.
 
 ## A ceiling, not another autoscaler
 

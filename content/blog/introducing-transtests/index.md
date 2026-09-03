@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [python, pytest, testing, async, generators, code-generation, developer-tools]
 ---
 
-Python tools that inspect, wrap, or transform callables rarely get to support only one kind of function. A decorator may behave perfectly on a regular function and still fail when execution is deferred until a coroutine is awaited or a generator is iterated.
+Python tools that inspect, wrap, or transform callables rarely get to support only one kind of function. A decorator may behave perfectly on a regular function and still fail when execution is deferred until a coroutine is awaited or a generator is iterated. Copying the same behavioral test three times makes those cases easy to let drift apart.
 
-The [transtests](https://github.com/mutating/transtests) repository opened on 26 March 2026. Four days later, [transtests 0.0.1](https://github.com/mutating/transtests/releases/tag/0.0.1) packaged this compatibility question as one small pytest fixture.
+[transtests](https://github.com/mutating/transtests) is a small Python testing library and pytest plugin for exercising one function template in synchronous, asynchronous, and generator-oriented forms. Its [first release](https://github.com/mutating/transtests/releases/tag/0.0.1) packages that compatibility check as a fixture with three separately reported cases.
 
 ## A new axis of parametrization
 

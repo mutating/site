@@ -8,7 +8,9 @@ logo: "logo.png"
 tags: [python, configuration, type-safety, validation, secrets, thread-safety]
 ---
 
-The [skelet](https://github.com/mutating/skelet) repository opened on 8 October 2025. On 10 November, [skelet 0.0.1](https://github.com/mutating/skelet/releases/tag/0.0.1) shipped a large first slice of a configuration system built around one idea: settings do not stop being configuration after startup.
+Applications rarely receive configuration from one place: defaults, constructor arguments, environment variables, files, and secrets all compete to define the final value. The problem becomes harder in long-running Python programs, where settings may change after startup and still need validation, conflict checks, safe diagnostics, and callbacks.
+
+[skelet](https://github.com/mutating/skelet) is a Python configuration library that treats settings as controlled live state rather than a one-time loading step. Its [first release](https://github.com/mutating/skelet/releases/tag/0.0.1) combines typed fields, ordered sources, guarded assignment, per-field locking, explicit conflicts, and secret-aware error reporting.
 
 ## A live settings object
 

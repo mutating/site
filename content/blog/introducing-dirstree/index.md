@@ -8,7 +8,9 @@ logo: "logo.png"
 tags: [python, filesystem, directory-traversal, developer-tools, orchestration]
 ---
 
-Repository work on [dirstree](https://github.com/mutating/dirstree) began on 27 September 2025. One day later, [dirstree 0.0.1](https://github.com/mutating/dirstree/releases/tag/0.0.1) became its first release: a deliberately small object for a piece of plumbing that source tools write over and over again.
+Almost every Python tool that works with source code begins by walking a directory, selecting useful file types, and excluding generated or irrelevant paths. When that policy lives in another handwritten loop, it becomes difficult to reuse, test, or pass intact to the next stage of a pipeline.
+
+[dirstree](https://github.com/mutating/dirstree) is a small Python library that turns this policy into a reusable directory walker. Its [first release](https://github.com/mutating/dirstree/releases/tag/0.0.1) produces a lazy stream of `pathlib.Path` objects filtered by extensions and familiar gitignore-style patterns.
 
 ## What dirstree does
 

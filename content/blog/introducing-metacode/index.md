@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [python, source-code, comments, metadata, static-analysis, developer-tools]
 ---
 
-Python tooling has accumulated a family of tiny languages inside comments: `noqa`, `type: ignore`, `fmt: off`, `pragma: no cover`, and many more. The ideas are related; the grammars are not.
+Python tooling has accumulated a family of tiny languages inside comments: `noqa`, `type: ignore`, `fmt: off`, `pragma: no cover`, and many more. Each tool invents another parser, so commands that express similar ideas still behave differently and cannot share infrastructure.
 
-The [metacode](https://github.com/mutating/metacode) repository opened on 4 December 2025. Four days later, [metacode 0.0.1](https://github.com/mutating/metacode/releases/tag/0.0.1) proposed a small shared shape for new machine-readable comments.
+[metacode](https://github.com/mutating/metacode) is a Python library for parsing machine-readable instructions from comments through one compact grammar. Its [first release](https://github.com/mutating/metacode/releases/tag/0.0.1) establishes the common `key: command[arguments]` shape on which source-aware tools can build their own directives.
 
 ## One grammar, tool-owned meaning
 

@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [python, introspection, source-code, ast, repl, developer-tools]
 ---
 
-Mutation and transformation tools begin with a deceptively simple question: what source belongs to this live function?
+Mutation, transformation, and introspection tools begin with a deceptively simple question: what source belongs to this live Python function? The standard library answers well for ordinary modules, but interactive definitions and indentation inherited from an enclosing scope make the boundary less predictable.
 
-The [getsources](https://github.com/mutating/getsources) repository opened on 25 February 2026. Later that day, [getsources 0.0.1](https://github.com/mutating/getsources/releases/tag/0.0.1) established a deliberately small boundary between Python function objects and the syntax tools that need their text.
+[getsources](https://github.com/mutating/getsources) is a small Python library that gives syntax tools one place to recover and normalize that text. Its [first release](https://github.com/mutating/getsources/releases/tag/0.0.1) combines `inspect` with a `dill` fallback and provides a separate operation for removing shared leading indentation.
 
 ## Two functions, two responsibilities
 
