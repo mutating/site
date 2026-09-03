@@ -1,20 +1,22 @@
 ---
-title: "Introducing denial: a second None for library internals"
+title: "Introducing denial: a sentinel for omitted values"
 slug: "introducing-denial"
 date: 2026-01-17T09:00:00+03:00
-description: "A tiny named sentinel for distinguishing an omitted value from an explicitly supplied None."
+description: "Lets Python libraries distinguish a missing argument from a deliberate None value."
 author: "muta"
 logo: "logo.png"
 tags: [python, sentinels, api-design, type-safety, developer-tools]
 ---
 
-Python's `None` is usually enough. Library authors, however, sometimes need to distinguish two different events: the caller explicitly passed `None`, or the caller passed nothing at all. Reusing `None` for both makes defaults, patch operations, and layered settings ambiguous.
+Python's `None` is usually enough. Library authors, however, sometimes need to distinguish two different events: the caller explicitly passed `None`, or the caller passed nothing at all. If both cases use `None`, an API may ignore a requested reset as though no value was supplied, making defaults, partial updates, and layered settings ambiguous.
 
-[denial](https://github.com/mutating/denial) is a tiny Python library that gives the second state a dedicated name and type. Its [first release](https://github.com/mutating/denial/releases/tag/0.0.1) provides `InnerNone` for values that mean “not supplied” inside library code while leaving ordinary `None` available as real input.
+A local `MISSING = object()` works inside one module; [`dataclasses.MISSING`](https://docs.python.org/3/library/dataclasses.html#dataclasses.MISSING) and [`attrs.NOTHING`](https://www.attrs.org/en/stable/api.html#attrs.NOTHING) belong to their own frameworks. Cooperating libraries instead need one framework-neutral marker with a public type.
 
-## A control state, not another spelling
+[denial](https://github.com/mutating/denial) is a small Python library that gives the second state a dedicated name and type. It provides `InnerNone` for values that mean “not supplied” inside library code, while ordinary `None` remains available as real input. [The release](https://github.com/mutating/denial/releases/tag/0.0.1) is available on GitHub.
 
-The strongest use case is an API where omission means “inherit the current value” while `None` means “clear it explicitly”:
+## How InnerNone is used
+
+A common use case is an API where omission means “inherit the current value” while `None` means “clear it explicitly”:
 
 ```python
 from typing import Union
@@ -29,28 +31,18 @@ def resolve_timeout(value: Timeout = InnerNone):
     return value  # None means explicitly disabled.
 ```
 
-The same distinction appears in patch APIs, layered configuration, caches, lazy computation, and defaults. `InnerNone` belongs to the control plane inside a library; it should normally not leak into the caller's value space.
+The same distinction appears in patch APIs, layered configuration, caches, and defaults. `InnerNone` is internal library state, not application data.
 
-Version 0.0.1 is extremely small: one empty public class, one module-level instance, and no runtime dependencies. `InnerNoneType` provides an ordinary class-based annotation and a target for `isinstance`; identity checks use `value is InnerNone`.
+The API is deliberately small: `InnerNone` is the shared value, while `InnerNoneType` can be used in annotations and `isinstance` checks. Identity checks use `value is InnerNone`.
 
-“A second `None`” describes purpose, not Python language semantics. In the first release, `InnerNone` is truthy, additional `InnerNoneType` instances can be constructed, and copying or pickling does not preserve the exported object's identity. It is a named minimal sentinel, not yet a hardened universal sentinel factory.
+`InnerNone` is truthy, additional `InnerNoneType` instances can be constructed, and copying or pickling does not preserve the exported object's identity. It is a named sentinel, not a sentinel factory.
 
-## A very old problem
+## When a sentinel factory is a better fit
 
-The one-line local idiom `MISSING = object()` is often the right answer. denial adds a stable import and a dedicated public type, but the first release does not yet improve that idiom's representation, copy, or serialization behavior.
+[sentinel-value](https://sentinel-value.readthedocs.io/) and [sentinels](https://pypi.org/project/sentinels/) provide factories and stronger serialization, making them better for projects that need several sentinels. denial standardizes one marker and public type for cooperating libraries.
 
-The standard library's [`dataclasses.MISSING`](https://docs.python.org/3/library/dataclasses.html#dataclasses.MISSING) solves the same ambiguity inside dataclasses, but its documentation discourages general reuse. [`attrs.NOTHING`](https://www.attrs.org/en/stable/api.html#attrs.NOTHING) and Pydantic's internal undefined markers are similarly tied to their own frameworks. An `Enum` member provides stronger singleton and pickle behavior at the price of a more ceremonial declaration.
-
-Established packages such as [sentinel-value](https://sentinel-value.readthedocs.io/), [sentinels](https://pypi.org/project/sentinels/), and [boltons.make_sentinel](https://boltons.readthedocs.io/en/latest/_modules/boltons/typeutils.html) already offer readable representations, factories, registries, or identity-preserving serialization. The older [nulltype](https://pypi.org/project/nulltype/) even explores several meanings of emptiness.
-
-denial 0.0.1 does not beat those projects on mechanics. Its specialization is conceptual and deliberately narrow: one framework-neutral marker for library-internal absence, with a memorable name and almost no surface area.
-
-At the time of this release, [PEP 661](https://peps.python.org/pep-0661/), the proposal for a standard sentinel API, was still deferred. A future standard could eventually make part of this small problem universal; older Python versions and project-specific semantics would still need an answer.
+[PEP 661](https://peps.python.org/pep-0661/), the proposal for a standard sentinel API, has Deferred status. A future standard could provide a common API, while older Python versions and project-specific semantics would still require separate implementations.
 
 ## What comes next
 
-The next releases will give the marker a stable readable representation and allow applications to create their own identity-based values. We also plan a unified type annotation for `None` and denial values, clearer separation between identifier spaces, docstrings for sentinels, and stronger singleton options for custom classes.
-
-This progression matters: first name the missing state, then make its behavior robust enough for richer uses. The package can remain tiny while becoming less surprising across diagnostics, typing, copying, and serialization.
-
-Within a wider family of infrastructure, denial is meant to stay nearly invisible. Its success is not becoming a framework; it is preventing one ambiguous `None` from leaking into the frameworks built above it.
+The project will make shared and application-defined sentinels more predictable while staying focused on ambiguous uses of `None` in library internals.

@@ -1,18 +1,20 @@
 ---
-title: "Introducing pristan: typed function-first plugins"
+title: "Introducing pristan: plugins defined by typed functions"
 slug: "introducing-pristan"
 date: 2026-03-11T09:00:00+03:00
-description: "A compact plugin system where a typed function is the extension contract, registry, fallback, and call site."
+description: "Turns a typed Python function into a complete plugin extension point with discovery, registration, fallback behavior, and result collection."
 author: "muta"
 logo: "logo.png"
 tags: [python, plugins, extensibility, type-safety, architecture, developer-tools]
 ---
 
-Adding third-party extensions to a Python library usually means assembling several separate pieces: a hook specification, a registry or manager, discovery through package metadata, fallback behavior, and rules for collecting results. For a small synchronous extension point, that infrastructure can overshadow the function being extended.
+To support separately installed plugins, a Python library must define a contract, discover implementations, handle an empty registry, and combine results. For one synchronous extension point, that infrastructure can become more complex than the function being extended.
 
-[pristan](https://github.com/mutating/pristan) is a compact Python plugin library that keeps the extension contract centred on an ordinary typed function. Its [first release](https://github.com/mutating/pristan/releases/tag/0.0.1) turns that function into the slot, registry, fallback, and call site while retaining lazy discovery through standard Python entry points.
+Python entry points handle discovery but not callable contracts or result aggregation. [Pluggy](https://pluggy.readthedocs.io/en/stable/) supplies a mature plugin manager, but its ordering, wrappers, tracing, and lifecycle controls may be unnecessary for one typed synchronous hook.
 
-## A function becomes the extension point
+[pristan](https://github.com/mutating/pristan) is a compact Python plugin library that keeps the extension contract centred on an ordinary typed function. That function serves as the slot, registry, fallback, and call site, while installed plugins are discovered lazily through standard Python entry points. [The release](https://github.com/mutating/pristan/releases/tag/0.0.1) is available on GitHub.
+
+## How function-based slots work
 
 Decorate a host function with `@slot` and it becomes the contract, registry, fallback implementation, and call site. A plugin is another ordinary function decorated with that exact slot:
 
@@ -24,38 +26,33 @@ def serializers(value) -> dict[str, bytes]:
     ...
 
 @serializers.plugin
-def json_serializer(value) -> bytes:
-    ...
+def text_serializer(value) -> bytes:
+    return str(value).encode()
+
+print(serializers(42))
+#> {'text_serializer': b'42'}
 ```
 
-Calling `serializers(value)` invokes every registered plugin in sequence. If no plugin exists, the original function body provides the fallback. The plugin decorator returns the original function, so an implementation can still be tested directly.
+Calling the slot invokes every plugin in sequence; if none exists, the original function body is the fallback. Each plugin remains directly callable for isolated tests.
 
-The slot's return annotation is executable policy. No annotation means results are discarded. `list[T]` collects values, while `dict[str, T]` collects them under plugin names. Actual return values are checked at runtime, and callable shapes are compared during registration. Version 0.0.1 also supports named selections, a maximum plugin count, plugin-local uniqueness, and a host-package version constraint.
+The slot's return annotation also defines how results are handled. No annotation discards them, `list[T]` collects values, and `dict[str, T]` collects them under plugin names. pristan checks plugin signatures during registration and return values during execution.
 
-Separately distributed extensions are discovered lazily through standard Python entry points. The first relevant slot operation loads modules from its entry-point group; importing those modules activates their decorators. Discovery cost and import side effects therefore wait until the slot is needed.
+Installed extensions are discovered lazily through Python entry points. Their modules are imported only when a relevant slot is first used.
 
-## Entry points are transport, not protocol
+## Alternatives and scope
 
-[`importlib.metadata.entry_points()`](https://docs.python.org/3/library/importlib.metadata.html#entry-points) already tells a host which installed objects exist. It does not define their callable contract, aggregation, fallback, naming policy, or result validation. pristan builds those semantics on top rather than replacing the packaging standard.
+Compared with Pluggy, pristan requires less setup for a narrower case: a synchronous function that calls every registered plugin. Pluggy remains the better choice when lifecycle, ordering, wrappers, or protocol evolution are more important.
 
-[Pluggy](https://pluggy.readthedocs.io/en/stable/) is the closest mature relative. It provides hookspec and hookimpl markers, a plugin manager, entry-point loading, ordering, wrappers, first-result hooks, tracing, unregistering, and an enormous production record through pytest. It is more powerful and more mature.
+[Stevedore](https://docs.openstack.org/stevedore/latest/) offers several manager styles, while [Pluginlib](https://pluginlib.readthedocs.io/) uses class-based contracts. A closed application may need only a dictionary and registration decorator.
 
-pristan's advantage is a shorter path for a narrower case: a synchronous fan-out hook that should still look like a function. The slot, specification, manager-like registry, fallback, and annotation-driven result policy live in one object. Pluggy remains the better choice when lifecycle, ordering, wrappers, or protocol evolution dominate.
+## Limitations
 
-[Stevedore](https://docs.openstack.org/stevedore/latest/) offers rich driver, hook, and extension managers. [Pluginlib](https://pluginlib.readthedocs.io/) validates class-based plugin contracts and versions. [Yapsy](https://yapsy.readthedocs.io/) handles filesystem-discovered stateful plugins. A small dictionary plus a registration decorator is often best in a closed-world application.
+Runtime checks catch many contract mistakes but cannot prove that every slot call suits every plugin. Plugins run sequentially, one exception stops dispatch, and the API has no priorities, wrappers, custom reducers, async dispatch, or plugin removal.
 
-Among the systems we reviewed, the distinctive combination in pristan is specific: the host function itself is the callable slot; plugins target that slot directly; installed packages are found through entry points; and the return annotation controls both aggregation and runtime validation. That is not a claim of universal superiority—only a clear niche.
+Lazy discovery and registration are protected against concurrent changes, but dispatch is not fully race-free. pristan therefore does not guarantee full thread safety.
 
-## Boundaries of the first release
-
-Runtime type safety is intentionally partial. Signature compatibility means that a common valid call shape exists unless a stricter signature is supplied; it does not prove that every slot call will suit every plugin. Dispatch is sequential, one exception stops the call, and there are no priorities, wrappers, custom reducers, async semantics, or removal lifecycle.
-
-The first release serializes lazy discovery and registration with a per-slot reentrant lock. It does not yet make every collection and dispatch operation race-free, so “fully thread-safe” would promise too much.
-
-pristan is aimed at library authors who want independently packaged extensions without turning every hook into a manager class. In a larger system, such slots can keep optional capabilities outside the core while leaving the surrounding architecture deliberately open.
+pristan is for library authors who want independently packaged extensions without a manager class for every hook. Its slots can keep optional capabilities outside the core without defining the surrounding architecture.
 
 ## What comes next
 
-Planned releases will simplify version constraints, add run-once plugins, permit removal, and allow a slot to enforce unique or explicitly provided names. Multiple expected signatures and a concise `.one` selection will make strict single-provider contracts clearer.
-
-The registry will also gain stronger locking and snapshot-based dispatch so user code can execute outside internal locks. These are not cosmetic extras: a plugin system earns trust by making discovery and concurrency failures boring.
+The project will support more plugin contracts and make lifecycle and concurrency behavior more predictable without expanding the compact function-based API.

@@ -1,51 +1,53 @@
 ---
-title: "Introducing autofission: a dynamic capacity ceiling for Fission"
+title: "Introducing autofission: dynamic MaxScale for Fission"
 slug: "introducing-autofission"
 date: 2026-08-21T09:00:00+03:00
-description: "A Kubernetes controller that converts uncommitted scheduling capacity into a changing MaxScale for Fission Functions."
+description: "Keeps the scaling limit of Fission Functions aligned with the capacity currently available in a Kubernetes cluster."
 author: "muta"
 logo: "logo.png"
 tags: [kubernetes, fission, autoscaling, distributed-computing, infrastructure, scheduling]
 ---
 
-A Fission Function can scale with demand, but its maximum replica count is fixed in advance—even when the capacity of the Kubernetes cluster changes underneath it. That leaves operators choosing between an artificially low ceiling and a ceiling the scheduler may never be able to satisfy.
+[Fission](https://fission.io/) runs serverless functions on Kubernetes and scales them with demand. The maximum replica count of each Function is fixed in advance, however, even when the available cluster capacity changes. Operators must therefore choose between a low limit that wastes capacity and a high limit that the scheduler may be unable to satisfy.
 
-[autofission](https://github.com/mutating/autofission) is an open-source Python controller and library that calculates a safer ceiling from the CPU, memory, and Pod capacity currently left on each node. Its [first release](https://github.com/mutating/autofission/releases/tag/0.0.1) includes the controller, CLI, container, and Helm definitions needed to apply that calculation continuously to opted-in Fission Functions.
+[HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [KEDA](https://keda.sh/docs/2.20/concepts/scaling-deployments/) choose a replica count within a fixed maximum. Cluster Autoscaler and [Karpenter](https://karpenter.sh/docs/concepts/) add nodes. None calculates how far disposable Fission workloads may scale on capacity that already exists.
 
-## A ceiling, not another autoscaler
+[autofission](https://github.com/mutating/autofission) is an open-source Python controller that calculates `MaxScale` from the CPU, memory, and Pod capacity available on each node. It includes a CLI, container, and Helm definitions for continuously updating opted-in Fission Functions. [The release](https://github.com/mutating/autofission/releases/tag/0.0.1) is available on GitHub.
 
-Fission's `newdeploy` executor already creates a Deployment, Service, and HorizontalPodAutoscaler for a Function. It decides how many replicas current demand needs between `MinScale` and `MaxScale`. The upper bound, however, is chosen in advance.
+## How the dynamic limit works
 
-A fixed ceiling is awkward in a shared cluster. Set it too low and new or temporarily idle nodes remain unused. Set it arbitrarily high and the HPA may ask for more Function Pods than the scheduler can place.
+Fission's `newdeploy` executor creates a Deployment, Service, and HPA for each Function. The HPA decides how many replicas demand requires; Autofission estimates how many fit and writes that number to `MaxScale`.
 
-Autofission closes a second control loop. It does not choose the desired replica count. It continuously converts Kubernetes capacity not already reserved by scheduling requests into a dynamic `MaxScale` for each explicitly opted-in Fission Function. Fission remains the owner of the generated HPA and the mechanism that reacts to demand.
+Autofission evaluates CPU, memory, and Pod slots separately on every node. It does not combine spare CPU on one machine with spare memory on another. The calculation also includes Fission's own overhead and replicas of the Function that are already running.
 
-For each reconciliation, Autofission reads Functions, Environments, schedulable Nodes, and Pods. It accounts for CPU, memory, and Pod slots separately on every node, avoiding the false promise created by combining spare CPU on one machine with spare memory on another. It resolves one Function replica's requests from the Function and Environment, includes Fission fetcher overhead, and returns the Function's already running replicas to its own total budget.
+Autofission updates the Fission Function rather than its generated HPA. Concurrent edits fail instead of being overwritten, and the calculated maximum never falls below `MinScale` or one replica.
 
-Updates patch the Fission Function—the source of truth—rather than its generated HPA. A `resourceVersion` precondition turns a concurrent edit into a conflict instead of silently overwriting it. The calculated value never falls below `MinScale` or one replica.
+## Opt-in behavior, priority, and limitations
 
-## Opt-in, priority, and honest limits
+Only explicitly labelled `newdeploy` Functions are managed. Their Pods can use a low, non-preempting priority class, so disposable work yields to more important workloads instead of evicting them.
 
-Only labelled `newdeploy` Functions are managed. Removing the label stops future updates and leaves the last calculated ceiling in place. The Helm definitions provide a low, non-preempting runtime PriorityClass; configured in Fission, Function Pods cannot evict ordinary workloads and may themselves yield to more important Pods.
+Opting a Function in is an explicit Kubernetes operation:
+
+```bash
+kubectl label function hello \
+  --namespace fission-function \
+  autoscaling.fission.io/cluster-capacity=true
+```
+
+Removing the label stops future updates to that Function.
 
 The calculation uses declared resource requests, not current CPU or memory utilization. “Spare capacity” therefore means uncommitted scheduler capacity, not borrowed resources inside another workload's reservation.
 
-Version 0.0.1 deliberately models only CPU, memory, and Pod count. It does not reproduce quota, storage, accelerators, affinity, topology, architecture, or the complete Kubernetes scheduler. Every Function is evaluated as if it alone could consume the remaining budget, so simultaneous bursts can overbook the upper bounds and still leave Pods Pending. The floor of one or a configured `MinScale` may also exceed the available capacity.
+The calculation models CPU, memory, and Pod count—not every scheduler rule. Each Function is also evaluated independently, so simultaneous bursts may still overbook the cluster. The result is an estimate, not a reservation or proof of placement.
 
-The result is a scheduler-aware estimate, not a reservation or a proof of placement.
+## Related Kubernetes controls
 
-## Where it fits among Kubernetes systems
+[Kueue](https://kueue.sigs.k8s.io/docs/overview/), [Volcano](https://volcano.sh/docs/scheduler/overview/), and [Koordinator](https://koordinator.sh/docs/architecture/overview/) provide much richer queueing, fairness, and admission control. They are stronger when a cluster needs a new scheduling control plane. Autofission works through the Fission API and changes one upper bound.
 
-[HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [KEDA](https://keda.sh/docs/2.20/concepts/scaling-deployments/) translate demand into a replica target but keep a static maximum. Cluster Autoscaler and [Karpenter](https://karpenter.sh/docs/concepts/) add machines for unschedulable workloads—the opposite direction from harvesting the nodes already present. The descheduler moves Pods; PriorityClasses decide who yields.
+The closest upstream analogue is [cluster-capacity](https://github.com/kubernetes-sigs/cluster-capacity), which simulates how many copies of a Pod specification could be scheduled. Autofission adds continuous reconciliation for Fission Functions and Environments and writes the result to `MaxScale`.
 
-[Kueue](https://kueue.sigs.k8s.io/docs/overview/), [Volcano](https://volcano.sh/docs/scheduler/overview/), and [Koordinator](https://koordinator.sh/docs/architecture/overview/) provide much richer queueing, fairness, admission, or opportunistic-resource systems. They are stronger when a cluster needs a new scheduling control plane. Autofission is intentionally narrower: it stays at the Fission API layer and changes one upper bound.
-
-The closest upstream analogue is [cluster-capacity](https://github.com/kubernetes-sigs/cluster-capacity), which simulates how many copies of a Pod specification could be scheduled. Autofission adds continuous Fission-aware reconciliation: Function and Environment semantics in, `MaxScale` out.
-
-That small layer is useful for independent, disposable work that should expand into whatever a shared cluster can spare. Distributed analysis is one possible consumer, but the controller remains general Fission infrastructure.
+This is useful for independent, disposable work that should use the remaining capacity of a shared cluster. Distributed analysis is one possible use case, but the controller remains general Fission infrastructure.
 
 ## What comes next
 
-The immediate plan is to harden packaging and operational safeguards. Most importantly, capacity estimates will reserve room for active ordinary Pods that are still waiting to be scheduled, and Autofission will verify that existing managed Function Pods actually use the intended low-priority class.
-
-These changes make the estimate more conservative without pretending to become the kube-scheduler. Fair sharing between Functions, hard reservations, accelerators, and full placement parity remain separate design questions rather than promises attached to the first release.
+The project will make capacity estimates more conservative when workloads compete for resources and add stronger checks around managed Functions. It will remain an estimator rather than a replacement for the Kubernetes scheduler.

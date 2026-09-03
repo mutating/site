@@ -1,22 +1,24 @@
 ---
-title: "Introducing cstvis: one source tree, one change at a time"
+title: "Introducing cstvis: independent LibCST transformations"
 slug: "introducing-cstvis"
 date: 2025-12-17T09:00:00+03:00
-description: "A small LibCST layer for discovering source-aware transformations and materializing them independently."
+description: "Finds every possible change in Python source and applies candidates one at a time without losing formatting or comments."
 author: "muta"
 logo: "logo.png"
 tags: [python, cst, source-transformation, mutation-testing, static-analysis, developer-tools]
 ---
 
-Source-transformation tools often need to find every possible edit in a Python file but apply only one candidate at a time. Conventional tree transformers are designed to rewrite every matching node in one pass, which makes isolated mutations surprisingly awkward.
+Mutation testing must find every possible edit in a Python file, then apply and test each one independently. Conventional tree transformers rewrite every matching node in one pass, which prevents that separation.
 
-[cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. Its [first release](https://github.com/mutating/cstvis/releases/tag/0.0.1) discovers source-aware transformation coordinates and can replay any one of them independently against the original module.
+[LibCST](https://libcst.readthedocs.io/) preserves formatting and comments but does not make potential edits independently addressable. Complete systems such as [mutmut](https://github.com/boxed/mutmut) add test execution and session management. A smaller transformation layer is useful between them.
 
-## From a rewrite to a catalogue
+[cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. It discovers source-aware transformation coordinates and can replay any one of them independently against the original module. [The release](https://github.com/mutating/cstvis/releases/tag/0.0.1) is available on GitHub.
 
-[LibCST](https://libcst.readthedocs.io/) already provides a typed, source-faithful representation of Python. It preserves comments and formatting that a standard AST discards. cstvis does not replace that parser. It adds a coordination layer on top.
+## Discovering independent transformations
 
-A converter is an ordinary function registered with `@changer.converter`. The type annotation on its first parameter selects the concrete LibCST node type it handles. Filters decide whether an individual occurrence is eligible. `iterate_coordinates()` exposes the surviving candidates as source ranges; `apply_coordinate()` starts from the untouched module and produces a complete source string with only the selected occurrence changed.
+cstvis does not replace LibCST's parser or transformation API. It coordinates potential edits so that a caller can enumerate them first and apply a selected one later.
+
+A function registered with `@changer.converter` handles the LibCST node type named by its first annotation. Filters remove ineligible occurrences. `iterate_coordinates()` returns the remaining source ranges, and `apply_coordinate()` applies one range to the untouched module.
 
 ```python
 from libcst import Add, Subtract
@@ -30,32 +32,28 @@ def replace_add(node: Add, context):
         whitespace_before=node.whitespace_before,
         whitespace_after=node.whitespace_after,
     )
+
+coordinate = next(changer.iterate_coordinates())
+print(changer.apply_coordinate(coordinate))
+#> total = left - right
 ```
 
-The important difference from a conventional transformer is not a richer tree. It is the one-change-at-a-time contract. Two additions in a file become two independent candidates, each replayed against the original source rather than combined into one rewrite.
+Two additions therefore produce two candidates, each applied separately to the original source.
 
-Context also exposes the candidate coordinate, a comment found on the node's starting line, and parsed metacode directives. That makes source-local policy available without teaching every converter how to locate comments.
+Context includes the coordinate, the comment on the node's first line, and parsed metacode directives, so converters can use local rules without implementing comment lookup.
 
-## The alternatives solve larger jobs
+## Comparison with other transformation tools
 
-Direct [LibCST visitors, transformers, matchers, and codemods](https://libcst.readthedocs.io/en/latest/codemods.html) are more expressive. They support structural captures, rich metadata, removals, flattened replacements, multi-pass work, repository traversal, and parallel codemod execution. Use them when you need full control over a transformation.
+Direct [LibCST codemods](https://libcst.readthedocs.io/en/latest/codemods.html) remain better for complex, multi-pass refactoring.
 
-[Bowler](https://pybowler.io/) offers a fluent repository-refactoring workflow, although its Fissix foundation had reached an older grammar ceiling before the project was archived. [RedBaron](https://redbaron.readthedocs.io/) makes interactive lossless edits pleasant. Standard [`ast.NodeTransformer`](https://docs.python.org/3/library/ast.html#ast.NodeTransformer) is simpler when source fidelity is irrelevant.
+[Bowler](https://pybowler.io/) and [RedBaron](https://redbaron.readthedocs.io/) provide higher-level lossless refactoring workflows. Standard [`ast.NodeTransformer`](https://docs.python.org/3/library/ast.html#ast.NodeTransformer) is simpler when preserving formatting and comments does not matter.
 
-Mutation tools provide especially important prior art. [Mutatest](https://mutatest.readthedocs.io/en/latest/) indexed AST mutation locations, while [Cosmic Ray](https://cosmic-ray.readthedocs.io/) already separated mutation discovery from applying a specific occurrence and wrapped that protocol in sessions and distributed workers. [mutmut](https://github.com/boxed/mutmut) is a much fuller runner with test selection and execution optimizations.
+cstvis specializes in a smaller layer: LibCST transformations with type-driven registration, access to source comments, and independent replay behind a runner-neutral API.
 
-cstvis does not claim to invent isolated mutations or beat those engines end to end. Its narrower advantage is the combination of LibCST fidelity, type-driven registration, source comments, and independent replay behind a small, runner-neutral API.
+## Intended use
 
-## The specialization
-
-Version 0.0.1 is a transformation primitive, not a mutation-testing framework. It does not walk directories, store sessions, run tests, or schedule workers. A coordinate is simply a clean boundary that a larger system may later use as a unit of work.
-
-The first release allows one converter per exact CST node type, requires both `node` and `context` parameters, and associates coordinates with the unchanged original source. Those limits keep the initial model easy to inspect.
+cstvis does not walk directories, store sessions, run tests, or schedule workers. It allows one converter per exact CST node type and always applies coordinates to the original source; another system can treat each coordinate as a unit of work.
 
 ## What comes next
 
-Planned iterations will allow several conversions for the same node type, identify the chosen converter in each coordinate, and separate registration from execution through reusable collectors. Union annotations and shortcuts for strings and numbers will make operator declarations more compact.
-
-After that, collectors will become composable, callbacks will be able to omit unused context, and metadata will travel with conversions. Richer context will expose the full source, character offsets, and the code before and after a node—computed lazily where possible.
-
-The direction is deliberately incremental: first turn possible changes into addressable work, then make those work items easier to describe, combine, and hand to the systems around them.
+The project will make independent transformations easier to describe and combine while preserving the one-change-at-a-time model.

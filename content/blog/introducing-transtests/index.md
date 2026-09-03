@@ -1,47 +1,60 @@
 ---
-title: "Introducing transtests: one test across function shapes"
+title: "Introducing transtests: testing three kinds of Python functions"
 slug: "introducing-transtests"
 date: 2026-03-31T09:00:00+03:00
-description: "A focused pytest fixture for checking shared behavior across synchronous, asynchronous, and generator-oriented function templates."
+description: "Runs one pytest behavior check against regular, asynchronous, and generator forms of the same Python function template."
 author: "muta"
 logo: "logo.png"
 tags: [python, pytest, testing, async, generators, code-generation, developer-tools]
 ---
 
-Python tools that inspect, wrap, or transform callables rarely get to support only one kind of function. A decorator may behave perfectly on a regular function and still fail when execution is deferred until a coroutine is awaited or a generator is iterated. Copying the same behavioral test three times makes those cases easy to let drift apart.
+Python tools that wrap or transform callables must often support regular functions, coroutines, and generators. A decorator may work synchronously but behave differently when execution waits for `await` or iteration. Copying the same test three times makes the cases easy to maintain inconsistently.
 
-[transtests](https://github.com/mutating/transtests) is a small Python testing library and pytest plugin for exercising one function template in synchronous, asynchronous, and generator-oriented forms. Its [first release](https://github.com/mutating/transtests/releases/tag/0.0.1) packages that compatibility check as a fixture with three separately reported cases.
+[`pytest.mark.parametrize`](https://docs.pytest.org/en/stable/how-to/parametrize.html) runs several cases, while [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) and [AnyIO](https://anyio.readthedocs.io/en/stable/testing.html) run asynchronous tests. None creates and invokes all three callable forms from one source template.
 
-## A new axis of parametrization
+[transtests](https://github.com/mutating/transtests) is a small Python testing library and pytest plugin for exercising one function template in synchronous, asynchronous, and generator-oriented forms. It provides that compatibility check as a fixture with three separately reported cases. [The release](https://github.com/mutating/transtests/releases/tag/0.0.1) is available on GitHub.
+
+## Parametrizing tests by function type
 
 After installation, pytest discovers the `transformed` fixture automatically. Any test that requests it becomes three separately reported cases: `sync`, `async`, and `generator`.
 
-The fixture returns a decorator. In the synchronous case it returns the template function. In the other cases it asks [transfunctions](https://github.com/mutating/transfunctions) to build coroutine- and generator-oriented variants from the same source template. The test then invokes the result in the appropriate way: directly, through an event loop, or by iteration.
+```python
+from asyncio import run
+from inspect import iscoroutinefunction, isgeneratorfunction
 
-This keeps shared behavior and assertions in one place while preserving ordinary pytest isolation and case IDs. Kind-specific syntax can stay inside the `sync_context`, `async_context`, and `generator_context` markers supplied by transfunctions.
+def test_addition(transformed):
+    @transformed
+    def add(left, right):
+        return left + right
 
-There is a subtle but important boundary in 0.0.1. The generator transformer converts explicit generator markers such as `yield_from_it`; it does not turn every ordinary `return` into `yield`. A template without a generator yield point may therefore remain an ordinary function in that mode. The first README example did not make this distinction clearly enough. Async generators are not part of the initial three-way model either.
+    if iscoroutinefunction(add):
+        assert run(add(1, 2)) == 3
+    elif isgeneratorfunction(add):
+        assert list(add(1, 2)) == [3]
+    else:
+        assert add(1, 2) == 3
+```
 
-## What neighboring tools do
+Pytest runs this test three times and reports each function type separately.
 
-[`pytest.mark.parametrize`](https://docs.pytest.org/en/stable/how-to/parametrize.html) can reproduce the three cases if a project supplies its own transformation factory and invocation rules. It remains more universal and is better when tests should exercise independently implemented sync and async APIs rather than generated variants.
+The fixture returns a decorator. For asynchronous and generator cases, [transfunctions](https://github.com/mutating/transfunctions) builds variants from the same template. Shared assertions stay in one test, while pytest preserves separate case IDs.
 
-[pytest-asyncio](https://pytest-asyncio.readthedocs.io/) teaches pytest to execute coroutine tests and manage asyncio fixtures. [AnyIO's pytest plugin](https://anyio.readthedocs.io/en/stable/testing.html) runs async tests across asyncio and Trio backends. They vary the runtime around an async test; transtests varies the shape of the callable passed to the code under test. The tools are complementary.
+Generator mode has one important limitation: it transforms explicit generator markers such as `yield_from_it`, but does not turn every ordinary `return` into `yield`. A template therefore needs an actual generator point. Async generators are not supported.
 
-[Hypothesis](https://hypothesis.readthedocs.io/) explores input data and shrinks failures. transtests explores a fixed structural dimension of a function template. [unasync](https://github.com/python-trio/unasync) transforms whole async source trees into synchronous code at build time; it is the stronger choice for maintaining two full public APIs.
+## Comparison with related tools
 
-We found no maintained published pytest plugin aimed at this exact regular/coroutine/generator template contract. That does not make the idea impossible to write locally. It makes the small reusable fixture worthwhile for projects that otherwise repeat the same scaffolding.
+Plain pytest parametrization is better when sync and async APIs are implemented independently rather than generated from one template.
 
-## Who needs it
+[pytest-asyncio](https://pytest-asyncio.readthedocs.io/) and [AnyIO's pytest plugin](https://anyio.readthedocs.io/en/stable/testing.html) vary the async runtime; transtests varies the callable type. The tools are complementary.
+
+[Hypothesis](https://hypothesis.readthedocs.io/) varies input data; transtests varies whether the tested callable is regular, asynchronous, or a generator. [unasync](https://github.com/python-trio/unasync) transforms whole source trees and is better suited to maintaining separate sync and async APIs.
+
+## Intended users
 
 The clearest users are authors of decorators, callback registries, dispatchers, middleware, instrumentation, and metaprogramming tools. These libraries often care not only about what a callback returns, but when its body actually runs.
 
-Combined with an instrument such as [`LockTraceWrapper`](https://pypi.org/project/locklib/), one shared contract can verify that the callback body—not merely the creation of a coroutine or generator object—ran while a lock was held. This is a small example of why callable shape belongs in infrastructure tests.
-
-In a larger testing stack, transtests can remain a narrow guardrail. It does not decide how the surrounding components are composed; it simply keeps three behavior paths from drifting apart.
+With [`LockTraceWrapper`](https://pypi.org/project/locklib/), one test can verify that the callback body—not merely coroutine or generator creation—ran while a lock was held. This check can fit into a larger test suite without determining its architecture.
 
 ## What comes next
 
-The next release will make the fixture easier to discover by adding a full usage example to its own docstring. That is a documentation improvement, not a new execution model.
-
-Beyond the published history, the natural work is to make each mode structurally explicit, improve generator diagnostics, normalize invocation, and test interoperability with async runners. Those are directions to validate before expanding the public contract—not promises hidden inside 0.0.1.
+The project will improve diagnostics and integration across async test environments while remaining focused on one behavior across several callable types.

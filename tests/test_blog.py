@@ -125,16 +125,21 @@ def test_blog_cards_open_individual_posts(driver: DriverFactory) -> None:
 
 
 def test_project_release_post_template_places_logo_in_heading() -> None:
-    """Keep optional release artwork decorative and next to the title."""
+    """Keep optional release artwork decorative, square, and next to the title."""
 
     template = (
         PROJECT_ROOT / "themes/mutating/layouts/blog/single.html"
+    ).read_text()
+    stylesheet = (
+        PROJECT_ROOT / "themes/mutating/assets/css/site.css"
     ).read_text()
     assert 'with .Params.logo' in template
     assert 'post__title-row--with-logo' in template
     assert '.Resources.GetMatch .' in template
     assert 'class="post__project-logo" aria-hidden="true"' in template
     assert 'alt=""' in template
+    assert ".post__project-logo {" in stylesheet
+    assert "aspect-ratio: 1;" in stylesheet
 
 
 def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
