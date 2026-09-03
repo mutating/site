@@ -16,11 +16,11 @@ Applications rarely receive configuration from one place: defaults, constructor 
 
 Many configuration tools focus on loading a validated snapshot. skelet 0.0.1 also governs what happens when application code changes a value later.
 
-A `Storage` class declares typed `Field` descriptors. Values can come from constructor arguments, environment variables, TOML—including a named `pyproject.toml` section—JSON, YAML, or an in-memory source. Sources are ordered, and the first source containing a value wins. A field may replace the class-wide chain with its own sources or use an ellipsis to prepend field-specific sources before falling back to the shared chain.
+A `Storage` class declares typed fields. Values can come from constructor arguments, environment variables, TOML—including `pyproject.toml`—JSON, YAML, or memory. Sources are ordered, and the first one containing a value wins. Individual fields can override or extend that shared order.
 
 Before a value is stored, skelet can convert it, check its runtime type, and run user-defined validators. Fields may be read-only, carry documentation, declare aliases, or define explicit conflicts with other fields. A successful change can trigger a callback with the old value, the new value, and the storage object.
 
-The unusual part is how those rules stay connected during mutation. Writes are serialized with per-field mutexes, while directly conflicting fields share a lock so that their pairwise invariant is checked against coordinated state. This is not a full transactional database—reads are not locked by default, mutations inside a stored list bypass the descriptor, and a failing post-write callback does not roll the value back—but it gives ordinary assignments a real lifecycle.
+The unusual part is that these rules still apply when values change later. Writes to a field are serialized, and fields that conflict share coordination so their relationship is checked consistently. This is not a transactional database: changes inside a stored mutable object bypass the field, and a failed callback does not roll an assignment back. It does, however, give ordinary assignments a clear lifecycle.
 
 ## Secrets without mythology
 
@@ -32,7 +32,7 @@ This distinction matters because secret-safe diagnostics and secret management a
 
 [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) offers much broader parsing, nested models, command-line input, secret directories, and cloud secret providers. [Dynaconf](https://www.dynaconf.com/) excels at layered environments, merging, reloads, Redis, and Vault. [Typed Settings](https://typed-settings.readthedocs.io/en/latest/) combines several model systems with composable loaders and generated CLIs. [Hydra and OmegaConf](https://hydra.cc/docs/intro/) specialize in hierarchical composition and overrides.
 
-skelet 0.0.1 does not surpass these projects in breadth or type-system coverage. Its more distinctive niche is guarded mutable configuration: per-field source routing, explicit bidirectional conflicts, related locks, and callbacks connected to the assignment path. Among the established libraries we reviewed, that exact combination is uncommon.
+Those projects are broader. skelet's distinctive niche is guarded mutable configuration: per-field source routing, explicit conflicts, coordinated writes, and callbacks connected to the assignment path. That exact combination is uncommon.
 
 The package is aimed at libraries, services, and long-running tools whose settings are both loaded from several places and legitimately changed after construction. When an immutable startup snapshot is enough, a narrower loader may be the better choice.
 

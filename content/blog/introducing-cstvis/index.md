@@ -38,19 +38,19 @@ Context also exposes the candidate coordinate, a comment found on the node's sta
 
 ## The alternatives solve larger jobs
 
-Direct [LibCST visitors, transformers, matchers, and codemods](https://libcst.readthedocs.io/en/latest/codemods.html) are more expressive. They support structural captures, rich metadata, removals, flattened replacements, multi-pass work, repository traversal, and parallel codemod execution. Use them when you need full control over a transformation.
+Direct [LibCST visitors, transformers, matchers, and codemods](https://libcst.readthedocs.io/en/latest/codemods.html) are more expressive and remain the right choice for complex, multi-pass refactoring.
 
-[Bowler](https://pybowler.io/) offers a fluent repository-refactoring workflow, although its Fissix foundation had reached an older grammar ceiling before the project was archived. [RedBaron](https://redbaron.readthedocs.io/) makes interactive lossless edits pleasant. Standard [`ast.NodeTransformer`](https://docs.python.org/3/library/ast.html#ast.NodeTransformer) is simpler when source fidelity is irrelevant.
+[Bowler](https://pybowler.io/) and [RedBaron](https://redbaron.readthedocs.io/) provide higher-level lossless refactoring workflows. Standard [`ast.NodeTransformer`](https://docs.python.org/3/library/ast.html#ast.NodeTransformer) is simpler when preserving formatting and comments does not matter.
 
-Mutation tools provide especially important prior art. [Mutatest](https://mutatest.readthedocs.io/en/latest/) indexed AST mutation locations, while [Cosmic Ray](https://cosmic-ray.readthedocs.io/) already separated mutation discovery from applying a specific occurrence and wrapped that protocol in sessions and distributed workers. [mutmut](https://github.com/boxed/mutmut) is a much fuller runner with test selection and execution optimizations.
+Full mutation tools such as [Cosmic Ray](https://cosmic-ray.readthedocs.io/) and [mutmut](https://github.com/boxed/mutmut) go much further: they manage mutation sessions, run tests, and optimize execution.
 
-cstvis does not claim to invent isolated mutations or beat those engines end to end. Its narrower advantage is the combination of LibCST fidelity, type-driven registration, source comments, and independent replay behind a small, runner-neutral API.
+cstvis is a transformation building block rather than an end-to-end mutation engine. Its advantage is the combination of LibCST fidelity, type-driven registration, source comments, and independent replay behind a small, runner-neutral API.
 
 ## The specialization
 
 Version 0.0.1 is a transformation primitive, not a mutation-testing framework. It does not walk directories, store sessions, run tests, or schedule workers. A coordinate is simply a clean boundary that a larger system may later use as a unit of work.
 
-The first release allows one converter per exact CST node type, requires both `node` and `context` parameters, and associates coordinates with the unchanged original source. Those limits keep the initial model easy to inspect.
+The initial model deliberately allows one converter per exact CST node type and always applies coordinates to the unchanged original source. Those limits keep each result easy to reason about.
 
 ## What comes next
 

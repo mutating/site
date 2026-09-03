@@ -31,7 +31,7 @@ def resolve_timeout(value: Timeout = InnerNone):
 
 The same distinction appears in patch APIs, layered configuration, caches, lazy computation, and defaults. `InnerNone` belongs to the control plane inside a library; it should normally not leak into the caller's value space.
 
-Version 0.0.1 is extremely small: one empty public class, one module-level instance, and no runtime dependencies. `InnerNoneType` provides an ordinary class-based annotation and a target for `isinstance`; identity checks use `value is InnerNone`.
+The API is deliberately small: `InnerNone` is the shared value, while `InnerNoneType` can be used in annotations and `isinstance` checks. Identity checks use `value is InnerNone`.
 
 “A second `None`” describes purpose, not Python language semantics. In the first release, `InnerNone` is truthy, additional `InnerNoneType` instances can be constructed, and copying or pickling does not preserve the exported object's identity. It is a named minimal sentinel, not yet a hardened universal sentinel factory.
 
@@ -39,9 +39,9 @@ Version 0.0.1 is extremely small: one empty public class, one module-level insta
 
 The one-line local idiom `MISSING = object()` is often the right answer. denial adds a stable import and a dedicated public type, but the first release does not yet improve that idiom's representation, copy, or serialization behavior.
 
-The standard library's [`dataclasses.MISSING`](https://docs.python.org/3/library/dataclasses.html#dataclasses.MISSING) solves the same ambiguity inside dataclasses, but its documentation discourages general reuse. [`attrs.NOTHING`](https://www.attrs.org/en/stable/api.html#attrs.NOTHING) and Pydantic's internal undefined markers are similarly tied to their own frameworks. An `Enum` member provides stronger singleton and pickle behavior at the price of a more ceremonial declaration.
+The standard library's [`dataclasses.MISSING`](https://docs.python.org/3/library/dataclasses.html#dataclasses.MISSING), [`attrs.NOTHING`](https://www.attrs.org/en/stable/api.html#attrs.NOTHING), and Pydantic's undefined markers solve the same ambiguity inside their own frameworks. They are not intended as a shared application-level value.
 
-Established packages such as [sentinel-value](https://sentinel-value.readthedocs.io/), [sentinels](https://pypi.org/project/sentinels/), and [boltons.make_sentinel](https://boltons.readthedocs.io/en/latest/_modules/boltons/typeutils.html) already offer readable representations, factories, registries, or identity-preserving serialization. The older [nulltype](https://pypi.org/project/nulltype/) even explores several meanings of emptiness.
+Established packages such as [sentinel-value](https://sentinel-value.readthedocs.io/) and [sentinels](https://pypi.org/project/sentinels/) offer factories, readable representations, and stronger serialization behavior.
 
 denial 0.0.1 does not beat those projects on mechanics. Its specialization is conceptual and deliberately narrow: one framework-neutral marker for library-internal absence, with a memorable name and almost no surface area.
 

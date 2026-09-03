@@ -20,17 +20,19 @@ A fixed ceiling is awkward in a shared cluster. Set it too low and new or tempor
 
 Autofission closes a second control loop. It does not choose the desired replica count. It continuously converts Kubernetes capacity not already reserved by scheduling requests into a dynamic `MaxScale` for each explicitly opted-in Fission Function. Fission remains the owner of the generated HPA and the mechanism that reacts to demand.
 
-For each reconciliation, Autofission reads Functions, Environments, schedulable Nodes, and Pods. It accounts for CPU, memory, and Pod slots separately on every node, avoiding the false promise created by combining spare CPU on one machine with spare memory on another. It resolves one Function replica's requests from the Function and Environment, includes Fission fetcher overhead, and returns the Function's already running replicas to its own total budget.
+Put simply: the HPA decides how many replicas are needed, while Autofission estimates how many can fit.
 
-Updates patch the Fission Function—the source of truth—rather than its generated HPA. A `resourceVersion` precondition turns a concurrent edit into a conflict instead of silently overwriting it. The calculated value never falls below `MinScale` or one replica.
+Autofission evaluates CPU, memory, and Pod slots separately on every node. That avoids promising a replica by combining spare CPU on one machine with spare memory on another. It also accounts for Fission's own overhead and for replicas of the Function that are already running.
+
+Updates go to the Fission Function—the source of truth—rather than its generated HPA. Concurrent edits fail instead of being overwritten, and the calculated ceiling never falls below `MinScale` or one replica.
 
 ## Opt-in, priority, and honest limits
 
-Only labelled `newdeploy` Functions are managed. Removing the label stops future updates and leaves the last calculated ceiling in place. The Helm definitions provide a low, non-preempting runtime PriorityClass; configured in Fission, Function Pods cannot evict ordinary workloads and may themselves yield to more important Pods.
+Only explicitly labelled `newdeploy` Functions are managed. Their Pods can use a low, non-preempting priority class, so disposable work yields to more important workloads instead of evicting them.
 
 The calculation uses declared resource requests, not current CPU or memory utilization. “Spare capacity” therefore means uncommitted scheduler capacity, not borrowed resources inside another workload's reservation.
 
-Version 0.0.1 deliberately models only CPU, memory, and Pod count. It does not reproduce quota, storage, accelerators, affinity, topology, architecture, or the complete Kubernetes scheduler. Every Function is evaluated as if it alone could consume the remaining budget, so simultaneous bursts can overbook the upper bounds and still leave Pods Pending. The floor of one or a configured `MinScale` may also exceed the available capacity.
+The calculation models CPU, memory, and Pod count—not every rule understood by the Kubernetes scheduler. It also evaluates each Function against the available budget independently, so simultaneous bursts can still overbook the cluster and leave Pods Pending.
 
 The result is a scheduler-aware estimate, not a reservation or a proof of placement.
 
@@ -38,7 +40,7 @@ The result is a scheduler-aware estimate, not a reservation or a proof of placem
 
 [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [KEDA](https://keda.sh/docs/2.20/concepts/scaling-deployments/) translate demand into a replica target but keep a static maximum. Cluster Autoscaler and [Karpenter](https://karpenter.sh/docs/concepts/) add machines for unschedulable workloads—the opposite direction from harvesting the nodes already present. The descheduler moves Pods; PriorityClasses decide who yields.
 
-[Kueue](https://kueue.sigs.k8s.io/docs/overview/), [Volcano](https://volcano.sh/docs/scheduler/overview/), and [Koordinator](https://koordinator.sh/docs/architecture/overview/) provide much richer queueing, fairness, admission, or opportunistic-resource systems. They are stronger when a cluster needs a new scheduling control plane. Autofission is intentionally narrower: it stays at the Fission API layer and changes one upper bound.
+[Kueue](https://kueue.sigs.k8s.io/docs/overview/), [Volcano](https://volcano.sh/docs/scheduler/overview/), and [Koordinator](https://koordinator.sh/docs/architecture/overview/) provide much richer queueing, fairness, and admission control. They are stronger when a cluster needs a new scheduling control plane. Autofission stays at the Fission API layer and changes one upper bound.
 
 The closest upstream analogue is [cluster-capacity](https://github.com/kubernetes-sigs/cluster-capacity), which simulates how many copies of a Pod specification could be scheduled. Autofission adds continuous Fission-aware reconciliation: Function and Environment semantics in, `MaxScale` out.
 

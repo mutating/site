@@ -26,7 +26,7 @@ def resolve_timeout(value: Timeout = InnerNone):
 
 То же различие встречается в patch API, слоях конфигурации, кэшах, ленивых вычислениях и значениях по умолчанию. `InnerNone` принадлежит управляющему слою внутри библиотеки и обычно не должен утекать в пространство значений пользователя.
 
-Версия 0.0.1 предельно мала: один пустой публичный класс, один экземпляр уровня модуля и никаких runtime-зависимостей. `InnerNoneType` служит обычной классовой аннотацией и целью для `isinstance`, а проверка идентичности выглядит как `value is InnerNone`.
+API намеренно мал: `InnerNone` — общее значение, а `InnerNoneType` можно использовать в аннотациях и проверках `isinstance`. Для проверки идентичности служит `value is InnerNone`.
 
 «Второй `None`» описывает назначение, а не семантику языка Python. В первом релизе `InnerNone` truthy, дополнительные экземпляры `InnerNoneType` можно создавать, а копирование и pickle не сохраняют идентичность экспортированного объекта. Это именованный минимальный sentinel, но ещё не усиленная универсальная фабрика.
 
@@ -34,9 +34,9 @@ def resolve_timeout(value: Timeout = InnerNone):
 
 Однострочная локальная идиома `MISSING = object()` часто остаётся лучшим ответом. denial добавляет стабильный импорт и отдельный публичный тип, но первая версия ещё не улучшает представление, копирование или сериализацию такого подхода.
 
-Стандартный [`dataclasses.MISSING`](https://docs.python.org/3/library/dataclasses.html#dataclasses.MISSING) решает ту же неоднозначность внутри dataclasses, однако документация не советует переиспользовать его как общий sentinel. [`attrs.NOTHING`](https://www.attrs.org/en/stable/api.html#attrs.NOTHING) и внутренние undefined-маркеры Pydantic также привязаны к своим фреймворкам. Член `Enum` даёт более строгую singleton-семантику и pickle ценой более многословного объявления.
+Стандартный [`dataclasses.MISSING`](https://docs.python.org/3/library/dataclasses.html#dataclasses.MISSING), [`attrs.NOTHING`](https://www.attrs.org/en/stable/api.html#attrs.NOTHING) и undefined-маркеры Pydantic решают ту же неоднозначность внутри своих фреймворков. Они не предназначены для роли общего значения приложения.
 
-Зрелые пакеты [sentinel-value](https://sentinel-value.readthedocs.io/), [sentinels](https://pypi.org/project/sentinels/) и [boltons.make_sentinel](https://boltons.readthedocs.io/en/latest/_modules/boltons/typeutils.html) уже предлагают читаемые представления, фабрики, реестры или сохранение identity при сериализации. Более старый [nulltype](https://pypi.org/project/nulltype/) даже исследует несколько смыслов пустоты.
+Зрелые пакеты [sentinel-value](https://sentinel-value.readthedocs.io/) и [sentinels](https://pypi.org/project/sentinels/) уже предлагают фабрики, читаемые представления и более надёжную сериализацию.
 
 denial 0.0.1 не превосходит эти решения механикой. Его специализация концептуальна и намеренно узка: один независимый от фреймворков маркер внутреннего отсутствия с запоминающимся именем и почти нулевой поверхностью API.
 

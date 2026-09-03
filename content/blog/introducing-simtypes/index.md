@@ -28,11 +28,11 @@ The last result is intentional. In this release, `list[str]` asks whether the va
 
 This gives collection checks a predictable cost that does not grow with collection length. It also means simtypes 0.0.1 is not suitable for validating untrusted nested data or proving that a value satisfies the full static annotation. The package rejects that larger promise on purpose.
 
-The result is a checking core of roughly thirty lines, a wheel of about five kilobytes, no runtime dependencies, no decorators, no import hooks, no coercion, and no schema compiler. For supported forms, callers get a boolean and decide what it means.
+The result is a small checker with no runtime dependencies, decorators, import hooks, coercion, or schema compiler. Callers get a boolean and decide what it means.
 
 ## The alternatives are more powerful
 
-Python already had excellent runtime checking projects. [Typeguard](https://typeguard.readthedocs.io/en/latest/) can instrument functions and modules and produce detailed failures. [Beartype](https://beartype.readthedocs.io/) supports a broad range of hints and already offers a boolean `is_bearable()` API. [Runtype](https://runtype.readthedocs.io/en/stable/validation.html) recursively validates collection contents. [Pydantic TypeAdapter](https://docs.pydantic.dev/latest/concepts/type_adapter/) validates, converts, serializes, and explains structured data.
+Python already has excellent runtime checking projects. [Typeguard](https://typeguard.readthedocs.io/en/latest/) and [Beartype](https://beartype.readthedocs.io/) cover far more type hints and can enforce contracts automatically. [Runtype](https://runtype.readthedocs.io/en/stable/validation.html) checks collection contents recursively, while [Pydantic TypeAdapter](https://docs.pydantic.dev/latest/concepts/type_adapter/) also converts and serializes structured data.
 
 Those are better tools when their richer semantics are required. simtypes does not win by covering more of `typing`, and it is not the first boolean checker. Its advantage is a smaller contract: no automatic enforcement, no transformation of the value, and a guaranteed refusal to inspect collection elements in the default model.
 

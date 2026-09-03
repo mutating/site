@@ -13,7 +13,7 @@ description: "Небольшая типизированная граница н�
 
 `getclearsource(function)` затем снимает ведущий отступ, унаследованный от внешнего класса или функции. Вложенное определение корректно внутри исходного блока, но может упасть при прямой передаче в `ast.parse()`. Очищенная форма сохраняет относительные отступы тела и делает фрагмент пригодным для верхнего уровня.
 
-Первый релиз намеренно сфокусирован на функциях, определённых на Python: обычных функциях, методах, class methods, static methods и функциях, созданных lambda-выражениями. Это не универсальный инспектор модулей, классов, builtins, C extensions, `functools.partial` или произвольных callable-объектов.
+Библиотека сосредоточена на функциях, определённых в Python, включая методы и lambda-выражения. Это не универсальный инспектор для модулей, классов, builtins, C-расширений или произвольных callable-объектов.
 
 Есть ещё одно важное ограничение. Lambda принимается как объект функции, но 0.0.1 пока не выделяет само lambda-выражение из окружающего statement. Исходник вида `handler = lambda value: value + 1` может вернуться вместе с присваиванием.
 
@@ -21,7 +21,7 @@ description: "Небольшая типизированная граница н�
 
 Основная способность извлечения принадлежит стандартному [`inspect`](https://docs.python.org/3/library/inspect.html#retrieving-source-code) и [dill](https://dill.readthedocs.io/en/latest/dill.html#module-dill.source). Прямой dill предлагает больше настроек, а `inspect.getsourcelines()` умеет возвращать номера строк и поддерживает более широкий набор объектов. Для обычного файлового кода проекту может быть достаточно `textwrap.dedent(inspect.getsource(function))`.
 
-[sourceinspect](https://pypi.org/project/sourceinspect/) — ближайшая более ранняя обёртка с адаптерами для большего числа shells и аналогами `getsourcelines()` и `getsourcefile()`. [executing](https://github.com/alexmojaki/executing) и [stack-data](https://github.com/alexmojaki/stack_data) сильнее, когда начальной точкой служит живой frame или traceback. `ast.get_source_segment()` выделяет точный фрагмент только после того, как исходник и AST-узел уже найдены. [cloudpickle](https://github.com/cloudpipe/cloudpickle) переносит исполняемое поведение в другой процесс, но не восстанавливает читаемый исходник для преобразований.
+[sourceinspect](https://pypi.org/project/sourceinspect/) поддерживает больше интерактивных оболочек и предоставляет более широкий API инспекции. [executing](https://github.com/alexmojaki/executing) и [stack-data](https://github.com/alexmojaki/stack_data) сильнее, когда начальной точкой служит живой frame или traceback. [cloudpickle](https://github.com/cloudpipe/cloudpickle) решает другую задачу: переносит исполняемое поведение между процессами, а не восстанавливает читаемый исходник.
 
 getsources лучше лишь на выбранной границе: оставить `inspect` предсказуемым основным путём, использовать интерактивную историю как fallback, нормализовать отступы и дать нижележащим инструментам единый function-focused контракт.
 

@@ -22,7 +22,7 @@ A metacode directive has a key, a command, and optional arguments:
 # type: ignore[attr-defined]
 ```
 
-Version 0.0.1 parses the form `key: command[arguments]` into `ParsedComment` records. Keys and commands use Python identifiers. Arguments may be identifiers, simple hyphenated names, strings, numbers, booleans, `None`, or an ellipsis. With `allow_ast=True`, a consumer can receive other Python expressions as inert AST nodes; metacode does not execute them.
+Version 0.0.1 parses the form `key: command[arguments]` into `ParsedComment` records. Arguments can contain common Python literals and names. Consumers may also opt into receiving other expressions as inert AST nodes; metacode never executes them.
 
 Several hash-separated directives can share a physical line, and human text between compatible fragments may remain human text. Each tool asks for its own key, so the parser does not assign meaning to the command. Syntax is shared; policy stays with the consumer.
 

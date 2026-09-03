@@ -20,7 +20,7 @@ The fixture returns a decorator. In the synchronous case it returns the template
 
 This keeps shared behavior and assertions in one place while preserving ordinary pytest isolation and case IDs. Kind-specific syntax can stay inside the `sync_context`, `async_context`, and `generator_context` markers supplied by transfunctions.
 
-There is a subtle but important boundary in 0.0.1. The generator transformer converts explicit generator markers such as `yield_from_it`; it does not turn every ordinary `return` into `yield`. A template without a generator yield point may therefore remain an ordinary function in that mode. The first README example did not make this distinction clearly enough. Async generators are not part of the initial three-way model either.
+There is one important boundary: generator mode transforms explicit generator markers such as `yield_from_it`; it does not turn every ordinary `return` into `yield`. A template therefore needs a real generator point. Async generators are not part of the initial three-way model.
 
 ## What neighboring tools do
 
@@ -28,9 +28,9 @@ There is a subtle but important boundary in 0.0.1. The generator transformer con
 
 [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) teaches pytest to execute coroutine tests and manage asyncio fixtures. [AnyIO's pytest plugin](https://anyio.readthedocs.io/en/stable/testing.html) runs async tests across asyncio and Trio backends. They vary the runtime around an async test; transtests varies the shape of the callable passed to the code under test. The tools are complementary.
 
-[Hypothesis](https://hypothesis.readthedocs.io/) explores input data and shrinks failures. transtests explores a fixed structural dimension of a function template. [unasync](https://github.com/python-trio/unasync) transforms whole async source trees into synchronous code at build time; it is the stronger choice for maintaining two full public APIs.
+[Hypothesis](https://hypothesis.readthedocs.io/) explores input data; transtests explores a fixed structural dimension of one function template. [unasync](https://github.com/python-trio/unasync) transforms whole source trees and is better suited to maintaining separate sync and async APIs.
 
-We found no maintained published pytest plugin aimed at this exact regular/coroutine/generator template contract. That does not make the idea impossible to write locally. It makes the small reusable fixture worthwhile for projects that otherwise repeat the same scaffolding.
+Unlike these neighboring tools, transtests focuses specifically on generating and exercising regular, coroutine, and generator forms from one template. That narrow scope saves projects from rebuilding the same test scaffolding locally.
 
 ## Who needs it
 
@@ -42,6 +42,4 @@ In a larger testing stack, transtests can remain a narrow guardrail. It does not
 
 ## What comes next
 
-The next release will make the fixture easier to discover by adding a full usage example to its own docstring. That is a documentation improvement, not a new execution model.
-
-Beyond the published history, the natural work is to make each mode structurally explicit, improve generator diagnostics, normalize invocation, and test interoperability with async runners. Those are directions to validate before expanding the public contract—not promises hidden inside 0.0.1.
+The next steps are clearer mode-specific diagnostics, more consistent invocation, and better interoperability with async runners. The fixture documentation will also gain a complete example so its three-way contract is visible without searching through a separate guide.

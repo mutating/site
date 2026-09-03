@@ -30,7 +30,7 @@ def json_serializer(value) -> bytes:
 
 Calling `serializers(value)` invokes every registered plugin in sequence. If no plugin exists, the original function body provides the fallback. The plugin decorator returns the original function, so an implementation can still be tested directly.
 
-The slot's return annotation is executable policy. No annotation means results are discarded. `list[T]` collects values, while `dict[str, T]` collects them under plugin names. Actual return values are checked at runtime, and callable shapes are compared during registration. Version 0.0.1 also supports named selections, a maximum plugin count, plugin-local uniqueness, and a host-package version constraint.
+The slot's return annotation also defines how results are handled. No annotation discards them, `list[T]` collects values, and `dict[str, T]` collects them under plugin names. pristan checks plugin signatures during registration and return values during execution.
 
 Separately distributed extensions are discovered lazily through standard Python entry points. The first relevant slot operation loads modules from its entry-point group; importing those modules activates their decorators. Discovery cost and import side effects therefore wait until the slot is needed.
 
@@ -38,19 +38,19 @@ Separately distributed extensions are discovered lazily through standard Python 
 
 [`importlib.metadata.entry_points()`](https://docs.python.org/3/library/importlib.metadata.html#entry-points) already tells a host which installed objects exist. It does not define their callable contract, aggregation, fallback, naming policy, or result validation. pristan builds those semantics on top rather than replacing the packaging standard.
 
-[Pluggy](https://pluggy.readthedocs.io/en/stable/) is the closest mature relative. It provides hookspec and hookimpl markers, a plugin manager, entry-point loading, ordering, wrappers, first-result hooks, tracing, unregistering, and an enormous production record through pytest. It is more powerful and more mature.
+[Pluggy](https://pluggy.readthedocs.io/en/stable/) is the closest mature relative. It offers a full plugin manager with ordering, wrappers, tracing, lifecycle controls, and a long production record through pytest.
 
 pristan's advantage is a shorter path for a narrower case: a synchronous fan-out hook that should still look like a function. The slot, specification, manager-like registry, fallback, and annotation-driven result policy live in one object. Pluggy remains the better choice when lifecycle, ordering, wrappers, or protocol evolution dominate.
 
-[Stevedore](https://docs.openstack.org/stevedore/latest/) offers rich driver, hook, and extension managers. [Pluginlib](https://pluginlib.readthedocs.io/) validates class-based plugin contracts and versions. [Yapsy](https://yapsy.readthedocs.io/) handles filesystem-discovered stateful plugins. A small dictionary plus a registration decorator is often best in a closed-world application.
+[Stevedore](https://docs.openstack.org/stevedore/latest/) provides several manager styles, while [Pluginlib](https://pluginlib.readthedocs.io/) focuses on class-based contracts. In a closed application, a small dictionary and registration decorator may still be enough.
 
-Among the systems we reviewed, the distinctive combination in pristan is specific: the host function itself is the callable slot; plugins target that slot directly; installed packages are found through entry points; and the return annotation controls both aggregation and runtime validation. That is not a claim of universal superiority—only a clear niche.
+pristan's distinctive combination is specific: the host function is the slot, plugins target it directly, installed packages arrive through entry points, and the return annotation controls aggregation and validation. It is a clear niche rather than a claim of universal superiority.
 
 ## Boundaries of the first release
 
-Runtime type safety is intentionally partial. Signature compatibility means that a common valid call shape exists unless a stricter signature is supplied; it does not prove that every slot call will suit every plugin. Dispatch is sequential, one exception stops the call, and there are no priorities, wrappers, custom reducers, async semantics, or removal lifecycle.
+The runtime checks catch many contract mistakes, but they are not a full proof that every possible slot call will suit every plugin. Plugins run one after another, and one exception stops the sequence. The initial API has no priorities, wrappers, custom result reducers, async dispatch, or plugin removal.
 
-The first release serializes lazy discovery and registration with a per-slot reentrant lock. It does not yet make every collection and dispatch operation race-free, so “fully thread-safe” would promise too much.
+Lazy discovery and registration are protected against concurrent changes, but dispatch is not yet fully race-free. Calling the first release “fully thread-safe” would promise too much.
 
 pristan is aimed at library authors who want independently packaged extensions without turning every hook into a manager class. In a larger system, such slots can keep optional capabilities outside the core while leaving the surrounding architecture deliberately open.
 

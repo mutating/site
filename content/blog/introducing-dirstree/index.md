@@ -14,7 +14,7 @@ Almost every Python tool that works with source code begins by walking a directo
 
 ## What dirstree does
 
-The first release turns a local directory into a lazy stream of `pathlib.Path` objects. Give `DirectoryWalker` a string or `Path` root, optionally restrict the accepted file extensions, add exclusion patterns in familiar `.gitignore` syntax, and iterate over the selected files.
+Give `DirectoryWalker` a string or `Path` root, optionally restrict the accepted file extensions, add exclusion patterns in familiar `.gitignore` syntax, and iterate over the selected files.
 
 That scope is intentionally narrow. Version 0.0.1 walks one root, returns files rather than directories, and filters candidates after discovery. It accepts gitignore-style patterns; it does not automatically read a repository's `.gitignore`, promise every edge case of Git's precedence rules, or prune an excluded directory before entering it.
 
@@ -36,8 +36,8 @@ In a larger execution system, a crawler like this can define the worklist that a
 
 ## What comes next
 
-The crawler object leaves room for capabilities that do not belong in every handwritten `rglob` loop. Planned iterations will add callable filters, cooperative cancellation, combinations of independently configured crawlers, and multiple roots. We also intend to add direct callback application, an option to include directories, and a frozen path worklist for jobs that modify the tree while processing it.
+Planned iterations will add callable filters, cooperative cancellation, multiple roots, and combinations of independently configured crawlers. We also intend to support callbacks, optional directory results, and a frozen path worklist for jobs that modify the tree while processing it.
 
 That frozen mode will be a snapshot of selected path names, not a filesystem transaction: contents may still change, paths may disappear, and rollback remains someone else's job. The distinction matters. dirstree should make controlled discovery convenient without pretending that a live filesystem has become immutable.
 
-Version 0.0.1 starts at the useful minimum: select local files, keep the policy together, and hand ordinary `Path` objects to whatever comes next.
+dirstree starts at the useful minimum: select local files, keep the policy together, and hand ordinary `Path` objects to whatever comes next.

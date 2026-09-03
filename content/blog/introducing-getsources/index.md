@@ -18,7 +18,7 @@ Mutation, transformation, and introspection tools begin with a deceptively simpl
 
 `getclearsource(function)` then removes the leading indentation inherited from an enclosing class or function. A nested definition may be valid in its original block but fail when passed directly to `ast.parse()`. The cleaned form preserves the relative indentation of the body while making the fragment usable at top level.
 
-The first release is intentionally focused on Python-defined functions: regular functions, methods, class methods, static methods, and functions created with lambda expressions. It is not a universal inspector for modules, classes, builtins, C extensions, `functools.partial`, or arbitrary callable objects.
+The library focuses on Python-defined functions, including methods and lambdas. It is not a universal inspector for modules, classes, builtins, C extensions, or arbitrary callable objects.
 
 There is another important limit. A lambda may be accepted as a function object, but 0.0.1 does not yet isolate the lambda expression from the statement around it. Source such as `handler = lambda value: value + 1` may be returned with the surrounding assignment.
 
@@ -26,7 +26,7 @@ There is another important limit. A lambda may be accepted as a function object,
 
 The extraction capability belongs primarily to Python's [`inspect`](https://docs.python.org/3/library/inspect.html#retrieving-source-code) and [dill](https://dill.readthedocs.io/en/latest/dill.html#module-dill.source). Direct dill exposes more controls, while `inspect.getsourcelines()` can return line numbers and supports a broader range of inspectable objects. For ordinary file-backed code, `textwrap.dedent(inspect.getsource(function))` may be all a project needs.
 
-[sourceinspect](https://pypi.org/project/sourceinspect/) is the closest earlier wrapper, with adapters for more shells and APIs resembling `getsourcelines()` and `getsourcefile()`. [executing](https://github.com/alexmojaki/executing) and [stack-data](https://github.com/alexmojaki/stack_data) are stronger when the starting point is a live frame or traceback. `ast.get_source_segment()` extracts a precise fragment only after source and an AST node are already available. [cloudpickle](https://github.com/cloudpipe/cloudpickle) transfers executable behavior to another process, but does not recover readable source for transformation.
+[sourceinspect](https://pypi.org/project/sourceinspect/) supports more interactive shells and exposes a broader inspection API. [executing](https://github.com/alexmojaki/executing) and [stack-data](https://github.com/alexmojaki/stack_data) are stronger when the starting point is a live frame or traceback. [cloudpickle](https://github.com/cloudpipe/cloudpickle) solves a different problem: moving executable behavior between processes rather than recovering readable source.
 
 getsources is better only at its chosen boundary: keep `inspect` as the predictable primary path, use interactive-history recovery as a fallback, normalize indentation, and give downstream tools one function-focused contract.
 
