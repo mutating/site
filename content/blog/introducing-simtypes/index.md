@@ -1,20 +1,22 @@
 ---
-title: "Introducing simtypes: runtime type checks kept small"
+title: "Introducing simtypes: lightweight runtime type checks"
 slug: "introducing-simtypes"
 date: 2025-10-14T09:00:00+03:00
-description: "One dependency-free predicate for the runtime-observable part of a Python type hint."
+description: "Checks whether a Python value broadly matches a type hint without recursively validating collections or changing the value."
 author: "muta"
 logo: "logo.png"
 tags: [python, runtime-types, type-safety, validation, developer-tools]
 ---
 
-Python type hints describe more than `isinstance()` can check directly, yet many runtime components need only a cheap yes-or-no compatibility test—not recursive validation, coercion, decorators, or an entire schema system.
+Python type hints describe more than `isinstance()` can check directly: even a union or a parameterized collection requires special handling. Many runtime components need this answer during dispatch, registration, or configuration, but they only need a cheap yes-or-no compatibility test—not recursive validation, coercion, decorators, or an entire schema system.
 
-[simtypes](https://github.com/mutating/simtypes) is a dependency-free Python library for that narrow question. Its [first release](https://github.com/mutating/simtypes/releases/tag/0.0.1) exposes one predicate that understands ordinary classes, unions, optionals, `Any`, `None`, and the observable outer type of parameterized annotations.
+A helper based on `isinstance()` and `typing.get_origin()` can cover a few annotations, but every project then defines slightly different rules. [Typeguard](https://typeguard.readthedocs.io/en/latest/), [Beartype](https://beartype.readthedocs.io/), and [Pydantic](https://docs.pydantic.dev/latest/concepts/type_adapter/) solve the broader problem through recursive checks, automatic enforcement, or conversion. That additional behavior is unnecessary when dispatch or plugin registration only needs a predictable, low-cost predicate.
 
-## A predicate, not a type system
+[simtypes](https://github.com/mutating/simtypes) is a dependency-free Python library for this specific check. It exposes one predicate that understands ordinary classes, unions, optionals, `Any`, `None`, and the observable outer type of parameterized annotations. [The release](https://github.com/mutating/simtypes/releases/tag/0.0.1) is available on GitHub.
 
-Version 0.0.1 exposes `check(type, value) -> bool`. The historical argument order is type first:
+## Supported runtime checks
+
+The library exposes `check(type, value) -> bool`, with the type argument first:
 
 ```python
 from simtypes import check
@@ -24,28 +26,22 @@ check(int | None, None)           # True
 check(list[str], [1, 2, 3])       # True
 ```
 
-The last result is intentional. In this release, `list[str]` asks whether the value is a list; it does not walk the list to verify every element. Ordinary classes use `isinstance`, while `Any`, `None`, unions, optionals, and the outer runtime type of parameterized annotations receive small explicit rules.
+The last result is intentional. `list[str]` asks whether the value is a list; it does not walk the list to verify every element. Ordinary classes use `isinstance`, while `Any`, `None`, unions, optionals, and the outer runtime type of parameterized annotations receive small explicit rules.
 
-This gives collection checks a predictable cost that does not grow with collection length. It also means simtypes 0.0.1 is not suitable for validating untrusted nested data or verifying a complete static annotation. That broader form of validation is outside its scope.
+This gives collection checks a predictable cost that does not grow with collection length. It also means simtypes is not suitable for validating untrusted nested data or verifying a complete static annotation. That broader form of validation is outside its scope.
 
 The result is a small checker with no runtime dependencies, decorators, import hooks, coercion, or schema compiler. Callers get a boolean and decide what it means.
 
-## The alternatives are more powerful
+## Comparison with full validation tools
 
-Python already has excellent runtime checking projects. [Typeguard](https://typeguard.readthedocs.io/en/latest/) and [Beartype](https://beartype.readthedocs.io/) cover far more type hints and can enforce contracts automatically. [Runtype](https://runtype.readthedocs.io/en/stable/validation.html) checks collection contents recursively, while [Pydantic TypeAdapter](https://docs.pydantic.dev/latest/concepts/type_adapter/) also converts and serializes structured data.
-
-Those are better tools when their richer semantics are required. simtypes does not win by covering more of `typing`, and it is not the first boolean checker. Its advantage is a smaller contract: no automatic enforcement, no transformation of the value, and a guaranteed refusal to inspect collection elements in the default model.
+The broader tools mentioned above are better when complete validation is required. [Runtype](https://runtype.readthedocs.io/en/stable/validation.html), for example, checks collection contents recursively. simtypes deliberately offers a smaller contract: no automatic enforcement, no value transformation, and no inspection of collection elements in its default model.
 
 A local helper around `isinstance()` and `typing.get_origin()` may still be the best solution for one call site. A package becomes useful when the same modest policy must be tested, versioned, and shared by several libraries.
 
-## The specialization
+## Intended use
 
-simtypes is designed for runtime infrastructure that needs a cheap compatibility decision rather than a full validation framework. Dispatch, plugin registration, configuration fields, and other mechanisms can depend on the same answer without adding a large enforcement system.
-
-In a broader toolchain, it can provide consistent type checks between components without determining their architecture.
+simtypes is designed for runtime infrastructure that needs a cheap compatibility decision rather than a full validation framework. Dispatch, plugin registration, and configuration code can share the same rule without adding an enforcement system or coupling their wider designs.
 
 ## What comes next
 
-Planned releases will let callers explicitly request strict collection checks, add a few useful special numeric types, and reverse the arguments into the more natural `check(value, type)` order. String deserialization will follow, including dates and datetimes, and later a matching serializer so supported values can make a controlled round trip.
-
-Those additions should remain opt-in layers around the same principle. simtypes will not try to reproduce every rule that a static type checker can reason about. Its job is to answer the runtime question we can observe—and to be honest about the parts we deliberately ignore.
+The project will cover more practical runtime types and optional conversion tasks while preserving a cheap, explicit default check. simtypes will remain focused on properties that can be observed at runtime instead of trying to reproduce a complete static type system.

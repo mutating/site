@@ -1,43 +1,59 @@
 ---
-title: "Introducing skelet: configuration as controlled live state"
+title: "Introducing skelet: typed settings with controlled runtime updates"
 slug: "introducing-skelet"
 date: 2025-11-11T09:00:00+03:00
-description: "Typed settings from ordered sources, with guarded runtime changes, field conflicts, and secret-aware diagnostics."
+description: "Loads typed Python settings from several sources, validates later changes, and reports errors without exposing secrets."
 author: "muta"
 logo: "logo.png"
 tags: [python, configuration, type-safety, validation, secrets, thread-safety]
 ---
 
-Applications rarely receive configuration from one place: defaults, constructor arguments, environment variables, files, and secrets all compete to define the final value. The problem becomes harder in long-running Python programs, where settings may change after startup and still need validation, conflict checks, safe diagnostics, and callbacks.
+Applications rarely receive configuration from one place: defaults, constructor arguments, environment variables, files, and secrets all compete to define the final value. In a long-running Python program, those settings may also change after startup. If loading and later assignment follow different rules, invalid or conflicting values can enter a running application, callbacks may observe inconsistent state, and diagnostics may expose secrets.
 
-[skelet](https://github.com/mutating/skelet) is a Python configuration library that treats settings as controlled live state rather than a one-time loading step. Its [first release](https://github.com/mutating/skelet/releases/tag/0.0.1) combines typed fields, ordered sources, guarded assignment, per-field locking, explicit conflicts, and secret-aware error reporting.
+[Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/), [Dynaconf](https://www.dynaconf.com/), and [Hydra](https://hydra.cc/docs/intro/) provide powerful loading, validation, layering, and override systems. Their main abstractions do not combine per-field source selection with coordinated mutable assignments, explicit conflicts, callbacks, and secret-aware errors in one object. Applications that need those guarantees after startup otherwise have to build a second configuration lifecycle around the loader.
 
-## A live settings object
+[skelet](https://github.com/mutating/skelet) is a Python configuration library for settings that can change after they are loaded. It combines typed fields, ordered sources, guarded assignment, per-field locking, explicit conflicts, and secret-aware error reporting. [The release](https://github.com/mutating/skelet/releases/tag/0.0.1) is available on GitHub.
 
-Many configuration tools focus on loading a validated snapshot. skelet 0.0.1 also governs what happens when application code changes a value later.
+## Validated runtime updates
 
 A `Storage` class declares typed fields. Values can come from constructor arguments, environment variables, TOML—including `pyproject.toml`—JSON, YAML, or memory. Sources are ordered, and the first one containing a value wins. Individual fields can override or extend that shared order.
 
+```python
+from skelet import EnvSource, Field, Storage, TOMLSource
+
+class Settings(
+    Storage,
+    sources=[
+        EnvSource(prefix="my_app_"),
+        TOMLSource("pyproject.toml", table="tool.my_app"),
+    ],
+):
+    retries: int = Field(3, validation=lambda value: value >= 0)
+    api_token: str = Field("", secret=True)
+
+settings = Settings()
+settings.retries = 5       # The same checks apply after loading.
+settings.retries = -1      # Raises ValueError; 5 remains stored.
+```
+
+Here environment variables take priority over the TOML table, which in turn takes priority over field defaults. A later assignment still passes through the field's type and value checks.
+
 Before a value is stored, skelet can convert it, check its runtime type, and run user-defined validators. Fields may be read-only, carry documentation, declare aliases, or define explicit conflicts with other fields. A successful change can trigger a callback with the old value, the new value, and the storage object.
 
-The unusual part is that these rules still apply when values change later. Writes to a field are serialized, and fields that conflict share coordination so their relationship is checked consistently. This is not a transactional database: changes inside a stored mutable object bypass the field, and a failed callback does not roll an assignment back. It does, however, give ordinary assignments a clear lifecycle.
+These rules also apply when values change later. Writes to a field are serialized, and conflicting fields are coordinated so their relationship is checked consistently. This is not a transactional database: changes inside a stored mutable object bypass the field, and a failed callback does not roll an assignment back. Ordinary field assignments still follow a defined validation and notification sequence.
 
 ## Handling secret values
 
 `secret=True` redacts a field from the storage representation and from standard error messages produced by skelet. It does not encrypt the object, erase it from memory, enforce access control, or fetch values from a vault. Application code can still read and expose the original value.
 
-This distinction matters because secret-safe diagnostics and secret management are separate jobs. Version 0.0.1 addresses the former.
+This distinction matters because secret-safe diagnostics and secret management are separate jobs. skelet addresses the former.
 
-## Where it sits among established tools
+## Comparison with established configuration tools
 
-[Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) offers much broader parsing, nested models, command-line input, secret directories, and cloud secret providers. [Dynaconf](https://www.dynaconf.com/) excels at layered environments, merging, reloads, Redis, and Vault. [Typed Settings](https://typed-settings.readthedocs.io/en/latest/) combines several model systems with composable loaders and generated CLIs. [Hydra and OmegaConf](https://hydra.cc/docs/intro/) specialize in hierarchical composition and overrides.
-
-Those projects are broader. skelet's distinctive niche is guarded mutable configuration: per-field source routing, explicit conflicts, coordinated writes, and callbacks connected to the assignment path. That exact combination is uncommon.
+Those projects offer richer loading ecosystems: nested models, command-line input, remote secret providers, hierarchical composition, and reloads. [Typed Settings](https://typed-settings.readthedocs.io/en/latest/) is another option for composable loaders and generated CLIs. skelet's narrower specialization is the lifecycle of mutable fields after loading: coordinated writes, explicit conflicts, and callbacks during assignment.
 
 The package is aimed at libraries, services, and long-running tools whose settings are both loaded from several places and legitimately changed after construction. When an immutable startup snapshot is enough, a narrower loader may be the better choice.
 
 ## What comes next
 
-The first follow-ups will add fields without defaults, dictionary serialization, and command-line arguments as another source. We also plan instance-specific source chains, stronger typing ergonomics so ordinary annotations need less `Field` ceremony, and richer value types such as dates and datetimes.
-
-Further ahead, built-in source implementations can move behind the same plugin boundary as third-party sources. That keeps the storage model compact while leaving room for new inputs—and gives a larger set of tools a configuration layer without forcing every source into the core.
+The project will make typed configuration easier to declare and extend across more input sources and value types. Built-in and third-party sources will move toward the same extension model, keeping the storage core compact while supporting a broader configuration layer for related tools.
