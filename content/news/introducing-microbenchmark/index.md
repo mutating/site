@@ -1,5 +1,5 @@
 ---
-title: "Introducing microbenchmark: structured performance checks for Python"
+title: "Introducing `microbenchmark`: structured performance checks for Python"
 slug: "introducing-microbenchmark"
 aliases: ["/blog/introducing-microbenchmark/"]
 date: 2026-04-10T09:00:00+03:00

@@ -1,5 +1,5 @@
 ---
-title: "Introducing skelet: typed settings from multiple sources"
+title: "Introducing `skelet`: typed settings from multiple sources"
 slug: "introducing-skelet"
 aliases: ["/blog/introducing-skelet/"]
 date: 2025-11-11T09:00:00+03:00

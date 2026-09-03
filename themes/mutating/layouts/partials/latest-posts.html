@@ -27,7 +27,7 @@
         {{- $localizedPost := partial "localized-page.html" $post -}}
         <a class="dispatch-card{{ if eq $index 0 }} dispatch-card--featured{{ end }}" href="{{ $post.RelPermalink }}"{{ if eq $index $fieldNotesIndex }} id="field-notes"{{ end }}>
           <p>{{ $slug }}</p>
-          <h3>{{ $localizedPost.Title }}</h3>
+          <h3>{{ partial "title-markup.html" $localizedPost.Title }}</h3>
           <span class="dispatch-card__description">{{ $localizedPost.Description }}</span>
           <span class="dispatch-card__cta">{{ if eq $post.Section "news" }}{{ T "read_announcement" }}{{ else }}{{ T "read_field_note" }}{{ end }} <b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b></span>
         </a>

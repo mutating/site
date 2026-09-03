@@ -1,5 +1,5 @@
 ---
-title: "Introducing metacode: machine-readable instructions in comments"
+title: "Introducing `metacode`: machine-readable instructions in comments"
 slug: "introducing-metacode"
 aliases: ["/blog/introducing-metacode/"]
 date: 2025-12-09T09:00:00+03:00

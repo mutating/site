@@ -1,5 +1,5 @@
 ---
-title: "Introducing pristan: plugins defined by typed functions"
+title: "Introducing `pristan`: plugins defined by typed functions"
 slug: "introducing-pristan"
 aliases: ["/blog/introducing-pristan/"]
 date: 2026-03-11T09:00:00+03:00

@@ -1,6 +1,7 @@
 {{- $localizedPage := partial "localized-page.html" . -}}
+{{- $plainTitle := $localizedPage.Title | markdownify | plainify -}}
 {{- $description := $localizedPage.Description | default site.Params.description -}}
-{{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" $localizedPage.Title) -}}
+{{- $title := cond .IsHome site.Title (printf "%s — The Mutating Company" $plainTitle) -}}
 {{- $canonicalURL := .Permalink -}}
 {{- $pageNumber := 1 -}}
 {{- $isArticle := and .IsPage (or (eq .Section "blog") (eq .Section "news")) -}}
@@ -12,7 +13,7 @@
   {{- $canonicalURL = $paginator.URL | absURL -}}
   {{- if gt $pageNumber 1 -}}
     {{- $pageLabel := cond (eq site.Language.Lang "ru") "Страница" "Page" -}}
-    {{- $title = printf "%s — %s %d — The Mutating Company" $localizedPage.Title $pageLabel $pageNumber -}}
+    {{- $title = printf "%s — %s %d — The Mutating Company" $plainTitle $pageLabel $pageNumber -}}
     {{- $description = printf "%s %s %d." $description $pageLabel $pageNumber -}}
   {{- end -}}
 {{- end -}}
@@ -225,7 +226,7 @@
     "@type" (cond (eq .Section "news") "NewsArticle" "BlogPosting")
     "@id" (printf "%s#article" $canonicalURL)
     "mainEntityOfPage" $canonicalURL
-    "headline" $localizedPage.Title
+    "headline" $plainTitle
     "description" $description
     "inLanguage" site.Language.Lang
     "datePublished" (.Date.Format "2006-01-02T15:04:05Z07:00")
@@ -243,7 +244,7 @@
   {{- $profileEntity := dict
     "@type" $entityType
     "@id" (printf "%s#profile" $canonicalURL)
-    "name" $localizedPage.Title
+    "name" $plainTitle
     "url" $canonicalURL
     "description" ($localizedPage.Description | default ($localizedPage.Plain | truncate 240))
     "sameAs" $sameAs
@@ -254,7 +255,7 @@
     "@type" "ProfilePage"
     "@id" (printf "%s#profile-page" $canonicalURL)
     "url" $canonicalURL
-    "name" $localizedPage.Title
+    "name" $plainTitle
     "inLanguage" site.Language.Lang
     "mainEntity" $profileEntity
     "isPartOf" (dict "@id" $websiteID)

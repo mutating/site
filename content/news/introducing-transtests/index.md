@@ -1,5 +1,5 @@
 ---
-title: "Introducing transtests: one test for sync, async, and generator functions"
+title: "Introducing `transtests`: one test for sync, async, and generator functions"
 slug: "introducing-transtests"
 aliases: ["/blog/introducing-transtests/"]
 date: 2026-03-31T09:00:00+03:00

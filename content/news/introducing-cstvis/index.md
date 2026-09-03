@@ -1,5 +1,5 @@
 ---
-title: "Introducing cstvis: independent changes to Python source code"
+title: "Introducing `cstvis`: independent changes to Python source code"
 slug: "introducing-cstvis"
 aliases: ["/blog/introducing-cstvis/"]
 date: 2025-12-17T09:00:00+03:00

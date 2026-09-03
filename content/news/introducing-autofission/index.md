@@ -1,5 +1,5 @@
 ---
-title: "Introducing autofission: automatic scaling limits for Fission"
+title: "Introducing `autofission`: automatic scaling limits for Fission"
 slug: "introducing-autofission"
 aliases: ["/blog/introducing-autofission/"]
 date: 2026-08-21T09:00:00+03:00

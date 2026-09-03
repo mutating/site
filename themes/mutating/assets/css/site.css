@@ -3528,6 +3528,19 @@ a.section-index:focus-visible {
   margin: 0 0 34px;
 }
 
+:is(
+  .post__header h1,
+  .blog-card h2,
+  .dispatch-card h3,
+  .author-post-card h3
+) code {
+  color: var(--hot);
+  font-family: var(--font-geist-mono);
+  font-size: 0.86em;
+  font-weight: inherit;
+  letter-spacing: -0.045em;
+}
+
 .post__layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 760px) minmax(0, 1fr);

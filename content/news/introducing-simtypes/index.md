@@ -1,5 +1,5 @@
 ---
-title: "Introducing simtypes: lightweight runtime checks for Python type hints"
+title: "Introducing `simtypes`: lightweight runtime checks for Python type hints"
 slug: "introducing-simtypes"
 aliases: ["/blog/introducing-simtypes/"]
 date: 2025-10-14T09:00:00+03:00

@@ -63,8 +63,8 @@
   </aside>
   {{ end }}
   <nav class="post__nav" aria-label="{{ T "post_navigation" }}">
-    {{ with .PrevInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--previous" href="{{ .RelPermalink }}"><small>{{ T "previous" }}</small><span>← {{ $localizedPost.Title }}</span></a>{{ end }}
-    {{ with .NextInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--next" href="{{ .RelPermalink }}"><small>{{ T "next" }}</small><span>{{ $localizedPost.Title }} →</span></a>{{ end }}
+    {{ with .PrevInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--previous" href="{{ .RelPermalink }}"><small>{{ T "previous" }}</small><span>← {{ partial "title-markup.html" $localizedPost.Title }}</span></a>{{ end }}
+    {{ with .NextInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--next" href="{{ .RelPermalink }}"><small>{{ T "next" }}</small><span>{{ partial "title-markup.html" $localizedPost.Title }} →</span></a>{{ end }}
   </nav>
 </article>
 {{ end }}

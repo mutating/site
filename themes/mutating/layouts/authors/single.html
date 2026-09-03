@@ -105,7 +105,7 @@
             <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date | time.Format "02 Jan 2006" }}</time>
             <span>{{ T "reading_time" (dict "count" $localizedPost.ReadingTime) }}</span>
           </div>
-          <h3>{{ $localizedPost.Title }}</h3>
+          <h3>{{ partial "title-markup.html" $localizedPost.Title }}</h3>
           <p>{{ $localizedPost.Description | default $localizedPost.Summary }}</p>
           <b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b>
         </a>

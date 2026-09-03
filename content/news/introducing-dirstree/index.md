@@ -1,5 +1,5 @@
 ---
-title: "Introducing dirstree: reusable rules for choosing project files"
+title: "Introducing `dirstree`: reusable rules for choosing project files"
 slug: "introducing-dirstree"
 aliases: ["/blog/introducing-dirstree/"]
 date: 2025-09-29T09:00:00+03:00

@@ -190,6 +190,25 @@ def test_all_release_announcements_disable_the_logo_frame() -> None:
         assert "logo_frame: false" in front_matter
 
 
+def test_release_titles_format_tool_names_as_inline_code() -> None:
+    """Keep every English and Russian announcement title consistently styled."""
+
+    announcements = sorted((PROJECT_ROOT / "content" / "news").glob("introducing-*"))
+    assert len(announcements) == 11
+    for announcement in announcements:
+        tool_name = announcement.name.removeprefix("introducing-")
+        for filename in ("index.md", "translation.ru.md"):
+            front_matter = (announcement / filename).read_text().split("---", 2)[1]
+            assert f"`{tool_name}`" in front_matter
+
+    stylesheet = (
+        PROJECT_ROOT / "themes/mutating/assets/css/site.css"
+    ).read_text()
+    title_code_rule = stylesheet.split(".post__header h1,", 1)[1].split("}", 1)[0]
+    assert "color: var(--hot);" in title_code_rule
+    assert ".post__nav-link span" not in title_code_rule
+
+
 def test_skelet_release_uses_the_full_color_mark_without_its_wordmark() -> None:
     """Keep the canonical iridescent artwork instead of the old monochrome logo."""
 
