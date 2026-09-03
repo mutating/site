@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [python, cst, source-transformation, mutation-testing, static-analysis, developer-tools]
 ---
 
-Mutation testing and other source-analysis tools often need to find every possible edit in a Python file but apply only one candidate at a time. If several edits are applied together, the tool can no longer test or distribute them as independent units. Conventional tree transformers rewrite every matching node in one pass, so they do not directly support this workflow.
+Mutation testing must find every possible edit in a Python file, then apply and test each one independently. Conventional tree transformers rewrite every matching node in one pass, which prevents that separation.
 
-[LibCST](https://libcst.readthedocs.io/) preserves formatting and comments, but its visitors and transformers do not by themselves turn every possible edit into an independently addressable operation. Complete mutation systems such as [mutmut](https://github.com/boxed/mutmut) also manage test execution and mutation sessions. A reusable transformation layer is needed when a tool wants LibCST's fidelity and independent changes without adopting an entire mutation runner.
+[LibCST](https://libcst.readthedocs.io/) preserves formatting and comments but does not make potential edits independently addressable. Complete systems such as [mutmut](https://github.com/boxed/mutmut) add test execution and session management. A smaller transformation layer is useful between them.
 
 [cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. It discovers source-aware transformation coordinates and can replay any one of them independently against the original module. [The release](https://github.com/mutating/cstvis/releases/tag/0.0.1) is available on GitHub.
 
@@ -18,7 +18,7 @@ Mutation testing and other source-analysis tools often need to find every possib
 
 cstvis does not replace LibCST's parser or transformation API. It coordinates potential edits so that a caller can enumerate them first and apply a selected one later.
 
-A converter is an ordinary function registered with `@changer.converter`. The type annotation on its first parameter selects the concrete LibCST node type it handles. Filters decide whether an individual occurrence is eligible. `iterate_coordinates()` exposes the surviving candidates as source ranges; `apply_coordinate()` starts from the untouched module and produces a complete source string with only the selected occurrence changed.
+A function registered with `@changer.converter` handles the LibCST node type named by its first annotation. Filters remove ineligible occurrences. `iterate_coordinates()` returns the remaining source ranges, and `apply_coordinate()` applies one range to the untouched module.
 
 ```python
 from libcst import Add, Subtract
@@ -38,13 +38,13 @@ print(changer.apply_coordinate(coordinate))
 #> total = left - right
 ```
 
-Unlike a conventional transformer, cstvis treats every matching node as an independent candidate. Two additions in a file produce two candidates, and each candidate is applied separately to the original source.
+Two additions therefore produce two candidates, each applied separately to the original source.
 
-Context also exposes the candidate coordinate, a comment found on the node's starting line, and parsed metacode directives. Each converter can therefore use source-local rules without implementing comment lookup itself.
+Context includes the coordinate, the comment on the node's first line, and parsed metacode directives, so converters can use local rules without implementing comment lookup.
 
 ## Comparison with other transformation tools
 
-Direct [LibCST visitors, transformers, matchers, and codemods](https://libcst.readthedocs.io/en/latest/codemods.html) are more expressive and remain the right choice for complex, multi-pass refactoring.
+Direct [LibCST codemods](https://libcst.readthedocs.io/en/latest/codemods.html) remain better for complex, multi-pass refactoring.
 
 [Bowler](https://pybowler.io/) and [RedBaron](https://redbaron.readthedocs.io/) provide higher-level lossless refactoring workflows. Standard [`ast.NodeTransformer`](https://docs.python.org/3/library/ast.html#ast.NodeTransformer) is simpler when preserving formatting and comments does not matter.
 
@@ -52,10 +52,8 @@ cstvis specializes in a smaller layer: LibCST transformations with type-driven r
 
 ## Intended use
 
-cstvis handles transformation only. It does not walk directories, store sessions, run tests, or schedule workers. A coordinate can serve as a unit of work for another system.
-
-The model allows one converter per exact CST node type and always applies coordinates to the unchanged original source. These limits make the result of each operation predictable.
+cstvis does not walk directories, store sessions, run tests, or schedule workers. It allows one converter per exact CST node type and always applies coordinates to the original source; another system can treat each coordinate as a unit of work.
 
 ## What comes next
 
-The direction is to make independent transformations easier to describe, combine, and reuse. Clearer separation between discovery and execution will help other tools build larger workflows without losing the one-change-at-a-time model.
+The project will make independent transformations easier to describe and combine while preserving the one-change-at-a-time model.
