@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [python, configuration, type-safety, validation, secrets, thread-safety]
 ---
 
-Applications rarely receive configuration from one place: defaults, constructor arguments, environment variables, files, and secrets all compete to define the final value. In a long-running Python program, those settings may also change after startup. If loading and later assignment follow different rules, invalid or conflicting values can enter a running application, callbacks may observe inconsistent state, and diagnostics may expose secrets.
+Python applications combine defaults, constructor arguments, environment variables, files, and secrets. Long-running programs may also change settings after startup. If loading and assignment follow different rules, invalid values can reach the application and errors may expose secrets.
 
-[Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/), [Dynaconf](https://www.dynaconf.com/), and [Hydra](https://hydra.cc/docs/intro/) provide powerful loading, validation, layering, and override systems. Their main abstractions do not combine per-field source selection with coordinated mutable assignments, explicit conflicts, callbacks, and secret-aware errors in one object. Applications that need those guarantees after startup otherwise have to build a second configuration lifecycle around the loader.
+[Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/), [Dynaconf](https://www.dynaconf.com/), and [Hydra](https://hydra.cc/docs/intro/) provide powerful loading and override systems. They do not combine per-field source selection with coordinated runtime assignments, explicit conflicts, callbacks, and secret-aware errors in one object.
 
 [skelet](https://github.com/mutating/skelet) is a Python configuration library for settings that can change after they are loaded. It combines typed fields, ordered sources, guarded assignment, per-field locking, explicit conflicts, and secret-aware error reporting. [The release](https://github.com/mutating/skelet/releases/tag/0.0.1) is available on GitHub.
 
@@ -38,15 +38,11 @@ settings.retries = -1      # Raises ValueError; 5 remains stored.
 
 Here environment variables take priority over the TOML table, which in turn takes priority over field defaults. A later assignment still passes through the field's type and value checks.
 
-Before a value is stored, skelet can convert it, check its runtime type, and run user-defined validators. Fields may be read-only, carry documentation, declare aliases, or define explicit conflicts with other fields. A successful change can trigger a callback with the old value, the new value, and the storage object.
-
-These rules also apply when values change later. Writes to a field are serialized, and conflicting fields are coordinated so their relationship is checked consistently. This is not a transactional database: changes inside a stored mutable object bypass the field, and a failed callback does not roll an assignment back. Ordinary field assignments still follow a defined validation and notification sequence.
+Before storing a value, skelet can convert it, check its type, and run validators. Fields may be read-only, documented, aliased, or declared incompatible with other fields; successful changes can trigger callbacks. Writes to related fields are coordinated, but this is not a database transaction: mutating a stored object bypasses the field, and a failed callback does not undo an assignment.
 
 ## Handling secret values
 
-`secret=True` redacts a field from the storage representation and from standard error messages produced by skelet. It does not encrypt the object, erase it from memory, enforce access control, or fetch values from a vault. Application code can still read and expose the original value.
-
-This distinction matters because secret-safe diagnostics and secret management are separate jobs. skelet addresses the former.
+`secret=True` redacts a field from the storage representation and standard skelet errors. It does not encrypt the value, control access, or retrieve secrets from a vault; application code can still expose it.
 
 ## Comparison with established configuration tools
 
@@ -56,4 +52,4 @@ The package is aimed at libraries, services, and long-running tools whose settin
 
 ## What comes next
 
-The project will make typed configuration easier to declare and extend across more input sources and value types. Built-in and third-party sources will move toward the same extension model, keeping the storage core compact while supporting a broader configuration layer for related tools.
+The project will simplify typed configuration and give built-in and third-party sources a common extension model, while keeping the storage core compact.
