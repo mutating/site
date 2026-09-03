@@ -9,7 +9,7 @@ tags: [python, benchmarking, performance, cli, testing, developer-tools]
 
 A `timeit` snippet becomes awkward when several measurements need names, shared execution, machine-readable results, and a failure threshold. Full benchmark suites may require more setup and statistical machinery than a small library check needs.
 
-[`timeit`](https://docs.python.org/3/library/timeit.html) provides timing primitives but no scenario model or CI budget. [pyperf](https://pyperf.readthedocs.io/) and [pytest-benchmark](https://pytest-benchmark.readthedocs.io/en/latest/) provide stronger statistics and isolation. A small in-process API covers the space between them.
+[`timeit`](https://docs.python.org/3/library/timeit.html) provides timing primitives but no scenario model or CI budget. [pyperf](https://pyperf.readthedocs.io/) and [pytest-benchmark](https://pytest-benchmark.readthedocs.io/en/latest/) provide stronger statistics and isolation. Smaller projects may need named, serializable measurements without a full harness.
 
 [microbenchmark](https://github.com/mutating/microbenchmark) is a lightweight Python library for structured, small-scale measurements. It represents benchmark scenarios, groups, and results as ordinary Python objects that can be combined, inspected, serialized, and checked against a basic performance budget. [The release](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) is available on GitHub.
 
