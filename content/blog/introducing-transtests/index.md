@@ -54,7 +54,3 @@ Plain pytest parametrization is better when sync and async APIs are implemented 
 The clearest users are authors of decorators, callback registries, dispatchers, middleware, instrumentation, and metaprogramming tools. These libraries often care not only about what a callback returns, but when its body actually runs.
 
 With [`LockTraceWrapper`](https://pypi.org/project/locklib/), one test can verify that the callback body—not merely coroutine or generator creation—ran while a lock was held. This check can fit into a larger test suite without determining its architecture.
-
-## What comes next
-
-The project will improve diagnostics and integration across async test environments while remaining focused on one behavior across several callable types.

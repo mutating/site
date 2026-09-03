@@ -53,7 +53,3 @@ cstvis specializes in a smaller layer: LibCST transformations with type-driven r
 ## Intended use
 
 cstvis does not walk directories, store sessions, run tests, or schedule workers. It allows one converter per exact CST node type and always applies coordinates to the original source; another system can treat each coordinate as a unit of work.
-
-## What comes next
-
-The project will make independent transformations easier to describe and combine while preserving the one-change-at-a-time model.
