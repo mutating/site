@@ -8,9 +8,9 @@ logo: "logo.png"
 tags: [python, plugins, extensibility, type-safety, architecture, developer-tools]
 ---
 
-To let separately installed packages extend a Python library, its author must define what plugins can provide, discover them, register their functions, handle the case where none are installed, and combine their results. When those pieces are defined separately, the callable contract is harder to see, type-check, and test. For a small synchronous extension point, the supporting infrastructure can become more complex than the function being extended.
+To support separately installed plugins, a Python library must define a contract, discover implementations, handle an empty registry, and combine results. For one synchronous extension point, that infrastructure can become more complex than the function being extended.
 
-Python entry points solve package discovery, but they do not define a callable contract or how several results should be combined. [Pluggy](https://pluggy.readthedocs.io/en/stable/) provides a mature plugin manager with ordering, wrappers, tracing, and lifecycle controls. A smaller library still has to choose between writing the missing glue itself and adopting a manager whose concepts exceed the needs of one typed synchronous hook.
+Python entry points handle discovery but not callable contracts or result aggregation. [Pluggy](https://pluggy.readthedocs.io/en/stable/) supplies a mature plugin manager, but its ordering, wrappers, tracing, and lifecycle controls may be unnecessary for one typed synchronous hook.
 
 [pristan](https://github.com/mutating/pristan) is a compact Python plugin library that keeps the extension contract centred on an ordinary typed function. That function serves as the slot, registry, fallback, and call site, while installed plugins are discovered lazily through standard Python entry points. [The release](https://github.com/mutating/pristan/releases/tag/0.0.1) is available on GitHub.
 
@@ -33,26 +33,26 @@ print(serializers(42))
 #> {'text_serializer': b'42'}
 ```
 
-Calling `serializers(value)` invokes every registered plugin in sequence. If no plugin exists, the original function body provides the fallback. The plugin decorator returns the original function, so an implementation can still be tested directly.
+Calling the slot invokes every plugin in sequence; if none exists, the original function body is the fallback. Each plugin remains directly callable for isolated tests.
 
 The slot's return annotation also defines how results are handled. No annotation discards them, `list[T]` collects values, and `dict[str, T]` collects them under plugin names. pristan checks plugin signatures during registration and return values during execution.
 
-Separately distributed extensions are discovered lazily through standard Python entry points. The first relevant slot operation loads modules from its entry-point group; importing those modules activates their decorators. Discovery cost and import side effects therefore wait until the slot is needed.
+Installed extensions are discovered lazily through Python entry points. Their modules are imported only when a relevant slot is first used.
 
 ## Alternatives and scope
 
 Compared with Pluggy, pristan requires less setup for a narrower case: a synchronous function that calls every registered plugin. Pluggy remains the better choice when lifecycle, ordering, wrappers, or protocol evolution are more important.
 
-[Stevedore](https://docs.openstack.org/stevedore/latest/) provides several manager styles, while [Pluginlib](https://pluginlib.readthedocs.io/) focuses on class-based contracts. In a closed application, a small dictionary and registration decorator may still be enough.
+[Stevedore](https://docs.openstack.org/stevedore/latest/) offers several manager styles, while [Pluginlib](https://pluginlib.readthedocs.io/) uses class-based contracts. A closed application may need only a dictionary and registration decorator.
 
 ## Limitations
 
-The runtime checks catch many contract mistakes, but they are not a full proof that every possible slot call will suit every plugin. Plugins run one after another, and one exception stops the sequence. The API has no priorities, wrappers, custom result reducers, async dispatch, or plugin removal.
+Runtime checks catch many contract mistakes but cannot prove that every slot call suits every plugin. Plugins run sequentially, one exception stops dispatch, and the API has no priorities, wrappers, custom reducers, async dispatch, or plugin removal.
 
 Lazy discovery and registration are protected against concurrent changes, but dispatch is not fully race-free. pristan therefore does not guarantee full thread safety.
 
-pristan is aimed at library authors who want independently packaged extensions without turning every hook into a manager class. In a larger system, such slots can keep optional capabilities outside the core while leaving the surrounding architecture deliberately open.
+pristan is for library authors who want independently packaged extensions without a manager class for every hook. Its slots can keep optional capabilities outside the core without defining the surrounding architecture.
 
 ## What comes next
 
-The project will broaden the kinds of plugin contracts a slot can express while keeping the function-based API compact. Another priority is more predictable lifecycle and concurrency behavior, especially when plugins are discovered, changed, or invoked at the same time.
+The project will support more plugin contracts and make lifecycle and concurrency behavior more predictable without expanding the compact function-based API.
