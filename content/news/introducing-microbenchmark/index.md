@@ -1,22 +1,23 @@
 ---
-title: "Introducing microbenchmark: structured performance checks for Python"
+title: "Introducing `microbenchmark`: structured performance checks for Python"
 slug: "introducing-microbenchmark"
 aliases: ["/blog/introducing-microbenchmark/"]
 date: 2026-04-10T09:00:00+03:00
 description: "Turns small performance checks into reusable Python scenarios and results without requiring a full benchmark suite."
 author: "muta"
+logo_frame: false
 tags: [python, benchmarking, performance, cli, testing, developer-tools]
 ---
 
-A `timeit` snippet becomes awkward when several measurements need names, shared execution, machine-readable results, and a failure threshold. Full benchmark suites may require more setup and statistical machinery than a small library check needs.
+A benchmark repeatedly measures how long an operation takes. Python's `timeit` is convenient for one quick measurement, but a project may need several named checks, reusable settings, saved results, and a clear failure when an operation becomes too slow. Full benchmark suites can require more setup and statistical machinery than a small library needs.
 
 [`timeit`](https://docs.python.org/3/library/timeit.html) provides timing primitives but no scenario model or CI budget. [pyperf](https://pyperf.readthedocs.io/) and [pytest-benchmark](https://pytest-benchmark.readthedocs.io/en/latest/) provide stronger statistics and isolation. Smaller projects may need named, serializable measurements without a full harness.
 
-[microbenchmark](https://github.com/mutating/microbenchmark) is a lightweight Python library for structured, small-scale measurements. It represents benchmark scenarios, groups, and results as ordinary Python objects that can be combined, inspected, serialized, and checked against a basic performance budget. [The release](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) is available on GitHub.
+[microbenchmark](https://github.com/mutating/microbenchmark) is a lightweight Python library for organizing small performance checks. Each measurement and its result is an ordinary Python object, so checks can be grouped, inspected, saved as JSON, and compared with a simple time limit. [The release](https://github.com/mutating/microbenchmark/releases/tag/0.0.1) is available on GitHub.
 
 ## Core API
 
-A `Scenario` keeps a callable, positional arguments, a name, documentation, and the number of observations together. `run()` performs optional warmup calls, then times every invocation separately with `perf_counter()` by default.
+A `Scenario` keeps the measured function, its arguments, a name, documentation, and the number of repetitions together. `run()` can make warm-up calls first, then times every invocation separately with `perf_counter()` by default.
 
 ```python
 from microbenchmark import Scenario
@@ -32,7 +33,7 @@ print(result.best)
 print(result.worst)
 ```
 
-The result is a `BenchmarkResult` that retains every duration rather than immediately reducing the run to one number. It exposes the mean, best, and worst observations. Its `p95` and `p99` properties return trimmed result sets—the fastest 95 or 99 percent of samples—not conventional scalar latency percentiles.
+The result is a `BenchmarkResult` that keeps every duration rather than immediately reducing the run to one number. It exposes the mean, best, and worst measurements. Its `p95` and `p99` properties return the fastest 95 or 99 percent of samples, not the single percentile values that monitoring tools commonly use.
 
 Adding scenarios creates a flat, ordered `ScenarioGroup`. Results serialize to JSON, but deserialization does not reconstruct executable scenarios.
 
@@ -51,7 +52,3 @@ Timing every call separately adds timer and Python-call overhead. There is no au
 ## Intended users
 
 microbenchmark is for library authors who want a few reusable performance scenarios beside their code. Work requiring stronger statistical guarantees should use a full benchmark system.
-
-## What comes next
-
-The project will simplify Python and command-line use while remaining a lightweight tool rather than a statistical benchmarking system.

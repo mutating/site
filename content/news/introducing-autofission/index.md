@@ -1,19 +1,20 @@
 ---
-title: "Introducing autofission: Fission scaling limits based on cluster capacity"
+title: "Introducing `autofission`: automatic scaling limits for Fission"
 slug: "introducing-autofission"
 aliases: ["/blog/introducing-autofission/"]
 date: 2026-08-21T09:00:00+03:00
-description: "Keeps the scaling limit of Fission Functions aligned with the capacity currently available in a Kubernetes cluster."
+description: "Keeps the maximum number of Fission function copies aligned with the free capacity of a Kubernetes cluster."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [kubernetes, fission, autoscaling, distributed-computing, infrastructure, scheduling]
 ---
 
-[Fission](https://fission.io/) runs serverless functions on Kubernetes and scales them with demand. The maximum replica count of each Function is fixed in advance, however, even when the available cluster capacity changes. Operators must therefore choose between a low limit that wastes capacity and a high limit that the scheduler may be unable to satisfy.
+[Fission](https://fission.io/) lets teams run small, on-demand programs called functions in a Kubernetes cluster. It can start more copies of a function when demand grows, but its upper limit is fixed in advance—even when the cluster has gained or lost available computing capacity. A low limit leaves machines idle; a high one may ask Kubernetes to start copies for which there is no room.
 
-[HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [KEDA](https://keda.sh/docs/2.20/concepts/scaling-deployments/) choose a replica count within a fixed maximum. Cluster Autoscaler and [Karpenter](https://karpenter.sh/docs/concepts/) add nodes. None calculates how far disposable Fission workloads may scale on capacity that already exists.
+[HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [KEDA](https://keda.sh/docs/2.20/concepts/scaling-deployments/) choose a replica count within a fixed maximum. Cluster Autoscaler and [Karpenter](https://karpenter.sh/docs/concepts/) add nodes. None calculates how far lower-priority Fission workloads may scale using capacity that already exists.
 
-[autofission](https://github.com/mutating/autofission) is an open-source Python controller that calculates `MaxScale` from the CPU, memory, and Pod capacity available on each node. It includes a CLI, container, and Helm definitions for continuously updating opted-in Fission Functions. [The release](https://github.com/mutating/autofission/releases/tag/0.0.1) is available on GitHub.
+[autofission](https://github.com/mutating/autofission) is an open-source controller written in Python. A controller is a program that watches the cluster and keeps settings up to date. Autofission calculates each opted-in function's `MaxScale` limit from the CPU, memory, and number of application copies that the cluster can currently accommodate. It includes a command-line interface, a container image, and Helm definitions for running continuously. [The release](https://github.com/mutating/autofission/releases/tag/0.0.1) is available on GitHub.
 
 ## How the dynamic limit works
 
@@ -25,7 +26,7 @@ Autofission updates the Fission Function rather than its generated HPA. Concurre
 
 ## Opt-in behavior, priority, and limitations
 
-Only explicitly labelled `newdeploy` Functions are managed. Their Pods can use a low, non-preempting priority class, so disposable work yields to more important workloads instead of evicting them.
+Only explicitly labelled `newdeploy` Functions are managed. Their Pods can use a low, non-preempting priority class, so lower-priority work gives way to more important workloads instead of evicting them.
 
 Opting a Function in is an explicit Kubernetes operation:
 
@@ -47,4 +48,4 @@ The calculation models CPU, memory, and Pod count—not every scheduler rule. Ea
 
 The closest upstream analogue is [cluster-capacity](https://github.com/kubernetes-sigs/cluster-capacity), which simulates how many copies of a Pod specification could be scheduled. Autofission adds continuous reconciliation for Fission Functions and Environments and writes the result to `MaxScale`.
 
-This is useful for independent, disposable work that should use the remaining capacity of a shared cluster. Distributed analysis is one possible use case, but the controller remains general Fission infrastructure.
+This is useful for independent, lower-priority jobs that should use the remaining capacity of a shared cluster. Distributed analysis is one possible use case, but the controller remains general Fission infrastructure.

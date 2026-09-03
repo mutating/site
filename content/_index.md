@@ -101,7 +101,7 @@ home:
   latest_posts:
     label: "FROM THE LAB"
     heading: "Fresh signals from the lab."
-    status: "Latest field notes"
+    status: "Latest publications"
   contact:
     frame_title: "Interactive field of cursor-responsive Muta tentacles"
     label: "CONTACT / NO SMALL TALK REQUIRED"

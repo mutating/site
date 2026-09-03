@@ -1,19 +1,20 @@
 ---
-title: "Introducing dirstree: reusable rules for directory traversal"
+title: "Introducing `dirstree`: reusable rules for choosing project files"
 slug: "introducing-dirstree"
 aliases: ["/blog/introducing-dirstree/"]
 date: 2025-09-29T09:00:00+03:00
-description: "Selects local source files through reusable extension and ignore rules and returns ordinary Python Path objects."
+description: "Selects local source files through reusable extension and exclusion rules and returns ordinary Python Path objects."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [python, filesystem, directory-traversal, developer-tools, orchestration]
 ---
 
-Python source tools begin by walking a directory, selecting file types, and excluding generated paths. When each tool implements that policy separately, components may process different files and the rules are hard to reuse or test.
+Linters, test tools, and source-code analyzers first need to go through a project directory and decide which files to process. They may want only Python files while ignoring virtual environments, generated output, and Git metadata. When every tool implements those rules separately, different parts of one system can accidentally process different files.
 
 [`os.walk()`](https://docs.python.org/3/library/os.html#os.walk) and [`Path.rglob()`](https://docs.python.org/3/library/pathlib.html#pathlib.Path.rglob) traverse files; [PathSpec](https://python-path-specification.readthedocs.io/) handles ignore patterns. A caller must still combine them with extension checks and package the policy for reuse.
 
-[dirstree](https://github.com/mutating/dirstree) is a small Python library that implements this policy as a reusable directory walker. It produces a lazy stream of `pathlib.Path` objects filtered by extensions and familiar gitignore-style patterns. [The release](https://github.com/mutating/dirstree/releases/tag/0.0.1) is available on GitHub.
+[dirstree](https://github.com/mutating/dirstree) is a small Python library that keeps this file-selection policy in one reusable object. It returns matching `pathlib.Path` values one at a time, filtered by filename extensions and patterns such as those used in `.gitignore`. [The release](https://github.com/mutating/dirstree/releases/tag/0.0.1) is available on GitHub.
 
 ## What dirstree does
 
@@ -45,7 +46,3 @@ dirstree is for a smaller case: local source trees, `Path` values from end to en
 ## Intended users
 
 dirstree is intended for linters, analyzers, codemods, test tools, and build helpers that repeatedly select a defined file set. In a larger system, it can produce the worklist consumed by another component.
-
-## What comes next
-
-The project will improve composition and reliability for long-running jobs, including cases where the filesystem changes during traversal, while remaining focused on local paths.

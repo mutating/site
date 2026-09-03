@@ -1,12 +1,13 @@
 {{ define "main" }}
 {{- $localizedPage := partial "localized-page.html" . -}}
+{{- $logoFrameClass := cond (and (isset .Params "logo_frame") (not .Params.logo_frame)) " post__project-logo--frameless" "" -}}
 <article class="post section-shell">
   <header class="post__header">
     <a class="section-index" href="{{ "/blog/" | relLangURL }}">{{ T "blog_label" }}</a>
     {{ with .Params.logo }}
       <div class="post__title-row post__title-row--with-logo">
         {{ with $.Resources.GetMatch . }}
-        <span class="post__project-logo" aria-hidden="true">
+        <span class="post__project-logo{{ $logoFrameClass }}" aria-hidden="true">
           <img src="{{ .RelPermalink }}" alt="" width="180" height="180">
         </span>
         {{ end }}
@@ -62,8 +63,8 @@
   </aside>
   {{ end }}
   <nav class="post__nav" aria-label="{{ T "post_navigation" }}">
-    {{ with .PrevInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--previous" href="{{ .RelPermalink }}"><small>{{ T "previous" }}</small><span>← {{ $localizedPost.Title }}</span></a>{{ end }}
-    {{ with .NextInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--next" href="{{ .RelPermalink }}"><small>{{ T "next" }}</small><span>{{ $localizedPost.Title }} →</span></a>{{ end }}
+    {{ with .PrevInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--previous" href="{{ .RelPermalink }}"><small>{{ T "previous" }}</small><span>← {{ partial "title-markup.html" $localizedPost.Title }}</span></a>{{ end }}
+    {{ with .NextInSection }}{{ $localizedPost := partial "localized-page.html" . }}<a class="post__nav-link post__nav-link--next" href="{{ .RelPermalink }}"><small>{{ T "next" }}</small><span>{{ partial "title-markup.html" $localizedPost.Title }} →</span></a>{{ end }}
   </nav>
 </article>
 {{ end }}

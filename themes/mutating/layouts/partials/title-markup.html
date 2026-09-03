@@ -1,0 +1,5 @@
+{{- $title := . | markdownify -}}
+{{- $title = strings.TrimPrefix "<p>" $title -}}
+{{- $title = strings.TrimSuffix "</p>\n" $title -}}
+{{- $title = strings.TrimSuffix "</p>" $title -}}
+{{- $title | safeHTML -}}

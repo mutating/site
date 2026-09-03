@@ -1,19 +1,20 @@
 ---
-title: "Introducing cstvis: independent changes to Python source code"
+title: "Introducing `cstvis`: independent changes to Python source code"
 slug: "introducing-cstvis"
 aliases: ["/blog/introducing-cstvis/"]
 date: 2025-12-17T09:00:00+03:00
 description: "Finds every possible change in Python source and applies candidates one at a time without losing formatting or comments."
 author: "muta"
 logo: "logo-mark.svg"
+logo_frame: false
 tags: [python, cst, source-transformation, mutation-testing, static-analysis, developer-tools]
 ---
 
-Mutation testing must find every possible edit in a Python file, then apply and test each one independently. Conventional tree transformers rewrite every matching node in one pass, which prevents that separation.
+Mutation testing checks a test suite by making small changes to a program and seeing whether the tests notice. To do this well, a tool must find every place where a change is possible, then apply and test one change at a time. Ordinary syntax-tree transformers usually rewrite every matching piece in one pass, so they do not provide this separation by themselves.
 
-[LibCST](https://libcst.readthedocs.io/) preserves formatting and comments but does not make potential edits independently addressable. Complete systems such as [mutmut](https://github.com/boxed/mutmut) add test execution and session management. A smaller transformation layer is useful between them.
+[LibCST](https://libcst.readthedocs.io/) represents Python code as a tree while preserving its formatting and comments. It can rewrite that tree, but it does not number all possible edits so that a caller can choose exactly one. Complete mutation-testing systems such as [mutmut](https://github.com/boxed/mutmut) also run tests and manage sessions. A smaller library is useful when another system already handles those jobs.
 
-[cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. It discovers source-aware transformation coordinates and can replay any one of them independently against the original module. [The release](https://github.com/mutating/cstvis/releases/tag/0.0.1) is available on GitHub.
+[cstvis](https://github.com/mutating/cstvis) is a Python library built on LibCST for exactly that workflow. It finds and records every place where a requested source-code change can happen, then applies any one of those changes to the original file. [The release](https://github.com/mutating/cstvis/releases/tag/0.0.1) is available on GitHub.
 
 ## Discovering independent transformations
 
@@ -49,8 +50,8 @@ Direct [LibCST codemods](https://libcst.readthedocs.io/en/latest/codemods.html) 
 
 [Bowler](https://pybowler.io/) and [RedBaron](https://redbaron.readthedocs.io/) provide higher-level lossless refactoring workflows. Standard [`ast.NodeTransformer`](https://docs.python.org/3/library/ast.html#ast.NodeTransformer) is simpler when preserving formatting and comments does not matter.
 
-cstvis specializes in a smaller layer: LibCST transformations with type-driven registration, access to source comments, and independent replay behind a runner-neutral API.
+cstvis solves a narrower problem: it registers LibCST changes by type, gives them access to source comments, and applies each candidate independently through an API that is not tied to a particular test runner.
 
 ## Intended use
 
-cstvis does not walk directories, store sessions, run tests, or schedule workers. It allows one converter per exact CST node type and always applies coordinates to the original source; another system can treat each coordinate as a unit of work.
+cstvis does not walk directories, store sessions, run tests, or distribute jobs. It allows one converter for each exact kind of syntax-tree element and always applies the selected change to the original source. Another system can treat each possible change as a separate job.

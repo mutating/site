@@ -158,7 +158,7 @@ def test_blog_cards_open_individual_posts(driver: DriverFactory) -> None:
 
 
 def test_project_release_post_template_places_logo_in_heading() -> None:
-    """Keep optional release artwork decorative, square, and next to the title."""
+    """Keep optional release artwork decorative, square, and wrapped by the title."""
 
     template = (
         PROJECT_ROOT / "themes/mutating/layouts/news/single.html"
@@ -169,10 +169,64 @@ def test_project_release_post_template_places_logo_in_heading() -> None:
     assert 'with .Params.logo' in template
     assert 'post__title-row--with-logo' in template
     assert '.Resources.GetMatch .' in template
-    assert 'class="post__project-logo" aria-hidden="true"' in template
+    assert 'class="post__project-logo{{ $logoFrameClass }}"' in template
     assert 'alt=""' in template
     assert ".post__project-logo {" in stylesheet
     assert "aspect-ratio: 1;" in stylesheet
+    assert "display: flow-root;" in stylesheet
+    assert "float: left;" in stylesheet
+    assert "width: clamp(180px, 17vw, 230px);" in stylesheet
+    assert 'isset .Params "logo_frame"' in template
+    assert ".post__project-logo--frameless {" in stylesheet
+
+
+def test_all_release_announcements_disable_the_logo_frame() -> None:
+    """Let individual articles override the framed-logo default."""
+
+    announcements = sorted((PROJECT_ROOT / "content" / "news").glob("introducing-*"))
+    assert len(announcements) == 11
+    for announcement in announcements:
+        front_matter = (announcement / "index.md").read_text().split("---", 2)[1]
+        assert "logo_frame: false" in front_matter
+
+
+def test_release_titles_format_tool_names_as_inline_code() -> None:
+    """Keep every English and Russian announcement title consistently styled."""
+
+    announcements = sorted((PROJECT_ROOT / "content" / "news").glob("introducing-*"))
+    assert len(announcements) == 11
+    for announcement in announcements:
+        tool_name = announcement.name.removeprefix("introducing-")
+        for filename in ("index.md", "translation.ru.md"):
+            front_matter = (announcement / filename).read_text().split("---", 2)[1]
+            assert f"`{tool_name}`" in front_matter
+
+    stylesheet = (
+        PROJECT_ROOT / "themes/mutating/assets/css/site.css"
+    ).read_text()
+    title_code_rule = stylesheet.split(".post__header h1,", 1)[1].split("}", 1)[0]
+    assert "color: var(--hot);" in title_code_rule
+    assert ".post__nav-link span" not in title_code_rule
+
+
+def test_skelet_release_uses_the_full_color_mark_without_its_wordmark() -> None:
+    """Keep the canonical iridescent artwork instead of the old monochrome logo."""
+
+    logo = (
+        PROJECT_ROOT
+        / "content"
+        / "news"
+        / "introducing-skelet"
+        / "logo-mark.svg"
+    ).read_text()
+    colors = {
+        tuple(int(color[index : index + 2], 16) for index in (0, 2, 4))
+        for color in re.findall(r'fill="#([0-9a-fA-F]{6})"', logo)
+    }
+
+    assert 'aria-label="SKELET"' not in logo
+    assert len(colors) > 100
+    assert any(max(color) - min(color) > 40 for color in colors)
 
 
 def test_blog_and_tag_pages_share_one_post_list_partial() -> None:

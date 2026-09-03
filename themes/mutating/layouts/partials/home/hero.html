@@ -1,5 +1,5 @@
 {{- $content := .Params.home.hero -}}
-{{- $posts := where .Site.RegularPages "Section" "blog" -}}
+{{- $posts := where .Site.RegularPages "Section" "in" (slice "blog" "news") -}}
 {{- $openSourceURL := "#open-source" -}}
 {{- if eq (len $posts) 0 -}}
   {{- $openSourceURL = "https://github.com/mutating" -}}
