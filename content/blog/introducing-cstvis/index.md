@@ -44,11 +44,11 @@ Direct [LibCST visitors, transformers, matchers, and codemods](https://libcst.re
 
 Full mutation tools such as [Cosmic Ray](https://cosmic-ray.readthedocs.io/) and [mutmut](https://github.com/boxed/mutmut) go much further: they manage mutation sessions, run tests, and optimize execution.
 
-cstvis is a transformation building block rather than an end-to-end mutation engine. Its advantage is the combination of LibCST fidelity, type-driven registration, source comments, and independent replay behind a small, runner-neutral API.
+cstvis provides transformation primitives rather than a complete mutation-testing engine. Its advantage is the combination of LibCST fidelity, type-driven registration, source comments, and independent replay behind a small, runner-neutral API.
 
 ## The specialization
 
-Version 0.0.1 is a transformation primitive, not a mutation-testing framework. It does not walk directories, store sessions, run tests, or schedule workers. A coordinate is simply a clean boundary that a larger system may later use as a unit of work.
+Version 0.0.1 handles transformation only. It does not walk directories, store sessions, run tests, or schedule workers. A coordinate can later serve as a unit of work for another system.
 
 The initial model deliberately allows one converter per exact CST node type and always applies coordinates to the unchanged original source. Those limits keep each result easy to reason about.
 

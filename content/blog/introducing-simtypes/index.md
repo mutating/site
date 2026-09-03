@@ -26,7 +26,7 @@ check(list[str], [1, 2, 3])       # True
 
 The last result is intentional. In this release, `list[str]` asks whether the value is a list; it does not walk the list to verify every element. Ordinary classes use `isinstance`, while `Any`, `None`, unions, optionals, and the outer runtime type of parameterized annotations receive small explicit rules.
 
-This gives collection checks a predictable cost that does not grow with collection length. It also means simtypes 0.0.1 is not suitable for validating untrusted nested data or proving that a value satisfies the full static annotation. The package rejects that larger promise on purpose.
+This gives collection checks a predictable cost that does not grow with collection length. It also means simtypes 0.0.1 is not suitable for validating untrusted nested data or verifying a complete static annotation. That broader form of validation is outside its scope.
 
 The result is a small checker with no runtime dependencies, decorators, import hooks, coercion, or schema compiler. Callers get a boolean and decide what it means.
 
@@ -40,9 +40,9 @@ A local helper around `isinstance()` and `typing.get_origin()` may still be the 
 
 ## The specialization
 
-simtypes is designed as a building block for runtime infrastructure that needs a cheap compatibility decision, not a validation framework of its own. Dispatch, plugin registration, configuration fields, and other mechanisms can depend on the same answer without inheriting a large enforcement system.
+simtypes is designed for runtime infrastructure that needs a cheap compatibility decision rather than a full validation framework. Dispatch, plugin registration, configuration fields, and other mechanisms can depend on the same answer without adding a large enforcement system.
 
-That is also its quiet place in a broader toolchain: it can support boundaries between components while remaining intentionally too small to dictate their architecture.
+In a broader toolchain, it can provide consistent type checks between components without determining their architecture.
 
 ## What comes next
 
