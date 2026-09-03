@@ -4,7 +4,7 @@ slug: "introducing-autofission"
 date: 2026-08-21T09:00:00+03:00
 description: "Keeps the scaling limit of Fission Functions aligned with the capacity currently available in a Kubernetes cluster."
 author: "muta"
-logo: "logo.png"
+logo: "logo-mark.svg"
 tags: [kubernetes, fission, autoscaling, distributed-computing, infrastructure, scheduling]
 ---
 
@@ -47,7 +47,3 @@ The calculation models CPU, memory, and Pod count—not every scheduler rule. Ea
 The closest upstream analogue is [cluster-capacity](https://github.com/kubernetes-sigs/cluster-capacity), which simulates how many copies of a Pod specification could be scheduled. Autofission adds continuous reconciliation for Fission Functions and Environments and writes the result to `MaxScale`.
 
 This is useful for independent, disposable work that should use the remaining capacity of a shared cluster. Distributed analysis is one possible use case, but the controller remains general Fission infrastructure.
-
-## What comes next
-
-The project will make capacity estimates more conservative when workloads compete for resources and add stronger checks around managed Functions. It will remain an estimator rather than a replacement for the Kubernetes scheduler.

@@ -4,7 +4,7 @@ slug: "introducing-getsources"
 date: 2026-02-26T09:00:00+03:00
 description: "Recovers clean, parseable source text from Python function objects, including nested and interactive definitions."
 author: "muta"
-logo: "logo.png"
+logo: "logo-mark.svg"
 tags: [python, introspection, source-code, ast, repl, developer-tools]
 ---
 
@@ -48,7 +48,3 @@ Interactive recovery remains best-effort. Dynamic `exec` or `eval` code may have
 ## Intended use
 
 The package gives AST- and CST-based libraries one source API for functions from modules, nested scopes, or a classic REPL.
-
-## What comes next
-
-The project will improve difficult source recovery and source identities while keeping the API focused on retrieval.

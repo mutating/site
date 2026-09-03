@@ -4,7 +4,7 @@ slug: "introducing-transtests"
 date: 2026-03-31T09:00:00+03:00
 description: "Runs one pytest behavior check against regular, asynchronous, and generator forms of the same Python function template."
 author: "muta"
-logo: "logo.png"
+logo: "logo-mark.svg"
 tags: [python, pytest, testing, async, generators, code-generation, developer-tools]
 ---
 
@@ -54,7 +54,3 @@ Plain pytest parametrization is better when sync and async APIs are implemented 
 The clearest users are authors of decorators, callback registries, dispatchers, middleware, instrumentation, and metaprogramming tools. These libraries often care not only about what a callback returns, but when its body actually runs.
 
 With [`LockTraceWrapper`](https://pypi.org/project/locklib/), one test can verify that the callback body—not merely coroutine or generator creation—ran while a lock was held. This check can fit into a larger test suite without determining its architecture.
-
-## What comes next
-
-The project will improve diagnostics and integration across async test environments while remaining focused on one behavior across several callable types.

@@ -4,7 +4,7 @@ slug: "introducing-pristan"
 date: 2026-03-11T09:00:00+03:00
 description: "Turns a typed Python function into a complete plugin extension point with discovery, registration, fallback behavior, and result collection."
 author: "muta"
-logo: "logo.png"
+logo: "logo-mark.svg"
 tags: [python, plugins, extensibility, type-safety, architecture, developer-tools]
 ---
 
