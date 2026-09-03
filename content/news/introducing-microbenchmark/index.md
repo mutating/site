@@ -1,6 +1,7 @@
 ---
 title: "Introducing microbenchmark: structured performance checks for Python"
 slug: "introducing-microbenchmark"
+aliases: ["/blog/introducing-microbenchmark/"]
 date: 2026-04-10T09:00:00+03:00
 description: "Turns small performance checks into reusable Python scenarios and results without requiring a full benchmark suite."
 author: "muta"

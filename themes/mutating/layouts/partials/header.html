@@ -19,6 +19,7 @@
   </div>
   <nav class="main-nav" aria-label="{{ T "main_navigation" }}">
     {{ partial "source-link.html" . }}
+    <a href="{{ "/news/" | relLangURL }}">{{ T "nav_news" }}</a>
     <a href="{{ "/blog/" | relLangURL }}">{{ T "nav_blog" }}</a>
     <a href="{{ "/#contact" | relLangURL }}">{{ T "nav_contact" }}</a>
   </nav>
@@ -39,6 +40,7 @@
         </div>
         <div class="mobile-menu__links">
           {{ partial "source-link.html" . }}
+          <a href="{{ "/news/" | relLangURL }}">{{ T "nav_news" }}</a>
           <a href="{{ "/blog/" | relLangURL }}">{{ T "nav_blog" }}</a>
           <a href="{{ "/#contact" | relLangURL }}">{{ T "nav_contact" }}</a>
         </div>

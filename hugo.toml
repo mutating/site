@@ -51,6 +51,12 @@ disableDefaultLanguageRedirect = true
     path = "/blog/**"
 
 [[permalinks]]
+  pattern = "/news/:slug/"
+  [permalinks.target]
+    kind = "page"
+    path = "/news/**"
+
+[[permalinks]]
   pattern = "/authors/:contentbasename/"
   [permalinks.target]
     kind = "page"

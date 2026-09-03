@@ -17,6 +17,7 @@ HUGO_CONFIG = tomllib.loads((PROJECT_ROOT / "hugo.toml").read_text())
 PAGER_SIZE = int(HUGO_CONFIG["pagination"]["pagerSize"])
 MARKDOWN_FIXTURE_PATH = "/blog/markdown-feature-fixture/"
 UNTAGGED_FIXTURE_PATH = "/blog/unauthored-fixture/"
+NEWS_FIXTURE_PATH = "/news/controlled-release-announcement/"
 CONTROLLED_TAG_PATH = "/tags/controlled-pagination/"
 CLIPBOARD_INIT_SCRIPT = """
 window.__copiedCode = null;
@@ -108,6 +109,38 @@ def test_shared_blog_links_open_the_hugo_index(driver: DriverFactory) -> None:
     expect(page.locator(".blog-index h1")).to_be_visible()
 
 
+def test_shared_news_links_open_the_news_index(driver: DriverFactory) -> None:
+    """Expose News in shared navigation and keep its cards in that section."""
+
+    page = driver(viewport=(1440, 900), load_interactive_visuals=False)
+    expect(page.locator('.main-nav a[href="/news/"]')).to_have_count(1)
+    expect(page.locator('.site-footer a[href="/news/"]')).to_have_count(1)
+    page.locator('.main-nav a[href="/news/"]').click()
+
+    expect(page).to_have_url(re.compile(r"/news/$"))
+    expect(page.locator(".blog-index__header > .section-index")).to_have_text(
+        "NEWS"
+    )
+    expect(page.locator(".blog-card__link")).to_have_attribute(
+        "href", NEWS_FIXTURE_PATH
+    )
+
+
+def test_introducing_posts_live_only_in_news() -> None:
+    """Keep product announcements out of Blog while preserving old redirects."""
+
+    blog = PROJECT_ROOT / "content" / "blog"
+    news = PROJECT_ROOT / "content" / "news"
+    blog_announcements = sorted(blog.glob("introducing-*"))
+    news_announcements = sorted(news.glob("introducing-*"))
+
+    assert blog_announcements == []
+    assert len(news_announcements) == 11
+    for announcement in news_announcements:
+        front_matter = (announcement / "index.md").read_text()
+        assert f'aliases: ["/blog/{announcement.name}/"]' in front_matter
+
+
 def test_blog_cards_open_individual_posts(driver: DriverFactory) -> None:
     """Open a card while keeping list-only title punctuation out of the article."""
 
@@ -128,7 +161,7 @@ def test_project_release_post_template_places_logo_in_heading() -> None:
     """Keep optional release artwork decorative, square, and next to the title."""
 
     template = (
-        PROJECT_ROOT / "themes/mutating/layouts/blog/single.html"
+        PROJECT_ROOT / "themes/mutating/layouts/news/single.html"
     ).read_text()
     stylesheet = (
         PROJECT_ROOT / "themes/mutating/assets/css/site.css"
@@ -148,6 +181,9 @@ def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
     blog_template = (
         PROJECT_ROOT / "themes/mutating/layouts/blog/list.html"
     ).read_text()
+    news_template = (
+        PROJECT_ROOT / "themes/mutating/layouts/news/list.html"
+    ).read_text()
     tag_template = (
         PROJECT_ROOT / "themes/mutating/layouts/_default/term.html"
     ).read_text()
@@ -157,8 +193,10 @@ def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
     ).read_text()
 
     assert 'partial "post-list.html"' in blog_template
+    assert 'partial "post-list.html"' in news_template
     assert 'partial "post-list.html"' in tag_template
     assert "blog-card" not in blog_template
+    assert "blog-card" not in news_template
     assert "blog-card" not in tag_template
     assert 'class="blog-card"' in shared_partial
     assert 'class="blog-pagination"' in shared_partial
@@ -821,7 +859,7 @@ def test_post_tags_render_only_when_present_and_link_to_terms(
     expect(tag_region).to_be_visible()
     expect(tag_region).to_have_attribute(
         "aria-label",
-        "Signals in this field note",
+        "Topics in this publication",
     )
     expect(tag_region.locator("h2")).to_have_count(0)
     expect(tag_region.locator("a")).to_have_count(2)
@@ -905,7 +943,7 @@ def test_tag_link_opens_a_distinct_filtered_collection(
     collection = page.locator('.blog-index[data-collection-kind="tag"]')
     expect(collection).to_be_visible()
     expect(collection.locator(".section-index")).to_have_text(
-        "BLOG / TAGGED SIGNALS"
+        "PUBLICATIONS / TAGGED SIGNALS"
     )
     expect(collection.locator("h1")).to_have_text(
         "Signals tagged [#verification]."

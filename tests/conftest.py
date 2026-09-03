@@ -32,20 +32,22 @@ def copy_controlled_test_content(target: Path) -> None:
 
     Browser and template-contract tests need stable documents to exercise, but
     they must not acquire expectations about whichever articles happen to be
-    published in ``content/blog``.  Keep the real section pages and author
-    profiles, remove the editorial post inventory from the copy, and replace it
-    with versioned synthetic fixtures.
+    published in ``content/blog`` or ``content/news``. Keep the real section
+    pages and author profiles, remove both editorial inventories from the copy,
+    and replace them with versioned synthetic fixtures.
     """
 
     shutil.copytree(PROJECT_ROOT / "content", target)
     blog_directory = target / "blog"
-    for content_entry in blog_directory.iterdir():
-        if content_entry.name.startswith("_index."):
-            continue
-        if content_entry.is_dir():
-            shutil.rmtree(content_entry)
-        else:
-            content_entry.unlink()
+    news_directory = target / "news"
+    for section_directory in (blog_directory, news_directory):
+        for content_entry in section_directory.iterdir():
+            if content_entry.name.startswith("_index."):
+                continue
+            if content_entry.is_dir():
+                shutil.rmtree(content_entry)
+            else:
+                content_entry.unlink()
 
     fixture_directory = PROJECT_ROOT / "tests" / "fixtures"
     for fixture_post in fixture_directory.glob("*-post.md"):
@@ -56,6 +58,8 @@ def copy_controlled_test_content(target: Path) -> None:
                 fixture_bundle,
                 blog_directory / fixture_bundle.name,
             )
+    for fixture_news in fixture_directory.glob("*-news.md"):
+        shutil.copy2(fixture_news, news_directory / fixture_news.name)
     for fixture_author in fixture_directory.glob("*-author.md"):
         shutil.copy2(fixture_author, target / "authors" / fixture_author.name)
     for fixture_bundle in fixture_directory.glob("*-author"):

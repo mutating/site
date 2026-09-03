@@ -3740,20 +3740,19 @@ def test_theme_toggle_stays_inside_header_at_navigation_breakpoint(
 ) -> None:
     """Keep the theme control visible while desktop navigation is introduced.
 
-    The former responsive boundary restored the desktop navigation at 861 px,
-    before the fixed-width logo, links, and theme toggle could fit in the
-    header. At that exact width the toggle's right edge landed beyond the
-    viewport, and it remained outside the header's padded content box until
-    the viewport was roughly 910 px wide. Exercise both sides of the repaired
+    Keep the mobile menu active until the fixed-width logo, all navigation
+    links, and the theme toggle fit in the header. Exercise both sides of the
     boundary and the affected interval so future header-content changes cannot
     silently push this control off-screen again.
     """
 
-    widths = (920, 921, 1000, 1040, 1041)
+    widths = (1040, 1041, 1100, 1120, 1121)
     page = driver(
         stored_theme="dark",
+        stored_language="ru",
         viewport=(widths[0], 844),
         load_interactive_visuals=False,
+        initial_path="/ru/",
     )
 
     for width in widths:
@@ -3769,6 +3768,9 @@ def test_theme_toggle_stays_inside_header_at_navigation_breakpoint(
               ).getBoundingClientRect();
               return {
                 viewportWidth: innerWidth,
+                navigationDisplay: getComputedStyle(
+                  header.querySelector(".main-nav"),
+                ).display,
                 contentRight:
                   headerRect.right -
                   (Number.parseFloat(headerStyle.paddingRight) || 0),
@@ -3783,6 +3785,9 @@ def test_theme_toggle_stays_inside_header_at_navigation_breakpoint(
         assert geometry["toggleLeft"] >= -0.5, width
         assert geometry["toggleRight"] <= geometry["viewportWidth"] + 0.5, width
         assert geometry["toggleRight"] <= geometry["contentRight"] + 0.5, width
+        assert geometry["navigationDisplay"] == (
+            "none" if width <= 1120 else "flex"
+        ), width
         assert geometry["toggleWidth"] == pytest.approx(68, abs=0.5)
 
 

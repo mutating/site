@@ -3,6 +3,7 @@
   <p class="site-footer__tagline">{{ T "footer_tagline" }}</p>
   <div class="site-footer__links">
     {{ partial "source-link.html" . }}
+    <a href="{{ "/news/" | relLangURL }}">{{ T "nav_news" }}</a>
     <a href="{{ "/blog/" | relLangURL }}">{{ T "nav_blog" }}</a>
     <a href="{{ "/#contact" | relLangURL }}">{{ T "nav_contact" }}</a>
   </div>

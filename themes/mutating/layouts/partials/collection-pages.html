@@ -4,6 +4,7 @@
   {{- if and (not $authorSlug) .File -}}
     {{- $authorSlug = .File.ContentBaseName -}}
   {{- end -}}
-  {{- $pages = where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
+  {{- $publications := where site.RegularPages "Section" "in" (slice "blog" "news") -}}
+  {{- $pages = where $publications "Params.author" $authorSlug -}}
 {{- end -}}
 {{- return $pages.ByDate.Reverse -}}

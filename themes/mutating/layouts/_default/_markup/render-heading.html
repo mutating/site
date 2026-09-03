@@ -1,5 +1,5 @@
 <h{{ .Level }} id="{{ .Anchor }}">
-  {{- if eq .Page.Section "blog" -}}
+  {{- if or (eq .Page.Section "blog") (eq .Page.Section "news") -}}
   <a class="post__heading-anchor" href="#{{ .Anchor }}">{{ .Text | safeHTML }}<span class="post__heading-chain-slot" aria-hidden="true"><span class="post__heading-chain" aria-hidden="true">🔗</span></span></a>
   {{- else -}}
   {{ .Text | safeHTML }}

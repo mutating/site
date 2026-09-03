@@ -11,7 +11,8 @@
     {{- errorf "author-posts page %q references missing author %q" .Path $authorSlug -}}
   {{- end -}}
   {{- $localizedAuthor := partial "localized-page.html" $author -}}
-  {{- $posts := where (where site.RegularPages "Section" "blog") "Params.author" $authorSlug -}}
+  {{- $publications := where site.RegularPages "Section" "in" (slice "blog" "news") -}}
+  {{- $posts := where $publications "Params.author" $authorSlug -}}
   {{ partial "post-list.html" (dict
     "context" .
     "pages" $posts

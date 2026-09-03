@@ -1,6 +1,7 @@
 ---
 title: "Introducing denial: a sentinel for omitted values"
 slug: "introducing-denial"
+aliases: ["/blog/introducing-denial/"]
 date: 2026-01-17T09:00:00+03:00
 description: "Lets Python libraries distinguish a missing argument from a deliberate None value."
 author: "muta"

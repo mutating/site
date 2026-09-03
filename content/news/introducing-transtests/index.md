@@ -1,6 +1,7 @@
 ---
 title: "Introducing transtests: one test for sync, async, and generator functions"
 slug: "introducing-transtests"
+aliases: ["/blog/introducing-transtests/"]
 date: 2026-03-31T09:00:00+03:00
 description: "Runs one pytest behavior check against regular, asynchronous, and generator forms of the same Python function template."
 author: "muta"

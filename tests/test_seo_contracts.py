@@ -295,12 +295,24 @@ def test_structured_data_matches_supported_page_types(production_site: Path) -> 
     home = _document(production_site / "index.html")
     assert {"Organization", "WebSite"} <= _schema_types(home)
 
-    article_pages = sorted(production_site.glob("blog/*/index.html"))
-    article_pages += sorted(production_site.glob("ru/blog/*/index.html"))
-    assert article_pages
-    for article_page in article_pages:
+    blog_pages = sorted(production_site.glob("blog/*/index.html"))
+    blog_pages += sorted(production_site.glob("ru/blog/*/index.html"))
+    blog_pages = [page for page in blog_pages if "introducing-" not in page.parent.name]
+    assert blog_pages
+    for article_page in blog_pages:
         document = _document(article_page)
         assert {"Organization", "BlogPosting"} <= _schema_types(document), (
+            article_page
+        )
+        for raw_schema in document.json_ld:
+            json.loads(raw_schema)
+
+    news_pages = sorted(production_site.glob("news/*/index.html"))
+    news_pages += sorted(production_site.glob("ru/news/*/index.html"))
+    assert news_pages
+    for article_page in news_pages:
+        document = _document(article_page)
+        assert {"Organization", "NewsArticle"} <= _schema_types(document), (
             article_page
         )
         for raw_schema in document.json_ld:

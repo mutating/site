@@ -1,6 +1,7 @@
 ---
 title: "Introducing skelet: typed settings from multiple sources"
 slug: "introducing-skelet"
+aliases: ["/blog/introducing-skelet/"]
 date: 2025-11-11T09:00:00+03:00
 description: "Loads typed Python settings from several sources, validates later changes, and reports errors without exposing secrets."
 author: "muta"

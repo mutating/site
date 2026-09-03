@@ -28,7 +28,7 @@
     {{- end }}
   </url>
   {{- $collectionPage := . }}
-  {{- $isPaginatedCollection := or (and (not .IsPage) (eq .Section "blog")) (eq .Kind "term") (eq .Section "author-posts") }}
+  {{- $isPaginatedCollection := or (and (not .IsPage) (or (eq .Section "blog") (eq .Section "news"))) (eq .Kind "term") (eq .Section "author-posts") }}
   {{- if $isPaginatedCollection }}
     {{- $collectionPages := partial "collection-pages.html" . }}
     {{- $paginator := .Paginate $collectionPages }}

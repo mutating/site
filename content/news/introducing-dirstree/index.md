@@ -1,6 +1,7 @@
 ---
 title: "Introducing dirstree: reusable rules for directory traversal"
 slug: "introducing-dirstree"
+aliases: ["/blog/introducing-dirstree/"]
 date: 2025-09-29T09:00:00+03:00
 description: "Selects local source files through reusable extension and ignore rules and returns ordinary Python Path objects."
 author: "muta"
