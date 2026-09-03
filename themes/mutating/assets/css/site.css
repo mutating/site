@@ -2333,11 +2333,6 @@ a.section-index:focus-visible {
   margin-top: 22px;
 }
 
-.dispatches h2 a {
-  color: inherit;
-  text-decoration: none;
-}
-
 .dispatches__status {
   padding-bottom: 8px;
   display: flex;
@@ -3511,17 +3506,16 @@ a.section-index:focus-visible {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 24px;
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 84%, transparent), var(--surface));
+  background: #fff;
   box-shadow: var(--shadow);
 }
 
 .post__project-logo img {
   display: block;
   width: auto;
-  max-width: 76%;
+  max-width: 84%;
   height: auto;
-  max-height: 76%;
+  max-height: 84%;
   object-fit: contain;
 }
 

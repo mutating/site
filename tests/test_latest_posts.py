@@ -20,15 +20,18 @@ CONTENT_ROOT = PROJECT_ROOT / "content"
 def _render_home_with_posts(
     tmp_path: Path,
     post_count: int,
+    news_count: int = 0,
 ) -> str:
     """Build controlled HTML without copying unrelated pass-through assets."""
 
     content_dir = tmp_path / "content"
     blog_dir = content_dir / "blog"
+    news_dir = content_dir / "news"
     destination = tmp_path / "public"
     source_theme = PROJECT_ROOT / "themes" / "mutating"
     themes_dir = tmp_path / "themes"
     blog_dir.mkdir(parents=True)
+    news_dir.mkdir(parents=True)
     shutil.copytree(
         source_theme,
         themes_dir / "mutating",
@@ -38,6 +41,7 @@ def _render_home_with_posts(
     )
     shutil.copy2(CONTENT_ROOT / "_index.md", content_dir / "_index.md")
     shutil.copy2(CONTENT_ROOT / "blog" / "_index.md", blog_dir / "_index.md")
+    shutil.copy2(CONTENT_ROOT / "news" / "_index.md", news_dir / "_index.md")
     for post_index in range(post_count):
         post_number = post_index + 1
         (blog_dir / f"controlled-signal-{post_number}.md").write_text(
@@ -49,6 +53,21 @@ def _render_home_with_posts(
                 f'slug: "controlled-signal-{post_number}"\n'
                 "---\n\n"
                 f"Body for controlled signal {post_number}.\n"
+            ),
+            encoding="utf-8",
+        )
+
+    for news_index in range(news_count):
+        news_number = news_index + 1
+        (news_dir / f"controlled-announcement-{news_number}.md").write_text(
+            (
+                "---\n"
+                f'title: "Controlled announcement {news_number}"\n'
+                f"date: 2001-01-{news_number:02d}T00:00:00Z\n"
+                f'description: "Synthetic announcement {news_number}."\n'
+                f'slug: "controlled-announcement-{news_number}"\n'
+                "---\n\n"
+                f"Body for controlled announcement {news_number}.\n"
             ),
             encoding="utf-8",
         )
@@ -77,10 +96,10 @@ def _render_home_with_posts(
     return (destination / "index.html").read_text()
 
 
-def test_home_uses_the_two_latest_posts_in_visual_priority_order(
+def test_home_shows_the_latest_blog_post_and_news_item(
     driver: DriverFactory,
 ) -> None:
-    """Mirror the two newest blog entries, slugs, links, and visual priority."""
+    """Keep the latest entry from each publication section on the home page."""
 
     page = driver(
         stored_theme="dark",
@@ -92,8 +111,11 @@ def test_home_uses_the_two_latest_posts_in_visual_priority_order(
 
     expect(section).to_be_visible()
     expect(section.locator("h2")).to_have_text("Fresh signals from the lab.")
-    expect(section.locator("h2 > a")).to_have_attribute("href", "/blog/")
-    assert 1 <= cards.count() <= 2
+    expect(section.locator("h2 > a")).to_have_count(0)
+    expect(section.locator(".dispatches__status")).to_have_text(
+        "Latest publications"
+    )
+    expect(cards).to_have_count(2)
     expect(cards.nth(0)).to_have_class(re.compile(r"\bdispatch-card--featured\b"))
 
     home_posts = [
@@ -108,29 +130,40 @@ def test_home_uses_the_two_latest_posts_in_visual_priority_order(
         assert post["href"] is not None
         assert post["slug"] == post["href"].strip("/").split("/")[-1]
 
+    assert {
+        str(post["href"]).strip("/").split("/")[0]
+        for post in home_posts
+    } == {"blog", "news"}
+    expect(
+        section.locator('.dispatch-card[href^="/blog/"] .dispatch-card__cta')
+    ).to_contain_text("Read the field note")
+    expect(
+        section.locator('.dispatch-card[href^="/news/"] .dispatch-card__cta')
+    ).to_contain_text("Read the announcement")
+
     if cards.count() == 2:
         widths = [cards.nth(index).bounding_box()["width"] for index in range(2)]
         assert widths[0] > widths[1] * 1.5
 
-    page.goto(f"{page.url.rstrip('/')}/blog/", wait_until="domcontentloaded")
-    blog_cards = page.locator(".blog-card")
-    blog_posts = [
-        {
-            "title": blog_cards.nth(index).locator("h2").inner_text(),
-            "href": blog_cards.nth(index)
-            .locator(".blog-card__link")
-            .get_attribute("href"),
+    origin = page.url.rstrip("/")
+    for section_name in ("blog", "news"):
+        home_post = next(
+            post
+            for post in home_posts
+            if str(post["href"]).startswith(f"/{section_name}/")
+        )
+        page.goto(f"{origin}/{section_name}/", wait_until="domcontentloaded")
+        list_post = {
+            "title": page.locator(".blog-card h2").first.inner_text(),
+            "href": page.locator(".blog-card__link").first.get_attribute("href"),
         }
-        for index in range(len(home_posts))
-    ]
-    for home_post, blog_post in zip(home_posts, blog_posts, strict=True):
-        assert home_post["href"] == blog_post["href"]
+        assert home_post["href"] == list_post["href"]
         expected_list_title = str(home_post["title"])
         if not expected_list_title.endswith("."):
             expected_list_title += "."
-        assert blog_post["title"] == expected_list_title
+        assert list_post["title"] == expected_list_title
 
-    page.goto(page.url.split("/blog/")[0], wait_until="domcontentloaded")
+    page.goto(origin, wait_until="domcontentloaded")
     page.locator(".dispatch-card").first.locator("h3").click()
     expected_article_title = str(home_posts[0]["title"])
     if not expected_article_title.endswith("."):
@@ -174,3 +207,19 @@ def test_home_latest_posts_handles_empty_and_single_post_collections(
         assert "Controlled signal 1" in html
         assert "controlled-signal-1" in html
         assert 'id="field-notes"' in html
+
+
+def test_home_balances_blog_and_news_when_one_section_is_newer(
+    tmp_path: Path,
+) -> None:
+    """Reserve one card for each section instead of letting one dominate."""
+
+    html = _render_home_with_posts(tmp_path, post_count=3, news_count=2)
+
+    assert html.count('<a class="dispatch-card') == 2
+    assert "Controlled signal 3" in html
+    assert "Controlled announcement 2" in html
+    assert "Controlled signal 2" not in html
+    assert "Controlled announcement 1" not in html
+    assert "Read the field note" in html
+    assert "Read the announcement" in html

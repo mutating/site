@@ -1,6 +1,12 @@
-{{- $posts := where .Site.RegularPages "Section" "blog" -}}
+{{- $posts := where .Site.RegularPages "Section" "in" (slice "blog" "news") -}}
 {{- $posts = $posts.ByDate.Reverse -}}
+{{- $blogPosts := where $posts "Section" "blog" -}}
+{{- $newsPosts := where $posts "Section" "news" -}}
 {{- $latestPosts := first 2 $posts -}}
+{{- if and (gt (len $blogPosts) 0) (gt (len $newsPosts) 0) -}}
+  {{- $latestPosts = union (first 1 $blogPosts) (first 1 $newsPosts) -}}
+  {{- $latestPosts = $latestPosts.ByDate.Reverse -}}
+{{- end -}}
 {{- $content := .Params.home.latest_posts -}}
 {{- if gt (len $latestPosts) 0 -}}
   {{- $fieldNotesIndex := 0 -}}
@@ -11,7 +17,7 @@
     <div class="dispatches__header">
       <div>
         <a class="section-index" href="#open-source">08 / {{ $content.label }}</a>
-        <h2 id="dispatches-heading"><a href="{{ "/blog/" | relLangURL }}">{{ $content.heading }}</a></h2>
+        <h2 id="dispatches-heading">{{ $content.heading }}</h2>
       </div>
       <span class="dispatches__status"><i></i> {{ $content.status }}</span>
     </div>
@@ -23,7 +29,7 @@
           <p>{{ $slug }}</p>
           <h3>{{ $localizedPost.Title }}</h3>
           <span class="dispatch-card__description">{{ $localizedPost.Description }}</span>
-          <span class="dispatch-card__cta">{{ T "read_field_note" }} <b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b></span>
+          <span class="dispatch-card__cta">{{ if eq $post.Section "news" }}{{ T "read_announcement" }}{{ else }}{{ T "read_field_note" }}{{ end }} <b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b></span>
         </a>
       {{- end }}
     </div>

@@ -175,6 +175,26 @@ def test_project_release_post_template_places_logo_in_heading() -> None:
     assert "aspect-ratio: 1;" in stylesheet
 
 
+def test_skelet_release_uses_the_full_color_mark_without_its_wordmark() -> None:
+    """Keep the canonical iridescent artwork instead of the old monochrome logo."""
+
+    logo = (
+        PROJECT_ROOT
+        / "content"
+        / "news"
+        / "introducing-skelet"
+        / "logo-mark.svg"
+    ).read_text()
+    colors = {
+        tuple(int(color[index : index + 2], 16) for index in (0, 2, 4))
+        for color in re.findall(r'fill="#([0-9a-fA-F]{6})"', logo)
+    }
+
+    assert 'aria-label="SKELET"' not in logo
+    assert len(colors) > 100
+    assert any(max(color) - min(color) > 40 for color in colors)
+
+
 def test_blog_and_tag_pages_share_one_post_list_partial() -> None:
     """Keep separate collection templates while sharing all list markup."""
 
