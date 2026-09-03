@@ -16,7 +16,7 @@ A benchmark repeatedly measures how long an operation takes. Python's `timeit` i
 
 ## Core API
 
-A `Scenario` keeps a callable, positional arguments, a name, documentation, and the number of observations together. `run()` performs optional warmup calls, then times every invocation separately with `perf_counter()` by default.
+A `Scenario` keeps the measured function, its arguments, a name, documentation, and the number of repetitions together. `run()` can make warm-up calls first, then times every invocation separately with `perf_counter()` by default.
 
 ```python
 from microbenchmark import Scenario
@@ -32,7 +32,7 @@ print(result.best)
 print(result.worst)
 ```
 
-The result is a `BenchmarkResult` that retains every duration rather than immediately reducing the run to one number. It exposes the mean, best, and worst observations. Its `p95` and `p99` properties return trimmed result sets—the fastest 95 or 99 percent of samples—not conventional scalar latency percentiles.
+The result is a `BenchmarkResult` that keeps every duration rather than immediately reducing the run to one number. It exposes the mean, best, and worst measurements. Its `p95` and `p99` properties return the fastest 95 or 99 percent of samples, not the single percentile values that monitoring tools commonly use.
 
 Adding scenarios creates a flat, ordered `ScenarioGroup`. Results serialize to JSON, but deserialization does not reconstruct executable scenarios.
 

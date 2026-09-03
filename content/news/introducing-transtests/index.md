@@ -11,13 +11,13 @@ tags: [python, pytest, testing, async, generators, code-generation, developer-to
 
 Python functions can run in different ways. A regular function returns immediately, an asynchronous function finishes when it is awaited, and a generator produces values during iteration. Tools such as decorators and function wrappers often need to support all three. Copying the same behavior test three times makes it easy for the cases to drift apart.
 
-[`pytest.mark.parametrize`](https://docs.pytest.org/en/stable/how-to/parametrize.html) runs several cases, while [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) and [AnyIO](https://anyio.readthedocs.io/en/stable/testing.html) run asynchronous tests. None creates and invokes all three callable forms from one source template.
+[`pytest.mark.parametrize`](https://docs.pytest.org/en/stable/how-to/parametrize.html) runs several cases, while [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) and [AnyIO](https://anyio.readthedocs.io/en/stable/testing.html) run asynchronous tests. None creates and invokes all three function forms from one source template.
 
 [transtests](https://github.com/mutating/transtests) is a small Python testing library and pytest plugin. It turns one function template into regular, asynchronous, and generator forms, then runs the same test against each form. Pytest reports the three cases separately, so failures remain easy to identify. [The release](https://github.com/mutating/transtests/releases/tag/0.0.1) is available on GitHub.
 
 ## Parametrizing tests by function type
 
-After installation, pytest discovers the `transformed` fixture automatically. Any test that requests it becomes three separately reported cases: `sync`, `async`, and `generator`.
+After installation, pytest discovers the `transformed` fixture automatically. A fixture is a prepared object that pytest supplies to a test as an argument. Any test that requests this one becomes three separately reported cases: regular, asynchronous, and generator.
 
 ```python
 from asyncio import run
@@ -46,7 +46,7 @@ Generator mode has one important limitation: it transforms explicit generator ma
 
 Plain pytest parametrization is better when sync and async APIs are implemented independently rather than generated from one template.
 
-[pytest-asyncio](https://pytest-asyncio.readthedocs.io/) and [AnyIO's pytest plugin](https://anyio.readthedocs.io/en/stable/testing.html) vary the async runtime; transtests varies the callable type. The tools are complementary.
+[pytest-asyncio](https://pytest-asyncio.readthedocs.io/) and [AnyIO's pytest plugin](https://anyio.readthedocs.io/en/stable/testing.html) run asynchronous tests in different environments; transtests varies the kind of function being tested. The tools are complementary.
 
 [Hypothesis](https://hypothesis.readthedocs.io/) varies input data; transtests varies whether the tested callable is regular, asynchronous, or a generator. [unasync](https://github.com/python-trio/unasync) transforms whole source trees and is better suited to maintaining separate sync and async APIs.
 

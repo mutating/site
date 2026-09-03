@@ -36,7 +36,7 @@ print(getclearsource(Parser.parse))
 
 The returned text can now be parsed without reconstructing the enclosing class.
 
-The library handles Python-defined functions, including methods and lambdas—not modules, classes, builtins, or arbitrary callables. A lambda may still be returned with its surrounding statement, such as `handler = lambda value: value + 1`.
+The library handles functions written in Python, including methods and lambdas—not modules, classes, built-in functions, or every object that can be called like a function. A lambda may still be returned with its surrounding statement, such as `handler = lambda value: value + 1`.
 
 ## Choosing a source-recovery tool
 
@@ -44,7 +44,7 @@ For ordinary file-backed code, `textwrap.dedent(inspect.getsource(function))` ma
 
 [sourceinspect](https://pypi.org/project/sourceinspect/) covers more interactive shells. [executing](https://github.com/alexmojaki/executing) and [stack-data](https://github.com/alexmojaki/stack_data) are better when inspection begins with a frame or traceback; [cloudpickle](https://github.com/cloudpipe/cloudpickle) moves behavior between processes instead of recovering readable source.
 
-Interactive recovery remains best-effort. Dynamic `exec` or `eval` code may have no trustworthy provenance, history-based lambda matching can be ambiguous, and source on disk may no longer match the loaded code object. This is source recovery, not bytecode decompilation.
+Interactive recovery cannot always be guaranteed. Dynamic `exec` or `eval` code may have no trustworthy source, matching a lambda to shell history can be ambiguous, and a file on disk may have changed since its function was loaded. getsources recovers available source text; it does not reconstruct source from Python's compiled representation.
 
 ## Intended use
 

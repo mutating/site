@@ -49,8 +49,8 @@ Direct [LibCST codemods](https://libcst.readthedocs.io/en/latest/codemods.html) 
 
 [Bowler](https://pybowler.io/) and [RedBaron](https://redbaron.readthedocs.io/) provide higher-level lossless refactoring workflows. Standard [`ast.NodeTransformer`](https://docs.python.org/3/library/ast.html#ast.NodeTransformer) is simpler when preserving formatting and comments does not matter.
 
-cstvis specializes in a smaller layer: LibCST transformations with type-driven registration, access to source comments, and independent replay behind a runner-neutral API.
+cstvis solves a narrower problem: it registers LibCST changes by type, gives them access to source comments, and applies each candidate independently through an API that is not tied to a particular test runner.
 
 ## Intended use
 
-cstvis does not walk directories, store sessions, run tests, or schedule workers. It allows one converter per exact CST node type and always applies coordinates to the original source; another system can treat each coordinate as a unit of work.
+cstvis does not walk directories, store sessions, run tests, or distribute jobs. It allows one converter for each exact kind of syntax-tree element and always applies the selected change to the original source. Another system can treat each possible change as a separate job.

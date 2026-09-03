@@ -3,7 +3,7 @@ title: "Introducing pristan: plugins defined by typed functions"
 slug: "introducing-pristan"
 aliases: ["/blog/introducing-pristan/"]
 date: 2026-03-11T09:00:00+03:00
-description: "Turns a typed Python function into a complete plugin extension point with discovery, registration, fallback behavior, and result collection."
+description: "Turns a typed Python function into a complete plugin extension point with discovery, registration, default behavior, and result collection."
 author: "muta"
 logo: "logo-mark.svg"
 tags: [python, plugins, extensibility, type-safety, architecture, developer-tools]
@@ -17,7 +17,7 @@ Python entry points—the package metadata commonly used to advertise installed 
 
 ## How function-based slots work
 
-Decorate a host function with `@slot` and it becomes the contract, registry, fallback implementation, and call site. A plugin is another ordinary function decorated with that exact slot:
+Decorate a host function with `@slot` and it defines the requirements, stores registrations, provides default behavior, and becomes the call site. A plugin is another ordinary function registered through that slot:
 
 ```python
 from pristan import slot
@@ -34,7 +34,7 @@ print(serializers(42))
 #> {'text_serializer': b'42'}
 ```
 
-Calling the slot invokes every plugin in sequence; if none exists, the original function body is the fallback. Each plugin remains directly callable for isolated tests.
+Calling the host function invokes every plugin in sequence; if none exists, its original body provides the default behavior. Each plugin remains directly callable for isolated tests.
 
 The slot's return annotation also defines how results are handled. No annotation discards them, `list[T]` collects values, and `dict[str, T]` collects them under plugin names. pristan checks plugin signatures during registration and return values during execution.
 
@@ -42,15 +42,15 @@ Installed extensions are discovered lazily through Python entry points. Their mo
 
 ## Alternatives and scope
 
-Compared with Pluggy, pristan requires less setup for a narrower case: a synchronous function that calls every registered plugin. Pluggy remains the better choice when lifecycle, ordering, wrappers, or protocol evolution are more important.
+Compared with Pluggy, pristan requires less setup for a narrower case: an ordinary function that calls every registered plugin. Pluggy remains the better choice when detailed control over plugin lifetime, call order, wrappers, or protocol changes is more important.
 
 [Stevedore](https://docs.openstack.org/stevedore/latest/) offers several manager styles, while [Pluginlib](https://pluginlib.readthedocs.io/) uses class-based contracts. A closed application may need only a dictionary and registration decorator.
 
 ## Limitations
 
-Runtime checks catch many contract mistakes but cannot prove that every slot call suits every plugin. Plugins run sequentially, one exception stops dispatch, and the API has no priorities, wrappers, custom reducers, async dispatch, or plugin removal.
+Checks made while the program runs catch many contract mistakes, but they cannot prove that every call suits every plugin. Plugins run in sequence, one exception stops the call, and the API does not manage priorities, wrappers, custom ways to combine results, asynchronous calls, or plugin removal.
 
-Lazy discovery and registration are protected against concurrent changes, but dispatch is not fully race-free. pristan therefore does not guarantee full thread safety.
+Discovery and registration are protected against simultaneous changes from different threads, but calling plugins is not completely protected. pristan therefore does not guarantee full thread safety.
 
 pristan is for library authors who want independently packaged extensions without a manager class for every hook. Its slots can keep optional capabilities outside the core without defining the surrounding architecture.
 

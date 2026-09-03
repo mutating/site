@@ -52,7 +52,7 @@ Comments place a local instruction beside the relevant code, have no runtime eff
 
 ## Use in source-processing tools
 
-Tokenizers and CST libraries locate comments. metacode parses compatible comment contents. A source-aware tool can therefore keep discovery, parsing, and policy as separate stages.
+Other source-code libraries locate comments; metacode reads their contents. A tool can therefore keep finding comments, understanding instructions, and applying its own rules as separate steps.
 
 Until independent tools adopt the grammar, metacode is a reusable convention and parser rather than an ecosystem standard.
 
