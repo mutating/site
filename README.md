@@ -367,6 +367,44 @@ diagnostics:
 TEST_BASE_URL=http://127.0.0.1:1313 python -m pytest tests/test_blog.py
 ```
 
+### Scan the animated wordmark for cursor jitter
+
+The wordmark scanner starts its own temporary Hugo server, enters the compact
+logo with a real Playwright pointer, and holds that pointer at each candidate
+coordinate while sampling the animation on every frame:
+
+```bash
+venv/bin/python scripts/find_wordmark_jitter.py \
+  --output /tmp/wordmark-jitter.json
+```
+
+It scans the center and all four boundaries at one-CSS-pixel intervals and
+tries the cursor move at the start, midpoint, and end of the 350 ms unfolding
+transition. Use `--exhaustive` to test the complete two-dimensional grid, or
+repeat `--viewport` and change the device scale factor to cover another layout:
+
+```bash
+venv/bin/python scripts/find_wordmark_jitter.py \
+  --viewport 1280x720 \
+  --viewport 920x720 \
+  --device-scale-factor 2 \
+  --exhaustive \
+  --output /tmp/wordmark-jitter-exhaustive.json
+```
+
+Pass `--url http://127.0.0.1:1313` to inspect an already-running site and
+`--channel chrome --headed` to use the installed Google Chrome build. The JSON
+report contains viewport-relative and logo-relative coordinates plus the full
+frame trace for each finding. Exit status `1` means jitter was found; `0` means
+the requested scan completed without a finding.
+
+The ordinary pytest suite also runs a bounded CI profile from
+`tests/test_wordmark_jitter_scanner.py`. It samples the center, all four stage
+boundaries, the outside margin, and five vertical slices at 32-CSS-pixel
+intervals, repeating every point at the start, midpoint, and end of unfolding.
+The one-pixel exhaustive scan remains a manual diagnostic because it contains
+tens of thousands of real-pointer attempts.
+
 Real asynchronous GPU timing for the Muta tentacle renderer is disabled by
 default. Its opt-in query parameter, output fields, and disable procedure are
 documented in [docs/tentacle-gpu-timing.md](docs/tentacle-gpu-timing.md).

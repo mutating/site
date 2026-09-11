@@ -3460,6 +3460,233 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     )
 
 
+@pytest.mark.parametrize(
+    "viewport_width",
+    [720, 920, 921, 1120, 1121, 1280],
+    ids=[
+        "measured-tablet",
+        "below-js-breakpoint",
+        "above-js-breakpoint",
+        "below-css-breakpoint",
+        "above-css-breakpoint",
+        "desktop",
+    ],
+)
+def test_unfolding_wordmark_keeps_hover_when_pointer_outpaces_the_text(
+    driver: DriverFactory,
+    viewport_width: int,
+) -> None:
+    """Do not let the animated wordmark move its own hover target away.
+
+    The reported cursor path starts over the compact ``TMC`` mark and then
+    moves to the eventual middle of ``Mutating`` before the 350 ms unfolding
+    transition has reached that point.  When ``:hover`` is owned only by the
+    width-changing wordmark, the pointer momentarily lands beyond its current
+    hit box, reverses the transition, and can repeatedly cross the moving edge
+    while the physical pointer is effectively still.  That is the visible
+    shaking captured in the bug report.
+
+    First render the completed state to locate the same future point without
+    hard-coding font metrics.  Then fold the logo, enter through its stable
+    ``T`` anchor, and immediately move the real browser pointer to that point.
+    The interaction must settle at the unchanged, fully expanded endpoint.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(viewport_width, 720),
+        load_interactive_visuals=False,
+    )
+    wordmark = page.locator(".brand__wordmark")
+    reveals = page.locator(".brand__word-reveal")
+    mutating = page.locator('.brand__word-reveal[data-text="utating"]')
+    anchor_t = page.locator(
+        ".brand__word-part--t .brand__word-anchor"
+    )
+
+    wordmark.hover()
+    wordmark.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+        }
+        """
+    )
+    expanded_mutating = mutating.bounding_box()
+    assert expanded_mutating is not None
+    target_x = expanded_mutating["x"] + expanded_mutating["width"] * 0.55
+    target_y = expanded_mutating["y"] + expanded_mutating["height"] * 0.5
+
+    page.mouse.move(page.viewport_size["width"] - 1, target_y)
+    wordmark.evaluate(
+        """
+        (element) => {
+          for (const animation of element.getAnimations({subtree: true})) {
+            animation.finish();
+          }
+        }
+        """
+    )
+    assert all(width <= 0.01 for width in reveals.evaluate_all(
+        "elements => elements.map((element) => element.getBoundingClientRect().width)"
+    ))
+
+    compact_wordmark = wordmark.bounding_box()
+    stable_stage = page.locator(".brand__wordmark-stage").bounding_box()
+    assert compact_wordmark is not None
+    assert stable_stage is not None
+    unused_stage_x = (
+        compact_wordmark["x"]
+        + compact_wordmark["width"]
+        + stable_stage["x"]
+        + stable_stage["width"]
+    ) / 2
+    page.mouse.move(unused_stage_x, target_y)
+    page.wait_for_timeout(450)
+    assert all(width <= 0.01 for width in reveals.evaluate_all(
+        "elements => elements.map((element) => element.getBoundingClientRect().width)"
+    ))
+
+    compact_t = anchor_t.bounding_box()
+    assert compact_t is not None
+    page.mouse.move(
+        compact_t["x"] + compact_t["width"] * 0.5,
+        target_y,
+    )
+    page.mouse.move(target_x, target_y)
+    page.wait_for_timeout(450)
+
+    settled = reveals.evaluate_all(
+        """
+        (elements) => elements.map((element) => ({
+          width: element.getBoundingClientRect().width,
+          naturalWidth: element.scrollWidth,
+          opacity: Number.parseFloat(getComputedStyle(element).opacity),
+        }))
+        """
+    )
+    for reveal in settled:
+        assert reveal["width"] == pytest.approx(
+            reveal["naturalWidth"],
+            abs=1,
+        )
+        assert reveal["opacity"] == pytest.approx(1, abs=0.01)
+
+    expanded_wordmark = wordmark.bounding_box()
+    assert expanded_wordmark is not None
+    assert expanded_wordmark["x"] >= stable_stage["x"] - 0.5
+    assert (
+        expanded_wordmark["x"] + expanded_wordmark["width"]
+        <= stable_stage["x"] + stable_stage["width"] + 0.5
+    )
+    assert expanded_wordmark["y"] >= stable_stage["y"] - 0.5
+    assert (
+        expanded_wordmark["y"] + expanded_wordmark["height"]
+        <= stable_stage["y"] + stable_stage["height"] + 0.5
+    )
+
+    for horizontal_fraction in (0.001, 0.25, 0.5, 0.75, 0.999):
+        for vertical_fraction in (0.001, 0.5, 0.999):
+            page.mouse.move(
+                expanded_wordmark["x"]
+                + expanded_wordmark["width"] * horizontal_fraction,
+                expanded_wordmark["y"]
+                + expanded_wordmark["height"] * vertical_fraction,
+            )
+            assert wordmark.get_attribute("data-hover-expanded") == "true"
+
+    page.wait_for_timeout(450)
+    for reveal in reveals.evaluate_all(
+        """
+        (elements) => elements.map((element) => ({
+          width: element.getBoundingClientRect().width,
+          naturalWidth: element.scrollWidth,
+        }))
+        """
+    ):
+        assert reveal["width"] == pytest.approx(
+            reveal["naturalWidth"],
+            abs=1,
+        )
+
+
+def test_wordmark_boundary_point_settles_without_synthetic_pointer_reentry(
+    driver: DriverFactory,
+) -> None:
+    """Keep layout-generated pointer crossings from restarting the wordmark.
+
+    The automated coordinate scanner found a deterministic residual case two
+    pixels above the stable stage and one quarter of the way across it. After
+    entering through compact ``TMC`` and moving there, the changing descendant
+    hit boxes generated fresh ``pointerenter`` and ``pointerover`` events even
+    though the physical pointer stayed still. Each event restarted expansion,
+    producing about ten state changes in half a second.
+
+    Reproduce the exact path with real Playwright pointer input, count every
+    retained-state mutation, and require a single activation/deactivation
+    round trip followed by the compact endpoint. Then leave and re-enter to
+    prove that suppressing synthetic re-entry did not disable ordinary hover.
+    """
+
+    page = driver(
+        stored_theme="dark",
+        viewport=(1280, 720),
+        load_interactive_visuals=False,
+    )
+    wordmark = page.locator(".brand__wordmark")
+    stage = page.locator(".brand__wordmark-stage")
+    anchor_t = page.locator(
+        ".brand__word-part--t .brand__word-anchor"
+    )
+    reveals = page.locator(".brand__word-reveal")
+
+    stage_box = stage.bounding_box()
+    anchor_box = anchor_t.bounding_box()
+    assert stage_box is not None
+    assert anchor_box is not None
+    page.evaluate(
+        """
+        () => {
+          const wordmark = document.querySelector(".brand__wordmark");
+          window.__tmcHoverStateChanges = 0;
+          new MutationObserver((records) => {
+            window.__tmcHoverStateChanges += records.length;
+          }).observe(wordmark, {
+            attributes: true,
+            attributeFilter: ["data-hover-expanded"],
+          });
+        }
+        """
+    )
+    page.mouse.move(
+        anchor_box["x"] + anchor_box["width"] * 0.5,
+        anchor_box["y"] + anchor_box["height"] * 0.5,
+    )
+    page.mouse.move(
+        stage_box["x"] + stage_box["width"] * 0.25,
+        stage_box["y"] - 2,
+    )
+    page.wait_for_timeout(500)
+
+    assert page.evaluate("window.__tmcHoverStateChanges") <= 2
+    expect(wordmark).not_to_have_attribute("data-hover-expanded", "true")
+    assert all(width <= 0.01 for width in reveals.evaluate_all(
+        "elements => elements.map((element) => element.getBoundingClientRect().width)"
+    ))
+
+    page.mouse.move(
+        page.viewport_size["width"] - 1,
+        page.viewport_size["height"] - 1,
+    )
+    wordmark.hover()
+    page.wait_for_timeout(450)
+    assert all(width > 1 for width in reveals.evaluate_all(
+        "elements => elements.map((element) => element.getBoundingClientRect().width)"
+    ))
+
+
 def test_desktop_language_list_opens_on_hover(
     driver: DriverFactory,
 ) -> None:
@@ -4683,7 +4910,7 @@ def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
         """
         (element) => {
           window.__tmcWordmarkAnimationsCaptured = false;
-          element.addEventListener("pointerover", () => {
+          element.addEventListener("pointermove", () => {
             const reveal = element.querySelector(".brand__word-reveal");
             getComputedStyle(reveal).opacity;
             const animations = element.getAnimations({subtree: true});
