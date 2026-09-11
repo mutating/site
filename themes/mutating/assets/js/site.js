@@ -487,14 +487,80 @@
     const header = stage?.closest(".site-header");
     const actions = header?.querySelector(".header-actions");
     const eye = brand?.querySelector(".brand__mark--eye");
-    if (!stage || !brand || !header || !actions || !eye) return;
+    const wordmark = stage?.querySelector(".brand__wordmark");
+    if (!stage || !brand || !header || !actions || !eye || !wordmark) return;
     let frameRequest = 0;
+    let lastPointer = null;
+
+    const containsPoint = (element, x, y) => {
+      const rect = element.getBoundingClientRect();
+      return (
+        x >= rect.left &&
+        x < rect.right &&
+        y >= rect.top &&
+        y < rect.bottom
+      );
+    };
+
+    const synchronizePointerExpansion = (x, y) => {
+      lastPointer = { x, y };
+      if (stage.dataset.canExpand !== "true") {
+        delete wordmark.dataset.hoverExpanded;
+        return;
+      }
+      const hitTarget =
+        wordmark.dataset.hoverExpanded === "true" ? stage : wordmark;
+      if (containsPoint(hitTarget, x, y)) {
+        wordmark.dataset.hoverExpanded = "true";
+      } else {
+        delete wordmark.dataset.hoverExpanded;
+      }
+    };
+
+    const publishExpansionAvailability = (canExpand) => {
+      const becameExpandable =
+        canExpand && stage.dataset.canExpand !== "true";
+      stage.dataset.canExpand = canExpand ? "true" : "false";
+      if (!canExpand) {
+        delete wordmark.dataset.hoverExpanded;
+      } else if (lastPointer) {
+        synchronizePointerExpansion(lastPointer.x, lastPointer.y);
+      } else if (becameExpandable && wordmark.matches(":hover")) {
+        wordmark.dataset.hoverExpanded = "true";
+      }
+    };
+
+    // Pointer boundary events can be synthesized when an animated hit box
+    // moves under a stationary cursor. Only physical pointer motion may change
+    // this state: compact TMC starts it, then the fixed stage retains it.
+    document.addEventListener(
+      "pointermove",
+      (event) => {
+        synchronizePointerExpansion(event.clientX, event.clientY);
+      },
+      { passive: true, capture: true },
+    );
+    document.addEventListener("pointerout", (event) => {
+      if (event.relatedTarget !== null) return;
+      lastPointer = null;
+      delete wordmark.dataset.hoverExpanded;
+    });
+    window.addEventListener("blur", () => {
+      lastPointer = null;
+      delete wordmark.dataset.hoverExpanded;
+    });
+    if (
+      stage.dataset.canExpand === "true" &&
+      wordmark.matches(":hover")
+    ) {
+      wordmark.dataset.hoverExpanded = "true";
+    }
 
     const update = () => {
       cancelAnimationFrame(frameRequest);
       frameRequest = requestAnimationFrame(() => {
         if (matchMedia("(min-width: 921px)").matches) {
-          stage.dataset.canExpand = "true";
+          publishExpansionAvailability(true);
           stage.dataset.expansionMeasured = "true";
           stage.dataset.expansionRevision = String(
             Number(stage.dataset.expansionRevision || 0) + 1,
@@ -521,8 +587,9 @@
           (Number.parseFloat(headerStyle.paddingLeft) || 0) -
           (Number.parseFloat(headerStyle.paddingRight) || 0) -
           actionsRect.width;
-        stage.dataset.canExpand =
-          availableWidth + 0.5 >= requiredWidth ? "true" : "false";
+        publishExpansionAvailability(
+          availableWidth + 0.5 >= requiredWidth,
+        );
         stage.dataset.expansionMeasured = "true";
         stage.dataset.expansionRevision = String(
           Number(stage.dataset.expansionRevision || 0) + 1,
