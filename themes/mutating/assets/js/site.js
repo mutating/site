@@ -502,19 +502,25 @@
       );
     };
 
+    const setPointerExpansion = (expanded) => {
+      if (expanded) {
+        if (wordmark.dataset.hoverExpanded !== "true") {
+          wordmark.dataset.hoverExpanded = "true";
+        }
+      } else if (wordmark.hasAttribute("data-hover-expanded")) {
+        delete wordmark.dataset.hoverExpanded;
+      }
+    };
+
     const synchronizePointerExpansion = (x, y) => {
       lastPointer = { x, y };
       if (stage.dataset.canExpand !== "true") {
-        delete wordmark.dataset.hoverExpanded;
+        setPointerExpansion(false);
         return;
       }
       const hitTarget =
         wordmark.dataset.hoverExpanded === "true" ? stage : wordmark;
-      if (containsPoint(hitTarget, x, y)) {
-        wordmark.dataset.hoverExpanded = "true";
-      } else {
-        delete wordmark.dataset.hoverExpanded;
-      }
+      setPointerExpansion(containsPoint(hitTarget, x, y));
     };
 
     const publishExpansionAvailability = (canExpand) => {
@@ -522,11 +528,11 @@
         canExpand && stage.dataset.canExpand !== "true";
       stage.dataset.canExpand = canExpand ? "true" : "false";
       if (!canExpand) {
-        delete wordmark.dataset.hoverExpanded;
+        setPointerExpansion(false);
       } else if (lastPointer) {
         synchronizePointerExpansion(lastPointer.x, lastPointer.y);
       } else if (becameExpandable && wordmark.matches(":hover")) {
-        wordmark.dataset.hoverExpanded = "true";
+        setPointerExpansion(true);
       }
     };
 
@@ -543,17 +549,17 @@
     document.addEventListener("pointerout", (event) => {
       if (event.relatedTarget !== null) return;
       lastPointer = null;
-      delete wordmark.dataset.hoverExpanded;
+      setPointerExpansion(false);
     });
     window.addEventListener("blur", () => {
       lastPointer = null;
-      delete wordmark.dataset.hoverExpanded;
+      setPointerExpansion(false);
     });
     if (
       stage.dataset.canExpand === "true" &&
       wordmark.matches(":hover")
     ) {
-      wordmark.dataset.hoverExpanded = "true";
+      setPointerExpansion(true);
     }
 
     const update = () => {
