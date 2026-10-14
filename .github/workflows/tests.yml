@@ -138,7 +138,14 @@ jobs:
       - run: uv run --project platform/api --python "${{ matrix.python }}" ruff check --config platform/api/pyproject.toml platform/api platform/web/server tests/platform/api tests/platform/web/server deploy
       - run: uv run --project platform/api --python "${{ matrix.python }}" ruff check tests/platform/api --select D103
       - run: uv run --project platform/api --python "${{ matrix.python }}" ruff format --check --config platform/api/pyproject.toml platform/api platform/web/server tests/platform/api tests/platform/web/server deploy
-      - run: uv run --project platform/api --python "${{ matrix.python }}" pytest -c platform/api/pyproject.toml tests/platform/api -q --cov=throng_api --cov-config=platform/api/pyproject.toml --cov-report=term-missing --cov-report=xml
+      # Python 3.11's coroutine/greenlet tracing loses executed lines and branches.
+      # Run every test on every supported version; measure coverage on Python 3.12.
+      - name: Run all API tests for Python compatibility
+        if: matrix.python != '3.12'
+        run: uv run --project platform/api --python "${{ matrix.python }}" pytest -c platform/api/pyproject.toml tests/platform/api -q
+      - name: Run all API tests with 100% line and branch coverage
+        if: matrix.python == '3.12'
+        run: uv run --project platform/api --python "${{ matrix.python }}" pytest -c platform/api/pyproject.toml tests/platform/api -q --cov=throng_api --cov-config=platform/api/pyproject.toml --cov-report=term-missing --cov-report=xml
       - run: uv build --project platform/api
 
   api_postgres:
