@@ -2,15 +2,18 @@ name: Tests
 
 on:
   push:
-    branches:
-      - "**"
+    # main runs this entire workflow through the deployment gate.
+    branches-ignore:
+      - main
+  pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-tests-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   seo_contracts:
@@ -39,7 +42,7 @@ jobs:
         run: python -m pip install -r requirements_dev.txt
 
       - name: Run deployment-equivalent SEO contracts
-        run: python -m pytest tests/test_seo_contracts.py -m seo -n 0 -vv --tb=short
+        run: python -m pytest tests/site/test_seo_contracts.py -m seo -n 0 -vv --tb=short
 
   pytest:
     name: ${{ matrix.suite.name }}
@@ -92,7 +95,7 @@ jobs:
 
       - name: Run the test suite
         run: >-
-          venv/bin/python -m pytest
+          venv/bin/python -m pytest tests/site
           -n ${{ matrix.suite.workers }}
           -m "${{ matrix.suite.marker }}"
           -vv
@@ -117,3 +120,103 @@ jobs:
         run: |
           test "$TEST_SHARDS_RESULT" = "success"
           test "$SEO_CONTRACTS_RESULT" = "success"
+
+  api_sqlite:
+    name: API SQLite (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install uv==0.10.12
+      - run: uv sync --project platform/api --frozen --python "${{ matrix.python }}"
+      - run: uv run --project platform/api --python "${{ matrix.python }}" ruff check --config platform/api/pyproject.toml platform/api platform/web/server tests/platform/api tests/platform/web/server deploy
+      - run: uv run --project platform/api --python "${{ matrix.python }}" ruff check tests/platform/api --select D103
+      - run: uv run --project platform/api --python "${{ matrix.python }}" ruff format --check --config platform/api/pyproject.toml platform/api platform/web/server tests/platform/api tests/platform/web/server deploy
+      - run: uv run --project platform/api --python "${{ matrix.python }}" pytest -c platform/api/pyproject.toml tests/platform/api -q --cov=throng_api --cov-config=platform/api/pyproject.toml --cov-report=term-missing --cov-report=xml
+      - run: uv build --project platform/api
+
+  api_postgres:
+    name: API PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      THRONG_TEST_POSTGRES_ADMIN_URL: postgresql://postgres:test-password@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv==0.10.12
+      - run: uv sync --project platform/api --frozen
+      - run: uv run --project platform/api pytest -c platform/api/pyproject.toml tests/platform/api -q --cov=throng_api --cov-config=platform/api/pyproject.toml --cov-report=term-missing --cov-report=xml
+
+  web:
+    name: Platform web, browsers and HTTPS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: pip install uv==0.10.12
+      - run: uv sync --project platform/api --frozen
+      - run: uv sync --project platform/web --frozen
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: sudo apt-get update && sudo apt-get install -y nginx openssl
+      - run: npm run build:web && npm run test:web:unit
+      - name: Verify the native service and subdomain nginx routing
+        run: uv run --project platform/api pytest -c platform/api/pyproject.toml -q tests/platform/api/deployment
+      - run: uv run --project platform/web pytest -c platform/web/pyproject.toml -q tests/platform/web/server
+      - run: npm run test:web:e2e
+      - run: npm run test:web:deploy
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: platform-web-playwright
+          path: |
+            platform/web/playwright-report
+            platform/web/test-results
+
+  web_visual:
+    name: Platform visual regressions
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the pinned visual test environment
+        run: docker build --platform linux/arm64 -f tests/platform/web/visual.Dockerfile -t platform-visual .
+      - name: Compare all unchanged visual baselines
+        run: >-
+          docker run --rm --ipc=host --platform linux/arm64
+          -v "$PWD/platform/web/test-results:/workspace/platform/web/test-results"
+          -v "$PWD/platform/web/playwright-report:/workspace/platform/web/playwright-report"
+          platform-visual
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: platform-web-visual
+          path: |
+            platform/web/playwright-report
+            platform/web/test-results

@@ -14,39 +14,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  seo_contracts:
-    name: SEO contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      - name: Install Hugo Extended
-        uses: peaceiris/actions-hugo@v3.2.0
-        with:
-          hugo-version: "0.164.0"
-          extended: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements_dev.txt
-
-      - name: Install test dependencies
-        run: python -m pip install -r requirements_dev.txt
-
-      - name: Verify production SEO contracts
-        run: python -m pytest tests/test_seo_contracts.py -m seo -n 0 -vv --tb=short
+  tests:
+    uses: ./.github/workflows/tests.yml
 
   deploy:
     name: Build and deploy over SSH
-    needs: seo_contracts
+    needs: tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       DEPLOY_PATH: /var/www/mutating.tech
       SITE_BASE_URL: https://mutating.tech/
@@ -99,7 +74,7 @@ jobs:
             echo "SITE_BASE_URL must be exactly https://mutating.tech/." >&2
             exit 1
           fi
-          hugo \
+          hugo --source site --destination "$GITHUB_WORKSPACE/site/public" \
             --cleanDestinationDir \
             --environment production \
             --minify \
@@ -107,7 +82,7 @@ jobs:
             --baseURL "$SITE_BASE_URL"
 
           if rg --glob '*.html' --glob '*.xml' --glob 'robots.txt' \
-            'localhost|127\.0\.0\.1|http://mutating\.tech|example\.test' public; then
+            'localhost|127\.0\.0\.1|http://mutating\.tech|example\.test' site/public; then
             echo "Production output contains a forbidden origin." >&2
             exit 1
           fi
@@ -151,92 +126,24 @@ jobs:
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$'
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^cache-control: no-cache\r?$'
 
-      - name: Replace the deployed site
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Build the production platform web UI
+        env:
+          VITE_SITE_ORIGIN: https://mutating.tech
+        run: npm ci && npm run build:web
+
+      - name: Upload and activate the shared release over SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          if [[ ! "$DEPLOY_PORT" =~ ^[0-9]+$ ]]; then
-            echo "DEPLOY_PORT must contain only digits." >&2
-            exit 1
-          fi
-
-          if ! getent ahostsv4 "$DEPLOY_HOST" >/dev/null; then
-            echo "::error title=No IPv4 deployment address::DEPLOY_HOST does not resolve to IPv4. A standard GitHub-hosted runner cannot reach an IPv6-only SSH endpoint."
-            exit 1
-          fi
-
-          if [[ ! "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
-            echo "DEPLOY_PATH must be an absolute path without spaces." >&2
-            exit 1
-          fi
-
-          target_path="${DEPLOY_PATH%/}"
-          case "$target_path" in
-            *"/../"*|*"/.."|*"/./"*|*"/.")
-              echo "DEPLOY_PATH must not contain dot path segments." >&2
-              exit 1
-              ;;
-          esac
-
-          case "$target_path" in
-            /|/home|/root|/srv|/usr|/var|/var/www)
-              echo "Refusing to synchronize into an unsafe DEPLOY_PATH." >&2
-              exit 1
-              ;;
-          esac
-
-          ssh_options=(
-            -4
-            -p "$DEPLOY_PORT"
-            -o PreferredAuthentications=password
-            -o PubkeyAuthentication=no
-            -o NumberOfPasswordPrompts=1
-            -o ConnectTimeout=15
-            -o StrictHostKeyChecking=no
-            -o UserKnownHostsFile=/dev/null
-          )
-
-          remote_preflight="
-            set -eu
-            if [ ! -d '$target_path' ]; then
-              echo 'Remote DEPLOY_PATH does not exist: $target_path' >&2
-              exit 20
-            fi
-            if [ ! -w '$target_path' ]; then
-              echo 'Remote DEPLOY_PATH is not writable by DEPLOY_USER: $target_path' >&2
-              exit 21
-            fi
-            if ! command -v rsync >/dev/null 2>&1; then
-              echo 'rsync is not installed on the remote server.' >&2
-              exit 22
-            fi
-          "
-
-          if ! sshpass -e ssh "${ssh_options[@]}" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "$remote_preflight"; then
-            echo "::error title=SSH connection or preflight failed::If SSH reported 'Network is unreachable', DEPLOY_HOST must point to a public IPv4 address reachable on DEPLOY_PORT. Otherwise review the SSH message above, the server firewall, credentials, remote rsync, and DEPLOY_PATH permissions."
-            exit 1
-          fi
-
-          if ! sshpass -e rsync \
-            --archive \
-            --compress \
-            --checksum \
-            --delete-delay \
-            --delay-updates \
-            --chmod=D755,F644 \
-            -e "ssh -4 -p $DEPLOY_PORT -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ConnectTimeout=15 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-            public/ \
-            "$DEPLOY_USER@$DEPLOY_HOST:$target_path/"; then
-            echo "::error title=Upload failed::SSH succeeded, but rsync could not synchronize public/ to DEPLOY_PATH. Review the rsync output above."
-            exit 1
-          fi
+        run: bash deploy/upload.sh "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
       - name: Verify the deployed content contracts
         run: |
@@ -297,8 +204,8 @@ jobs:
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$'
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^cache-control: no-cache\r?$'
 
-          css_path="$(find public/css -type f -name '*.css' -print -quit)"
-          css_url="https://mutating.tech/${css_path#public/}"
+          css_path="$(find site/public/css -type f -name '*.css' -print -quit)"
+          css_url="https://mutating.tech/${css_path#site/public/}"
           css_headers="$(curl --silent --show-error --dump-header - --output /dev/null --header 'Accept-Encoding: gzip' --max-time 30 "$css_url")"
           printf '%s' "$css_headers" | rg --quiet --ignore-case '^content-encoding: gzip\r?$'
           printf '%s' "$css_headers" | rg --quiet --ignore-case '^vary: Accept-Encoding\r?$'
@@ -309,3 +216,10 @@ jobs:
             echo "Stable image URLs must not use immutable caching." >&2
             exit 1
           fi
+
+      - name: Verify API and platform through nginx
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/health/ready
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/openapi.json --output /dev/null
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --max-time 30 https://platform.mutating.tech/ --output /dev/null
