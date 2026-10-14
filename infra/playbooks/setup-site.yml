@@ -1,0 +1,739 @@
+---
+# Bootstrap a fresh Debian VPS from a local machine:
+#   ansible-playbook -i 'SERVER_IP,' infra/playbooks/setup-server.yml \
+#     -u root -e ansible_host=SERVER_IP
+#
+# By default the local checkout containing this playbook is copied to the VPS.
+# Override local_site_path, site_domain, certbot_email or deploy_path with -e.
+
+- name: Set up the web server
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: "-o ControlPath=~/.ansible/cp/mutating-tech-%C"
+    site_domain: mutating.tech
+    site_aliases:
+      - www.mutating.tech
+    certbot_email: contact@mutating.tech
+    deploy_user: user
+    deploy_group: user
+    local_site_path: "{{ playbook_dir }}/../../site"
+    source_path: /opt/mutating.tech
+    source_staging_path: /var/tmp/mutating-tech-source-sync
+    deploy_path: /var/www/mutating.tech
+    acme_webroot: /var/www/letsencrypt
+    nginx_site_name: mutating.tech
+    hugo_version: 0.164.0
+    hugo_debian_architectures:
+      x86_64: amd64
+      aarch64: arm64
+    nginx_bootstrap_config: "/etc/nginx/sites-available/{{ nginx_site_name }}-bootstrap"
+    nginx_tls_config: "/etc/nginx/sites-available/{{ nginx_site_name }}-tls"
+    nginx_enabled_config: "/etc/nginx/sites-enabled/{{ nginx_site_name }}"
+    letsencrypt_live_path: "/etc/letsencrypt/live/{{ site_domain }}"
+
+  handlers:
+    - name: Test nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      listen: nginx configuration changed
+
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      listen: nginx configuration changed
+
+  tasks:
+    - name: Require Debian
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == 'Debian'
+        fail_msg: This playbook currently supports Debian-based systems only.
+
+    - name: Install server packages
+      ansible.builtin.apt:
+        name:
+          - git
+          - nginx
+          - certbot
+          - curl
+          - openssl
+          - rsync
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Require a supported Hugo release architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.architecture in hugo_debian_architectures
+        fail_msg: "Hugo {{ hugo_version }} is not configured for {{ ansible_facts.architecture }}."
+
+    - name: Download the pinned Hugo Extended package
+      ansible.builtin.get_url:
+        url: "https://github.com/gohugoio/hugo/releases/download/v{{ hugo_version }}/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_facts.architecture] }}.deb"
+        dest: "/var/tmp/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_facts.architecture] }}.deb"
+        mode: '0644'
+
+    - name: Install the pinned Hugo Extended package
+      ansible.builtin.apt:
+        deb: "/var/tmp/hugo_extended_{{ hugo_version }}_linux-{{ hugo_debian_architectures[ansible_facts.architecture] }}.deb"
+        state: present
+
+    - name: Read the installed Hugo version
+      ansible.builtin.command: hugo version
+      register: installed_hugo
+      changed_when: false
+
+    - name: Verify the pinned Hugo version
+      ansible.builtin.assert:
+        that:
+          - "('v' ~ hugo_version) in installed_hugo.stdout"
+          - "'extended' in installed_hugo.stdout"
+        fail_msg: "Expected Hugo Extended {{ hugo_version }}, got: {{ installed_hugo.stdout }}"
+
+    - name: Create deployment group
+      ansible.builtin.group:
+        name: "{{ deploy_group }}"
+        state: present
+
+    - name: Create deployment account
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        create_home: true
+        shell: /bin/bash
+        state: present
+
+    - name: Create source, site and ACME directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ source_path }}", owner: "{{ deploy_user }}", group: "{{ deploy_group }}", mode: '0755' }
+        - { path: "{{ deploy_path }}", owner: "{{ deploy_user }}", group: "{{ deploy_group }}", mode: '0755' }
+        - { path: "{{ acme_webroot }}/.well-known/acme-challenge", owner: root, group: root, mode: '0755' }
+        - { path: /etc/letsencrypt/renewal-hooks/deploy, owner: root, group: root, mode: '0755' }
+
+    - name: Create remote source synchronization staging directory
+      tags:
+        - source_sync
+      ansible.builtin.file:
+        path: "{{ source_staging_path }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: '0700'
+
+    - name: Synchronize the local site checkout to the server
+      tags:
+        - source_sync
+      become: false
+      ansible.posix.synchronize:
+        src: "{{ local_site_path }}/"
+        dest: "{{ source_staging_path }}/"
+        archive: true
+        checksum: true
+        compress: true
+        delete: true
+        owner: false
+        group: false
+        perms: false
+        times: false
+        use_ssh_args: true
+        ssh_connection_multiplexing: true
+        rsync_opts:
+          - --delete-excluded
+          - --exclude=/.git/
+          - --exclude=/public/
+          - --exclude=/resources/
+          - --exclude=/venv/
+          - --exclude=/.pytest_cache/
+          - --exclude=/.hugo_build.lock
+          - --exclude=/.DS_Store
+
+    - name: Promote the synchronized checkout into the source directory
+      tags:
+        - source_sync
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - --archive
+          - --checksum
+          - --delete-delay
+          - --delay-updates
+          - --no-times
+          - "--chown={{ deploy_user }}:{{ deploy_group }}"
+          - --chmod=D755,F644
+          - --itemize-changes
+          - --exclude=.hugo_build.lock
+          - "{{ source_staging_path }}/"
+          - "{{ source_path }}/"
+      register: source_promotion
+      changed_when: source_promotion.stdout_lines | length > 0
+
+    - name: Install crawler-oriented nginx log format
+      ansible.builtin.copy:
+        dest: /etc/nginx/conf.d/mutating-tech-log-format.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          log_format seo_json escape=json '{'
+            '"time":"$time_iso8601",'
+            '"host":"$host",'
+            '"method":"$request_method",'
+            '"uri":"$uri",'
+            '"has_args":"$is_args",'
+            '"status":$status,'
+            '"bytes":$body_bytes_sent,'
+            '"request_time":$request_time,'
+            '"referer":"$http_referer",'
+            '"user_agent":"$http_user_agent"'
+          '}';
+      notify: nginx configuration changed
+
+    - name: Install nginx access-log retention policy
+      ansible.builtin.copy:
+        dest: /etc/logrotate.d/mutating-tech-nginx
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          /var/log/nginx/{{ nginx_site_name }}.access.json.log {
+              daily
+              rotate 14
+              missingok
+              notifempty
+              compress
+              delaycompress
+              sharedscripts
+              postrotate
+                  [ ! -f /run/nginx.pid ] || kill -USR1 "$(cat /run/nginx.pid)"
+              endscript
+          }
+
+    - name: Install the daily crawler-log analyzer
+      ansible.builtin.copy:
+        src: "{{ local_site_path }}/scripts/analyze_crawler_logs.py"
+        dest: /usr/local/sbin/analyze-mutating-crawler-logs
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install crawler-log analysis service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mutating-crawler-report.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Summarize claimed search crawler traffic for {{ site_domain }}
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/analyze-mutating-crawler-logs --canonical-host {{ site_domain }} --hours 24
+
+    - name: Install crawler-log analysis timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mutating-crawler-report.timer
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Generate the daily {{ site_domain }} crawler report
+          [Timer]
+          OnCalendar=daily
+          RandomizedDelaySec=30min
+          Persistent=true
+          Unit=mutating-crawler-report.service
+          [Install]
+          WantedBy=timers.target
+
+    - name: Install bootstrap HTTP nginx configuration
+      tags:
+        - nginx_config
+      ansible.builtin.copy:
+        dest: "{{ nginx_bootstrap_config }}"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          server {
+              listen 80 default_server;
+              listen [::]:80 default_server;
+              server_name _;
+              return 444;
+          }
+
+          server {
+              listen 80;
+              listen [::]:80;
+              server_name {{ site_domain }} {{ site_aliases | join(' ') }};
+
+              root {{ deploy_path }};
+              index index.html;
+              charset utf-8;
+              server_tokens off;
+              sendfile on;
+              tcp_nopush on;
+
+              gzip on;
+              gzip_vary on;
+              gzip_comp_level 6;
+              gzip_min_length 1024;
+              gzip_types
+                  application/javascript
+                  application/json
+                  application/xml
+                  image/svg+xml
+                  text/css
+                  text/javascript;
+
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+              access_log /var/log/nginx/{{ nginx_site_name }}.access.json.log seo_json;
+
+              if ($request_uri ~ "//") {
+                  return 308 https://{{ site_domain }}$uri$is_args$args;
+              }
+
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
+              }
+
+              location ^~ /.well-known/acme-challenge/ {
+                  root {{ acme_webroot }};
+                  default_type text/plain;
+                  try_files $uri =404;
+              }
+
+              location = /en {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /en/ {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /author-posts/ {
+                  return 308 https://{{ site_domain }}/authors/;
+              }
+
+              location = /ru/author-posts/ {
+                  return 308 https://{{ site_domain }}/ru/authors/;
+              }
+
+              location ~ ^(.*)/page/1/$ {
+                  return 308 https://{{ site_domain }}$1/;
+              }
+
+              location / {
+                  try_files $uri $uri/ $uri/index.html =404;
+                  add_header Cache-Control "no-cache" always;
+              }
+
+              location ~* "^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
+                  try_files $uri =404;
+                  add_header Cache-Control "public, max-age=31536000, immutable" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+              }
+
+              location ~* \.(?:mjs|json|jpg|jpeg|png|gif|webp|avif|svg|ico|woff|woff2|ttf|otf)$ {
+                  try_files $uri =404;
+                  add_header Cache-Control "public, max-age=604800" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+              }
+
+              location ~ /\.(?!well-known/) {
+                  deny all;
+              }
+          }
+      notify: nginx configuration changed
+
+    - name: Install final HTTPS nginx configuration
+      tags:
+        - nginx_config
+      ansible.builtin.copy:
+        dest: "{{ nginx_tls_config }}"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          server {
+              listen 80 default_server;
+              listen [::]:80 default_server;
+              server_name _;
+              return 444;
+          }
+
+          server {
+              listen 80;
+              listen [::]:80;
+              server_name {{ site_domain }} {{ site_aliases | join(' ') }};
+
+              if ($request_uri ~ "//") {
+                  return 308 https://{{ site_domain }}$uri$is_args$args;
+              }
+
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
+              }
+
+              location ^~ /.well-known/acme-challenge/ {
+                  root {{ acme_webroot }};
+                  default_type text/plain;
+                  try_files $uri =404;
+              }
+
+              location = /en {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /en/ {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /author-posts/ {
+                  return 308 https://{{ site_domain }}/authors/;
+              }
+
+              location = /ru/author-posts/ {
+                  return 308 https://{{ site_domain }}/ru/authors/;
+              }
+
+              location ~ ^(.*)/page/1/$ {
+                  return 308 https://{{ site_domain }}$1/;
+              }
+
+              location / {
+                  return 308 https://{{ site_domain }}$request_uri;
+              }
+          }
+
+          server {
+              listen 443 ssl default_server;
+              listen [::]:443 ssl default_server;
+              http2 on;
+              server_name _;
+              ssl_certificate {{ letsencrypt_live_path }}/fullchain.pem;
+              ssl_certificate_key {{ letsencrypt_live_path }}/privkey.pem;
+              return 444;
+          }
+
+          server {
+              listen 443 ssl;
+              listen [::]:443 ssl;
+              http2 on;
+              server_name {{ site_aliases | join(' ') }};
+              ssl_certificate {{ letsencrypt_live_path }}/fullchain.pem;
+              ssl_certificate_key {{ letsencrypt_live_path }}/privkey.pem;
+              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+              if ($request_uri ~ "//") {
+                  return 308 https://{{ site_domain }}$uri$is_args$args;
+              }
+
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
+              }
+
+              location = /en {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /en/ {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /author-posts/ {
+                  return 308 https://{{ site_domain }}/authors/;
+              }
+
+              location = /ru/author-posts/ {
+                  return 308 https://{{ site_domain }}/ru/authors/;
+              }
+
+              location ~ ^(.*)/page/1/$ {
+                  return 308 https://{{ site_domain }}$1/;
+              }
+
+              location / {
+                  return 308 https://{{ site_domain }}$request_uri;
+              }
+          }
+
+          server {
+              listen 443 ssl;
+              listen [::]:443 ssl;
+              http2 on;
+              server_name {{ site_domain }};
+
+              ssl_certificate {{ letsencrypt_live_path }}/fullchain.pem;
+              ssl_certificate_key {{ letsencrypt_live_path }}/privkey.pem;
+
+              root {{ deploy_path }};
+              index index.html;
+              charset utf-8;
+              server_tokens off;
+              sendfile on;
+              tcp_nopush on;
+
+              gzip on;
+              gzip_vary on;
+              gzip_proxied any;
+              gzip_comp_level 6;
+              gzip_min_length 1024;
+              gzip_types
+                  application/javascript
+                  application/json
+                  application/xml
+                  application/rss+xml
+                  image/svg+xml
+                  text/css
+                  text/javascript;
+
+              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+              access_log /var/log/nginx/{{ nginx_site_name }}.access.json.log seo_json;
+
+              if ($request_uri ~ "//") {
+                  return 308 https://{{ site_domain }}$uri$is_args$args;
+              }
+
+              if ($request_uri ~ "^(.*/)index\.html(?:\?.*)?$") {
+                  return 308 https://{{ site_domain }}$1$is_args$args;
+              }
+
+              location = /en {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /en/ {
+                  return 308 https://{{ site_domain }}/;
+              }
+
+              location = /author-posts/ {
+                  return 308 https://{{ site_domain }}/authors/;
+              }
+
+              location = /ru/author-posts/ {
+                  return 308 https://{{ site_domain }}/ru/authors/;
+              }
+
+              location ~ ^(.*)/page/1/$ {
+                  return 308 https://{{ site_domain }}$1/;
+              }
+
+              location ^~ /.well-known/acme-challenge/ {
+                  root {{ acme_webroot }};
+                  default_type text/plain;
+                  try_files $uri =404;
+                  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+              }
+
+              location / {
+                  try_files $uri $uri/ $uri/index.html =404;
+                  add_header Cache-Control "no-cache" always;
+                  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+                  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+              }
+
+              location ~* "^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
+                  try_files $uri =404;
+                  add_header Cache-Control "public, max-age=31536000, immutable" always;
+                  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+              }
+
+              location ~* \.(?:mjs|json|jpg|jpeg|png|gif|webp|avif|svg|ico|woff|woff2|ttf|otf)$ {
+                  try_files $uri =404;
+                  add_header Cache-Control "public, max-age=604800" always;
+                  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+              }
+
+              location ~ /\.(?!well-known/) {
+                  deny all;
+              }
+          }
+      notify: nginx configuration changed
+
+    - name: Check for an existing TLS certificate
+      ansible.builtin.stat:
+        path: "{{ letsencrypt_live_path }}/fullchain.pem"
+      register: existing_tls_certificate
+
+    - name: Enable bootstrap or final site configuration
+      ansible.builtin.file:
+        src: "{{ nginx_tls_config if existing_tls_certificate.stat.exists else nginx_bootstrap_config }}"
+        dest: "{{ nginx_enabled_config }}"
+        state: link
+        force: true
+      notify: nginx configuration changed
+
+    - name: Remove Debian default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: nginx configuration changed
+
+    - name: Apply nginx configuration before using it
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure nginx starts and remains running
+      ansible.builtin.service:
+        name: nginx
+        enabled: true
+        state: started
+
+    - name: Build the site for the first time
+      become_user: "{{ deploy_user }}"
+      ansible.builtin.command: >-
+        hugo
+        --gc
+        --minify
+        --cleanDestinationDir
+        --panicOnWarning
+        --environment production
+        --baseURL "https://{{ site_domain }}/"
+        --destination "{{ deploy_path }}"
+      args:
+        chdir: "{{ source_path }}"
+      changed_when: true
+
+    - name: Install initial certificate bootstrap script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/mutating-cert-bootstrap
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          set -eu
+          domain="{{ site_domain }}"
+          aliases="{{ site_aliases | join(' ') }}"
+          certificate="/etc/letsencrypt/live/${domain}/fullchain.pem"
+          tls_config="{{ nginx_tls_config }}"
+          enabled_config="{{ nginx_enabled_config }}"
+          marker="{{ acme_webroot }}/.well-known/acme-challenge/${domain}"
+
+          certificate_covers_all_names() {
+            [ -s "$certificate" ] || return 1
+            for name in "$domain" $aliases; do
+              openssl x509 \
+                -in "$certificate" \
+                -noout \
+                -checkhost "$name" >/dev/null 2>&1 || return 1
+            done
+          }
+
+          if certificate_covers_all_names; then
+            ln -sfn "$tls_config" "$enabled_config"
+            nginx -t
+            systemctl reload nginx
+            exit 0
+          fi
+
+          if [ ! -s "$marker" ]; then exit 0; fi
+          expected="$(cat "$marker")"
+          for name in "$domain" $aliases; do
+            probe="http://${name}/.well-known/acme-challenge/${domain}"
+            observed="$(curl --fail --silent --show-error --max-time 20 "$probe" 2>/dev/null || true)"
+            [ "$observed" = "$expected" ] || exit 0
+          done
+
+          set -- -d "$domain"
+          for name in $aliases; do
+            set -- "$@" -d "$name"
+          done
+
+          certbot certonly \
+            --webroot \
+            --webroot-path "{{ acme_webroot }}" \
+            --non-interactive \
+            --agree-tos \
+            --email "{{ certbot_email }}" \
+            --cert-name "$domain" \
+            --expand \
+            "$@"
+          ln -sfn "$tls_config" "$enabled_config"
+          nginx -t
+          systemctl reload nginx
+
+    - name: Create ACME DNS-readiness marker
+      ansible.builtin.copy:
+        dest: "{{ acme_webroot }}/.well-known/acme-challenge/{{ site_domain }}"
+        content: "{{ ansible_facts.default_ipv4.address }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install certificate bootstrap service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mutating-cert-bootstrap.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Issue or reconcile the TLS certificate for {{ site_domain }}
+          After=network-online.target nginx.service
+          Wants=network-online.target
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/mutating-cert-bootstrap
+
+    - name: Install certificate bootstrap timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/mutating-cert-bootstrap.timer
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Retry initial TLS certificate issuance for {{ site_domain }}
+          [Timer]
+          OnBootSec=2min
+          OnUnitActiveSec=15min
+          RandomizedDelaySec=2min
+          Persistent=true
+          Unit=mutating-cert-bootstrap.service
+          [Install]
+          WantedBy=timers.target
+
+    - name: Install certificate renewal nginx hook
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          set -eu
+          nginx -t
+          systemctl reload nginx
+
+    - name: Enable nginx and certificate timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop:
+        - nginx
+        - certbot.timer
+        - mutating-cert-bootstrap.timer
+        - mutating-crawler-report.timer
+
+    - name: Reconcile certificate hostname coverage
+      ansible.builtin.systemd:
+        name: mutating-cert-bootstrap.service
+        state: started
+      changed_when: false

@@ -1,0 +1,146 @@
+/* Brand typography and colors from site/themes/mutating/assets/css/site.css. */
+@font-face {
+  font-family: "Science Gothic";
+  src: url("/fonts/science-gothic-wordmark.woff2") format("woff2-variations");
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 50% 200%;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist/geist-98bbbccb.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist/geist-875ccdd4.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0400-04FF;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/geist-mono/geist-mono-013b2f2f.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --font-geist-sans: "Geist";
+  --font-geist-mono: "Geist Mono";
+  color-scheme: light;
+  --bg: #fffafb;
+  --surface: #ffffff;
+  --surface-raised: #fff3f8;
+  --ink: #160d13;
+  --ink-muted: #6c5f67;
+  --hot: #ff2c92;
+  --hot-bright: #ff66ae;
+  --hot-soft: #bb5d8c;
+  --hot-pale: #ffd8e9;
+  --line: #e5d9df;
+  --inverse: #0a0609;
+  --inverse-ink: #fff7fb;
+  --shadow: 0 28px 90px rgba(113, 15, 65, 0.13);
+  --code-canvas: #fff6fa;
+  --code-text: #35242e;
+  --code-comment: #8d7783;
+  --code-keyword: #c31568;
+  --code-function: #7135a2;
+  --code-string: #a53869;
+  --code-number: #b24675;
+  --code-type: #8b2f81;
+  --code-operator: #d51d76;
+  --code-error: #b91c35;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #090608;
+    --surface: #100c0f;
+    --surface-raised: #171015;
+    --ink: #fff7fb;
+    --ink-muted: #b9a9b2;
+    --hot: #ff3e9d;
+    --hot-bright: #ff75b8;
+    --hot-soft: #b65b8a;
+    --hot-pale: #4a1830;
+    --line: #30242b;
+    --inverse: #ffedf5;
+    --inverse-ink: #11080d;
+    --shadow: 0 32px 120px rgba(255, 36, 144, 0.12);
+    --code-canvas: #100b0f;
+    --code-text: #f5e9ef;
+    --code-comment: #95818c;
+    --code-keyword: #ff5ca8;
+    --code-function: #ffc0df;
+    --code-string: #e79dcc;
+    --code-number: #ff9bbb;
+    --code-type: #d5b5ff;
+    --code-operator: #ff82bb;
+    --code-error: #ff8798;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #090608;
+  --surface: #100c0f;
+  --surface-raised: #171015;
+  --ink: #fff7fb;
+  --ink-muted: #b9a9b2;
+  --hot: #ff3e9d;
+  --hot-bright: #ff75b8;
+  --hot-soft: #b65b8a;
+  --hot-pale: #4a1830;
+  --line: #30242b;
+  --inverse: #ffedf5;
+  --inverse-ink: #11080d;
+  --shadow: 0 32px 120px rgba(255, 36, 144, 0.12);
+  --code-canvas: #100b0f;
+  --code-text: #f5e9ef;
+  --code-comment: #95818c;
+  --code-keyword: #ff5ca8;
+  --code-function: #ffc0df;
+  --code-string: #e79dcc;
+  --code-number: #ff9bbb;
+  --code-type: #d5b5ff;
+  --code-operator: #ff82bb;
+  --code-error: #ff8798;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fffafb;
+  --surface: #ffffff;
+  --surface-raised: #fff3f8;
+  --ink: #160d13;
+  --ink-muted: #6c5f67;
+  --hot: #ff2c92;
+  --hot-bright: #ff66ae;
+  --hot-soft: #bb5d8c;
+  --hot-pale: #ffd8e9;
+  --line: #e5d9df;
+  --inverse: #0a0609;
+  --inverse-ink: #fff7fb;
+  --shadow: 0 28px 90px rgba(113, 15, 65, 0.13);
+  --code-canvas: #fff6fa;
+  --code-text: #35242e;
+  --code-comment: #8d7783;
+  --code-keyword: #c31568;
+  --code-function: #7135a2;
+  --code-string: #a53869;
+  --code-number: #b24675;
+  --code-type: #8b2f81;
+  --code-operator: #d51d76;
+  --code-error: #b91c35;
+}

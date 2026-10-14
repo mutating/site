@@ -1,0 +1,195 @@
+# Единый деплой сайта, API и платформы
+
+Production работает без Docker и Docker Compose. Репозиторий содержит Hugo в
+`site/`, API в `platform/api/`, кабинет в `platform/web/` и все проверки в `tests/`. Nginx выбирает приложение по
+`server_name`, а единый сервис systemd `throng.service` управляет API, контроллером
+и кабинетом. Кабинет обращается к API через сервер Python на локальном порту;
+браузеру не требуется CORS между поддоменами.
+
+| Адрес | Обработчик |
+| --- | --- |
+| `https://mutating.tech/` | Существующий сайт Hugo |
+| `https://api.mutating.tech/` | API и контроллер на `127.0.0.1:8000` |
+| `https://platform.mutating.tech/` | Переход на `/account/`, кабинет на `127.0.0.1:8001` |
+
+Используются точные имена двух поддоменов. Для добавления других доменов нужно
+добавить их в nginx и сертификат. Все пути API сохраняются: например,
+`https://api.mutating.tech/api/v1/users`, `/agent/v1/*`, `/docs`, `/openapi.json`.
+Кабинет сохраняет существующие маршруты `/account/profile`, `/account/api/*`.
+В production логотип кабинета ведёт на `https://mutating.tech/`.
+
+## Общий локальный запуск
+
+Из корня репозитория:
+
+```sh
+uv sync --project platform/api --frozen
+cp platform/api/.env.example platform/api/.env  # только если собственного .env ещё нет
+npm ci
+npm run build:web
+uv run --project platform/api python deploy/run.py
+```
+
+API доступен на `http://127.0.0.1:8000`, кабинет — на
+`http://127.0.0.1:8001/account/`. В `platform/api/.env` укажите
+`DASHBOARD_PUBLIC_ORIGIN=http://127.0.0.1:8001` и `DASHBOARD_SECURE_COOKIE=false`.
+При использовании Vite вместо общего запуска используйте прежние настройки из
+`platform/web/.env.example` с origin `http://127.0.0.1:5173`.
+
+Общая команда применяет миграции, ждёт готовности API, запускает кабинет и
+останавливает оба процесса по Ctrl+C/SIGTERM. Неожиданное завершение любого
+компонента останавливает второй и возвращает ненулевой код.
+
+## Первичная настройка сервера
+
+Это отдельный административный шаг, который не выполняется обычным CI-деплоем.
+Поддерживаются Debian/Ubuntu на amd64/arm64. Используется тот же подход, что в
+репозитории `site`: Ansible, nginx, Certbot и SSH-пользователь `user`.
+
+Если статический сайт уже настроен, достаточно применить
+`infra/playbooks/setup-platform.yml`; общий `setup-server.yml` также повторно
+настраивает и собирает Hugo-сайт.
+
+14 октября 2026 года `setup-platform.yml` применён к production-серверу:
+nginx-маршруты, сертификат обоих поддоменов, systemd-сервис, SQLite-конфигурация
+и права пользователя CI проверены. Существующая конфигурация nginx и статическая
+страница сохранены. Первый релиз приложений загружает CI после merge в `main`.
+
+1. Создайте DNS-записи `api.mutating.tech` и `platform.mutating.tech`, указывающие
+   на сервер. Если есть AAAA-записи, IPv6 тоже должен вести на этот сервер.
+2. Откройте входящие 80/443 и SSH-порт. Порты 8000/8001 слушают только loopback.
+3. Выполните playbook с административного аккаунта после переключения DNS:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i 'SERVER_IP,' infra/playbooks/setup-server.yml \
+  -u root -e ansible_port=22
+```
+
+При парольном административном доступе добавьте `--ask-pass`, а если нужны права
+sudo — `--ask-become-pass`. Пароли вводите в приглашении Ansible. Пользователя
+деплоя можно задать через `-e deploy_user=user`.
+
+Playbook устанавливает Hugo Extended 0.164.0, `uv` версии 0.10.12, nginx, Certbot и инструменты SSH-деплоя,
+создаёт отдельного runtime-пользователя `throng`, один systemd unit и дополнительный
+nginx-конфиг `/etc/nginx/sites-available/throng`. Сертификат двух поддоменов
+хранится отдельно в `/etc/letsencrypt/live/throng-mutating.tech/`; продление
+перезагружает nginx после `nginx -t`. Основной конфиг сайта остаётся самостоятельным.
+
+Сервис включается для старта при загрузке машины. Первый CI-деплой создаёт
+`/opt/mutating/current` и запускает его. На сервере не требуется Node.js:
+интерфейс собирается в GitHub Actions, Python 3.12 устанавливается через `uv`.
+
+Установленные прежде отдельные процессы API/кабинета нужно остановить перед
+первым общим запуском, чтобы освободить 8000/8001. Старую SQLite при необходимости
+перенесите в `/var/lib/throng/throng.db` при остановленных писателях, включая WAL
+либо используя SQLite backup; владельцем должен быть `throng:throng`.
+
+## CI и SSH-секреты
+
+`.github/workflows/deploy.yml` запускается при **каждом push в main**, без фильтров
+по файлам. Также есть ручной `workflow_dispatch`. Деплой ждёт успешного завершения
+всех site-, API- и web-проверок, включая HTTPS и визуальные тесты. Все production-деплои
+сериализованы; выполняющийся деплой не отменяется следующим push.
+
+В GitHub-репозитории добавьте Actions secrets:
+
+| Secret | Значение |
+| --- | --- |
+| `DEPLOY_HOST` | Публичный IPv4-адрес или DNS-имя сервера, доступное из GitHub |
+| `DEPLOY_PORT` | SSH-порт, например `22` |
+| `DEPLOY_USER` | Пользователь из playbook, по умолчанию `user` |
+| `DEPLOY_PASSWORD` | Пароль этого SSH-пользователя, как в `site` |
+
+Достаточно четырёх прежних SSH-секретов. Дополнительный `DEPLOY_KNOWN_HOSTS`
+не требуется: проверенный публичный SSH-ключ сервера сохранён в
+`deploy/known_hosts`. Это публичный ключ, его можно хранить в Git.
+CI использует `StrictHostKeyChecking=yes` и `HostKeyAlias=mutating-production`,
+поэтому проверка сохраняется при использовании IP, DNS-имени или другого SSH-порта.
+При пересоздании сервера сначала проверьте новый ключ через доверенный доступ,
+затем обновите `deploy/known_hosts`. Пароль в репозитории не хранится.
+
+Deployment user записывает только исходники и окружения в `/opt/mutating/releases/`
+и Python в `/opt/mutating/python/`. Секреты и база недоступны ему напрямую. Для
+активации разрешён один root-owned скрипт `/usr/local/sbin/mutating-activate` через
+sudo без пароля; миграции и SQLite backup внутри него выполняются от `throng`.
+
+## Что происходит при обновлении
+
+1. CI собирает Hugo в `site/public/` с origin `https://mutating.tech/` и интерфейс с `VITE_SITE_ORIGIN=https://mutating.tech` и передаёт
+   исходники и `platform/web/dist/` через rsync в новый каталог релиза. Локальные
+   `.env`, виртуальные окружения, базы и тестовые данные исключены из передачи.
+2. На сервере `uv sync --project platform/api --frozen --no-dev` готовит отдельное Python-окружение.
+   Ошибка сборки/установки не останавливает работающий сервис.
+3. Скрипт активации получает файловую блокировку и останавливает общий сервис.
+4. SQLite backup API сохраняет согласованную копию БД, включая данные из WAL,
+   в `/var/lib/throng/backups/<release>-<timestamp>/throng.db` и проверяет её целостность.
+5. Alembic применяет все неприменённые миграции до `head`. При ошибке до запуска
+   приложений копия БД восстанавливается и прежний активный сервис запускается снова.
+6. Атомарно переключается `/opt/mutating/current`. Запускается единый systemd-сервис,
+   проверяется готовность API и наличие HTML кабинета. Повторная проверка миграций
+   при обычном старте не применяет уже выполненные миграции заново.
+7. Скрипт синхронизирует `site/public/` в `/var/www/mutating.tech/`. CI проверяет
+   публичные HTTPS-адреса сайта, API и кабинета через nginx.
+
+Во время остановки, миграций и запуска возможен короткий перерыв с `502` от nginx.
+Если новое приложение не запускается после успешной миграции, сервис останавливается,
+CI завершается ошибкой, а новая БД сохраняется для разбора. Автоматический откат
+БД после запуска API мог бы удалить уже принятые новые записи и поэтому не выполняется.
+Предыдущие каталоги релизов и резервные копии сохраняются; их очистка — отдельная
+операция после проверки нужных копий.
+
+## Данные и управление
+
+| Путь | Содержимое |
+| --- | --- |
+| `/var/lib/throng/throng.db` | Рабочая SQLite; при работе также возможны `-wal` и `-shm` |
+| `/var/lib/throng/artifacts/` | Артефакты, аватары и другие данные API |
+| `/var/lib/throng/backups/` | Копии SQLite перед обновлениями; файлы артефактов не копируются |
+| `/etc/throng/throng.env` | Настройки production и постоянный ключ cookie |
+| `/opt/mutating/releases/` | Hugo, API, интерфейс и `platform/api/.venv` каждого релиза |
+| `/opt/mutating/current` | Ссылка на релиз, соответствующий текущей схеме БД |
+
+Playbook генерирует `DASHBOARD_SESSION_KEY` один раз и сохраняет его при повторном
+запуске. Cookie остаётся Secure/HttpOnly, привязана к хосту платформы и пути
+`/account/`. Для CSRF используется точный origin `https://platform.mutating.tech`.
+В SQLite одновременно работает один API/контроллер; не запускайте дополнительные
+Uvicorn workers или старый независимый API поверх этой базы.
+
+Одна команда запускает оба приложения:
+
+```sh
+sudo systemctl start throng
+```
+
+Остальные команды администратора:
+
+```sh
+sudo systemctl restart throng
+sudo systemctl stop throng
+sudo systemctl status throng
+sudo journalctl -u throng -f
+```
+
+Общий `infra/playbooks/setup-server.yml` последовательно запускает `setup-site.yml`
+и `setup-platform.yml`; их можно применять отдельно по необходимости.
+
+При изменении systemd unit, root-owned скрипта активации или nginx-шаблона повторно
+примените playbook. Обычный push обновляет приложения и миграции; изменение
+административных настроек сервера выполняется явно.
+
+## Проверки
+
+```sh
+uv run --project platform/api pytest -c platform/api/pyproject.toml -q tests/platform/api/deployment
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook --syntax-check \
+  -i localhost, infra/playbooks/setup-server.yml
+bash -n deploy/upload.sh deploy/deploy.sh deploy/activate.sh
+```
+
+Проверки используют временную SQLite и реальные API, кабинет и nginx с отдельными
+портами и временным TLS-сертификатом. Они проверяют выбор приложения по Host,
+статику, CSRF/cookie, сохранение данных и сессии после перезапуска и остановку
+обоих компонентов при завершении одного. Системный nginx и рабочая база не
+затрагиваются. Для сетевой проверки нужен собранный `platform/web/dist/`, nginx и
+OpenSSL; она запускается в группе web общего CI после сборки.
