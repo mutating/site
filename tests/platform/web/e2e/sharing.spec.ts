@@ -11,7 +11,11 @@ import type { Page } from "@playwright/test";
 
 async function createCompany(page: Page, name = "Общая лаборатория") {
   await page.goto("organizations");
-  await page.getByLabel("Название организации").fill(name);
+  const nameField = page.getByLabel("Название организации");
+  // Settle focus in mobile WebKit before entering the organization name.
+  await nameField.click();
+  await nameField.fill(name);
+  await expect(nameField).toHaveValue(name);
   await page
     .getByRole("button", { name: "Создать организацию", exact: true })
     .click();
