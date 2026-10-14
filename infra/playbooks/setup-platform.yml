@@ -1,0 +1,239 @@
+---
+# Run once with administrative SSH access, after both DNS records point here.
+# ansible-playbook -i 'SERVER_IP,' infra/playbooks/setup-server.yml -u root
+- name: Set up the Throng API and platform alongside mutating.tech
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    deploy_user: user
+    certbot_email: contact@mutating.tech
+    certificate_path: /etc/letsencrypt/live/throng-mutating.tech
+    uv_version: 0.10.12
+    uv_architectures:
+      x86_64: x86_64-unknown-linux-gnu
+      aarch64: aarch64-unknown-linux-gnu
+    project_source: "{{ playbook_dir }}/../.."
+  handlers:
+    - name: Validate nginx
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      listen: nginx configuration changed
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      listen: nginx configuration changed
+  tasks:
+    - name: Require a supported Linux server
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution in ['Debian', 'Ubuntu']
+          - ansible_facts.architecture in uv_architectures
+        fail_msg: Use Debian or Ubuntu on amd64 or arm64.
+
+    - name: Install deployment and HTTPS tools
+      ansible.builtin.apt:
+        name: [ca-certificates, curl, nginx, certbot, rsync, util-linux, sudo]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Download the pinned uv release
+      ansible.builtin.get_url:
+        url: "https://github.com/astral-sh/uv/releases/download/{{ uv_version }}/uv-{{ uv_architectures[ansible_facts.architecture] }}.tar.gz"
+        dest: "/var/tmp/uv-{{ uv_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Unpack uv
+      ansible.builtin.unarchive:
+        src: "/var/tmp/uv-{{ uv_version }}.tar.gz"
+        dest: /var/tmp
+        remote_src: true
+
+    - name: Install uv
+      ansible.builtin.copy:
+        src: "/var/tmp/uv-{{ uv_architectures[ansible_facts.architecture] }}/uv"
+        dest: /usr/local/bin/uv
+        remote_src: true
+        owner: root
+        mode: '0755'
+
+    - name: Ensure the ordinary SSH deployment user exists
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        create_home: true
+        shell: /bin/bash
+
+    - name: Create the runtime group
+      ansible.builtin.group:
+        name: throng
+        system: true
+
+    - name: Create the runtime account
+      ansible.builtin.user:
+        name: throng
+        group: throng
+        system: true
+        create_home: false
+        shell: /usr/sbin/nologin
+
+    - name: Create persistent directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: /opt/mutating, owner: root, group: root, mode: '0755'}
+        - {path: /opt/mutating/releases, owner: "{{ deploy_user }}", group: root, mode: '0755'}
+        - {path: /opt/mutating/python, owner: "{{ deploy_user }}", group: root, mode: '0755'}
+        - {path: /var/lib/throng, owner: throng, group: throng, mode: '0700'}
+        - {path: /etc/throng, owner: root, group: throng, mode: '0750'}
+        - {path: /var/www/letsencrypt/.well-known/acme-challenge, owner: root, group: root, mode: '0755'}
+        - {path: /etc/letsencrypt/renewal-hooks/deploy, owner: root, group: root, mode: '0755'}
+
+    - name: Check for the persistent environment
+      ansible.builtin.stat:
+        path: /etc/throng/throng.env
+      register: server_environment
+
+    - name: Generate a permanent dashboard session key
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+      register: session_key
+      when: not server_environment.stat.exists
+      no_log: true
+
+    - name: Write the initial production environment
+      ansible.builtin.copy:
+        dest: /etc/throng/throng.env
+        owner: root
+        group: throng
+        mode: '0640'
+        force: false
+        content: |
+          THRONG_DATABASE_URL=sqlite+aiosqlite:////var/lib/throng/throng.db
+          THRONG_STORAGE_PATH=/var/lib/throng/artifacts
+          THRONG_ALLOW_REGISTRATION=true
+          DASHBOARD_PUBLIC_ORIGIN=https://platform.mutating.tech
+          DASHBOARD_SECURE_COOKIE=true
+          DASHBOARD_SESSION_KEY={{ session_key.stdout }}
+      when: not server_environment.stat.exists
+      no_log: true
+
+    - name: Install the privileged activation wrapper
+      ansible.builtin.copy:
+        src: "{{ project_source }}/deploy/activate.sh"
+        dest: /usr/local/sbin/mutating-activate
+        owner: root
+        mode: '0755'
+
+    - name: Allow CI to activate only this service
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/throng-deploy
+        owner: root
+        mode: '0440'
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          {{ deploy_user }} ALL=(root) NOPASSWD: /usr/local/sbin/mutating-activate *
+
+    - name: Install the single systemd service
+      ansible.builtin.copy:
+        src: "{{ project_source }}/deploy/throng.service"
+        dest: /etc/systemd/system/throng.service
+        owner: root
+        mode: '0644'
+      register: service_definition
+
+    - name: Reload systemd and enable the service for subsequent boots
+      ansible.builtin.systemd_service:
+        name: throng.service
+        daemon_reload: "{{ service_definition.changed }}"
+        enabled: true
+      # The first deployment creates current and starts the service.
+
+    - name: Enable nginx at boot
+      ansible.builtin.service:
+        name: nginx
+        enabled: true
+        state: started
+
+    - name: Check for the subdomain certificate
+      ansible.builtin.stat:
+        path: "{{ certificate_path }}/fullchain.pem"
+      register: certificate
+
+    - name: Install HTTP challenge routing before the first certificate
+      ansible.builtin.copy:
+        src: "{{ project_source }}/deploy/nginx-bootstrap.conf"
+        dest: /etc/nginx/sites-available/throng
+        owner: root
+        mode: '0644'
+      when: not certificate.stat.exists
+      notify: nginx configuration changed
+
+    - name: Enable the additional nginx virtual hosts
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/throng
+        dest: /etc/nginx/sites-enabled/throng
+        state: link
+      notify: nginx configuration changed
+
+    - name: Apply challenge routing
+      ansible.builtin.meta: flush_handlers
+
+    - name: Issue or retain the separate subdomain certificate
+      ansible.builtin.command:
+        argv:
+          - certbot
+          - certonly
+          - --non-interactive
+          - --agree-tos
+          - --webroot
+          - --webroot-path
+          - /var/www/letsencrypt
+          - --cert-name
+          - throng-mutating.tech
+          - --keep-until-expiring
+          - --email
+          - "{{ certbot_email }}"
+          - -d
+          - api.mutating.tech
+          - -d
+          - platform.mutating.tech
+      register: certbot_result
+      changed_when: "'Successfully received certificate' in certbot_result.stdout"
+
+    - name: Install subdomain routing over HTTPS
+      ansible.builtin.template:
+        src: "{{ project_source }}/deploy/nginx.conf.j2"
+        dest: /etc/nginx/sites-available/throng
+        owner: root
+        mode: '0644'
+      notify: nginx configuration changed
+
+    - name: Reload nginx on successful certificate renewal
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/renewal-hooks/deploy/throng-nginx
+        owner: root
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          set -eu
+          nginx -t
+          systemctl reload nginx
+
+    - name: Enable automatic certificate renewal
+      ansible.builtin.service:
+        name: certbot.timer
+        enabled: true
+        state: started
+
+    - name: Apply the HTTPS configuration
+      ansible.builtin.meta: flush_handlers

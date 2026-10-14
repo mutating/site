@@ -1,0 +1,17 @@
+{
+  "name": "mutating",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "platform/web"
+  ],
+  "scripts": {
+    "build:site": "hugo --source site --cleanDestinationDir --minify --environment production",
+    "build:web": "npm run build --workspace platform/web",
+    "test:web:unit": "npm run test:unit --workspace platform/web",
+    "test:web:e2e": "npm run test:e2e --workspace platform/web",
+    "test:web:deploy": "npm run test:deploy --workspace platform/web",
+    "test:web:visual": "npm run test:visual --workspace platform/web"
+  },
+  "type": "module"
+}

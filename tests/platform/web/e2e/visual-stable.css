@@ -1,0 +1,8 @@
+/* The wall-clock invitation expiry is checked by API/e2e tests, independently of pixels. */
+.invitation-expiry time { visibility: hidden; }
+.brand-pupil {
+  /* Pointer tracking is exercised in brand.spec.ts; page snapshots use a fixed gaze. */
+  --gaze-x: 0px !important;
+  --gaze-y: 0px !important;
+  --gaze-tilt: 0deg !important;
+}
