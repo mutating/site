@@ -23,6 +23,7 @@ async def test_profile_capabilities_and_enrollment_ownership(
     assert len(response.json()["extensions"]) == 5 and response.json()["attestation_required"]
     profile = enrollment.profile
     assert profile["PayloadType"] == "Configuration" and len(profile["PayloadContent"]) == 1
+    assert profile["PayloadScope"] == "User"
     acme = profile["PayloadContent"][0]
     assert (
         acme["PayloadType"] == "com.apple.security.acme"

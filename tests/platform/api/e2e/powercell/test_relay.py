@@ -138,6 +138,11 @@ def relay_tls(tmp_path, pki, clock):
         .not_valid_before(clock.now - timedelta(days=1))
         .not_valid_after(clock.now + timedelta(days=365))
         .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), False)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(pki.root_key.public_key()),
+            critical=False,
+        )
         .sign(pki.root_key, hashes.SHA256())
     )
     cert_path, key_path = tmp_path / "relay.pem", tmp_path / "relay.key"
@@ -279,6 +284,8 @@ def tls_context(tmp_path, pki, verified_enrollment):
         )
     )
     context = ssl.create_default_context(cafile=str(pki.root_file))
+    # Exercise the same strict certificate checks on every supported Python version.
+    context.verify_flags |= ssl.VERIFY_X509_STRICT
     context.set_alpn_protocols(["h2"])
     context.load_cert_chain(certificate_path, key_path)
     return context
@@ -302,7 +309,7 @@ async def test_profile_scopes_relay_to_virtual_api_and_exact_attested_identity(
     profile = enrollment.profile
     assert len(profile["PayloadContent"]) == 2
     acme, relay = profile["PayloadContent"]
-    assert profile["PayloadScope"] == "User"
+    assert profile["PayloadScope"] == "System"
     assert relay["PayloadType"] == "com.apple.relay.managed"
     assert relay["MatchDomains"] == [urlsplit(enrollment.row["relay"]["api_origin"]).hostname]
     assert relay["Relays"] == [

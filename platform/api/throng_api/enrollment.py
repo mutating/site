@@ -269,6 +269,8 @@ async def profile(enrollment_id: UUID, request: Request):
             "PayloadContent": [acme],
         }
         if relay := enrollment_configuration(request.app.state.powercell_relay, row.id):
+            # The built-in relay requires its ACME key in the system keychain.
+            document["PayloadScope"] = "System"
             document["PayloadContent"].append(
                 {
                     "PayloadType": "com.apple.relay.managed",
