@@ -97,6 +97,11 @@ def certificate(key, issuer_key, subject, issuer, now, *, ca=False, extensions=(
         .add_extension(
             x509.KeyUsage(True, False, False, False, False, ca, ca, False, False), critical=True
         )
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()),
+            critical=False,
+        )
     )
     for oid, value in extensions:
         builder = builder.add_extension(x509.UnrecognizedExtension(oid, value), critical=False)

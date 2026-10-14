@@ -554,6 +554,9 @@ test("logout revokes its API token and a revoked active session returns to login
   const signOut = page
     .getByRole("main")
     .getByRole("button", { name: "Выйти", exact: true });
+  // The profile's session request must finish before taking the browser offline.
+  await expect(signOut).toBeVisible();
+  await expect(signOut).toBeEnabled();
   await page.context().setOffline(true);
   await signOut.click();
   await expect(page.getByRole("alert")).toContainText(

@@ -195,9 +195,10 @@ async def test_ack_and_started_retries_preserve_times(agent_api, api, clock, com
 
 async def test_long_poll_does_not_block_heartbeat_or_command_dispatch(api, agent_api, isolate):
     """A waiting claim allows concurrent heartbeat and command submission, then returns the new task."""
-    async with asyncio.TaskGroup() as group:
+    # Bound responsiveness separately from the poll's idle timeout, including under load.
+    async with asyncio.timeout(5), asyncio.TaskGroup() as group:
         pending = group.create_task(
-            agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})
+            agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 25})
         )
         await asyncio.sleep(0.03)
         assert not pending.done()

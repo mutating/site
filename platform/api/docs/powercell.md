@@ -93,11 +93,14 @@ been signed after successful attestation. Only the initiating user can read or
 finish an enrollment. At most 20 live enrollments per initiating user are allowed.
 
 GET `.../{id}/profile` returns `application/x-apple-aspen-config`. It contains a
-user-scoped ACME identity payload, no MDM/root/restriction payloads.
+ACME identity payload, no MDM/root/restriction payloads.
 It requests hardware-bound, nonextractable P-256 with `Attest=true`,
 `AllowAllAppsAccess=false`, digital-signature usage and client-auth EKU.
 
 With a relay configured, the profile also contains `com.apple.relay.managed`.
+It uses `PayloadScope=System`: the built-in relay requires its hardware-bound
+ACME identity in the system data protection keychain. Installation requires
+manual administrator consent. Without a relay, the profile remains user scoped.
 It routes only its own virtual `<enrollment>.powercell-<hash>.invalid` hostname and refers
 to the **same ACME payload UUID** for client authentication. macOS uses the
 nonextractable attested key itself; the app neither exports that key nor needs
