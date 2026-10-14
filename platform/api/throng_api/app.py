@@ -22,6 +22,7 @@ from throng_api import (
     invitations,
     jobs,
     powercell,
+    relay,
     resources,
 )
 from throng_api.config import Settings
@@ -37,13 +38,19 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         settings.storage_path.mkdir(parents=True, exist_ok=True)
         app.state.db = Database(settings.database_url)
         task = None
+        relay_server = None
         stop = asyncio.Event()
         try:
             await app.state.db.check()
+            if app.state.powercell_relay:
+                relay_server = relay.RelayServer(app, settings, app.state.powercell_relay)
+                await relay_server.start()
             if settings.controller_enabled:
                 task = asyncio.create_task(controller.run(app, stop), name="throng-controller")
             yield
         finally:
+            if relay_server:
+                await relay_server.close()
             if task:
                 # Finish the current transaction before disposing connections.
                 # Cancelling an in-flight SQLite statement can retain its write lock.
@@ -85,6 +92,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         ),
     )
     app.state.powercell_authority = enrollment.configure_authority(settings)
+    app.state.powercell_relay = relay.configuration(settings)
     app.state.settings = settings
     app.state.clock = clock
     app.state.last_controller_tick = None

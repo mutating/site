@@ -1,6 +1,6 @@
 ---
 # Run once with administrative SSH access, after both DNS records point here.
-# ansible-playbook -i 'SERVER_IP,' infra/playbooks/setup-server.yml -u root
+# ansible-playbook -i 'SERVER_IP,' infra/playbooks/setup-platform.yml -u root
 - name: Set up the Throng API and platform alongside mutating.tech
   hosts: all
   become: true

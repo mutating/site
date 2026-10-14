@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic import Field
@@ -5,7 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="THRONG_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="THRONG_", env_file=os.environ.get("THRONG_ENV_FILE", ".env"), extra="ignore"
+    )
 
     database_url: str = "sqlite+aiosqlite:///./data/throng.db"
     storage_path: Path = Path("./data/artifacts")
@@ -33,6 +36,10 @@ class Settings(BaseSettings):
     powercell_ca_certificate: Path | None = None
     powercell_ca_key: Path | None = None
     powercell_secret: str | None = Field(default=None, min_length=32, repr=False)
+    powercell_relay_url: str | None = None
+    powercell_relay_certificate: Path | None = None
+    powercell_relay_key: Path | None = None
+    powercell_relay_host: str = "127.0.0.1"
     enrollment_seconds: int = Field(default=3600, ge=60, le=86400)
     device_certificate_days: int = Field(default=365, ge=1, le=3650)
     device_proof_seconds: int = Field(default=300, ge=30, le=600)

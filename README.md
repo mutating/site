@@ -116,7 +116,9 @@ sudo systemctl start throng
 ```
 
 Настройка сервера, DNS, SSH-секретов и сохранения данных описана в
-[docs/deployment.md](docs/deployment.md). Основной playbook —
-`infra/playbooks/setup-server.yml`. Он объединяет настройку статического сайта и
-платформы. Изменения nginx и системных файлов требуют явного применения playbook;
+[docs/deployment.md](docs/deployment.md). На существующем nginx, который также
+обслуживает `pomponchik.org` и может обслуживать другие сайты, платформа добавляется
+через `infra/playbooks/setup-platform.yml`. Полный `infra/playbooks/setup-server.yml`
+объединяет настройку статического сайта и платформы на новом сервере.
+Изменения nginx и системных файлов требуют явного применения playbook;
 обычный CI обновляет приложения и миграции.

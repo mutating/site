@@ -47,6 +47,7 @@ def main():
             if value is not None
         },
         **os.environ,
+        "THRONG_ENV_FILE": str(arguments.env_file),
         "DASHBOARD_API_URL": f"http://127.0.0.1:{arguments.api_port}",
     }
     stopping = threading.Event()

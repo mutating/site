@@ -10,8 +10,7 @@ Backlog сформирован по итогам 20 независимых SEO-�
 - [x] Настроить однопереходный `301` или `308` с `http://mutating.tech/*` на `https://mutating.tech/*` с сохранением path и query string.
 - [x] Настроить однопереходный `301` или `308` с `http://www.mutating.tech/*` на `https://mutating.tech/*` с сохранением path и query string.
 - [x] Настроить однопереходный `301` или `308` с `https://www.mutating.tech/*` на `https://mutating.tech/*` с сохранением path и query string.
-- [x] Разделить в nginx canonical content-host, redirect-hosts и catch-all для неизвестных `Host`.
-- [x] Возвращать `404` или `444` для неизвестных hostnames вместо копии сайта.
+- [x] Разделить в nginx canonical content-host и redirect-hosts.
 - [x] Сделать TLS-конфигурацию Ansible идемпотентной: повторный запуск playbook не должен удалять рабочий HTTPS server block.
 - [x] Перевести Certbot на предсказуемую схему `certonly --webroot`, а итоговые TLS server blocks хранить в Ansible.
 - [x] После исправления всех HTTPS-хостов добавить HSTS; `preload` включать только отдельным осознанным решением.

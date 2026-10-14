@@ -464,8 +464,6 @@ def test_server_and_deploy_configuration_enforce_the_canonical_origin() -> None:
     assert "return 308 https://{{ site_domain }}$request_uri;" in playbook
     assert 'if ($request_uri ~ "^(.*/)index\\.html(?:\\?.*)?$")' in playbook
     assert "return 308 https://{{ site_domain }}$1$is_args$args;" in playbook
-    assert "listen 443 ssl default_server;" in playbook
-    assert "return 444;" in playbook
     assert "http2 on;" in playbook
     assert "gzip_vary on;" in playbook
     assert 'Cache-Control "public, max-age=31536000, immutable"' in playbook

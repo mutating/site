@@ -36,6 +36,31 @@ Without these settings the API still serves generic workers and all execution
 extensions, but does not advertise `powercell.enrollment.v1` and refuses to enroll
 Power Cell devices. Partial or invalid issuer configuration fails startup.
 
+For the native macOS agent, also configure the authenticated network relay:
+
+```dotenv
+THRONG_POWERCELL_RELAY_URL=https://relay.example.org:8444
+THRONG_POWERCELL_RELAY_CERTIFICATE=/run/secrets/relay-fullchain.pem
+THRONG_POWERCELL_RELAY_KEY=/run/secrets/relay-key.pem
+THRONG_POWERCELL_RELAY_HOST=0.0.0.0
+```
+
+The URL must be an HTTPS origin (no credentials, path, query or fragment). Its
+port is the listener port; the bind address defaults to `127.0.0.1`. Use a TLS
+certificate trusted by macOS, and expose this listener directly or through TCP
+passthrough. Ordinary HTTP reverse proxies must not terminate its TLS: the API
+must verify the actual client certificate. Run one API process per relay address
+and port. TLS 1.3, HTTP/2 and a client certificate issued by the Power Cell CA are
+mandatory; partial configuration or unusable TLS material fails startup.
+`deploy/run.py --env-file <path>` keeps that file selected in its child services;
+standalone processes can select it with `THRONG_ENV_FILE=<path>`. An explicitly
+selected file does not inherit settings from a different local `.env`.
+
+The relay accepts TCP CONNECT only to its own virtual API destination. It does
+not proxy arbitrary hosts. Each connection's verified TLS certificate is attached
+to the API request internally; no public certificate/fingerprint header is trusted.
+There is no additional loopback HTTP listener accepting trusted identity headers.
+
 Additional limits: `THRONG_ENROLLMENT_SECONDS` (3600),
 `THRONG_DEVICE_CERTIFICATE_DAYS` (365), `THRONG_DEVICE_PROOF_SECONDS` (300),
 `THRONG_AGENT_MUTATION_SECONDS` (86400), `THRONG_MAX_DIAGNOSTIC_BYTES` (8 MiB),
@@ -51,6 +76,7 @@ Public `GET /api/v1/agent-capabilities` returns `protocol_version: 1`, runtime
 `attestation_required: true`, and supported extensions:
 `powercell.enrollment.v1`, `powercell.capacity.v1`, `powercell.eviction.v1`,
 `powercell.diagnostics.v1`, `powercell.isolation.v1`.
+When the relay is configured, discovery also advertises `powercell.relay.v1`.
 
 With a personal `manage` token, POST `/api/v1/agent-enrollments` and
 `Idempotency-Key`:
@@ -61,15 +87,32 @@ With a personal `manage` token, POST `/api/v1/agent-enrollments` and
 
 Company enrollment requires its administrator role, rechecked when finishing.
 Responses and GET `/api/v1/agent-enrollments/{id}` contain
-`id,status,expires_at,certificate_sha256`. Status is `pending_attestation`,
+`id,status,expires_at,certificate_sha256,relay`. Status is `pending_attestation`,
 `verified` or `expired`. The certificate hash is absent until a matching CSR has
 been signed after successful attestation. Only the initiating user can read or
 finish an enrollment. At most 20 live enrollments per initiating user are allowed.
 
-GET `.../{id}/profile` returns `application/x-apple-aspen-config`. It contains one
-user-scoped ACME identity payload, no MDM/management/root/restriction payloads.
+GET `.../{id}/profile` returns `application/x-apple-aspen-config`. It contains a
+user-scoped ACME identity payload, no MDM/root/restriction payloads.
 It requests hardware-bound, nonextractable P-256 with `Attest=true`,
 `AllowAllAppsAccess=false`, digital-signature usage and client-auth EKU.
+
+With a relay configured, the profile also contains `com.apple.relay.managed`.
+It routes only its own virtual `<enrollment>.powercell-<hash>.invalid` hostname and refers
+to the **same ACME payload UUID** for client authentication. macOS uses the
+nonextractable attested key itself; the app neither exports that key nor needs
+access to the system-only identity. Other computer traffic is unaffected.
+The `relay` response field contains `url` and `api_origin`; without this feature
+it is null. The agent keeps the original server URL as its credential origin and
+rewrites device request URLs to `api_origin`, preserving paths, queries and bodies.
+The virtual hostname cannot resolve to a public fallback without the profile.
+Routes differ between enrollment attempts, so a previously installed profile
+cannot select the wrong identity for a new connection or another account.
+
+After installation, authenticated GET `.../{id}/verification` through the relay
+checks the enrollment owner's token and possession of its exact certificate. It
+returns the enrollment status, or 409 for a pending/expired unbound attempt and
+401 for an invalid device proof. The agent probes this endpoint before finishing.
 
 The ACME service implements newNonce, newAccount, newOrder, POST-as-GET polling,
 `device-attest-01`, CSR finalization and PEM chain retrieval. Each enrollment has
@@ -90,7 +133,7 @@ POST `.../{id}/finish` with an empty JSON object, personal `manage` token,
 `Idempotency-Key` and a device proof returns:
 
 ```json
-{"computer_id":"uuid","credential":"agt_...","device_id":"uuid","certificate_sha256":"hex"}
+{"computer_id":"uuid","credential":"agt_...","device_id":"uuid","certificate_sha256":"hex","relay":{"url":"https://relay.example.org:8444","api_origin":"http://<enrollment>.powercell-<hash>.invalid"}}
 ```
 
 An exact retry using a new proof nonce recovers the same credential. A different
@@ -100,6 +143,13 @@ installations and accounts can bind the same physical device; deleting a binding
 preserves its billing identity. Enrollment IDs, installation IDs and physical
 IDs are separate records.
 
+On the relay transport, the TLS certificate provides the device proof. Each API
+request rechecks its exact enrollment/computer binding, validity interval and
+revocation, including on an already-established TLS connection. Bearer tokens,
+organization authorization, sessions and mutation idempotency still apply.
+Registration and stable physical-device verification do not impose license or
+computer-count limits.
+
 ## Request signatures
 
 Every endpoint under `/agent/v1` requires a possession proof for enrolled Power
@@ -107,6 +157,10 @@ Cell computers, including session discovery, session creation and late uploads.
 The server rechecks credential binding/revocation in the handler after proof
 verification. Rotating a bearer token never removes its device-key requirement.
 Generic legacy agents without an attested binding are unchanged.
+
+The following signature protocol remains available for clients that can access
+their attested key directly. The native relay transport above does not require
+these per-request signatures.
 
 `X-PowerCell-Proof` contains base64 of exact UTF-8 JSON bytes;
 `X-PowerCell-Signature` contains base64 of their ECDSA P-256/SHA-256 DER signature:
@@ -127,6 +181,7 @@ Proofs also operate over explicitly configured HTTP API endpoints. HTTP does not
 encrypt credentials/data or authenticate responses; the ACME profile endpoint
 still requires HTTPS. Optional TLS client-certificate verification may be applied
 by the deployment, but forwarded certificate headers never bypass request proofs.
+Only the API's own relay listener can supply the authenticated TLS identity.
 
 ## Capacity and isolation
 

@@ -375,6 +375,7 @@ def api_requests(
             ),
             ("GET", "/api/v1/agent-enrollments/{enrollment_id}", "read", {}),
             ("GET", "/api/v1/agent-enrollments/{enrollment_id}/profile", "read", {}),
+            ("GET", "/api/v1/agent-enrollments/{enrollment_id}/verification", "read", {}),
             ("POST", "/api/v1/agent-enrollments/{enrollment_id}/finish", "manage", {}),
             ("GET", "/api/v1/computers/{computer_id}/diagnostics/{diagnostic_id}", "read", {}),
         ]

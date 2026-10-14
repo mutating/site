@@ -107,6 +107,21 @@ def validate_attestation(encoded, token, now):
 async def verify_proof(session, request, certificate_hash, *, allow_revoked=False):
     """Called under the protocol write lock; successful nonces are durable before dispatch."""
     now = request.app.state.clock()
+    from throng_api.relay import RelayPeer
+
+    peer = request.scope.get("powercell.relay_peer")
+    if isinstance(peer, RelayPeer):
+        certificate = await session.get(DeviceCertificate, certificate_hash)
+        if (
+            peer.certificate_sha256 != certificate_hash
+            or not certificate
+            or certificate.expires_at <= now
+            or (certificate.revoked_at and not allow_revoked)
+            or x509.load_pem_x509_certificate(certificate.pem).not_valid_before_utc > now
+        ):
+            raise HTTPException(401, "Invalid device proof")
+        request.state.device_certificate = certificate_hash
+        return
     window = request.app.state.settings.device_proof_seconds
     try:
         raw = base64.b64decode(request.headers.get("x-powercell-proof", ""), validate=True)
