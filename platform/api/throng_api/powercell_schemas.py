@@ -34,11 +34,17 @@ class EnrollmentCreate(ComputerCreate):
     isolation_modes: list[Isolation] = Field(min_length=1, max_length=2)
 
 
+class RelayConfiguration(Input):
+    url: str
+    api_origin: str
+
+
 class EnrollmentStatus(Input):
     id: str
     status: Literal["pending_attestation", "verified", "expired"]
     expires_at: datetime
     certificate_sha256: str | None
+    relay: RelayConfiguration | None = None
 
 
 class Binding(Input):
@@ -46,6 +52,7 @@ class Binding(Input):
     credential: str
     device_id: str
     certificate_sha256: str
+    relay: RelayConfiguration | None = None
 
 
 class Capacity(Input):

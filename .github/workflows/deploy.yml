@@ -90,7 +90,7 @@ jobs:
       - name: Verify the production server before upload
         run: |
           set -euo pipefail
-          trap 'echo "::error title=Production server contract failed::Apply infra/playbooks/setup-server.yml with an administrative account before rerunning deployment."' ERR
+          trap 'echo "::error title=Production server contract failed::Verify the mutating.tech virtual hosts, redirects, TLS, HTTP/2 and response headers before rerunning deployment."' ERR
 
           assert_redirect() {
             local source_url="$1"
@@ -106,9 +106,6 @@ jobs:
           assert_redirect "http://mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
           assert_redirect "http://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
           assert_redirect "https://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-
-          unknown_host_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --header 'Host: seo-invalid.invalid' --max-time 30 http://mutating.tech/ || true)"
-          [[ "$unknown_host_status" == "000" || "$unknown_host_status" == "404" ]]
 
           printf '' | openssl s_client \
             -connect www.mutating.tech:443 \
@@ -179,9 +176,6 @@ jobs:
           assert_redirect "http://mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
           assert_redirect "http://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
           assert_redirect "https://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-
-          unknown_host_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --header 'Host: seo-invalid.invalid' --max-time 30 http://mutating.tech/ || true)"
-          [[ "$unknown_host_status" == "000" || "$unknown_host_status" == "404" ]]
 
           printf '' | openssl s_client \
             -connect www.mutating.tech:443 \

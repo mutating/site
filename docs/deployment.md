@@ -46,9 +46,17 @@ API доступен на `http://127.0.0.1:8000`, кабинет — на
 Поддерживаются Debian/Ubuntu на amd64/arm64. Используется тот же подход, что в
 репозитории `site`: Ansible, nginx, Certbot и SSH-пользователь `user`.
 
-Если статический сайт уже настроен, достаточно применить
-`infra/playbooks/setup-platform.yml`; общий `setup-server.yml` также повторно
-настраивает и собирает Hugo-сайт.
+На production nginx совместно обслуживает `mutating.tech` и `pomponchik.org`;
+позже можно добавить другие сайты с собственными `server_name`. Обычный деплой
+этого репозитория обновляет Hugo, API и кабинет `mutating.tech`. Конфигурации,
+сертификаты и содержимое остальных сайтов управляются отдельно. Проверки CI
+проверяют домены `mutating.tech`, `www.mutating.tech`, `api.mutating.tech` и
+`platform.mutating.tech`.
+
+На уже работающем сервере применяется `infra/playbooks/setup-platform.yml`:
+он добавляет виртуальные серверы API и кабинета с точными `server_name`.
+Общий `setup-server.yml` предназначен для первоначальной настройки нового
+сервера: он также настраивает nginx основного сайта и собирает Hugo-сайт.
 
 14 октября 2026 года `setup-platform.yml` применён к production-серверу:
 nginx-маршруты, сертификат обоих поддоменов, systemd-сервис, SQLite-конфигурация
@@ -58,11 +66,12 @@ nginx-маршруты, сертификат обоих поддоменов, sy
 1. Создайте DNS-записи `api.mutating.tech` и `platform.mutating.tech`, указывающие
    на сервер. Если есть AAAA-записи, IPv6 тоже должен вести на этот сервер.
 2. Откройте входящие 80/443 и SSH-порт. Порты 8000/8001 слушают только loopback.
-3. Выполните playbook с административного аккаунта после переключения DNS:
+3. Добавьте платформу к существующему nginx с административного аккаунта после
+   переключения DNS:
 
 ```sh
 LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
-  -i 'SERVER_IP,' infra/playbooks/setup-server.yml \
+  -i 'SERVER_IP,' infra/playbooks/setup-platform.yml \
   -u root -e ansible_port=22
 ```
 
@@ -70,7 +79,10 @@ LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
 sudo — `--ask-become-pass`. Пароли вводите в приглашении Ansible. Пользователя
 деплоя можно задать через `-e deploy_user=user`.
 
-Playbook устанавливает Hugo Extended 0.164.0, `uv` версии 0.10.12, nginx, Certbot и инструменты SSH-деплоя,
+Для нового сервера вместо `setup-platform.yml` используйте `setup-server.yml`:
+он сначала устанавливает Hugo Extended 0.164.0 и основной сайт.
+
+Playbook платформы устанавливает `uv` версии 0.10.12, nginx, Certbot и инструменты SSH-деплоя,
 создаёт отдельного runtime-пользователя `throng`, один systemd unit и дополнительный
 nginx-конфиг `/etc/nginx/sites-available/throng`. Сертификат двух поддоменов
 хранится отдельно в `/etc/letsencrypt/live/throng-mutating.tech/`; продление

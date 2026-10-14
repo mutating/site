@@ -267,13 +267,6 @@
         mode: '0644'
         content: |
           server {
-              listen 80 default_server;
-              listen [::]:80 default_server;
-              server_name _;
-              return 444;
-          }
-
-          server {
               listen 80;
               listen [::]:80;
               server_name {{ site_domain }} {{ site_aliases | join(' ') }};
@@ -368,13 +361,6 @@
         mode: '0644'
         content: |
           server {
-              listen 80 default_server;
-              listen [::]:80 default_server;
-              server_name _;
-              return 444;
-          }
-
-          server {
               listen 80;
               listen [::]:80;
               server_name {{ site_domain }} {{ site_aliases | join(' ') }};
@@ -416,16 +402,6 @@
               location / {
                   return 308 https://{{ site_domain }}$request_uri;
               }
-          }
-
-          server {
-              listen 443 ssl default_server;
-              listen [::]:443 ssl default_server;
-              http2 on;
-              server_name _;
-              ssl_certificate {{ letsencrypt_live_path }}/fullchain.pem;
-              ssl_certificate_key {{ letsencrypt_live_path }}/privkey.pem;
-              return 444;
           }
 
           server {
@@ -580,12 +556,6 @@
         dest: "{{ nginx_enabled_config }}"
         state: link
         force: true
-      notify: nginx configuration changed
-
-    - name: Remove Debian default nginx site
-      ansible.builtin.file:
-        path: /etc/nginx/sites-enabled/default
-        state: absent
       notify: nginx configuration changed
 
     - name: Apply nginx configuration before using it

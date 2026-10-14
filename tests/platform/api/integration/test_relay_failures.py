@@ -1,0 +1,72 @@
+"""Fault injection for OS socket failures that cannot reliably be triggered over TLS."""
+
+import asyncio
+import os
+import subprocess
+import sys
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from throng_api.relay import RelayServer, _Stream
+
+pytestmark = pytest.mark.anyio
+
+
+async def test_broken_backend_upload_closes_the_socket():
+    """An OS write failure must release the tunnel instead of retaining a blocked upload."""
+    writer = SimpleNamespace(write=Mock(side_effect=BrokenPipeError), close=Mock())
+    stream = _Stream(None, 1, None, writer)
+    stream.incoming.put_nowait((b"request", 7))
+    await stream.upload()
+    writer.close.assert_called_once()
+
+
+async def test_broken_backend_download_cancels_upload_and_removes_stream():
+    """An OS read failure must remove the tunnel and cancel its otherwise waiting upload."""
+    connection = SimpleNamespace(streams={})
+    writer = SimpleNamespace(close=Mock())
+    reader = SimpleNamespace(read=AsyncMock(side_effect=ConnectionResetError))
+    stream = _Stream(connection, 1, reader, writer)
+    connection.streams[1] = stream
+    upload = asyncio.create_task(asyncio.Event().wait())
+    stream.tasks = [upload]
+    await stream.download()
+    await asyncio.gather(upload, return_exceptions=True)
+    assert upload.cancelled() and not connection.streams
+    writer.close.assert_called_once()
+
+
+async def test_tls_disconnect_error_does_not_retain_connection():
+    """A peer disconnect during TLS closure must still remove the connection from shutdown tracking."""
+    server = RelayServer(None, None, None)
+    writer = SimpleNamespace(
+        get_extra_info=Mock(return_value=SimpleNamespace(selected_alpn_protocol=lambda: None)),
+        close=Mock(),
+        wait_closed=AsyncMock(side_effect=ConnectionResetError),
+    )
+    await server.connected(None, writer)
+    assert not server.connections
+    writer.close.assert_called_once()
+
+
+def test_selected_env_file_does_not_inherit_the_developers_relay_settings(tmp_path):
+    """An explicitly selected deployment config must not borrow relay keys/ports from the local .env."""
+    (tmp_path / ".env").write_text("THRONG_POWERCELL_RELAY_URL=https://unrelated.invalid:8444\n")
+    selected = tmp_path / "isolated.env"
+    selected.write_text("THRONG_CONTROLLER_ENABLED=false\n")
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("THRONG_")}
+    environment["THRONG_ENV_FILE"] = str(selected)
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from throng_api.config import Settings; s=Settings(); "
+            "assert s.powercell_relay_url is None; assert not s.controller_enabled",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+    )

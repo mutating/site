@@ -31,6 +31,7 @@ from throng_api.models import (
 )
 from throng_api.powercell import bounded_body
 from throng_api.powercell_schemas import Binding, EnrollmentCreate, EnrollmentStatus
+from throng_api.relay import enrollment_configuration
 from throng_api.resource_ledger import add_resource
 from throng_api.security import (
     access_token_scheme,
@@ -156,14 +157,15 @@ async def capabilities(request: Request):
     configured = request.app.state.powercell_authority is not None
     return {
         "protocol_version": 1,
-        "extensions": EXTENSIONS if configured else EXTENSIONS[1:],
+        "extensions": (EXTENSIONS if configured else EXTENSIONS[1:])
+        + (["powercell.relay.v1"] if request.app.state.powercell_relay else []),
         "runtime": "powercell-ubuntu-arm64-v1",
         "images": ["ubuntu:24.04"],
         "attestation_required": True,
     }
 
 
-def enrollment_status(row, now):
+def enrollment_status(row, now, relay=None):
     status = "verified" if row.certificate_sha256 else "pending_attestation"
     if row.expires_at <= now and not row.computer_id:
         status = "expired"
@@ -172,6 +174,7 @@ def enrollment_status(row, now):
         "status": status,
         "expires_at": row.expires_at,
         "certificate_sha256": row.certificate_sha256,
+        "relay": enrollment_configuration(relay, row.id),
     }
 
 
@@ -197,7 +200,9 @@ async def create_enrollment(
         previous = await replay(session, principal.key, "enrollment", idempotency_key, payload)
         now = request.app.state.clock()
         if previous:
-            return enrollment_status(await session.get(AgentEnrollment, previous), now)
+            return enrollment_status(
+                await session.get(AgentEnrollment, previous), now, request.app.state.powercell_relay
+            )
         count = await session.scalars(
             select(AgentEnrollment).where(
                 AgentEnrollment.actor_id == actor_id, AgentEnrollment.expires_at > now
@@ -218,14 +223,14 @@ async def create_enrollment(
         session.add(row)
         await session.flush()
         remember(session, principal.key, "enrollment", idempotency_key, payload, row.id)
-        return enrollment_status(row, now)
+        return enrollment_status(row, now, request.app.state.powercell_relay)
 
 
 @router.get("/agent-enrollments/{enrollment_id}", response_model=EnrollmentStatus)
 async def get_enrollment(enrollment_id: UUID, request: Request):
     async with request.app.state.db.read() as session:
         row, _ = await enrollment_for_user(session, request, enrollment_id)
-        return enrollment_status(row, request.app.state.clock())
+        return enrollment_status(row, request.app.state.clock(), request.app.state.powercell_relay)
 
 
 @router.get("/agent-enrollments/{enrollment_id}/profile", response_class=Response)
@@ -263,11 +268,40 @@ async def profile(enrollment_id: UUID, request: Request):
             "PayloadScope": "User",
             "PayloadContent": [acme],
         }
+        if relay := enrollment_configuration(request.app.state.powercell_relay, row.id):
+            document["PayloadContent"].append(
+                {
+                    "PayloadType": "com.apple.relay.managed",
+                    "PayloadVersion": 1,
+                    "PayloadIdentifier": prefix + ".relay",
+                    "PayloadUUID": str(uuid5(NAMESPACE_URL, prefix + ".relay")),
+                    "PayloadDisplayName": "Power Cell authenticated API connection",
+                    "MatchDomains": [urlsplit(relay["api_origin"]).hostname],
+                    "Relays": [
+                        {
+                            "HTTP2RelayURL": relay["url"],
+                            "PayloadCertificateUUID": acme["PayloadUUID"],
+                        }
+                    ],
+                }
+            )
         return Response(
             plistlib.dumps(document),
             media_type="application/x-apple-aspen-config",
             headers={"Cache-Control": "no-store"},
         )
+
+
+@router.get("/agent-enrollments/{enrollment_id}/verification", response_model=EnrollmentStatus)
+async def verify_enrolled_device(enrollment_id: UUID, request: Request):
+    """Confirm that this connection holds the key certified for this user's enrollment."""
+    async with request.app.state.db.write() as session:
+        row, _ = await enrollment_for_user(session, request, enrollment_id)
+        now = request.app.state.clock()
+        if not row.certificate_sha256 or (not row.computer_id and row.expires_at <= now):
+            raise HTTPException(409, "Enrollment requires a fresh verified attestation")
+        await verify_proof(session, request, row.certificate_sha256)
+        return enrollment_status(row, now, request.app.state.powercell_relay)
 
 
 @router.post("/agent-enrollments/{enrollment_id}/finish", response_model=Binding)
@@ -333,6 +367,7 @@ async def finish_enrollment(enrollment_id: UUID, request: Request, idempotency_k
             "credential": credential,
             "device_id": certificate.device_id,
             "certificate_sha256": certificate.sha256,
+            "relay": enrollment_configuration(request.app.state.powercell_relay, row.id),
         }
 
 

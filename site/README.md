@@ -707,10 +707,10 @@ Create `/etc/nginx/sites-available/mutating.tech` with this configuration:
 
 ```nginx
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+    listen 80;
+    listen [::]:80;
 
-    server_name mutating.tech www.mutating.tech SERVER_IPV4 _;
+    server_name mutating.tech www.mutating.tech SERVER_IPV4;
 
     root /var/www/mutating.tech;
     index index.html;
@@ -759,15 +759,11 @@ server {
 ```
 
 Replace `SERVER_IPV4` with the server's public IPv4 address. Then enable the
-site and disable Debian's placeholder site:
+site alongside the existing virtual hosts:
 
 ```bash
 ln -sfn /etc/nginx/sites-available/mutating.tech \
   /etc/nginx/sites-enabled/mutating.tech
-
-if [ -L /etc/nginx/sites-enabled/default ]; then
-  unlink /etc/nginx/sites-enabled/default
-fi
 ```
 
 Always validate nginx before applying a change:
