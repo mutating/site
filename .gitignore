@@ -13,3 +13,26 @@ __pycache__/
 .DS_Store
 .env*
 *.pem
+
+# Monorepo output, environments and application data
+/site/public/
+/site/resources/
+/site/.hugo_build.lock
+**/.venv/
+**/node_modules/
+**/.runtime/
+**/dist/
+**/test-results/
+**/playwright-report/
+**/.pytest_cache/
+**/.ruff_cache/
+**/htmlcov/
+**/data/
+.coverage
+.coverage.*
+coverage.xml
+*.db
+*.db-shm
+*.db-wal
+!**/.env.example
+!platform/api/throng_api/certificates/*.pem
