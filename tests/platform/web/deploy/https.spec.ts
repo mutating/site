@@ -176,10 +176,6 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   await expect(
     page.getByRole("link", { name: "The Mutating Company", exact: true }).first(),
   ).toHaveAttribute("href", "https://mutating.tech/");
-  await expect(page.locator(".page-footer a")).toHaveAttribute(
-    "href",
-    "https://mutating.tech/",
-  );
   await page
     .getByRole("navigation")
     .getByRole("link", { name: "Overview", exact: true })
@@ -193,7 +189,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   );
   await page.goto("profile");
   await page
-    .getByRole("main")
+    .locator(".account-card")
     .getByRole("button", { name: "Sign out", exact: true })
     .click();
   await expect(

@@ -47,18 +47,28 @@ test("sidebar account card opens the profile and signs out through the browser s
   page,
   account,
 }) => {
-  test.skip(
-    (page.viewportSize()?.width ?? 0) <= 800,
-    "The sidebar account card is hidden on mobile layouts",
-  );
   await login(page, account);
   const card = page.locator(".account-card");
+  await expect(
+    page
+      .getByRole("navigation")
+      .getByRole("link", { name: "Профиль", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Профиль", exact: true }),
+  ).toHaveCount(1);
   await expect(card.locator("small")).toHaveText(account.email);
   await card.getByRole("link", { name: "Профиль", exact: true }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
   );
+  await expect(
+    page.getByRole("main").getByRole("button", { name: "Выйти", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Выйти", exact: true }),
+  ).toHaveCount(1);
   const signedOut = page.waitForResponse(
     (response) =>
       response.url() === `${API}/auth/session` &&
@@ -168,7 +178,7 @@ test("all private pages require login; registration has optional fields and no p
     page.getByRole("heading", { name: "Страница не найдена" }),
   ).toBeVisible();
   await page
-    .getByRole("navigation", { name: "Навигация кабинета" })
+    .locator(".account-card")
     .getByRole("link", { name: "Профиль" })
     .click();
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue("");
@@ -615,9 +625,9 @@ test("logout revokes its API token and a revoked active session returns to login
   )!;
   await page.goto("profile");
   const signOut = page
-    .getByRole("main")
+    .locator(".account-card")
     .getByRole("button", { name: "Выйти", exact: true });
-  // The profile's session request must finish before taking the browser offline.
+  // The account card must finish loading before taking the browser offline.
   await expect(signOut).toBeVisible();
   await expect(signOut).toBeEnabled();
   await page.context().setOffline(true);
