@@ -108,6 +108,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   }
   for (const [version, name, number] of [
     ["1.2.0", "single_core", 1100],
+    ["1.2.0", "legacy_only", 875.25],
     ["1.9.0", "single_core", 1200.25],
     ["1.10.0", "single_core", 1250.5],
     ["1.10.0", "multi_core", 9350.75],
@@ -157,6 +158,14 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     3,
   );
   await screenshot("computer-benchmark-history");
+  await page.locator(".benchmark-archive summary").click();
+  await page
+    .getByLabel(language === "ru" ? "Выберите бенчмарк" : "Choose a benchmark")
+    .selectOption("legacy_only");
+  await expect(page.locator(".benchmark-history-table tbody th")).toHaveText([
+    "1.2.0",
+  ]);
+  await screenshot("computer-benchmark-archive");
   await page.goto(`power-cells/computers/${mini.id}?user_id=${account.id}`);
   await screenshot("computer-benchmarks-empty");
   await page.goto("organizations");

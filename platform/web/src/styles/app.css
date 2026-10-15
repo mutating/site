@@ -1304,6 +1304,19 @@ td small {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.benchmark-archive {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  font-size: 13px;
+}
+.benchmark-archive summary {
+  cursor: pointer;
+}
+.benchmark-archive .field,
+.benchmark-archive > .muted {
+  margin: 18px 0 0;
+}
 .form-actions {
   display: flex;
   justify-content: flex-end;

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useData } from "../lib/useData";
@@ -62,8 +62,13 @@ export function BenchmarkSummary({
 
 export function Benchmarks({ computerId }: { computerId: string }) {
   const { t, locale } = useI18n();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const selected = params.get("benchmark");
+  const [historyRequested, setHistoryRequested] = useState(!!selected);
+  const needHistory = historyRequested || !!selected;
+  useEffect(() => {
+    if (selected) setHistoryRequested(true);
+  }, [selected]);
   const state = useData(
     (signal) =>
       api<BenchmarkResult[]>(
@@ -72,6 +77,20 @@ export function Benchmarks({ computerId }: { computerId: string }) {
       ),
     computerId,
   );
+  const history = useData(
+    (signal) =>
+      needHistory
+        ? api<BenchmarkResult[]>(
+            `computers/${computerId}/benchmark-results?latest_only=false`,
+            { signal },
+          )
+        : Promise.resolve(null),
+    `${computerId}:${needHistory}`,
+  );
+  const historyLoading = history.loading || (!history.data && !history.error);
+  const names = [
+    ...new Set(history.data?.map((result) => result.benchmark_name)),
+  ].sort();
   return (
     <>
       <section
@@ -115,12 +134,52 @@ export function Benchmarks({ computerId }: { computerId: string }) {
             </div>
           </>
         )}
+        <details
+          className="benchmark-archive"
+          onToggle={(event) => {
+            if (event.currentTarget.open) setHistoryRequested(true);
+          }}
+        >
+          <summary>{t("allBenchmarks")}</summary>
+          {needHistory &&
+            (historyLoading ? (
+              <Loading />
+            ) : history.error ? (
+              <ErrorBox error={history.error} retry={history.reload} />
+            ) : !names.length ? (
+              <p className="muted">{t("noBenchmarks")}</p>
+            ) : (
+              <label className="field">
+                {t("chooseBenchmark")}
+                <select
+                  value={names.includes(selected || "") ? selected! : ""}
+                  onChange={(event) => {
+                    const next = new URLSearchParams(params);
+                    next.set("benchmark", event.target.value);
+                    setParams(next);
+                  }}
+                >
+                  <option value="" disabled>
+                    {t("chooseBenchmark")}
+                  </option>
+                  {names.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+        </details>
       </section>
       {selected && (
         <BenchmarkHistory
           key={`${computerId}:${selected}`}
-          computerId={computerId}
           name={selected}
+          results={history.data}
+          loading={historyLoading}
+          error={history.error}
+          reload={history.reload}
         />
       )}
     </>
@@ -128,11 +187,17 @@ export function Benchmarks({ computerId }: { computerId: string }) {
 }
 
 function BenchmarkHistory({
-  computerId,
   name,
+  results,
+  loading,
+  error,
+  reload,
 }: {
-  computerId: string;
   name: string;
+  results: BenchmarkResult[] | null;
+  loading: boolean;
+  error: unknown;
+  reload: () => void;
 }) {
   const { t, locale } = useI18n();
   const section = useRef<HTMLElement>(null);
@@ -144,14 +209,10 @@ function BenchmarkHistory({
     });
     return () => cancelAnimationFrame(frame);
   }, []);
-  const state = useData(async (signal) => {
-    const results = await api<BenchmarkResult[]>(
-      `computers/${computerId}/benchmark-results?latest_only=false`,
-      { signal },
-    );
-    // The API orders by SemVer, including prereleases and its build metadata tie-break.
-    return results.filter((result) => result.benchmark_name === name).reverse();
-  }, computerId);
+  // The API orders by SemVer, including prereleases and its build metadata tie-break.
+  const rows = results
+    ?.filter((result) => result.benchmark_name === name)
+    .reverse();
   return (
     <section
       ref={section}
@@ -163,11 +224,11 @@ function BenchmarkHistory({
         {t("benchmarkHistory")} · {name}
       </h2>
       <p className="muted section-lede">{t("benchmarkHistoryOrder")}</p>
-      {state.loading ? (
+      {loading ? (
         <Loading />
-      ) : state.error ? (
-        <ErrorBox error={state.error} retry={state.reload} />
-      ) : !state.data?.length ? (
+      ) : error ? (
+        <ErrorBox error={error} retry={reload} />
+      ) : !rows?.length ? (
         <p className="muted">{t("noBenchmarkHistory")}</p>
       ) : (
         <div className="table-scroll">
@@ -181,7 +242,7 @@ function BenchmarkHistory({
               </tr>
             </thead>
             <tbody>
-              {state.data.map((result) => (
+              {rows.map((result) => (
                 <tr key={result.id}>
                   <th scope="row">{result.benchmarker_version}</th>
                   <td className="numeric">{score(result.number, locale)}</td>

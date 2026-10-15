@@ -289,6 +289,8 @@ const messages = {
     "No results for this benchmark yet.",
   ],
   moreBenchmarks: ["ещё", "more"],
+  allBenchmarks: ["Все бенчмарки", "All benchmarks"],
+  chooseBenchmark: ["Выберите бенчмарк", "Choose a benchmark"],
   status: ["Статус", "Status"],
   online: ["Онлайн", "Online"],
   offline: ["Офлайн", "Offline"],
