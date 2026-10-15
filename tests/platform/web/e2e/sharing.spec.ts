@@ -11,18 +11,24 @@ import type { Page } from "@playwright/test";
 
 async function createCompany(page: Page, name = "Общая лаборатория") {
   await page.goto("organizations");
+  await page
+    .getByRole("button", { name: "Создать организацию", exact: true })
+    .click();
   const nameField = page.getByLabel("Название организации");
   // Settle focus in mobile WebKit before entering the organization name.
   await nameField.click();
   await nameField.fill(name);
   await expect(nameField).toHaveValue(name);
   await page
+    .getByRole("dialog")
     .getByRole("button", { name: "Создать организацию", exact: true })
     .click();
   const row = page
     .locator(".organization-row")
     .filter({ has: page.getByRole("heading", { name }) });
-  await row.getByRole("link", { name: "Участники" }).click();
+  await row
+    .getByRole("link", { name: `Открыть организацию: ${name}`, exact: true })
+    .click();
   await expect(
     page.getByRole("heading", { level: 1, name: `${name}.` }),
   ).toBeVisible();
@@ -42,7 +48,7 @@ async function openSharing(page: Page, mode: "add" | "invite" | "link") {
 async function signOut(page: Page) {
   await page.goto("profile");
   await page
-    .locator(".account-card")
+    .locator(".sidebar-account")
     .getByRole("button", { name: "Выйти", exact: true })
     .click();
   await expect(
@@ -133,7 +139,10 @@ test("addressed invitation appears in recipient inbox and can be accepted with a
   await signOut(page);
   await login(page, bob);
   await page.goto("organizations");
-  const inbox = page.getByRole("region", { name: "Вас пригласили" });
+  const inbox = page.getByRole("region", {
+    name: "Все организации",
+    exact: true,
+  });
   await expect(
     inbox.getByRole("heading", { name: "Общая лаборатория" }),
   ).toBeVisible();
@@ -258,7 +267,10 @@ test("invitation link renewal disables the old link, revocation and decline are 
   await signOut(page);
   await login(page, bob);
   await page.goto("organizations");
-  const inbox = page.getByRole("region", { name: "Вас пригласили" });
+  const inbox = page.getByRole("region", {
+    name: "Все организации",
+    exact: true,
+  });
   await inbox.getByRole("button", { name: "Отклонить", exact: true }).click();
   await expect(inbox.getByRole("status")).toHaveText("Приглашение отклонено.");
   expect(
@@ -451,7 +463,10 @@ test("invitation creation can retry and an email recipient can register later an
     page.getByRole("heading", { name: "Привет, Будущий участник." }),
   ).toBeVisible();
   await page.goto("organizations");
-  const inbox = page.getByRole("region", { name: "Вас пригласили" });
+  const inbox = page.getByRole("region", {
+    name: "Все организации",
+    exact: true,
+  });
   await expect(
     inbox.getByRole("article", { name: "Будущая команда" }),
   ).toBeVisible();

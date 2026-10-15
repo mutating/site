@@ -70,6 +70,33 @@ export function Layout() {
     ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
   ];
+  const accountActions = (
+    <>
+      <Link className="account-action account-profile" to="/profile">
+        <Icon name="user" size={14} />
+        {t("profile")}
+      </Link>
+      <button
+        className="account-action logout-button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            await api("auth/session", json("DELETE"));
+            setUser(null);
+          } catch (e) {
+            setError(e);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Icon name="exit" size={14} />
+        {t("logout")}
+      </button>
+    </>
+  );
   return (
     <>
       <a className="skip-link" href="#main">
@@ -106,32 +133,9 @@ export function Layout() {
                   <small>{user?.email}</small>
                 </span>
               </div>
-              <div className="account-actions">
-                <Link className="account-action account-profile" to="/profile">
-                  <Icon name="user" size={14} />
-                  {t("profile")}
-                </Link>
-                <button
-                  className="account-action logout-button"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setError(null);
-                    try {
-                      await api("auth/session", json("DELETE"));
-                      setUser(null);
-                    } catch (e) {
-                      setError(e);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  <Icon name="exit" size={14} />
-                  {t("logout")}
-                </button>
-              </div>
+              <div className="account-actions">{accountActions}</div>
             </div>
+            <div className="mobile-account-actions">{accountActions}</div>
             <ErrorBox error={error} />
           </div>
         </aside>

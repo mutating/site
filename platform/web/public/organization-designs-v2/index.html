@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Один список — 30 новых вариантов Organizations</title>
+  <meta name="description" content="30 новых вариантов страницы Organizations с единым списком всех организаций.">
+  <link rel="icon" href="../favicon.ico">
+  <link rel="stylesheet" href="designs.css">
+  <link rel="stylesheet" href="gallery.css">
+  <script src="concepts.js" defer></script>
+  <script src="gallery.js" defer></script>
+</head>
+<body>
+  <header class="gallery-top"><a class="gallery-brand" href="index.html"><b>m<span>.</span></b><span>THE MUTATING COMPANY <i>/</i> DESIGN STUDIES</span></a><div class="top-actions"><a href="../organization-designs/index.html" class="quiet-button previous-edition">Первая серия ↗</a><button id="original-button" class="quiet-button">Исходная страница ↗</button><button id="favorites-toggle" class="favorites-toggle" aria-pressed="false">♡ Избранное <span id="favorite-count">0</span></button></div></header>
+  <main class="gallery-main">
+    <section class="gallery-intro"><div><p class="gallery-eyebrow"><i></i> ORGANIZATIONS / ЕДИНЫЙ СПИСОК</p><h1>Один список.<br><em>30 новых решений.</em></h1></div><div class="intro-note"><span class="edition">DESIGN EXPLORATION / 04</span><p>Все организации вместе.<br>Роль — внутри каждой строки.</p><span>Новые компоновки и оформление списка.<br>Откройте, сравните, выберите своё.</span></div></section>
+    <div class="gallery-controls"><nav id="filters" aria-label="Направления дизайна"><button data-filter="all" class="active" aria-pressed="true">Все <span>30</span></button><button data-filter="minimal" aria-pressed="false">Минимализм <span>05</span></button><button data-filter="cards" aria-pressed="false">Карточки <span>05</span></button><button data-filter="editorial" aria-pressed="false">Типографика <span>05</span></button><button data-filter="product" aria-pressed="false">Рабочие панели <span>05</span></button><button data-filter="graphic" aria-pressed="false">Графика <span>05</span></button><button data-filter="dark" aria-pressed="false">Тёмные <span>05</span></button></nav><div class="gallery-state"><span id="visible-count" aria-live="polite">30 вариантов</span><div class="segmented" aria-label="Данные в макетах"><button data-state="empty" aria-pressed="true">Пустая страница</button><button data-state="filled" aria-pressed="false">С организациями</button></div></div></div>
+    <div id="gallery" class="design-gallery"></div>
+    <div id="gallery-empty" class="gallery-empty" hidden>Отметьте понравившиеся варианты сердечком — здесь появится ваша подборка.</div>
+    <footer class="gallery-footer"><span>THE MUTATING COMPANY / ONE ORGANIZATION LIST</span><p>Интерактивные макеты. Организации и действия внутри — демонстрационные.</p><span>01 — 30</span></footer>
+  </main>
+  <aside id="comparison-tray" class="comparison-tray" aria-label="Выбранные варианты" hidden><div><span class="tray-label">СРАВНЕНИЕ</span><strong id="comparison-selection"></strong></div><button id="clear-comparison" class="quiet-button">Сбросить</button><button id="open-comparison" class="solid-button" disabled>Выберите второй вариант</button></aside>
+  <dialog id="preview" class="preview-dialog" aria-labelledby="preview-title"><header class="preview-top"><button id="close-preview" class="back-button">← Галерея</button><div class="preview-title-wrap"><span id="preview-number" class="preview-number"></span><h2 id="preview-title"></h2><span id="preview-group" class="preview-group"></span></div><button id="preview-favorite" class="favorites-toggle" aria-pressed="false">♡ В избранное</button></header><div class="preview-tools"><div class="segmented"><button data-preview-state="empty" aria-pressed="true">Пустая страница</button><button data-preview-state="filled" aria-pressed="false">С организациями</button></div><div class="preview-device"><div class="segmented"><button data-device="desktop" aria-pressed="true">Десктоп</button><button data-device="mobile" aria-pressed="false">Мобильный</button></div><a id="standalone-link" target="_blank" rel="noopener">Открыть отдельно ↗</a></div></div><div class="preview-stage"><iframe id="preview-frame" title="Полный макет страницы Organizations"></iframe></div><footer class="preview-bottom"><div><button id="previous-design" class="arrow-button" aria-label="Предыдущий вариант">←</button><button id="next-design" class="arrow-button" aria-label="Следующий вариант">→</button><span id="preview-description"></span></div><nav id="pagination" aria-label="Выбрать вариант"></nav></footer></dialog>
+  <dialog id="comparison" class="comparison-dialog" aria-labelledby="comparison-title"><header class="preview-top"><button id="close-comparison" class="back-button">← Галерея</button><h2 id="comparison-title">Два варианта рядом</h2><div class="segmented"><button data-comparison-state="empty" aria-pressed="true">Пустые</button><button data-comparison-state="filled" aria-pressed="false">С организациями</button></div></header><div id="comparison-panels" class="comparison-panels"></div><p class="comparison-hint">Оба макета показаны в одинаковом масштабе. Откройте вариант из галереи для работы с формой.</p></dialog>
+  <dialog id="original" class="original-dialog" aria-labelledby="original-title"><header class="preview-top"><h2 id="original-title">Исходная страница</h2><button id="close-original" class="back-button">Закрыть ✕</button></header><img src="../organization-designs/reference.png" width="1468" height="1054" alt="Исходный дизайн страницы Organizations, предоставленный пользователем"></dialog>
+  <div id="gallery-toast" class="gallery-toast" role="status" aria-live="polite"></div>
+</body>
+</html>

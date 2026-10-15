@@ -13,6 +13,7 @@ from throng_api.models import (
     TokenOwnership,
     User,
 )
+from throng_api.organization_counts import organization_counts
 from throng_api.permissions import PERMISSIONS, effective_permissions
 from throng_api.schemas import (
     CompanyInput,
@@ -212,6 +213,8 @@ async def create_company(data: CompanyInput, request: Request):
             "my_role": "creator",
             "my_permissions": sorted(PERMISSIONS),
             "my_membership_id": member.id,
+            "computer_count": 0,
+            "member_count": 1,
         }
 
 
@@ -228,18 +231,22 @@ async def list_companies(
                 select(Membership.company_id).where(Membership.user_id == principal.user_id)
             )
         )
-        rows = await session.execute(
-            select(Company, Membership)
-            .join(Membership, Membership.company_id == Company.id)
-            .where(condition)
-            .where(Membership.user_id == (principal.user_id or principal.actor_id))
-            .order_by(Company.created_at, Company.id)
-            .limit(limit)
-            .offset(offset)
-        )
+        rows = (
+            await session.execute(
+                select(Company, Membership)
+                .join(Membership, Membership.company_id == Company.id)
+                .where(condition)
+                .where(Membership.user_id == (principal.user_id or principal.actor_id))
+                .order_by(Company.created_at, Company.id)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+        counts = await organization_counts(session, (company.id for company, _ in rows))
         return [
             {
                 **public(company),
+                **counts[company.id],
                 "my_role": member.role,
                 "my_permissions": sorted(effective_permissions(member.role, member.permissions)),
                 "my_membership_id": member.id,
@@ -264,6 +271,7 @@ async def get_company(company_id: UUID, request: Request):
         )
         return {
             **public(company),
+            **(await organization_counts(session, [company.id]))[company.id],
             "my_role": member.role,
             "my_permissions": sorted(effective_permissions(member.role, member.permissions)),
             "my_membership_id": member.id,
@@ -277,7 +285,10 @@ async def update_company(company_id: UUID, data: CompanyInput, request: Request)
         await company_access(session, principal, str(company_id), admin=True)
         company = await session.get(Company, str(company_id))
         company.name = data.name
-        return public(company)
+        return {
+            **public(company),
+            **(await organization_counts(session, [company.id]))[company.id],
+        }
 
 
 @router.delete("/companies/{company_id}", status_code=204)

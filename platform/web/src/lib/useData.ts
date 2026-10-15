@@ -27,5 +27,11 @@ export function useData<T>(
       });
     return () => controller.abort();
   }, [key, revision, retainData]);
-  return { data, error, loading, reload: () => setRevision((x) => x + 1) };
+  return {
+    data,
+    error,
+    loading,
+    update: setData,
+    reload: () => setRevision((x) => x + 1),
+  };
 }

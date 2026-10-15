@@ -69,10 +69,15 @@ test("organization creation preserves the draft on failure and creates once on r
   await login(page, account);
   await page.goto("organizations");
   await expect(page.locator(".loading")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Создать организацию", exact: true })
+    .click();
   await page.getByLabel("Название организации").fill("Надёжная команда");
   const path = "**/v1/companies";
   await page.route(path, (route) => route.abort("failed"));
-  const create = page.getByRole("button", { name: "Создать организацию" });
+  const create = page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Создать организацию" });
   await create.click();
   await expect(page.getByRole("alert")).toContainText(
     "Не удалось связаться с сервером",
@@ -107,7 +112,15 @@ test("organization creation preserves the draft on failure and creates once on r
     page.getByRole("heading", { name: "Надёжная команда" }),
   ).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page
+    .getByRole("button", { name: "Создать организацию", exact: true })
+    .click();
   await expect(page.getByLabel("Название организации")).toHaveValue("");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Отмена", exact: true })
+    .click();
   const companies = await (
     await request.get(`${API}/companies`, { headers: headers(account) })
   ).json();
@@ -160,8 +173,6 @@ test("refresh shows newly available capacity and recovery does not discard the s
   await expect(pool.getByTestId("computer-count")).toHaveText("1");
   await expect(page.getByRole("alert")).toHaveCount(0);
   expect(
-    (await page.context().cookies()).some(
-      (c) => c.name === "tmc_session",
-    ),
+    (await page.context().cookies()).some((c) => c.name === "tmc_session"),
   ).toBe(true);
 });

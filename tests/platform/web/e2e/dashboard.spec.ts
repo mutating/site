@@ -39,16 +39,49 @@ test("root routes keep navigation and sessions while account URLs are absent", a
   await expect(page).toHaveURL(
     new RegExp(`/power-cells/computers\\?user_id=${account.id}&page=1$`),
   );
-  await page.getByRole("navigation").getByRole("link", { name: "Обзор" }).click();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Обзор" })
+    .click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/");
 });
 
-test("sidebar account card opens the profile and signs out through the browser session API", async ({
+test("account card stays desktop-only across the mobile breakpoint", async ({
   page,
   account,
 }) => {
   await login(page, account);
+  await page.goto("organizations");
   const card = page.locator(".account-card");
+  const mobileActions = page.locator(".mobile-account-actions");
+  for (const width of [1440, 801, 800, 540, 390, 320, 801]) {
+    await page.setViewportSize({ width, height: 1000 });
+    if (width <= 800) {
+      await expect(card).toBeHidden();
+      await expect(mobileActions).toBeVisible();
+      await expect(page.locator(".account-identity")).toBeHidden();
+    } else {
+      await expect(card).toBeVisible();
+      await expect(mobileActions).toBeHidden();
+    }
+    await expect(
+      page.getByRole("link", { name: "Профиль", exact: true }),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "Выйти", exact: true }),
+    ).toHaveCount(1);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  }
+});
+
+test("sidebar account actions open the profile and sign out through the browser session API", async ({
+  page,
+  account,
+}) => {
+  await login(page, account);
+  const actions = page.locator(".sidebar-account");
   await expect(
     page
       .getByRole("navigation")
@@ -57,8 +90,8 @@ test("sidebar account card opens the profile and signs out through the browser s
   await expect(
     page.getByRole("link", { name: "Профиль", exact: true }),
   ).toHaveCount(1);
-  await expect(card.locator("small")).toHaveText(account.email);
-  await card.getByRole("link", { name: "Профиль", exact: true }).click();
+  await expect(actions.locator("small")).toHaveText(account.email);
+  await actions.getByRole("link", { name: "Профиль", exact: true }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
@@ -74,7 +107,7 @@ test("sidebar account card opens the profile and signs out through the browser s
       response.url() === `${API}/auth/session` &&
       response.request().method() === "DELETE",
   );
-  await card.getByRole("button", { name: "Выйти", exact: true }).click();
+  await actions.getByRole("button", { name: "Выйти", exact: true }).click();
   expect((await signedOut).status()).toBe(204);
   await expect(
     page.getByRole("heading", { name: "С возвращением." }),
@@ -178,7 +211,7 @@ test("all private pages require login; registration has optional fields and no p
     page.getByRole("heading", { name: "Страница не найдена" }),
   ).toBeVisible();
   await page
-    .locator(".account-card")
+    .locator(".sidebar-account")
     .getByRole("link", { name: "Профиль" })
     .click();
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue("");
@@ -364,8 +397,14 @@ test("organization creation, creator restrictions and safe deletion errors", asy
 }) => {
   await login(page, account);
   await page.goto("organizations");
+  await page
+    .getByRole("button", { name: "Создать организацию", exact: true })
+    .click();
   await page.getByLabel("Название организации").fill("Новая команда");
-  await page.getByRole("button", { name: "Создать организацию" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Создать организацию" })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Новая команда" }),
   ).toBeVisible();
@@ -592,17 +631,14 @@ test("wrong password, expired session and cross-origin mutation are rejected", a
   );
   await login(page, account);
   const cookies = await page.context().cookies();
-  const response = await request.post(
-    "http://127.0.0.1:18100/v1/companies",
-    {
-      headers: {
-        Origin: "https://example.com",
-        Cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; "),
-        "X-Requested-With": "ThrongDashboard",
-      },
-      data: { name: "forbidden" },
+  const response = await request.post("http://127.0.0.1:18100/v1/companies", {
+    headers: {
+      Origin: "https://example.com",
+      Cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; "),
+      "X-Requested-With": "ThrongDashboard",
     },
-  );
+    data: { name: "forbidden" },
+  });
   expect(response.status()).toBe(403);
   await page.context().clearCookies();
   await page.goto("profile");
@@ -625,9 +661,9 @@ test("logout revokes its API token and a revoked active session returns to login
   )!;
   await page.goto("profile");
   const signOut = page
-    .locator(".account-card")
+    .locator(".sidebar-account")
     .getByRole("button", { name: "Выйти", exact: true });
-  // The account card must finish loading before taking the browser offline.
+  // Account actions must finish loading before taking the browser offline.
   await expect(signOut).toBeVisible();
   await expect(signOut).toBeEnabled();
   await page.context().setOffline(true);
@@ -649,10 +685,9 @@ test("logout revokes its API token and a revoked active session returns to login
     await request.get(`${API}/access-tokens`, { headers: headers(account) })
   ).json();
   expect(after).toEqual(before);
-  const replay = await request.get(
-    "http://127.0.0.1:18100/v1/auth/session",
-    { headers: { Cookie: `${sessionCookie.name}=${sessionCookie.value}` } },
-  );
+  const replay = await request.get("http://127.0.0.1:18100/v1/auth/session", {
+    headers: { Cookie: `${sessionCookie.name}=${sessionCookie.value}` },
+  });
   expect(replay.status()).toBe(401);
   await login(page, account);
   const tokens: { id: string }[] = await (

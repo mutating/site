@@ -23,14 +23,33 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     { language, theme },
   );
   await page.clock.setFixedTime(historyNow);
+  async function settleFonts() {
+    await page.evaluate(async () => {
+      await Promise.all(Array.from(document.fonts, (face) => face.load()));
+      await document.fonts.ready;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
+  }
   async function screenshot(name: string) {
     await expect(
       page.locator("h1:visible, #auth-title:visible").first(),
     ).toBeVisible();
     await expect(page.locator(".loading")).toHaveCount(0);
-    await page.evaluate(() => document.fonts.ready);
+    await settleFonts();
     if (name.startsWith("computer-")) {
-      await page.evaluate(() => window.scrollTo(0, 0));
+      // BenchmarkHistory scrolls and focuses in an animation frame after mount.
+      // Settle that frame before resetting the full-page capture to the top.
+      await page.evaluate(async () => {
+        if (document.activeElement instanceof HTMLElement)
+          document.activeElement.blur();
+        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     }
     await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true });
   }
@@ -171,6 +190,18 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await page.goto("organizations");
   await expect(page.getByRole("heading", { name: company.name })).toBeVisible();
   await screenshot("organizations");
+  await page
+    .getByRole("button", {
+      name: language === "ru" ? "Создать организацию" : "Create organization",
+      exact: true,
+    })
+    .click();
+  const createDialog = page.getByRole("dialog");
+  await expect(createDialog).toBeVisible();
+  await settleFonts();
+  await expect(createDialog).toHaveScreenshot("organization-create-dialog.png");
+  await page.keyboard.press("Escape");
+  await expect(createDialog).not.toBeVisible();
   await page.goto(`organizations/${company.id}`);
   await expect(page.locator(".member-row")).toHaveCount(1);
   await screenshot("organization-members");
@@ -193,12 +224,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     .check();
   // The newly expanded dialog introduces text at additional font sizes/weights.
   // Let font loading and the following layout/paint settle before pixel capture.
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
-  });
+  await settleFonts();
   await expect(page).toHaveScreenshot("member-permissions.png");
   await page.keyboard.press("Escape");
   const invited = await request.post(`${API}/invitations`, {
