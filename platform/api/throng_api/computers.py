@@ -36,9 +36,7 @@ from throng_api.security import (
 )
 from throng_api.serialization import public
 
-router = APIRouter(
-    prefix="/api/v1", tags=["computers"], dependencies=[Depends(access_token_scheme)]
-)
+router = APIRouter(prefix="/v1", tags=["computers"], dependencies=[Depends(access_token_scheme)])
 
 
 async def computer_for_user(session, principal, computer_id, admin=False):

@@ -3463,7 +3463,7 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
 
 @pytest.mark.parametrize(
     "viewport_width",
-    [720, 920, 921, 1120, 1121, 1280],
+    [861, 920, 921, 1120, 1121, 1280],
     ids=[
         "measured-tablet",
         "below-js-breakpoint",
@@ -5254,8 +5254,10 @@ def test_tmc_wordmark_letter_size_is_fixed_across_header_widths(
         (390, False),
         (460, False),
         (580, False),
-        (720, True),
-        (860, True),
+        (720, False),
+        (860, False),
+        (861, True),
+        (920, True),
     ],
 )
 def test_tmc_expands_only_when_the_reserved_wordmark_fits(
@@ -5270,13 +5272,13 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
     button. Letting hover expand unconditionally either covers those controls,
     pushes them outside the rounded header, or exposes only a clipped fragment
     of the name. A viewport-only breakpoint is also insufficient because the
-    usable width depends on the actual rendered action group, font size, eye
-    margins, and gap.
+    usable width depends on the platform island, actual rendered action group,
+    font size, eye margins, and gap.
 
     The component therefore measures the horizontal interval from the brand's
     left edge to the action group's left edge after fonts and responsive styles
-    settle. This parameterized regression exercises four widths where the full
-    reservation cannot fit and three where it can. It independently recomputes
+    settle. This parameterized regression exercises widths on both sides of the
+    tablet layout boundary with the platform island present. It recomputes
     the same physical requirement from rendered geometry, checks the published
     ``data-can-expand`` decision, then deterministically finishes CSS
     animations after hover. Blocked cases must keep every reveal at zero width

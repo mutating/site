@@ -134,7 +134,7 @@ test("keyboard expansion and pointer tracking work with reduced motion", async (
   await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
   await expect(
     page.getByRole("link", { name: "The Mutating Company", exact: true }),
-  ).toHaveAttribute("href", "/");
+  ).toHaveAttribute("href", "https://mutating.tech/");
   const eye = (await page.locator(".brand-eye").boundingBox())!;
   await page.mouse.move(1, eye.y + eye.height / 2);
   await expect.poll(async () => (await gazeOffset(page)).x).toBeLessThan(-1);

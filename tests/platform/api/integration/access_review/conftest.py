@@ -15,7 +15,7 @@ from throng_api.models import AgentCredential, User
 async def shared_review_computer(api, computer, company, membership):
     """Transfer an idle computer to a company that both HTTP users can initially access."""
     response = await api.patch(
-        f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+        f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
     )
     assert response.status_code == 200, response.text
@@ -105,7 +105,7 @@ async def paginated_review_computers(api):
     computers = []
     for index in range(3):
         response = await api.post(
-            "/api/v1/computers",
+            "/v1/computers",
             json={
                 "name": f"pagination-{index}",
                 "os": "linux",

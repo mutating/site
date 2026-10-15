@@ -181,6 +181,11 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await page.goto("profile");
   await screenshot("profile");
   await page
+    .getByText(language === "ru" ? "Управление аккаунтом" : "Account management", {
+      exact: true,
+    })
+    .click();
+  await page
     .getByRole("button", {
       name: language === "ru" ? "Удалить аккаунт" : "Delete account",
       exact: true,

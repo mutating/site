@@ -40,7 +40,7 @@ export function ShareLink({ token }: { token: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
   const [selected, setSelected] = useState(false);
-  const value = `${window.location.origin}/account/invitations/${encodeURIComponent(token)}`;
+  const value = `${window.location.origin}/invitations/${encodeURIComponent(token)}`;
   return (
     <div className="share-link panel" key={token}>
       <label className="field">

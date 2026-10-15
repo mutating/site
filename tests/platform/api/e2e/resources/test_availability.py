@@ -24,7 +24,7 @@ async def test_history_tracks_heartbeats_capacity_changes_and_expiry_without_con
 ):
     """Keep one interval per unchanged capacity and terminate at lease expiry even without a tick."""
     clock = dashboard_clock
-    credential = (await api.post(f"/api/v1/computers/{computer['id']}/credentials")).json()["token"]
+    credential = (await api.post(f"/v1/computers/{computer['id']}/credentials")).json()["token"]
     headers = {"Authorization": "Bearer " + credential}
     started = clock.now
     handshake = await client.post(
@@ -40,10 +40,10 @@ async def test_history_tracks_heartbeats_capacity_changes_and_expiry_without_con
     clock.now += timedelta(seconds=10)
     changed = clock.now
     assert (
-        await api.patch(f"/api/v1/computers/{computer['id']}", json={"cpu_millis": 4000})
+        await api.patch(f"/v1/computers/{computer['id']}", json={"cpu_millis": 4000})
     ).status_code == 200
     clock.now += timedelta(seconds=100)
-    path = f"/api/v1/users/{user['id']}/resources/availability-history"
+    path = f"/v1/users/{user['id']}/resources/availability-history"
     report = (
         await api.get(
             path,
@@ -56,7 +56,7 @@ async def test_history_tracks_heartbeats_capacity_changes_and_expiry_without_con
     assert report["points"][-1]["cpu_millis"] == 0
     assert report["points"][-1]["cpu_occupied_millis"] == 0
     summary = (
-        await api.get(f"/api/v1/users/{user['id']}/resources/summary?only_available=true")
+        await api.get(f"/v1/users/{user['id']}/resources/summary?only_available=true")
     ).json()
     assert summary["computer_count"] == 0 and summary["resources"] == []
 
@@ -67,21 +67,17 @@ async def test_available_computers_filter_owner_count_and_pagination(
     """Apply owner and availability filters before count/pagination and reject foreign owners."""
     for owner in [{"user_id": user["id"]}, {"company_id": company["id"]}]:
         response = await api.get(
-            "/api/v1/computers", params={**owner, "only_available": True, "limit": 1}
+            "/v1/computers", params={**owner, "only_available": True, "limit": 1}
         )
         assert response.status_code == 200 and response.headers["x-total-count"] == "1"
         assert len(response.json()) == 1
         response = await api.get(
-            "/api/v1/computers", params={**owner, "only_available": True, "offset": 1}
+            "/v1/computers", params={**owner, "only_available": True, "offset": 1}
         )
         assert response.json() == [] and response.headers["x-total-count"] == "1"
+    assert (await api.get("/v1/computers", params={"user_id": other_user["id"]})).status_code == 404
     assert (
-        await api.get("/api/v1/computers", params={"user_id": other_user["id"]})
-    ).status_code == 404
-    assert (
-        await api.get(
-            "/api/v1/computers", params={"user_id": user["id"], "company_id": company["id"]}
-        )
+        await api.get("/v1/computers", params={"user_id": user["id"], "company_id": company["id"]})
     ).status_code == 422
 
 
@@ -90,7 +86,7 @@ async def test_empty_history_validation_and_owner_isolation(
 ):
     """Bound query windows, exclude future history and authorize each owner independently."""
     clock = dashboard_clock
-    path = f"/api/v1/users/{user['id']}/resources/availability-history"
+    path = f"/v1/users/{user['id']}/resources/availability-history"
     period = {"from": (clock.now - timedelta(days=7)).isoformat(), "to": clock.now.isoformat()}
     report = (await api.get(path, params=period)).json()
     assert all(point["cpu_millis"] == point["memory_bytes"] == 0 for point in report["points"])
@@ -102,7 +98,7 @@ async def test_empty_history_validation_and_owner_isolation(
     ]:
         assert (await api.get(path, params=bounds)).status_code == 422
     assert (await other_api.get(path, params=period)).status_code == 404
-    company_path = f"/api/v1/companies/{company['id']}/resources/availability-history"
+    company_path = f"/v1/companies/{company['id']}/resources/availability-history"
     assert (await api.get(company_path, params=period)).status_code == 200
     assert (await other_api.get(company_path, params=period)).status_code == 404
     future = {
@@ -120,14 +116,12 @@ async def test_history_coalesces_instant_changes_and_keeps_real_reservations(
     started = clock.now
     clock.now += timedelta(seconds=1)
     for total in [3000, 2000]:
-        response = await api.patch(
-            f"/api/v1/computers/{computer['id']}", json={"cpu_millis": total}
-        )
+        response = await api.patch(f"/v1/computers/{computer['id']}", json={"cpu_millis": total})
         assert response.status_code == 200, response.text
     clock.now += timedelta(seconds=1)
     report = (
         await api.get(
-            f"/api/v1/users/{user['id']}/resources/availability-history",
+            f"/v1/users/{user['id']}/resources/availability-history",
             params={"from": started.isoformat(), "to": clock.now.isoformat()},
         )
     ).json()

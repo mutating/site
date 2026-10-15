@@ -22,17 +22,17 @@ async def test_reservations_last_until_confirmed_isolate_cleanup(
     cancel,
 ):
     """Command completion or cancellation keeps capacity reserved; only confirmed isolate destruction releases it, exactly once."""
-    current = (await api.get(f"/api/v1/users/{user['id']}/resources/summary")).json()
+    current = (await api.get(f"/v1/users/{user['id']}/resources/summary")).json()
     assert {row["code"]: (row["occupied"], row["free"]) for row in current["resources"]} == {
         "cpu": (1000, 1000),
         "memory": (1024, 1024),
     }
     for row in computer_resources.values():
-        path = f"/api/v1/computer-resources/{row['id']}"
+        path = f"/v1/computer-resources/{row['id']}"
         assert (await api.delete(path)).status_code == 409
         assert (await api.patch(path, json={"total": 0})).status_code == 409
     if cancel:
-        assert (await api.post(f"/api/v1/commands/{command['id']}/cancel")).status_code == 202
+        assert (await api.post(f"/v1/commands/{command['id']}/cancel")).status_code == 202
         tasks = (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})).json()[
             "tasks"
         ]
@@ -42,17 +42,17 @@ async def test_reservations_last_until_confirmed_isolate_cleanup(
     assert (
         await agent_api.post(f"/agent/v1/tasks/{completion['id']}/complete", json={"returncode": 0})
     ).status_code == 200
-    current = (await api.get(f"/api/v1/users/{user['id']}/resources/summary")).json()
+    current = (await api.get(f"/v1/users/{user['id']}/resources/summary")).json()
     assert {row["code"]: row["occupied"] for row in current["resources"]} == {
         "cpu": 1000,
         "memory": 1024,
     }
-    assert (await api.delete(f"/api/v1/isolates/{isolate['id']}")).status_code == 202
+    assert (await api.delete(f"/v1/isolates/{isolate['id']}")).status_code == 202
     tasks = (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})).json()[
         "tasks"
     ]
     destroy = next(task for task in tasks if task["kind"] == "destroy")
-    assert (await api.get(f"/api/v1/computer-resources/{computer_resources['cpu']['id']}")).json()[
+    assert (await api.get(f"/v1/computer-resources/{computer_resources['cpu']['id']}")).json()[
         "occupied"
     ] == 1000
     clock.now += timedelta(seconds=1)
@@ -61,7 +61,7 @@ async def test_reservations_last_until_confirmed_isolate_cleanup(
             await agent_api.post(f"/agent/v1/tasks/{destroy['id']}/complete", json={})
         ).status_code == 200
     report = (
-        await api.get(f"/api/v1/users/{user['id']}/resources/history", params=history_range)
+        await api.get(f"/v1/users/{user['id']}/resources/history", params=history_range)
     ).json()
     assert len(report["points"]) == 3
     assert [
@@ -72,9 +72,9 @@ async def test_reservations_last_until_confirmed_isolate_cleanup(
         {"cpu": 0, "memory": 0},
     ]
     for code in ["cpu", "memory"]:
-        row = (await api.get(f"/api/v1/computer-resources/{computer_resources[code]['id']}")).json()
+        row = (await api.get(f"/v1/computer-resources/{computer_resources[code]['id']}")).json()
         assert row["version"] == 3 and row["occupied"] == 0 and row["free"] == row["total"]
-    legacy = (await api.get(f"/api/v1/computers/{computer['id']}")).json()
+    legacy = (await api.get(f"/v1/computers/{computer['id']}")).json()
     assert legacy["reserved_cpu"] == legacy["reserved_memory"] == 0
 
 
@@ -85,11 +85,11 @@ async def test_worker_loss_keeps_reservations_until_clean_start(
     clock.now += timedelta(seconds=settings.agent_lease_seconds)
     assert (await agent_api.post("/agent/v1/heartbeat")).status_code == 409
     for code, amount in [("cpu", 1000), ("memory", 1024)]:
-        assert (
-            await api.get(f"/api/v1/computer-resources/{computer_resources[code]['id']}")
-        ).json()["occupied"] == amount
+        assert (await api.get(f"/v1/computer-resources/{computer_resources[code]['id']}")).json()[
+            "occupied"
+        ] == amount
     before = (
-        await api.get(f"/api/v1/users/{user['id']}/resources/history", params=history_range)
+        await api.get(f"/v1/users/{user['id']}/resources/history", params=history_range)
     ).json()
     assert len(before["points"]) == 2
     payload = {"clean_start": True, "previous_session_id": agent["session"]["session_id"]}
@@ -99,7 +99,7 @@ async def test_worker_loss_keeps_reservations_until_clean_start(
         )
         assert response.status_code == 200
     after = (
-        await api.get(f"/api/v1/users/{user['id']}/resources/history", params=history_range)
+        await api.get(f"/v1/users/{user['id']}/resources/history", params=history_range)
     ).json()
     assert len(after["points"]) == 3
     assert all(row["occupied"] == 0 for row in after["points"][-1]["resources"])
@@ -112,20 +112,18 @@ async def test_deleted_builtin_resource_blocks_allocation_until_restored(
     """A computer missing CPU or memory is ineligible; restoring the same record through the legacy capacity field enables allocation."""
     # Disable allocation while deleting the unoccupied record; no artificial scheduler mocks are needed.
     assert (
-        await api.patch(f"/api/v1/computers/{computer['id']}", json={"enabled": False})
+        await api.patch(f"/v1/computers/{computer['id']}", json={"enabled": False})
     ).status_code == 200
-    resource_path = f"/api/v1/computer-resources/{computer_resources[code]['id']}"
+    resource_path = f"/v1/computer-resources/{computer_resources[code]['id']}"
     assert (await api.delete(resource_path)).status_code == 204
     assert (
-        await api.patch(f"/api/v1/computers/{computer['id']}", json={"enabled": True})
+        await api.patch(f"/v1/computers/{computer['id']}", json={"enabled": True})
     ).status_code == 200
-    assert (await api.get(f"/api/v1/computers/{computer['id']}")).json()[legacy] == 0
+    assert (await api.get(f"/v1/computers/{computer['id']}")).json()[legacy] == 0
     assert (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0.05})).json()[
         "tasks"
     ] == []
-    response = await api.patch(
-        f"/api/v1/computers/{computer['id']}", json={legacy: computer[legacy]}
-    )
+    response = await api.patch(f"/v1/computers/{computer['id']}", json={legacy: computer[legacy]})
     assert response.status_code == 200
     tasks = (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})).json()[
         "tasks"

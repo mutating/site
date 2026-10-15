@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -244,6 +245,20 @@ class ResourceType(Identity, Base):
     unit: Mapped[str] = mapped_column(String(40))
     builtin: Mapped[bool] = mapped_column(Boolean, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class BenchmarkResult(Identity, Base):
+    __tablename__ = "benchmark_results"
+    __table_args__ = (
+        UniqueConstraint("computer_id", "benchmark_name", "benchmarker_version"),
+        CheckConstraint("number >= 0", name="nonnegative_score"),
+    )
+    computer_id: Mapped[str] = mapped_column(
+        ForeignKey("computers.id", ondelete="CASCADE"), index=True
+    )
+    benchmark_name: Mapped[str] = mapped_column(String(200))
+    number: Mapped[float] = mapped_column(Float)
+    benchmarker_version: Mapped[str] = mapped_column(String(200))
 
 
 class ComputerResource(Identity, Base):

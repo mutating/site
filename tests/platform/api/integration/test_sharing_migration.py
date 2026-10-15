@@ -15,10 +15,10 @@ async def test_sharing_migration_preserves_memberships_and_defaults(
 ):
     """Existing roles survive downgrade/upgrade and inherit defaults from a nullable permission override."""
     assert (
-        await api.patch(f"/api/v1/memberships/{membership['id']}", json={"permissions": []})
+        await api.patch(f"/v1/memberships/{membership['id']}", json={"permissions": []})
     ).status_code == 200
     assert (
-        await api.post("/api/v1/invitations", json={"company_id": company["id"]})
+        await api.post("/v1/invitations", json={"company_id": company["id"]})
     ).status_code == 201
     http_server.server.should_exit = True
     await asyncio.wait_for(http_server.task, timeout=10)

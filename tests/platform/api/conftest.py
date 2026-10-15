@@ -125,11 +125,11 @@ async def user(client):
         "last_name": "Example",
         "nickname": "alice",
     }
-    response = await client.post("/api/v1/users", json=data)
+    response = await client.post("/v1/users", json=data)
     assert response.status_code == 201, response.text
     profile = response.json()
     response = await client.post(
-        "/api/v1/auth/login",
+        "/v1/auth/login",
         json={
             "email": data["email"],
             "password": data["password"],
@@ -148,7 +148,7 @@ async def user(client):
 async def other_user(client):
     """Register an independent user for ownership and membership scenarios."""
     response = await client.post(
-        "/api/v1/users",
+        "/v1/users",
         json={
             "email": "bob@example.com",
             "password": "bob's sufficiently long password",
@@ -160,7 +160,7 @@ async def other_user(client):
     assert response.status_code == 201, response.text
     profile = response.json()
     response = await client.post(
-        "/api/v1/auth/login",
+        "/v1/auth/login",
         json={
             "email": "bob@example.com",
             "password": "bob's sufficiently long password",
@@ -193,7 +193,7 @@ def cli_environment(settings):
 async def system_admin(client, cli_environment):
     """Register a separate operator and grant system administration through the real host CLI."""
     response = await client.post(
-        "/api/v1/users",
+        "/v1/users",
         json={
             "email": "operator@example.com",
             "password": "operator long password",
@@ -205,7 +205,7 @@ async def system_admin(client, cli_environment):
     assert response.status_code == 201, response.text
     user = response.json()
     response = await client.post(
-        "/api/v1/auth/login",
+        "/v1/auth/login",
         json={"email": "operator@example.com", "password": "operator long password"},
     )
     assert response.status_code == 200, response.text
@@ -222,7 +222,7 @@ async def system_admin(client, cli_environment):
     )
     _, errors = await asyncio.wait_for(process.communicate(), timeout=15)
     assert process.returncode == 0, errors.decode()
-    response = await client.get("/api/v1/users/me", headers=headers)
+    response = await client.get("/v1/users/me", headers=headers)
     assert response.status_code == 200 and response.json()["is_system_admin"] is True
     return {**user, "headers": headers}
 
@@ -241,7 +241,7 @@ async def resource_type(admin_api, request):
     """Create a custom resource type using the system administrator API."""
     payload = {"code": "gpu", "name": "GPU", "description": "Accelerator count", "unit": "device"}
     payload.update(getattr(request, "param", {}))
-    response = await admin_api.post("/api/v1/resource-types", json=payload)
+    response = await admin_api.post("/v1/resource-types", json=payload)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -249,7 +249,7 @@ async def resource_type(admin_api, request):
 @pytest.fixture
 async def computer_resources(api, computer):
     """Read the computer's automatically created CPU and memory resources over HTTP."""
-    response = await api.get(f"/api/v1/computers/{computer['id']}/resources")
+    response = await api.get(f"/v1/computers/{computer['id']}/resources")
     assert response.status_code == 200, response.text
     return {row["resource_type"]["code"]: row for row in response.json()}
 
@@ -266,7 +266,7 @@ async def other_api(server, other_user):
 @pytest.fixture
 async def company(api):
     """Create a company whose initial creator is Alice."""
-    response = await api.post("/api/v1/companies", json={"name": "Example company"})
+    response = await api.post("/v1/companies", json={"name": "Example company"})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -275,7 +275,7 @@ async def company(api):
 async def membership(api, company, other_user, request):
     """Add Bob to Alice's company with the requested role (ordinary user by default)."""
     response = await api.post(
-        "/api/v1/memberships",
+        "/v1/memberships",
         json={
             "company_id": company["id"],
             "user_id": other_user["id"],
@@ -289,7 +289,7 @@ async def membership(api, company, other_user, request):
 @pytest.fixture
 async def token_ownership(api, user):
     """Create an empty personal token ownership, independent of the login token."""
-    response = await api.post("/api/v1/token-ownerships", json={"user_id": user["id"]})
+    response = await api.post("/v1/token-ownerships", json={"user_id": user["id"]})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -303,7 +303,7 @@ async def access_token(api, token_ownership, request):
         "scopes": ["read", "manage", "execute"],
     }
     payload.update(getattr(request, "param", {}))
-    response = await api.post("/api/v1/access-tokens", json=payload)
+    response = await api.post("/v1/access-tokens", json=payload)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -311,10 +311,10 @@ async def access_token(api, token_ownership, request):
 @pytest.fixture
 async def company_token(api, company):
     """Issue a corporate token with all scopes, without granting personal rights."""
-    response = await api.post("/api/v1/token-ownerships", json={"company_id": company["id"]})
+    response = await api.post("/v1/token-ownerships", json={"company_id": company["id"]})
     assert response.status_code == 201, response.text
     response = await api.post(
-        "/api/v1/access-tokens",
+        "/v1/access-tokens",
         json={
             "ownership_id": response.json()["id"],
             "name": "Company CI",
@@ -338,7 +338,7 @@ async def computer(api, request):
         "disk_bytes": 8192,
     }
     data.update(getattr(request, "param", {}))
-    response = await api.post("/api/v1/computers", json=data)
+    response = await api.post("/v1/computers", json=data)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -346,7 +346,7 @@ async def computer(api, request):
 @pytest.fixture
 async def agent(api, client, computer):
     """Enroll the computer and establish a clean agent session through HTTP."""
-    response = await api.post(f"/api/v1/computers/{computer['id']}/credentials")
+    response = await api.post(f"/v1/computers/{computer['id']}/credentials")
     assert response.status_code == 201, response.text
     headers = {"Authorization": "Bearer " + response.json()["token"]}
     handshake = {"clean_start": True, "previous_session_id": None}
@@ -378,7 +378,7 @@ async def agent_api(server, agent):
 async def other_agent(other_api, client):
     """Enroll Bob's worker for tests that cross both owner and agent boundaries."""
     response = await other_api.post(
-        "/api/v1/computers",
+        "/v1/computers",
         json={
             "os": "linux",
             "architecture": "amd64",
@@ -390,7 +390,7 @@ async def other_agent(other_api, client):
     )
     assert response.status_code == 201, response.text
     computer = response.json()
-    response = await other_api.post(f"/api/v1/computers/{computer['id']}/credentials")
+    response = await other_api.post(f"/v1/computers/{computer['id']}/credentials")
     assert response.status_code == 201, response.text
     headers = {"Authorization": "Bearer " + response.json()["token"]}
     response = await client.post(
@@ -409,7 +409,7 @@ async def other_agent(other_api, client):
 async def artifact(api):
     """Upload opaque initial-state bytes into real artifact storage."""
     response = await api.post(
-        "/api/v1/artifacts", params={"filename": "state.tar"}, content=b"initial state"
+        "/v1/artifacts", params={"filename": "state.tar"}, content=b"initial state"
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -436,7 +436,7 @@ async def isolate_payload(artifact, request):
 async def provisioning_isolate(api, isolate_payload):
     """Request an isolate without claiming or acknowledging its create operation."""
     response = await api.post(
-        "/api/v1/isolates", headers={"Idempotency-Key": str(uuid4())}, json=isolate_payload
+        "/v1/isolates", headers={"Idempotency-Key": str(uuid4())}, json=isolate_payload
     )
     assert response.status_code == 202, response.text
     return response.json()
@@ -458,7 +458,7 @@ async def isolate(api, agent_api, create_task):
     """Confirm actual provisioning through the agent API and return the ready isolate."""
     response = await agent_api.post(f"/agent/v1/tasks/{create_task['id']}/complete", json={})
     assert response.status_code == 200, response.text
-    response = await api.get(f"/api/v1/isolates/{create_task['isolate_id']}")
+    response = await api.get(f"/v1/isolates/{create_task['isolate_id']}")
     assert response.status_code == 200 and response.json()["status"] == "ready", response.text
     return response.json()
 
@@ -469,7 +469,7 @@ async def command(api, isolate, request):
     payload = {"command": "pytest -q"}
     payload.update(getattr(request, "param", {}))
     response = await api.post(
-        f"/api/v1/isolates/{isolate['id']}/commands",
+        f"/v1/isolates/{isolate['id']}/commands",
         headers={"Idempotency-Key": str(uuid4())},
         json=payload,
     )
@@ -507,13 +507,13 @@ async def control_task(api, agent_api, create_task, request):
     isolate_id = create_task["isolate_id"]
     if kind == "snapshot":
         response = await api.post(
-            f"/api/v1/isolates/{isolate_id}/snapshots", headers={"Idempotency-Key": str(uuid4())}
+            f"/v1/isolates/{isolate_id}/snapshots", headers={"Idempotency-Key": str(uuid4())}
         )
     elif kind == "destroy":
-        response = await api.delete(f"/api/v1/isolates/{isolate_id}")
+        response = await api.delete(f"/v1/isolates/{isolate_id}")
     else:
         response = await api.post(
-            f"/api/v1/isolates/{isolate_id}/commands",
+            f"/v1/isolates/{isolate_id}/commands",
             headers={"Idempotency-Key": str(uuid4())},
             json={"command": "pytest"},
         )
@@ -522,7 +522,7 @@ async def control_task(api, agent_api, create_task, request):
         response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})
         assert response.status_code == 200, response.text
         assert response.json()["tasks"][0]["command_id"] == command["id"]
-        response = await api.post(f"/api/v1/commands/{command['id']}/cancel")
+        response = await api.post(f"/v1/commands/{command['id']}/cancel")
     assert response.status_code == 202, response.text
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})
     assert response.status_code == 200, response.text
@@ -561,7 +561,7 @@ async def secondary_client(settings, clock, server):
 async def company_agent(api, client, company):
     """Enroll a worker belonging exclusively to the company pool."""
     response = await api.post(
-        "/api/v1/computers",
+        "/v1/computers",
         json={
             "company_id": company["id"],
             "name": "company worker",
@@ -575,7 +575,7 @@ async def company_agent(api, client, company):
     )
     assert response.status_code == 201, response.text
     computer = response.json()
-    response = await api.post(f"/api/v1/computers/{computer['id']}/credentials")
+    response = await api.post(f"/v1/computers/{computer['id']}/credentials")
     assert response.status_code == 201, response.text
     headers = {"Authorization": "Bearer " + response.json()["token"]}
     response = await client.post(
@@ -593,10 +593,10 @@ async def company_agent(api, client, company):
 @pytest.fixture
 async def foreign_command(other_api, client, other_agent):
     """Create an unclaimed command in Bob's separate resource pool."""
-    response = await other_api.post("/api/v1/artifacts", content=b"foreign initial state")
+    response = await other_api.post("/v1/artifacts", content=b"foreign initial state")
     assert response.status_code == 201, response.text
     response = await other_api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": str(uuid4())},
         json={
             "state_artifact_id": response.json()["id"],
@@ -621,7 +621,7 @@ async def foreign_command(other_api, client, other_agent):
     )
     assert response.status_code == 200, response.text
     response = await other_api.post(
-        f"/api/v1/isolates/{isolate['id']}/commands",
+        f"/v1/isolates/{isolate['id']}/commands",
         headers={"Idempotency-Key": str(uuid4())},
         json={"command": "pytest"},
     )
@@ -635,7 +635,7 @@ async def late_agent(api, client, computer, provisioning_isolate, clock):
     from datetime import timedelta
 
     clock.now += timedelta(seconds=2)
-    response = await api.post(f"/api/v1/computers/{computer['id']}/credentials")
+    response = await api.post(f"/v1/computers/{computer['id']}/credentials")
     assert response.status_code == 201, response.text
     headers = {"Authorization": "Bearer " + response.json()["token"]}
     response = await client.post(
@@ -676,6 +676,8 @@ async def cli_server(tmp_path):
             "THRONG_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path}/cli/throng.db",
             "THRONG_STORAGE_PATH": str(tmp_path / "cli" / "artifacts"),
             "THRONG_CONTROLLER_INTERVAL": "0.01",
+            # CLI must not inherit the developer's relay listener or keys from .env.
+            "THRONG_ENV_FILE": str(tmp_path / "absent-test.env"),
         }
     )
     log = tmp_path / "cli-server.log"

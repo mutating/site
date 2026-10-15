@@ -212,9 +212,7 @@ async def test_persisted_credentials_are_encrypted_and_revoked_finish_is_not_rec
     async with app.state.db.read() as session:
         row = await session.get(AgentEnrollment, identity.order.enrollment.row["id"])
         assert bound_device.binding["credential"].encode() not in row.credential_encrypted
-    response = await api.post(
-        f"/api/v1/computers/{bound_device.binding['computer_id']}/credentials"
-    )
+    response = await api.post(f"/v1/computers/{bound_device.binding['computer_id']}/credentials")
     assert response.status_code == 201
     response = await api.post(
         bound_device.target,
@@ -237,7 +235,7 @@ async def test_enrollment_finish_rejects_unverified_and_invalid_retry_input(
 ):
     """Finalization requires a verified enrollment, an empty body and a bounded idempotency key."""
     identity = verified_enrollment
-    target = f"/api/v1/agent-enrollments/{enrollment.row['id']}/finish"
+    target = f"/v1/agent-enrollments/{enrollment.row['id']}/finish"
     headers = {**user["headers"], "Idempotency-Key": "x" * 129}
     response = await api.post(
         target,
@@ -260,7 +258,7 @@ async def test_enrollment_quota_bounds_pending_records(api, enrollment):
     """An authenticated user cannot accumulate an unbounded number of live ACME challenges."""
     for i in range(20):
         response = await api.post(
-            "/api/v1/agent-enrollments",
+            "/v1/agent-enrollments",
             headers={"Idempotency-Key": str(uuid4())},
             json={**enrollment.payload, "installation_id": str(uuid4())},
         )
@@ -280,11 +278,11 @@ async def test_diagnostics_do_not_follow_transferred_ownership(
     )
     assert response.status_code == 200
     response = await api.patch(
-        f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+        f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
     )
     assert response.status_code == 200
-    response = await other_api.get(f"/api/v1/computers/{computer['id']}/diagnostics/{identifier}")
+    response = await other_api.get(f"/v1/computers/{computer['id']}/diagnostics/{identifier}")
     assert response.status_code == 404
 
 
@@ -352,7 +350,7 @@ async def test_capacity_requires_advertised_isolation_and_complete_inventory(
         json=payload,
     )
     assert response.status_code == 422
-    response = await api.delete(f"/api/v1/computer-resources/{computer_resources['cpu']['id']}")
+    response = await api.delete(f"/v1/computer-resources/{computer_resources['cpu']['id']}")
     assert response.status_code == 204
     response = await client.post(
         "/agent/v1/capacity",
@@ -372,14 +370,14 @@ async def test_scheduler_skips_an_unadvertised_isolation_mode(
         row = await session.get(Computer, computer["id"])
         row.isolation_modes = ["vm"]
     response = await api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": str(uuid4())},
         json={**isolate_payload, "isolation_mode": "shared"},
     )
     assert response.status_code == 202
     waiting = response.json()["id"]
     response = await api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": str(uuid4())},
         json={**isolate_payload, "isolation_mode": "vm"},
     )
@@ -390,4 +388,4 @@ async def test_scheduler_skips_an_unadvertised_isolation_mode(
     )
     assert response.status_code == 200
     assert [t["isolate_id"] for t in response.json()["tasks"]] == [compatible]
-    assert (await api.get("/api/v1/isolates/" + waiting)).json()["computer_id"] is None
+    assert (await api.get("/v1/isolates/" + waiting)).json()["computer_id"] is None

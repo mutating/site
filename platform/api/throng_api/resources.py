@@ -27,9 +27,7 @@ from throng_api.security import (
 )
 from throng_api.serialization import public
 
-router = APIRouter(
-    prefix="/api/v1", tags=["resources"], dependencies=[Depends(access_token_scheme)]
-)
+router = APIRouter(prefix="/v1", tags=["resources"], dependencies=[Depends(access_token_scheme)])
 
 
 async def resource_type(session, type_id):

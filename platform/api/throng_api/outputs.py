@@ -26,6 +26,13 @@ class Identity(BaseModel):
     created_at: datetime
 
 
+class BenchmarkResult(Identity):
+    computer_id: str
+    benchmark_name: str
+    number: float
+    benchmarker_version: str
+
+
 class Owner(BaseModel):
     user_id: str | None
     company_id: str | None

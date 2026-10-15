@@ -17,7 +17,7 @@ async def test_inventory_loads_type_metadata_in_one_query(
 ):
     """A larger inventory page still fetches type descriptions in one SQL query rather than one round trip per resource."""
     response = await api.get(
-        f"/api/v1/computers/{large_resource_inventory['id']}/resources", params={"limit": limit}
+        f"/v1/computers/{large_resource_inventory['id']}/resources", params={"limit": limit}
     )
     assert response.status_code == 200, response.text
     assert len(response.json()) == limit
@@ -31,7 +31,7 @@ async def test_history_loads_type_metadata_once_for_the_whole_page(
 ):
     """Page size does not multiply catalog queries, and types introduced later stay absent from earlier graph points."""
     response = await api.get(
-        f"/api/v1/users/{user['id']}/resources/history",
+        f"/v1/users/{user['id']}/resources/history",
         params={
             "from": (resource_history_series["start"] - timedelta(seconds=1)).isoformat(),
             "to": (resource_history_series["end"] + timedelta(seconds=1)).isoformat(),
@@ -57,7 +57,7 @@ async def test_baseline_materializes_only_the_last_snapshot_per_resource(
 ):
     """A report after many changes reconstructs the baseline from three latest snapshots, without loading every historical event."""
     response = await api.get(
-        f"/api/v1/users/{user['id']}/resources/history",
+        f"/v1/users/{user['id']}/resources/history",
         params={
             "from": resource_history_series["end"].isoformat(),
             "to": (resource_history_series["end"] + timedelta(hours=1)).isoformat(),
@@ -82,15 +82,15 @@ async def test_baseline_preserves_zero_contributions_after_transfer(
     """The last owner-matching snapshot records an exit as zero even if the resource later changes under a different owner."""
     clock.now += timedelta(seconds=1)
     response = await api.patch(
-        f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+        f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
     )
     assert response.status_code == 200, response.text
     clock.now += timedelta(seconds=1)
-    response = await api.patch(f"/api/v1/computers/{computer['id']}", json={"cpu_millis": 9000})
+    response = await api.patch(f"/v1/computers/{computer['id']}", json={"cpu_millis": 9000})
     assert response.status_code == 200, response.text
     response = await api.get(
-        f"/api/v1/users/{user['id']}/resources/history",
+        f"/v1/users/{user['id']}/resources/history",
         params={"from": clock.now.isoformat(), "to": (clock.now + timedelta(hours=1)).isoformat()},
     )
     assert response.status_code == 200, response.text
@@ -114,11 +114,11 @@ async def test_history_rechecks_owner_scope_after_concurrent_transfer(
 ):
     """A transfer between authorization and history-scope lookup returns 404, hiding the new owner's private history and the existence of the now-foreign resource."""
     response = await api.patch(
-        f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+        f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
     )
     assert response.status_code == 200, response.text
-    path = f"/api/v1/computer-resources/{computer_resources['cpu']['id']}/history"
+    path = f"/v1/computer-resources/{computer_resources['cpu']['id']}/history"
     params = {
         "from": (clock.now - timedelta(hours=1)).isoformat(),
         "to": (clock.now + timedelta(hours=1)).isoformat(),
@@ -128,7 +128,7 @@ async def test_history_rechecks_owner_scope_after_concurrent_transfer(
     try:
         await asyncio.wait_for(entered.wait(), timeout=5)
         response = await api.patch(
-            f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+            f"/v1/computer-ownerships/{computer['ownership']['id']}",
             json={"user_id": user["id"]},
         )
         assert response.status_code == 200, response.text
@@ -168,17 +168,17 @@ async def test_inventory_cannot_read_new_private_resources_after_transfer(
 ):
     """A list authorized before transfer cannot disclose a resource created by the new private owner; the same 404 hides foreign and missing resources."""
     response = await api.patch(
-        f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+        f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
     )
     assert response.status_code == 200, response.text
-    path = f"/api/v1/computers/{computer['id']}/resources"
+    path = f"/v1/computers/{computer['id']}/resources"
     entered, resume = paused_resource_inventory
     pending = asyncio.create_task(other_api.get(path))
     try:
         await asyncio.wait_for(entered.wait(), timeout=5)
         response = await api.patch(
-            f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+            f"/v1/computer-ownerships/{computer['ownership']['id']}",
             json={"user_id": user["id"]},
         )
         assert response.status_code == 200, response.text
@@ -196,10 +196,10 @@ async def test_inventory_cannot_read_new_private_resources_after_transfer(
 
 async def test_inventory_keeps_empty_pages_and_detached_registrant_access(api, other_api, computer):
     """The SQL ownership guard preserves empty pagination and permits only the original registrant to read a detached computer's resources."""
-    path = f"/api/v1/computers/{computer['id']}/resources"
+    path = f"/v1/computers/{computer['id']}/resources"
     response = await api.get(path, params={"offset": 100})
     assert response.status_code == 200 and response.json() == []
-    response = await api.delete(f"/api/v1/computer-ownerships/{computer['ownership']['id']}")
+    response = await api.delete(f"/v1/computer-ownerships/{computer['ownership']['id']}")
     assert response.status_code == 204, response.text
     response = await api.get(path)
     assert response.status_code == 200, response.text

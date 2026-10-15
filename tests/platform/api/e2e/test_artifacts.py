@@ -10,13 +10,13 @@ pytestmark = pytest.mark.anyio
 
 async def test_artifact_upload_download_and_delete(api, artifact):
     """Artifact CRUD preserves bytes and checksum while hiding the private storage location."""
-    path = f"/api/v1/artifacts/{artifact['id']}"
+    path = f"/v1/artifacts/{artifact['id']}"
     assert "storage_key" not in artifact
     assert artifact["sha256"] == hashlib.sha256(b"initial state").hexdigest()
     assert artifact["size_bytes"] == len(b"initial state")
     assert (await api.get(path)).json() == artifact
-    assert (await api.get("/api/v1/artifacts", params={"limit": 1})).json() == [artifact]
-    assert (await api.get("/api/v1/artifacts", params={"offset": 1})).json() == []
+    assert (await api.get("/v1/artifacts", params={"limit": 1})).json() == [artifact]
+    assert (await api.get("/v1/artifacts", params={"offset": 1})).json() == []
     response = await api.get(path + "/content")
     assert response.status_code == 200 and response.content == b"initial state"
     assert response.headers["x-content-sha256"] == artifact["sha256"]
@@ -29,7 +29,7 @@ async def test_artifact_upload_download_and_delete(api, artifact):
 async def test_filename_is_sanitized_and_binary_bytes_are_opaque(api):
     """The API stores opaque binary bytes and strips directories from the download filename."""
     response = await api.post(
-        "/api/v1/artifacts",
+        "/v1/artifacts",
         params={"filename": "../../archive.bin"},
         content=b"\x00\xffnot an archive",
     )
@@ -37,7 +37,7 @@ async def test_filename_is_sanitized_and_binary_bytes_are_opaque(api):
     artifact = response.json()
     assert artifact["filename"] == "archive.bin"
     assert (
-        await api.get(f"/api/v1/artifacts/{artifact['id']}/content")
+        await api.get(f"/v1/artifacts/{artifact['id']}/content")
     ).content == b"\x00\xffnot an archive"
 
 
@@ -46,14 +46,12 @@ async def test_filename_is_sanitized_and_binary_bytes_are_opaque(api):
 )
 async def test_artifact_size_and_owner_quota_recover_after_deletion(api, artifact):
     """Oversized files and owner quota overflow are rejected; deleting a file restores usable quota."""
-    assert (await api.post("/api/v1/artifacts", content=b"x" * 14)).status_code == 413
-    assert (await api.post("/api/v1/artifacts", content=b"x")).status_code == 409
-    assert (
-        await api.get(f"/api/v1/artifacts/{artifact['id']}/content")
-    ).content == b"initial state"
-    assert (await api.delete(f"/api/v1/artifacts/{artifact['id']}")).status_code == 204
-    assert (await api.post("/api/v1/artifacts", content=b"replacement")).status_code == 201
-    assert len((await api.get("/api/v1/artifacts")).json()) == 1
+    assert (await api.post("/v1/artifacts", content=b"x" * 14)).status_code == 413
+    assert (await api.post("/v1/artifacts", content=b"x")).status_code == 409
+    assert (await api.get(f"/v1/artifacts/{artifact['id']}/content")).content == b"initial state"
+    assert (await api.delete(f"/v1/artifacts/{artifact['id']}")).status_code == 204
+    assert (await api.post("/v1/artifacts", content=b"replacement")).status_code == 201
+    assert len((await api.get("/v1/artifacts")).json()) == 1
 
 
 @pytest.mark.parametrize("purpose", ["stdout", "stderr"])
@@ -72,18 +70,18 @@ async def test_output_artifacts_are_idempotent_and_attached_to_results(
     assert (
         await agent_api.post(f"/agent/v1/tasks/{run_task['id']}/complete", json={"returncode": 0})
     ).status_code == 200
-    result = (await api.get(f"/api/v1/commands/{command['id']}/result")).json()["result"]
+    result = (await api.get(f"/v1/commands/{command['id']}/result")).json()["result"]
     assert result[purpose + "_artifact_id"] == artifact["id"]
-    assert (await api.get(f"/api/v1/artifacts/{artifact['id']}/content")).content == content
+    assert (await api.get(f"/v1/artifacts/{artifact['id']}/content")).content == content
     assert (await agent_api.put(path, content=content)).status_code == 409
-    assert (await api.delete(f"/api/v1/artifacts/{artifact['id']}")).status_code == 409
+    assert (await api.delete(f"/v1/artifacts/{artifact['id']}")).status_code == 409
 
 
 async def test_snapshot_blocks_dispatch_and_can_seed_another_isolate(
     api, agent_api, isolate, isolate_payload
 ):
     """Snapshot completion requires uploaded state, excludes concurrent execution and produces reusable state."""
-    path = f"/api/v1/isolates/{isolate['id']}/snapshots"
+    path = f"/v1/isolates/{isolate['id']}/snapshots"
     response = await api.post(path, headers={"Idempotency-Key": "snapshot"})
     assert response.status_code == 202
     operation = response.json()
@@ -97,7 +95,7 @@ async def test_snapshot_blocks_dispatch_and_can_seed_another_isolate(
     assert task["kind"] == "snapshot"
     assert (await agent_api.post(f"/agent/v1/tasks/{task['id']}/ack")).status_code == 200
     response = await api.post(
-        f"/api/v1/isolates/{isolate['id']}/commands",
+        f"/v1/isolates/{isolate['id']}/commands",
         headers={"Idempotency-Key": "while-snapshot"},
         json={"command": "pytest"},
     )
@@ -106,14 +104,14 @@ async def test_snapshot_blocks_dispatch_and_can_seed_another_isolate(
     assert (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0.05})).json()[
         "tasks"
     ] == []
-    assert (await api.get(f"/api/v1/commands/{queued['id']}")).json()["status"] == "queued"
+    assert (await api.get(f"/v1/commands/{queued['id']}")).json()["status"] == "queued"
     task_path = f"/agent/v1/tasks/{task['id']}"
     assert (await agent_api.post(task_path + "/complete", json={})).status_code == 422
     response = await agent_api.put(task_path + "/artifacts/snapshot", content=b"saved snapshot")
     assert response.status_code == 200
     snapshot = response.json()
     assert (await agent_api.post(task_path + "/complete", json={})).status_code == 200
-    response = await api.get(f"/api/v1/operations/{operation['id']}")
+    response = await api.get(f"/v1/operations/{operation['id']}")
     assert response.status_code == 200 and response.json()["artifact_id"] == snapshot["id"]
     run = (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})).json()["tasks"][
         0
@@ -123,7 +121,7 @@ async def test_snapshot_blocks_dispatch_and_can_seed_another_isolate(
         await agent_api.post(f"/agent/v1/tasks/{run['id']}/complete", json={"returncode": 0})
     ).status_code == 200
     response = await api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": "restored"},
         json={**isolate_payload, "state_artifact_id": snapshot["id"]},
     )
@@ -144,7 +142,7 @@ async def test_running_commands_prevent_snapshots(api, isolate, running_command)
     """A snapshot cannot start while a command is already active in its isolate."""
     assert (
         await api.post(
-            f"/api/v1/isolates/{isolate['id']}/snapshots", headers={"Idempotency-Key": "busy"}
+            f"/v1/isolates/{isolate['id']}/snapshots", headers={"Idempotency-Key": "busy"}
         )
     ).status_code == 409
 
@@ -154,8 +152,8 @@ async def test_agent_can_fetch_only_assigned_live_initial_state(api, agent_api, 
     path = f"/agent/v1/artifacts/{artifact['id']}/content"
     assert (await agent_api.get(path)).content == b"initial state"
     assert (await agent_api.get(f"/agent/v1/artifacts/{uuid4()}/content")).status_code == 404
-    assert (await api.delete(f"/api/v1/artifacts/{artifact['id']}")).status_code == 409
-    assert (await api.delete(f"/api/v1/isolates/{isolate['id']}")).status_code == 202
+    assert (await api.delete(f"/v1/artifacts/{artifact['id']}")).status_code == 409
+    assert (await api.delete(f"/v1/isolates/{isolate['id']}")).status_code == 202
     assert (await agent_api.get(path)).status_code == 404
 
 
@@ -171,7 +169,7 @@ async def test_artifact_purpose_must_match_task_type(agent_api, control_task):
 
 async def test_cancel_report_can_attach_partial_output(api, agent_api, command, run_task):
     """A separate stop task may upload partial stdout and include it in the cancellation result."""
-    assert (await api.post(f"/api/v1/commands/{command['id']}/cancel")).status_code == 202
+    assert (await api.post(f"/v1/commands/{command['id']}/cancel")).status_code == 202
     tasks = (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})).json()[
         "tasks"
     ]
@@ -184,15 +182,15 @@ async def test_cancel_report_can_attach_partial_output(api, agent_api, command, 
     assert (
         await agent_api.post(f"/agent/v1/tasks/{cancel['id']}/complete", json={"returncode": -9})
     ).status_code == 200
-    result = (await api.get(f"/api/v1/commands/{command['id']}/result")).json()["result"]
+    result = (await api.get(f"/v1/commands/{command['id']}/result")).json()["result"]
     assert result["stdout_artifact_id"] == artifact["id"]
-    assert (await api.get(f"/api/v1/artifacts/{artifact['id']}/content")).content == b"partial"
+    assert (await api.get(f"/v1/artifacts/{artifact['id']}/content")).content == b"partial"
 
 
 async def test_undelivered_tasks_cannot_be_completed_or_receive_artifacts(api, agent_api, isolate):
     """Knowing an operation UUID does not authorize acknowledgement, completion or upload before delivery."""
     response = await api.post(
-        f"/api/v1/isolates/{isolate['id']}/snapshots", headers={"Idempotency-Key": "undelivered"}
+        f"/v1/isolates/{isolate['id']}/snapshots", headers={"Idempotency-Key": "undelivered"}
     )
     assert response.status_code == 202
     path = f"/agent/v1/tasks/{response.json()['id']}"
@@ -215,7 +213,7 @@ async def test_interrupted_http_upload_does_not_leave_partial_files(
 
     _, writer = upload_connection
     request = (
-        "POST /api/v1/artifacts HTTP/1.1\r\nHost: localhost\r\n"
+        "POST /v1/artifacts HTTP/1.1\r\nHost: localhost\r\n"
         f"Authorization: {user['headers']['Authorization']}\r\n"
         "Content-Length: 100000\r\nContent-Type: application/octet-stream\r\n\r\npartial"
     )
@@ -234,5 +232,5 @@ async def test_interrupted_http_upload_does_not_leave_partial_files(
             break
         await asyncio.sleep(0.01)
     assert not list(settings.storage_path.iterdir())
-    assert (await api.get("/api/v1/artifacts")).json() == []
-    assert (await api.post("/api/v1/artifacts", content=b"complete replacement")).status_code == 201
+    assert (await api.get("/v1/artifacts")).json() == []
+    assert (await api.post("/v1/artifacts", content=b"complete replacement")).status_code == 201

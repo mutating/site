@@ -189,26 +189,53 @@ img {
 }
 
 .section-shell,
-.site-header {
+.site-header-shell {
   width: min(1440px, calc(100% - 64px));
   margin-inline: auto;
 }
 
-.site-header {
+.site-header-shell {
   position: sticky;
   top: 14px;
   z-index: 50;
-  min-height: 74px;
   margin-top: 14px;
-  padding: 12px 14px 12px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.site-header,
+.platform-link {
   border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
   border-radius: 18px;
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.site-header {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 74px;
+  padding: 12px 14px 12px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 8px 30px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.platform-link {
+  width: 74px;
+  height: 74px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: light-dark(#000, #fff);
+}
+
+.platform-link svg {
+  width: 36px;
+  height: 36px;
 }
 
 .brand {
@@ -552,6 +579,21 @@ html[data-wordmark-font-ready="false"] .brand__wordmark {
   }
 }
 
+@media (min-width: 1121px) and (max-width: 1240px) {
+  .main-nav {
+    gap: 4px;
+    margin-right: 12px;
+  }
+
+  .main-nav a {
+    padding-inline: 6px;
+  }
+
+  .header-actions {
+    gap: 18px;
+  }
+}
+
 .language-switcher {
   --language-switcher-list-surface: color-mix(
     in srgb,
@@ -818,6 +860,12 @@ summary:focus-visible {
 
 .mobile-menu > summary::-webkit-details-marker {
   display: none;
+}
+
+.mobile-menu__icon {
+  display: none;
+  width: 20px;
+  height: 20px;
 }
 
 .mobile-menu nav {
@@ -2679,7 +2727,8 @@ a.section-index:focus-visible {
     display: none;
   }
 
-  .site-header {
+  .site-header,
+  .platform-link {
     background: color-mix(in srgb, var(--bg) 93%, transparent);
   }
 
@@ -2758,7 +2807,7 @@ a.section-index:focus-visible {
 
 @media (max-width: 860px) {
   .section-shell,
-  .site-header {
+  .site-header-shell {
     width: min(100% - 32px, 720px);
   }
 
@@ -2980,15 +3029,29 @@ a.section-index:focus-visible {
 
 @media (max-width: 580px) {
   .section-shell,
-  .site-header {
+  .site-header-shell {
     width: calc(100% - 24px);
   }
 
-  .site-header {
+  .site-header-shell {
     top: 8px;
     margin-top: 8px;
+    gap: 8px;
+  }
+
+  .site-header {
     min-height: 66px;
     padding: 9px 9px 9px 12px;
+  }
+
+  .platform-link {
+    width: 68px;
+    height: 68px;
+  }
+
+  .platform-link svg {
+    width: 32px;
+    height: 32px;
   }
 
   .brand__mark {
@@ -3232,7 +3295,39 @@ a.section-index:focus-visible {
   }
 }
 
-@media (max-width: 340px) {
+@media (max-width: 480px) {
+  .site-header {
+    padding-inline: 6px;
+  }
+
+  .brand {
+    gap: 3px;
+  }
+
+  .header-actions {
+    gap: 5px;
+  }
+
+  .mobile-menu > summary {
+    width: 44px;
+    min-height: 44px;
+    padding-inline: 0;
+  }
+
+  .mobile-menu__label {
+    display: none;
+  }
+
+  .mobile-menu__icon {
+    display: block;
+  }
+
+  .platform-link {
+    width: 56px;
+  }
+}
+
+@media (max-width: 380px) {
   .site-header {
     flex-wrap: wrap;
     row-gap: 8px;

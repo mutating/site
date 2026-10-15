@@ -90,7 +90,7 @@ function App() {
 createRoot(document.getElementById("root")!).render(
   <I18nProvider>
     <SessionProvider>
-      <BrowserRouter basename="/account">
+      <BrowserRouter>
         <App />
       </BrowserRouter>
     </SessionProvider>

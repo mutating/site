@@ -29,7 +29,7 @@ async def test_api_shutdown_preserves_delivered_commands_and_results(
     )
     assert response.status_code == 200
     result = await secondary_client.get(
-        f"/api/v1/commands/{command['id']}/result", headers=user["headers"]
+        f"/v1/commands/{command['id']}/result", headers=user["headers"]
     )
     assert result.status_code == 200 and result.json()["result"]["stdout"] == "survived restart"
     assert (
@@ -49,9 +49,9 @@ async def test_two_controllers_cannot_overreserve_capacity(
 ):
     """Concurrent API instances reserve a worker once and allocate the next isolate only after cleanup."""
     responses = await asyncio.gather(
-        api.post("/api/v1/isolates", headers={"Idempotency-Key": "first"}, json=isolate_payload),
+        api.post("/v1/isolates", headers={"Idempotency-Key": "first"}, json=isolate_payload),
         secondary_client.post(
-            "/api/v1/isolates",
+            "/v1/isolates",
             headers={**user["headers"], "Idempotency-Key": "second"},
             json=isolate_payload,
         ),
@@ -63,11 +63,11 @@ async def test_two_controllers_cannot_overreserve_capacity(
     ]
     assert len(tasks) == 1 and tasks[0]["isolate_id"] in ids
     first = tasks[0]
-    assert (await api.get(f"/api/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 1000
+    assert (await api.get(f"/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 1000
     assert (
         await agent_api.post(f"/agent/v1/tasks/{first['id']}/complete", json={})
     ).status_code == 200
-    assert (await api.delete(f"/api/v1/isolates/{first['isolate_id']}")).status_code == 202
+    assert (await api.delete(f"/v1/isolates/{first['isolate_id']}")).status_code == 202
     destroy = (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})).json()[
         "tasks"
     ][0]
@@ -79,9 +79,9 @@ async def test_two_controllers_cannot_overreserve_capacity(
         "tasks"
     ]
     assert len(tasks) == 1 and tasks[0]["isolate_id"] in ids - {first["isolate_id"]}
-    assert (await api.get(f"/api/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 1000
+    assert (await api.get(f"/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 1000
     response = await api.get(
-        f"/api/v1/users/{user['id']}/resources/history",
+        f"/v1/users/{user['id']}/resources/history",
         params={
             "from": (clock.now - timedelta(seconds=1)).isoformat(),
             "to": (clock.now + timedelta(seconds=1)).isoformat(),
@@ -110,7 +110,7 @@ async def test_health_and_openapi_expose_public_contracts(client):
     response = await client.get("/openapi.json")
     assert response.status_code == 200
     schema = response.json()
-    result = schema["paths"]["/api/v1/commands/results"]["post"]["responses"]["200"]["content"][
+    result = schema["paths"]["/v1/commands/results"]["post"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]
     assert result["items"]["$ref"].endswith("/ResultEnvelope")
@@ -125,7 +125,7 @@ async def test_cli_migrates_and_serves_a_working_public_api(cli_server):
     assert (await cli_server.get("/health/live")).status_code == 200
     assert (await cli_server.get("/health/ready")).status_code == 200
     response = await cli_server.post(
-        "/api/v1/users",
+        "/v1/users",
         json={
             "email": "cli@example.com",
             "password": "CLI integration password",
@@ -136,12 +136,12 @@ async def test_cli_migrates_and_serves_a_working_public_api(cli_server):
     )
     assert response.status_code == 201
     response = await cli_server.post(
-        "/api/v1/auth/login",
+        "/v1/auth/login",
         json={"email": "cli@example.com", "password": "CLI integration password"},
     )
     assert response.status_code == 200
     headers = {"Authorization": "Bearer " + response.json()["access_token"]}
-    assert (await cli_server.get("/api/v1/users/me", headers=headers)).json()["nickname"] == "cli"
+    assert (await cli_server.get("/v1/users/me", headers=headers)).json()["nickname"] == "cli"
 
 
 @pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)

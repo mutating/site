@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export const origin = "https://127.0.0.1:18443";
-export const apiURL = "http://127.0.0.1:18210/api/v1";
+export const apiURL = "http://127.0.0.1:18210/v1";
 type Stack = {
   restartDashboard: () => Promise<void>;
   stopAPI: () => Promise<void>;
@@ -33,8 +33,6 @@ export const test = base.extend<{ ready: void }, { stack: Stack }>({
       const dashboard = resolve(".");
       await mkdir(".runtime", { recursive: true });
       const runtime = await mkdtemp(resolve(".runtime", "https-"));
-      const site = resolve(runtime, "site");
-      await mkdir(resolve(site, "ru"), { recursive: true });
       const processes = new Set<ChildProcess>();
       const logs: string[] = [];
       const client = await request.newContext({ ignoreHTTPSErrors: true });
@@ -133,25 +131,9 @@ export const test = base.extend<{ ready: void }, { stack: Stack }>({
             DASHBOARD_SESSION_KEY: Buffer.alloc(32, 19).toString("base64"),
           },
         );
-        await ready("http://127.0.0.1:18211/account/login");
+        await ready("http://127.0.0.1:18211/login");
       }
       try {
-        if (process.env.DASHBOARD_SITE_SOURCE) {
-          execFileSync("hugo", [
-            "--source",
-            resolve(process.env.DASHBOARD_SITE_SOURCE),
-            "--destination",
-            site,
-            "--baseURL",
-            `${origin}/`,
-          ]);
-        } else {
-          // CI owns only this repository. This static page represents the other nginx location.
-          const html =
-            '<!doctype html><html><head><title>The Mutating Company</title></head><body><h1>The Mutating Company</h1><a href="/account/">Account</a></body></html>';
-          await writeFile(resolve(site, "index.html"), html);
-          await writeFile(resolve(site, "ru/index.html"), html);
-        }
         execFileSync(
           "../api/.venv/bin/python",
           ["-m", "throng_api.cli", "migrate"],
@@ -194,9 +176,7 @@ http {
     server_name localhost;
     ssl_certificate "${runtime}/cert.pem";
     ssl_certificate_key "${runtime}/key.pem";
-    root "${site}";
     ${locations}
-    location / { try_files $uri $uri/ =404; }
   }
 }`;
         const configPath = resolve(runtime, "nginx.conf");
@@ -211,7 +191,7 @@ http {
           "-g",
           "daemon off;",
         ]);
-        await ready(`${origin}/account/login`);
+        await ready(`${origin}/login`);
         await use({
           restartDashboard: async () => {
             await stop(bff);

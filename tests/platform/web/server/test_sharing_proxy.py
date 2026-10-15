@@ -57,7 +57,7 @@ def test_sharing_routes_forward_session_and_preserve_api_contract(method, path):
     def handler(request):
         called.append(request)
         assert request.headers["authorization"] == "Bearer thr_private"
-        assert request.url.path == "/api/v1/" + path.split("?")[0]
+        assert request.url.path == "/v1/" + path.split("?")[0]
         if "?" in path:
             assert request.url.params["identifier"] == "alice"
         if method in {"POST", "PATCH"}:

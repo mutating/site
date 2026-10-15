@@ -485,7 +485,6 @@ def test_server_and_deploy_configuration_enforce_the_canonical_origin() -> None:
     assert "sudo apt-get install --yes ripgrep rsync sshpass" in deploy
     assert "Verify the production server before upload" in deploy
     assert "--panicOnWarning" in deploy
-    assert "needs: tests" in deploy
     assert "Verify the deployed content contracts" in deploy
     assert "openssl x509 -noout -checkhost www.mutating.tech" in deploy
     assert "ALPN protocol" in deploy

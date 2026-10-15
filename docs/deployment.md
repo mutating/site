@@ -10,12 +10,16 @@ Production работает без Docker и Docker Compose. Репозитор�
 | --- | --- |
 | `https://mutating.tech/` | Существующий сайт Hugo |
 | `https://api.mutating.tech/` | API и контроллер на `127.0.0.1:8000` |
-| `https://platform.mutating.tech/` | Переход на `/account/`, кабинет на `127.0.0.1:8001` |
+| `https://platform.mutating.tech/` | Главная кабинета, сервис на `127.0.0.1:8001` |
 
 Используются точные имена двух поддоменов. Для добавления других доменов нужно
-добавить их в nginx и сертификат. Все пути API сохраняются: например,
-`https://api.mutating.tech/api/v1/users`, `/agent/v1/*`, `/docs`, `/openapi.json`.
-Кабинет сохраняет существующие маршруты `/account/profile`, `/account/api/*`.
+добавить их в nginx и сертификат. Базовый адрес API — `https://api.mutating.tech/v1`.
+Пример запроса: `https://api.mutating.tech/v1/users`.
+На том же поддомене доступны `/agent/v1/*`, `/docs` и `/openapi.json`.
+Страницы кабинета доступны без префикса: `/login`, `/profile`, `/organizations` и т. д.
+Старые адреса `/account/` и `/account/*` перенаправляются с кодом 308 на новые,
+сохраняя параметры запроса. Внутренний транспорт `/account/api/*` и путь cookie
+остаются прежними, поэтому существующие сессии продолжают работать.
 В production логотип кабинета ведёт на `https://mutating.tech/`.
 
 ## Общий локальный запуск
@@ -31,7 +35,7 @@ uv run --project platform/api python deploy/run.py
 ```
 
 API доступен на `http://127.0.0.1:8000`, кабинет — на
-`http://127.0.0.1:8001/account/`. В `platform/api/.env` укажите
+`http://127.0.0.1:8001/`. В `platform/api/.env` укажите
 `DASHBOARD_PUBLIC_ORIGIN=http://127.0.0.1:8001` и `DASHBOARD_SECURE_COOKIE=false`.
 При использовании Vite вместо общего запуска используйте прежние настройки из
 `platform/web/.env.example` с origin `http://127.0.0.1:5173`.
@@ -100,9 +104,13 @@ nginx-конфиг `/etc/nginx/sites-available/throng`. Сертификат д�
 ## CI и SSH-секреты
 
 `.github/workflows/deploy.yml` запускается при **каждом push в main**, без фильтров
-по файлам. Также есть ручной `workflow_dispatch`. Деплой ждёт успешного завершения
-всех site-, API- и web-проверок, включая HTTPS и визуальные тесты. Все production-деплои
-сериализованы; выполняющийся деплой не отменяется следующим push.
+по файлам. Также есть ручной `workflow_dispatch`. Сборка и деплой запускаются
+без ожидания результатов тестов. `.github/workflows/tests.yml` независимо запускает
+все site-, API- и web-проверки, включая HTTPS и визуальные тесты, на push в любую
+ветку (в том числе `main`) и на pull request. Ошибки тестов не блокируют деплой.
+Все production-деплои сериализованы; выполняющийся деплой не отменяется следующим
+push. Настройка `queue: max` сохраняет ожидающие запуски вместо замены новым push;
+[GitHub Actions допускает до 100 запусков в очереди](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs).
 
 В GitHub-репозитории добавьте Actions secrets:
 
@@ -189,6 +197,14 @@ sudo journalctl -u throng -f
 При изменении systemd unit, root-owned скрипта активации или nginx-шаблона повторно
 примените playbook. Обычный push обновляет приложения и миграции; изменение
 административных настроек сервера выполняется явно.
+
+При переходе кабинета с `/account/` на `/` обновите nginx-шаблон через
+`setup-platform.yml` вместе с релизом приложения. В старом конфиге есть
+перенаправление `/` → `/account/`; после обновления приложения оно создаст цикл
+с новым перенаправлением `/account/` → `/`. Новый nginx-конфиг передаёт все пути
+платформы приложению. Его можно применить первым в том же окне выкладки:
+на прежнем приложении продолжат работать адреса `/account/`, а корень `/` станет
+доступен после обновления приложения.
 
 ## Проверки
 

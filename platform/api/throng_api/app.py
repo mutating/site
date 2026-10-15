@@ -16,6 +16,7 @@ from throng_api import (
     agents,
     artifacts,
     avatars,
+    benchmarks,
     computers,
     controller,
     enrollment,
@@ -64,15 +65,15 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         lifespan=lifespan,
         description=(
             "Серверный API Throng с очередью и контроллером заданий.\n\n"
-            "**Вход:** зарегистрируйтесь через `POST /api/v1/users`, затем отправьте "
-            "email или ник и пароль в `POST /api/v1/auth/login`. В **Authorize → AccessToken** "
+            "**Вход:** зарегистрируйтесь через `POST /v1/users`, затем отправьте "
+            "email или ник и пароль в `POST /v1/auth/login`. В **Authorize → AccessToken** "
             "вставьте полученный `access_token`. Регистрация, вход и health доступны без токена.\n\n"
             "**Права:** `read` — чтение, `execute` — команды, изоляты и артефакты, "
             "`manage` — управление учётными записями и ресурсами. Дополнительно проверяются "
             "владелец ресурса и роль в компании (`creator`, `admin`, `user`).\n\n"
             "**Ресурсы:** CPU — millicores (1000 = ядро), память — байты. "
             "`occupied` означает резерв под изоляты и изменяется сервером. "
-            "Каталог `/api/v1/resource-types` доступен только системному администратору "
+            "Каталог `/v1/resource-types` доступен только системному администратору "
             "с личным токеном; роль назначается CLI `throng-api system-admin <user-uuid>`. "
             "Владельцы и члены компаний читают свои сводки и историю через "
             "`/users/{id}/resources/*` и `/companies/{id}/resources/*`. "
@@ -80,7 +81,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
             "пагинацию `snapshot_revision` / `after_revision`.\n\n"
             "**Исполнение:** загрузите исходный файл, создайте изолят и дождитесь `ready`. "
             "Создание изолята и команды возвращает `202` с ID; статусы и результаты "
-            "доступны через `/api/v1/commands/statuses` и `/api/v1/commands/results`. "
+            "доступны через `/v1/commands/statuses` и `/v1/commands/results`. "
             "Внешняя отмена доставленной команды проходит через `cancel_requested` "
             "до подтверждения остановки агентом.\n\n"
             "**Агент:** используйте **Authorize → AgentCredential**, затем "
@@ -162,6 +163,8 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         accounts.router,
         invitations.router,
         computers.router,
+        benchmarks.router,
+        benchmarks.agent_router,
         artifacts.router,
         jobs.router,
         agents.router,

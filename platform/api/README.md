@@ -7,9 +7,33 @@ HTTP API и контроллер заданий для выполнения ко
 Плагин `throng` и агент компьютера разрабатываются отдельно. Интеграционные
 тесты используют имитатор агента. Личный кабинет находится в соседнем пакету API
 каталоге [web](../web/README.md), запускается отдельным
-Python-сервисом на `/account/` и имеет собственные браузерные и серверные тесты.
+Python-сервисом в корне поддомена платформы и имеет собственные браузерные и серверные тесты.
 Для API и кабинета есть общий запуск и единый production-сервис systemd: см.
 [развёртывание](../../docs/deployment.md).
+
+Базовый адрес production API: `https://api.mutating.tech/v1`.
+
+Результаты benchset хранятся в `benchmark_results` (миграция `0008`). CRUD:
+`POST /v1/benchmark-results`, `GET /v1/benchmark-results?computer_id=<uuid>`,
+`GET/PATCH/DELETE /v1/benchmark-results/<uuid>`. Также доступен
+`GET /v1/computers/<uuid>/benchmark-results`. Запись содержит `id`, `created_at`,
+`computer_id`, `benchmark_name`, конечное неотрицательное `number` и строгую
+SemVer 2 `benchmarker_version`. Для проверки и сравнения версий используется
+библиотека `semver`. PATCH меняет число; идентичность результата
+задаётся тройкой компьютер/имя/версия. Повторный POST сохраняет UUID и обновляет
+число; другая версия добавляет запись. Списки по умолчанию возвращают целиком
+наибольшую semver-версию, `latest_only=false` — историю. При равном semver
+precedence build metadata разрешает ничью лексикографически по полной версии.
+
+Агент отправляет каждый завершённый тест через
+`PUT /agent/v1/benchmark-results` с `benchmarker_version` и массивом `results`
+из `{benchmark_name, number}`. Компьютер определяется по credential; ID из
+тела не принимается. Сессия вычислений не требуется, device proof для
+подтверждённых устройств обязательна. Несколько измерений в одном запросе
+записываются транзакционно; частично невалидный запрос не меняет прежние данные.
+Права CRUD совпадают с правами компьютера и `resources.read`/`resources.manage`.
+Для тестирования Swift-клиента на macOS задайте `POWER_CELL_BENCHMARK_CLI`
+путём к `powercell-dev` и запустите `test_benchmark_swift_client.py`.
 
 ## Запуск
 
@@ -25,7 +49,7 @@ uv run python ../../deploy/run.py
 ```
 
 Общая команда применяет миграции, запускает API на `127.0.0.1:8000`, ждёт его
-готовности и поднимает кабинет на `http://127.0.0.1:8001/account/`. Ctrl+C
+готовности и поднимает кабинет на `http://127.0.0.1:8001/`. Ctrl+C
 останавливает оба процесса. Если один компонент неожиданно завершается, общий
 процесс останавливает второй и возвращает ошибку; на сервере systemd перезапускает
 весь сервис. Для запуска только API остаётся `uv run throng-api serve`.
@@ -65,11 +89,11 @@ uv run uvicorn throng_api.app:app --host 127.0.0.1 --port 8000
 ## Первый запрос
 
 ```sh
-curl -X POST http://127.0.0.1:8000/api/v1/users \
+curl -X POST http://127.0.0.1:8000/v1/users \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"replace-with-a-long-password","first_name":"Alice","last_name":"Example","nickname":"alice"}'
 
-curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
+curl -X POST http://127.0.0.1:8000/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"replace-with-a-long-password"}'
 ```
@@ -87,23 +111,23 @@ Swagger UI поддерживает кнопку Authorize. Регистраци
 Вход выдаёт случайный непрозрачный токен `thr_…` со всеми тремя scopes на 24 часа
 по умолчанию (`THRONG_LOGIN_TOKEN_SECONDS`). Это токен с серверной записью в БД;
 каждый запрос проверяет его хэш, срок, отзыв и текущие права. Отдельного refresh-токена
-нет: после истечения срока можно войти снова. Через `/api/v1/access-tokens` можно
+нет: после истечения срока можно войти снова. Через `/v1/access-tokens` можно
 выпустить токен с выбранными scopes и сроком от 60 секунд до года.
-Для отзыва — `PATCH /api/v1/access-tokens/{id}` с `{"revoke":true}` либо `DELETE`
+Для отзыва — `PATCH /v1/access-tokens/{id}` с `{"revoke":true}` либо `DELETE`
 этого ресурса. ID токена входа возвращается в `token.id` ответа `/auth/login`.
 
 ## Учётные записи и права
 
 Организации поддерживают совместное управление и приглашения. Через
-`POST /api/v1/memberships` менеджер добавляет пользователя: `company_id` и либо
+`POST /v1/memberships` менеджер добавляет пользователя: `company_id` и либо
 `user_id`, либо `identifier` (точный email/ник, регистр не важен), `role` и
 необязательные `permissions`. Поиск по точному логину доступен менеджеру через
-`GET /api/v1/companies/{id}/users/lookup?identifier=…`; общего каталога нет.
+`GET /v1/companies/{id}/users/lookup?identifier=…`; общего каталога нет.
 
-Список `GET /api/v1/memberships?company_id=…` содержит роль, `permissions`,
+Список `GET /v1/memberships?company_id=…` содержит роль, `permissions`,
 фактические `effective_permissions` и профиль `user`: ФИ, ник, версию аватара.
 Чужие email и приватные поля не выдаются. Есть `limit`, `offset`, `X-Total-Count`.
-Аватар: `GET /api/v1/memberships/{id}/avatar`, с проверкой права чтения участников.
+Аватар: `GET /v1/memberships/{id}/avatar`, с проверкой права чтения участников.
 Ответы списка/карточки организации содержат `my_role`, `my_permissions`, `my_membership_id`.
 
 `permissions=null` наследует роль; массив задаёт полный набор отдельных разрешений,
@@ -132,7 +156,7 @@ Swagger UI поддерживает кнопку Authorize. Регистраци
 токена. Уменьшение прав/выход отзывает выпущенные участником корпоративные токены
 и его ожидающие приглашения.
 
-`POST /api/v1/invitations` принимает `company_id`, `role`, `permissions`,
+`POST /v1/invitations` принимает `company_id`, `role`, `permissions`,
 необязательный `identifier`, `expires_in_seconds` (1 час–30 дней, по умолчанию 7 дней).
 Можно пригласить по email до регистрации; существующий ник привязывает приглашение
 к конкретному аккаунту. Без адресата создаётся одноразовая ссылка. Создание выдаёт
@@ -146,7 +170,7 @@ Swagger UI поддерживает кнопку Authorize. Регистраци
 - `POST /invitations/{id}/link` — новая ссылка, старая перестаёт действовать.
 - `DELETE /invitations/{id}` — отзыв.
 
-У этих сокращённых путей префикс `/api/v1`. Принятие атомарно создаёт членство,
+У этих сокращённых путей префикс `/v1`. Принятие атомарно создаёт членство,
 проверяет адресата и право отправителя выдать доступ. Срок, отзыв и повторное
 использование проверяются сервером; существующее членство не перезаписывается.
 Удаление пустой организации отзывает ожидающие приглашения, сохраняя историю.
@@ -159,19 +183,19 @@ Swagger UI поддерживает кнопку Authorize. Регистраци
 прежнее поле `email` также поддерживается. В `PATCH /users/{id}` ник можно убрать
 значением `null`, ФИ — пустой строкой.
 
-Аватар текущего пользователя доступен через `GET`, `PUT`, `DELETE /api/v1/users/me/avatar`.
+Аватар текущего пользователя доступен через `GET`, `PUT`, `DELETE /v1/users/me/avatar`.
 `PUT` принимает файл непосредственно в теле: статичный PNG/JPEG/WebP до 2 МиБ и 16 Мп.
 API нормализует изображение в квадратный WebP 512×512, удаляет метаданные и возвращает
 обновлённый профиль с `avatar_version`. Чтение требует личного токена.
 
-CRUD доступен для `/api/v1/users`, `/companies`, `/memberships`, `/computers`,
+CRUD доступен для `/v1/users`, `/companies`, `/memberships`, `/computers`,
 `/computer-ownerships`, `/access-tokens`, `/token-ownerships`. Списки ресурсов
 поддерживают `limit` (максимум 200) и `offset`, кроме списка пользователей, который
 возвращает только текущую учётную запись. `/users/me` возвращает профиль.
 `offset` должен лежать в диапазоне от 0 до `2^63 - 1`.
 Текстовые поля принимают корректный Unicode без NUL; недопустимый текст возвращает
 `422`. Произвольные байты, включая бинарные логи, передаются через артефакты.
-Пакет `/api/v1/commands/results` имеет предел размера ответа
+Пакет `/v1/commands/results` имеет предел размера ответа
 `THRONG_MAX_RESULTS_RESPONSE_BYTES` (по умолчанию 16 МиБ). Если запрошенные
 результаты, с учётом повторных ID, его превышают, API возвращает `422`;
 разделите список на более мелкие запросы или скачайте логи как артефакты.
@@ -228,12 +252,12 @@ CRUD доступен для `/api/v1/users`, `/companies`, `/memberships`, `/co
 
 ## Компьютерные ресурсы
 
-Список `/api/v1/computers` поддерживает фильтры `user_id` **или** `company_id`,
+Список `/v1/computers` поддерживает фильтры `user_id` **или** `company_id`,
 `only_available=true` и возвращает `X-Total-Count` после фильтрации до пагинации.
-Список `/api/v1/memberships` поддерживает `user_id` для получения собственной роли.
+Список `/v1/memberships` поддерживает `user_id` для получения собственной роли.
 
-Для графиков кабинета добавлены `/api/v1/users/{user_id}/resources/availability-history`
-и `/api/v1/companies/{company_id}/resources/availability-history`. Они показывают
+Для графиков кабинета добавлены `/v1/users/{user_id}/resources/availability-history`
+и `/v1/companies/{company_id}/resources/availability-history`. Они показывают
 CPU/RAM и резервы только доступных компьютеров, учитывая периоды связи и истечение lease.
 История начинается с миграции `0005`; более ранние значения не восстанавливаются.
 Протокол агента и политика выполнения задач этой доработкой не меняются.
@@ -245,7 +269,7 @@ CPU измеряется в millicores (1000 = одно ядро), память 
 Старые поля компьютера `cpu_millis`, `memory_bytes`, `reserved_cpu`, `reserved_memory`
 вычисляются из этих записей. Миграция переносит существующие мощности и резервы.
 
-Каталог `/api/v1/resource-types` доступен только системному администратору с личным
+Каталог `/v1/resource-types` доступен только системному администратору с личным
 токеном. Права создателя или администратора компании этого доступа не дают.
 Назначение и отзыв системной роли выполняются на хосте сервера:
 
@@ -257,9 +281,9 @@ uv run throng-api system-admin <user-uuid> --revoke
 CRUD ресурсов компьютера доступен владельцу или администраторам компании;
 члены компании могут читать её ресурсы и отчёты. Сводки и история:
 
-- `/api/v1/users/{user_id}/resources/summary` и `/history`;
-- `/api/v1/companies/{company_id}/resources/summary` и `/history`;
-- `/api/v1/computer-resources/{resource_id}/history`.
+- `/v1/users/{user_id}/resources/summary` и `/history`;
+- `/v1/companies/{company_id}/resources/summary` и `/history`;
+- `/v1/computer-resources/{resource_id}/history`.
 
 История сохраняет владельца на момент изменения, включая передачу и удаление
 ресурса. Для графика возвращаются начальное состояние и изменения за интервал
@@ -269,14 +293,14 @@ CRUD ресурсов компьютера доступен владельцу �
 
 ## Выполнение
 
-1. Загрузить исходное состояние: `POST /api/v1/artifacts`, бинарное тело,
+1. Загрузить исходное состояние: `POST /v1/artifacts`, бинарное тело,
    необязательные query-параметры `filename` и `company_id`.
-2. Создать изолят: `POST /api/v1/isolates` с `Idempotency-Key`.
-3. Ожидать `ready` через `GET /api/v1/isolates/{id}`.
-4. Послать команду: `POST /api/v1/isolates/{id}/commands` с `Idempotency-Key`.
+2. Создать изолят: `POST /v1/isolates` с `Idempotency-Key`.
+3. Ожидать `ready` через `GET /v1/isolates/{id}`.
+4. Послать команду: `POST /v1/isolates/{id}/commands` с `Idempotency-Key`.
 5. Получать статусы и результаты пакетами.
-6. Продлевать срок жизни изолята через `POST /api/v1/isolates/{id}/renew` и
-   уничтожить его через `DELETE /api/v1/isolates/{id}` после использования.
+6. Продлевать срок жизни изолята через `POST /v1/isolates/{id}/renew` и
+   уничтожить его через `DELETE /v1/isolates/{id}` после использования.
 
 Пример запроса создания изолята:
 
@@ -311,15 +335,15 @@ CRUD ресурсов компьютера доступен владельцу �
 
 | Метод и путь | Назначение |
 |---|---|
-| `POST /api/v1/commands/statuses` | Статусы; тело `{"ids":["<uuid>"]}` |
-| `POST /api/v1/commands/results` | Статусы и результаты; такое же тело |
-| `POST /api/v1/commands/cancel` | Пакетная внешняя отмена; такое же тело |
-| `GET /api/v1/commands/{id}` | Описание отдельной команды |
-| `GET /api/v1/commands/{id}/result` | Результат отдельной команды |
-| `POST /api/v1/commands/{id}/cancel` | Отмена отдельной команды |
-| `POST /api/v1/isolates/{id}/snapshots` | Снимок простаивающего изолята; нужен `Idempotency-Key` |
-| `GET /api/v1/operations/{id}` | Состояние операции создания снимка |
-| `GET /api/v1/artifacts/{id}/content` | Скачать состояние, снимок или лог |
+| `POST /v1/commands/statuses` | Статусы; тело `{"ids":["<uuid>"]}` |
+| `POST /v1/commands/results` | Статусы и результаты; такое же тело |
+| `POST /v1/commands/cancel` | Пакетная внешняя отмена; такое же тело |
+| `GET /v1/commands/{id}` | Описание отдельной команды |
+| `GET /v1/commands/{id}/result` | Результат отдельной команды |
+| `POST /v1/commands/{id}/cancel` | Отмена отдельной команды |
+| `POST /v1/isolates/{id}/snapshots` | Снимок простаивающего изолята; нужен `Idempotency-Key` |
+| `GET /v1/operations/{id}` | Состояние операции создания снимка |
+| `GET /v1/artifacts/{id}/content` | Скачать состояние, снимок или лог |
 
 В пакете допускается до 200 ID. Недоступный/несуществующий ID приводит к `404`
 для всего запроса; пакет отменяется атомарно. Неготовый результат имеет `result=null`.

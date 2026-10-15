@@ -15,10 +15,10 @@ async def test_authentication_matrix_covers_all_protected_operations(
     schema = (await client.get("/openapi.json")).json()
     public = {
         ("GET", "/health/live"),
-        ("GET", "/api/v1/agent-capabilities"),
+        ("GET", "/v1/agent-capabilities"),
         ("GET", "/health/ready"),
-        ("POST", "/api/v1/users"),
-        ("POST", "/api/v1/auth/login"),
+        ("POST", "/v1/users"),
+        ("POST", "/v1/auth/login"),
     }
     actual = {
         (method.upper(), path) for path, methods in schema["paths"].items() for method in methods
@@ -56,9 +56,7 @@ async def test_every_client_operation_rejects_invalid_authentication(
     if mode == "expired":
         clock.now += timedelta(seconds=60)
     elif mode == "revoked":
-        response = await api.patch(
-            f"/api/v1/access-tokens/{access_token['id']}", json={"revoke": True}
-        )
+        response = await api.patch(f"/v1/access-tokens/{access_token['id']}", json={"revoke": True})
         assert response.status_code == 200, response.text
 
     for case in api_requests:
@@ -73,9 +71,9 @@ async def test_every_client_operation_rejects_invalid_authentication(
         else:
             assert response.json() == {"detail": "Invalid or expired token"}
 
-    response = await api.get(f"/api/v1/commands/{running_command['command']['id']}")
+    response = await api.get(f"/v1/commands/{running_command['command']['id']}")
     assert response.status_code == 200 and response.json()["status"] == "running"
-    response = await api.get(f"/api/v1/artifacts/{artifact['id']}/content")
+    response = await api.get(f"/v1/artifacts/{artifact['id']}/content")
     assert response.status_code == 200 and response.content == b"initial state"
 
 
@@ -109,7 +107,7 @@ async def test_every_client_operation_requires_its_scope(
         )
         assert response.json() == {"detail": "Token lacks required scope"}
 
-    response = await api.get(f"/api/v1/commands/{running_command['command']['id']}")
+    response = await api.get(f"/v1/commands/{running_command['command']['id']}")
     assert response.status_code == 200 and response.json()["status"] == "running"
 
 
@@ -127,7 +125,7 @@ async def test_every_agent_operation_requires_a_current_agent_credential(
         "rotated": agent["headers"]["Authorization"],
     }[mode]
     if mode == "rotated":
-        response = await api.post(f"/api/v1/computers/{agent['computer']['id']}/credentials")
+        response = await api.post(f"/v1/computers/{agent['computer']['id']}/credentials")
         assert response.status_code == 201, response.text
 
     for case in agent_requests:
@@ -175,6 +173,7 @@ async def test_every_session_bound_agent_operation_requires_a_live_session(
             "/agent/v1/session",
             "/agent/v1/unbind",
             "/agent/v1/diagnostics/{diagnostic_id}",
+            "/agent/v1/benchmark-results",
         }:
             continue
         kwargs = {

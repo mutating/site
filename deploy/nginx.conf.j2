@@ -46,9 +46,6 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     client_max_body_size 3m;
 
-    location = / { return 308 /account/; }
-    location = /account { return 308 /account/; }
-
     location / {
         proxy_pass http://127.0.0.1:8001;
         proxy_set_header Host $host;

@@ -33,7 +33,7 @@ access_token_scheme = HTTPBearer(
     auto_error=False,
     description=(
         "Токен пользователя или компании (thr_…). Получите access_token через "
-        "POST /api/v1/auth/login либо выпустите токен через /api/v1/access-tokens. "
+        "POST /v1/auth/login либо выпустите токен через /v1/access-tokens. "
         "В Authorize вставьте только сам токен, без префикса Bearer."
     ),
 )
@@ -42,7 +42,7 @@ agent_credential_scheme = HTTPBearer(
     auto_error=False,
     description=(
         "Отдельный credential компьютера (agt_…), выданный через "
-        "POST /api/v1/computers/{id}/credentials. Вставьте только сам токен. "
+        "POST /v1/computers/{id}/credentials. Вставьте только сам токен. "
         "После создания сессии также передавайте её ID в X-Agent-Session."
     ),
 )

@@ -18,9 +18,9 @@ def history_range(clock):
 def history_report_paths(user, company, computer_resources):
     """Expose the three authorized history scopes for shared interval-validation checks."""
     return [
-        f"/api/v1/users/{user['id']}/resources/history",
-        f"/api/v1/companies/{company['id']}/resources/history",
-        f"/api/v1/computer-resources/{computer_resources['cpu']['id']}/history",
+        f"/v1/users/{user['id']}/resources/history",
+        f"/v1/companies/{company['id']}/resources/history",
+        f"/v1/computer-resources/{computer_resources['cpu']['id']}/history",
     ]
 
 
@@ -28,7 +28,7 @@ def history_report_paths(user, company, computer_resources):
 async def gpu_resource(api, computer, resource_type):
     """Attach a custom accelerator resource to Alice's personal computer."""
     response = await api.post(
-        f"/api/v1/computers/{computer['id']}/resources",
+        f"/v1/computers/{computer['id']}/resources",
         json={"resource_type_id": resource_type["id"], "total": 4},
     )
     assert response.status_code == 201, response.text
@@ -39,7 +39,7 @@ async def gpu_resource(api, computer, resource_type):
 async def company_computer(api, company):
     """Register a company-owned computer independently of personal inventory."""
     response = await api.post(
-        "/api/v1/computers",
+        "/v1/computers",
         json={
             "company_id": company["id"],
             "os": "linux",
@@ -57,7 +57,7 @@ async def company_computer(api, company):
 @pytest.fixture
 async def company_resources(api, company_computer):
     """Expose the company computer's automatic CPU and memory records."""
-    response = await api.get(f"/api/v1/computers/{company_computer['id']}/resources")
+    response = await api.get(f"/v1/computers/{company_computer['id']}/resources")
     assert response.status_code == 200, response.text
     return {row["resource_type"]["code"]: row for row in response.json()}
 
@@ -65,13 +65,13 @@ async def company_resources(api, company_computer):
 @pytest.fixture
 async def administrator_company_token(admin_api):
     """Issue a corporate token whose issuer also holds system administrator privileges."""
-    response = await admin_api.post("/api/v1/companies", json={"name": "Operator company"})
+    response = await admin_api.post("/v1/companies", json={"name": "Operator company"})
     assert response.status_code == 201, response.text
     company = response.json()
-    response = await admin_api.post("/api/v1/token-ownerships", json={"company_id": company["id"]})
+    response = await admin_api.post("/v1/token-ownerships", json={"company_id": company["id"]})
     assert response.status_code == 201, response.text
     response = await admin_api.post(
-        "/api/v1/access-tokens",
+        "/v1/access-tokens",
         json={
             "ownership_id": response.json()["id"],
             "name": "Operator company",
@@ -85,10 +85,10 @@ async def administrator_company_token(admin_api):
 @pytest.fixture
 async def disabled_pending_isolate(api, computer, agent_api, isolate_payload):
     """Queue an isolate while its enrolled worker is disabled, leaving capacity safely unreserved."""
-    response = await api.patch(f"/api/v1/computers/{computer['id']}", json={"enabled": False})
+    response = await api.patch(f"/v1/computers/{computer['id']}", json={"enabled": False})
     assert response.status_code == 200, response.text
     response = await api.post(
-        "/api/v1/isolates", headers={"Idempotency-Key": "disabled-resource"}, json=isolate_payload
+        "/v1/isolates", headers={"Idempotency-Key": "disabled-resource"}, json=isolate_payload
     )
     assert response.status_code == 202, response.text
     return response.json()

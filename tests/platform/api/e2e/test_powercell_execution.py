@@ -32,12 +32,12 @@ def capacity_report():
 
 async def test_capabilities_fail_closed_without_issuer(client, api):
     """An unconfigured server never advertises enrollment or creates an unverifiable device."""
-    response = await client.get("/api/v1/agent-capabilities")
+    response = await client.get("/v1/agent-capabilities")
     assert response.status_code == 200
     assert response.json()["attestation_required"] is True
     assert "powercell.enrollment.v1" not in response.json()["extensions"]
     response = await api.post(
-        "/api/v1/agent-enrollments",
+        "/v1/agent-enrollments",
         headers={"Idempotency-Key": str(uuid4())},
         json={
             "installation_id": str(uuid4()),
@@ -54,7 +54,7 @@ async def test_targets_below_reservations_and_revisions_are_atomic(
     api, agent_api, computer, isolate, capacity_report
 ):
     """Zero offered capacity preserves reservations; stale and conflicting reports cannot restore work."""
-    before = (await api.get(f"/api/v1/computers/{computer['id']}")).json()
+    before = (await api.get(f"/v1/computers/{computer['id']}")).json()
     report = {
         **capacity_report,
         "cpu_millis": 0,
@@ -68,7 +68,7 @@ async def test_targets_below_reservations_and_revisions_are_atomic(
     )
     assert response.status_code == 200, response.text
     assert response.json() == {"revision": 0, "accepted": True}
-    after = (await api.get(f"/api/v1/computers/{computer['id']}")).json()
+    after = (await api.get(f"/v1/computers/{computer['id']}")).json()
     assert after["reserved_cpu"] == before["reserved_cpu"] == 1000
     assert after["target_cpu"] == after["target_memory"] == after["target_disk"] == 0
     assert after["lease_expires_at"] == before["lease_expires_at"]
@@ -98,7 +98,7 @@ async def test_targets_below_reservations_and_revisions_are_atomic(
         )
     )
     assert all(row.status_code in {200, 409} for row in responses)
-    after = (await api.get(f"/api/v1/computers/{computer['id']}")).json()
+    after = (await api.get(f"/v1/computers/{computer['id']}")).json()
     assert after["capacity_revision"] == 3
     response = await agent_api.post(
         "/agent/v1/capacity", headers={"Idempotency-Key": str(uuid4())}, json=report
@@ -116,7 +116,7 @@ async def test_plugin_override_is_resolved_once(
     )
     assert response.status_code == 200
     response = await api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": str(uuid4())},
         json={**isolate_payload, "isolation_mode": mode, "retry_allowed": False},
     )
@@ -138,7 +138,7 @@ async def test_plugin_override_is_resolved_once(
         },
     )
     assert response.status_code == 200
-    current = (await api.get(f"/api/v1/isolates/{isolate['id']}")).json()
+    current = (await api.get(f"/v1/isolates/{isolate['id']}")).json()
     assert current["effective_isolation"] == (mode or "shared")
     assert current["network_enabled"] is False and current["internet_only"] is True
     response = await agent_api.post(
@@ -165,10 +165,10 @@ async def test_draining_blocks_delivery_and_start_but_allows_cleanup(
         response = await agent_api.post(f"/agent/v1/tasks/{run_task['id']}/{operation}")
         assert response.status_code == 409
     response = await api.post(
-        f"/api/v1/isolates/{isolate['id']}/snapshots", headers={"Idempotency-Key": str(uuid4())}
+        f"/v1/isolates/{isolate['id']}/snapshots", headers={"Idempotency-Key": str(uuid4())}
     )
     assert response.status_code == 409
-    response = await api.delete(f"/api/v1/isolates/{isolate['id']}")
+    response = await api.delete(f"/v1/isolates/{isolate['id']}")
     assert response.status_code == 202
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})
     tasks = response.json()["tasks"]
@@ -191,19 +191,19 @@ async def test_paused_worker_does_not_schedule_new_work(
     )
     assert response.status_code == 200
     response = await api.post(
-        f"/api/v1/isolates/{isolate['id']}/commands",
+        f"/v1/isolates/{isolate['id']}/commands",
         headers={"Idempotency-Key": str(uuid4())},
         json={"command": "echo delayed"},
     )
     command = response.json()
     response = await api.post(
-        "/api/v1/isolates", headers={"Idempotency-Key": str(uuid4())}, json=isolate_payload
+        "/v1/isolates", headers={"Idempotency-Key": str(uuid4())}, json=isolate_payload
     )
     pending = response.json()
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0.1})
     assert response.json()["tasks"] == []
-    assert (await api.get(f"/api/v1/commands/{command['id']}")).json()["status"] == "queued"
-    assert (await api.get(f"/api/v1/isolates/{pending['id']}")).json()["computer_id"] is None
+    assert (await api.get(f"/v1/commands/{command['id']}")).json()["status"] == "queued"
+    assert (await api.get(f"/v1/isolates/{pending['id']}")).json()["computer_id"] is None
     response = await agent_api.post(
         "/agent/v1/capacity",
         headers={"Idempotency-Key": str(uuid4())},
@@ -243,15 +243,15 @@ async def test_eviction_completion_race_preserves_one_result(
     )
     assert responses[0].status_code == 200
     assert responses[1].status_code in {200, 409}
-    result = (await api.get(f"/api/v1/commands/{command['id']}/result")).json()
+    result = (await api.get(f"/v1/commands/{command['id']}/result")).json()
     response = await agent_api.post(endpoint, headers={"Idempotency-Key": key}, json=payload)
     assert response.status_code == 200
     response = await agent_api.post(
         endpoint, headers={"Idempotency-Key": str(uuid4())}, json=payload
     )
     assert response.status_code == 200
-    assert (await api.get(f"/api/v1/commands/{command['id']}/result")).json() == result
-    row = (await api.get(f"/api/v1/computers/{computer['id']}")).json()
+    assert (await api.get(f"/v1/commands/{command['id']}/result")).json() == result
+    row = (await api.get(f"/v1/computers/{computer['id']}")).json()
     assert row["reserved_cpu"] == row["reserved_memory"] == row["reserved_disk"] == 0
 
 
@@ -270,7 +270,7 @@ async def test_disconnect_retry_and_session_fencing(
         "/agent/v1/disconnect", headers={"Idempotency-Key": str(uuid4())}, json=payload
     )
     assert response.status_code == 409
-    assert (await api.get(f"/api/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 0
+    assert (await api.get(f"/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 0
     response = await agent_api.post(
         "/agent/v1/session",
         headers={"Idempotency-Key": str(uuid4())},
@@ -331,7 +331,7 @@ async def test_late_diagnostics_are_owned_deduplicated_and_do_not_change_results
         f"/agent/v1/tasks/{run_task['id']}/complete", json={"returncode": 0, "stdout": "done"}
     )
     assert response.status_code == 200
-    before = (await api.get(f"/api/v1/commands/{command['id']}/result")).json()
+    before = (await api.get(f"/v1/commands/{command['id']}/result")).json()
     clock.now += timedelta(minutes=5)
     identifier = str(uuid4())
     content = json.dumps(
@@ -353,12 +353,12 @@ async def test_late_diagnostics_are_owned_deduplicated_and_do_not_change_results
     assert response.status_code == 409
     response = await client.put(endpoint, headers=other_agent["headers"], content=content)
     assert response.status_code == 404
-    endpoint = f"/api/v1/computers/{computer['id']}/diagnostics/{identifier}"
+    endpoint = f"/v1/computers/{computer['id']}/diagnostics/{identifier}"
     response = await other_api.get(endpoint)
     assert response.status_code == 404
     response = await api.get(endpoint)
     assert response.status_code == 200 and response.content == content
-    assert (await api.get(f"/api/v1/commands/{command['id']}/result")).json() == before
+    assert (await api.get(f"/v1/commands/{command['id']}/result")).json() == before
 
 
 @pytest.mark.parametrize(
@@ -382,7 +382,7 @@ async def test_diagnostic_bounds_and_retention(api, agent_api, computer, clock, 
     if case != "missing":
         response = await agent_api.put(f"/agent/v1/diagnostics/{identifier}", content=content)
         assert response.status_code == (413 if case == "oversized" else 422), response.text
-    response = await api.get(f"/api/v1/computers/{computer['id']}/diagnostics/{identifier}")
+    response = await api.get(f"/v1/computers/{computer['id']}/diagnostics/{identifier}")
     assert response.status_code == 404
 
 
@@ -401,13 +401,13 @@ async def test_diagnostic_quota_expires_and_metadata_without_task_is_allowed(
     clock.now += timedelta(days=31)
     # User token has expired as well; renew it through login to inspect retained access rules.
     response = await api.post(
-        "/api/v1/auth/login",
+        "/v1/auth/login",
         json={"login": "alice", "password": "  correct horse battery staple  "},
     )
     assert response.status_code == 200
     headers = {"Authorization": "Bearer " + response.json()["access_token"]}
     response = await api.get(
-        f"/api/v1/computers/{computer['id']}/diagnostics/{ids[0]}", headers=headers
+        f"/v1/computers/{computer['id']}/diagnostics/{ids[0]}", headers=headers
     )
     assert response.status_code == 404
     response = await agent_api.put(
@@ -436,7 +436,7 @@ async def test_cleanup_idempotency_headers_are_bounded(agent_api, header):
 async def test_powercell_runtime_cannot_bypass_attestation(api):
     """The legacy computer registration path cannot create a Power Cell execution worker."""
     response = await api.post(
-        "/api/v1/computers",
+        "/v1/computers",
         json={
             "os": "linux",
             "architecture": "arm64",
@@ -459,17 +459,15 @@ async def test_target_free_capacity_and_available_summary(
         json={**capacity_report, "cpu_millis": 500, "memory_bytes": 512, "disk_bytes": 1024},
     )
     assert response.status_code == 200
-    row = (await api.get(f"/api/v1/computers/{computer['id']}")).json()
+    row = (await api.get(f"/v1/computers/{computer['id']}")).json()
     assert row["free_cpu"] == row["free_memory"] == row["free_disk"] == 0
     summary = (
-        await api.get(
-            f"/api/v1/users/{user['id']}/resources/summary", params={"only_available": True}
-        )
+        await api.get(f"/v1/users/{user['id']}/resources/summary", params={"only_available": True})
     ).json()
     cpu = next(row for row in summary["resources"] if row["code"] == "cpu")
     assert cpu["total"] == 500 and cpu["occupied"] == 1000 and cpu["free"] == 0
     response = await api.post(
-        f"/api/v1/isolates/{isolate['id']}/commands",
+        f"/v1/isolates/{isolate['id']}/commands",
         headers={"Idempotency-Key": str(uuid4())},
         json={"command": "echo pending"},
     )

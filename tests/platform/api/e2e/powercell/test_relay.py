@@ -319,9 +319,9 @@ async def test_profile_scopes_relay_to_virtual_api_and_exact_attested_identity(
         }
     ]
     assert acme["HardwareBound"] and acme["Attest"] and not acme["AllowAllAppsAccess"]
-    reply = await api.get(f"/api/v1/agent-enrollments/{enrollment.row['id']}")
+    reply = await api.get(f"/v1/agent-enrollments/{enrollment.row['id']}")
     assert reply.json()["relay"] == enrollment.row["relay"]
-    reply = await api.get("/api/v1/agent-capabilities")
+    reply = await api.get("/v1/agent-capabilities")
     assert "powercell.relay.v1" in reply.json()["extensions"]
 
 
@@ -330,7 +330,7 @@ async def test_relay_registers_real_attested_mac_and_authenticates_agent_request
 ):
     """The actual TLS key replaces request signatures without weakening account/credential checks."""
     enrollment = verified_enrollment.order.enrollment
-    target = f"/api/v1/agent-enrollments/{enrollment.row['id']}"
+    target = f"/v1/agent-enrollments/{enrollment.row['id']}"
     response = await relay_client.get(target + "/verification", headers=user["headers"])
     assert response.status_code == 200, response.text
     assert (
@@ -362,7 +362,7 @@ async def test_plain_http_headers_cannot_forge_relay_authentication(
     client, verified_enrollment, user
 ):
     """Public listeners never trust forwarded certificates, fingerprints or proxy claims."""
-    target = f"/api/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}/finish"
+    target = f"/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}/finish"
     digest = verified_enrollment.certificate.fingerprint(hashes.SHA256()).hex()
     for name in [
         "X-PowerCell-Certificate",
@@ -408,9 +408,7 @@ async def test_relay_rejects_device_certificate_from_another_mac(
     context = ssl.create_default_context(cafile=str(pki.root_file))
     context.set_alpn_protocols(["h2"])
     context.load_cert_chain(cert_path, key_path)
-    target = (
-        f"/api/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}/verification"
-    )
+    target = f"/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}/verification"
     async with httpx.AsyncClient(
         transport=RelayTransport(context, verified_enrollment.order.enrollment.row["relay"]),
         base_url="http://api.test",
@@ -445,7 +443,7 @@ async def test_verified_connection_does_not_replace_account_ownership(
     relay_client, verified_enrollment, other_user
 ):
     """Knowing the enrollment and holding its physical key cannot replace its initiating account."""
-    target = f"/api/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}"
+    target = f"/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}"
     response = await relay_client.get(target + "/verification", headers=other_user["headers"])
     assert response.status_code == 404
     response = await relay_client.post(
@@ -461,15 +459,15 @@ async def test_expired_and_pending_enrollments_cannot_be_verified(
 ):
     """Transport authentication cannot finish a different unverified attempt or an expired enrollment."""
     response = await api.post(
-        "/api/v1/agent-enrollments",
+        "/v1/agent-enrollments",
         headers={"Idempotency-Key": str(uuid4())},
         json=verified_enrollment.order.enrollment.payload,
     )
-    target = f"/api/v1/agent-enrollments/{response.json()['id']}"
+    target = f"/v1/agent-enrollments/{response.json()['id']}"
     response = await relay_client.get(target + "/verification", headers=api.headers)
     assert response.status_code == 409
     clock.now += timedelta(seconds=3601)
-    target = f"/api/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}"
+    target = f"/v1/agent-enrollments/{verified_enrollment.order.enrollment.row['id']}"
     assert (
         await relay_client.get(target + "/verification", headers=api.headers)
     ).status_code == 409
@@ -486,14 +484,14 @@ async def test_relay_flow_control_preserves_large_upload_and_download(relay_clie
     """Data larger than both HTTP/2 windows survives backpressure in each direction byte for byte."""
     data = bytes(range(256)) * 2048
     response = await relay_client.post(
-        "/api/v1/artifacts?filename=relay.bin",
+        "/v1/artifacts?filename=relay.bin",
         headers={**user["headers"], "Content-Type": "application/octet-stream"},
         content=data,
     )
     assert response.status_code == 201, response.text
     assert response.json()["sha256"] == hashlib.sha256(data).hexdigest()
     downloaded = await relay_client.get(
-        f"/api/v1/artifacts/{response.json()['id']}/content", headers=user["headers"]
+        f"/v1/artifacts/{response.json()['id']}/content", headers=user["headers"]
     )
     assert downloaded.status_code == 200 and downloaded.content == data
 
@@ -585,7 +583,7 @@ async def test_abandoned_upload_and_reset_do_not_block_other_streams(relay_wire)
     async with relay_wire() as wire:
         assert await wire.connect(1) == 200
         # Leave HTTP incomplete, then cancel it while another stream remains usable.
-        wire.h2.send_data(1, b"POST /api/v1/artifacts HTTP/1.1\r\nHost: api.test\r\n")
+        wire.h2.send_data(1, b"POST /v1/artifacts HTTP/1.1\r\nHost: api.test\r\n")
         wire.flush()
         assert (await wire.get(3, "/health/ready"))[0] == 200
         wire.h2.reset_stream(1)
@@ -642,7 +640,7 @@ async def test_api_shutdown_closes_authenticated_connections_and_pending_streams
     """Stopping the API must stop its relay too, including unfinished uploads."""
     async with relay_wire() as wire:
         assert await wire.connect(1) == 200
-        wire.h2.send_data(1, b"POST /api/v1/artifacts HTTP/1.1\r\nHost: api.test\r\n")
+        wire.h2.send_data(1, b"POST /v1/artifacts HTTP/1.1\r\nHost: api.test\r\n")
         wire.flush()
         http_server.server.should_exit = True
         _, pending = await asyncio.wait([http_server.task], timeout=3)
@@ -749,14 +747,14 @@ async def test_old_profile_routes_cannot_select_a_new_enrollments_identity(api, 
     """Each enrollment has its own hostname; replay keeps that route stable and reinstall gets another."""
     first = enrollment.row["relay"]
     response = await api.post(
-        "/api/v1/agent-enrollments",
+        "/v1/agent-enrollments",
         headers={"Idempotency-Key": str(uuid4())},
         json=enrollment.payload,
     )
     second = response.json()["relay"]
     assert second["url"] == first["url"] and second["api_origin"] != first["api_origin"]
     response = await api.post(
-        "/api/v1/agent-enrollments",
+        "/v1/agent-enrollments",
         headers={"Idempotency-Key": enrollment.key},
         json=enrollment.payload,
     )

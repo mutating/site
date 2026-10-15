@@ -70,7 +70,7 @@ async def test_simultaneous_cleanup_timeouts_invalidate_worker_once_without_rele
 ):
     """When two destroy tasks expire together, failing the worker obsoletes both and the scheduler safely skips the second stale task."""
     for isolate in paired_isolates:
-        assert (await api.delete(f"/api/v1/isolates/{isolate['id']}")).status_code == 202
+        assert (await api.delete(f"/v1/isolates/{isolate['id']}")).status_code == 202
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})
     assert response.status_code == 200
     tasks = response.json()["tasks"]
@@ -79,14 +79,14 @@ async def test_simultaneous_cleanup_timeouts_invalidate_worker_once_without_rele
     async with asyncio.timeout(3):
         while True:
             states = [
-                (await api.get(f"/api/v1/isolates/{isolate['id']}")).json()
+                (await api.get(f"/v1/isolates/{isolate['id']}")).json()
                 for isolate in paired_isolates
             ]
             if all(row["status"] == "failed" for row in states):
                 break
             await asyncio.sleep(0.01)
     assert all(row["error"] == "cleanup_unconfirmed" and row["reserved"] for row in states)
-    response = await api.get(f"/api/v1/computers/{computer['id']}")
+    response = await api.get(f"/v1/computers/{computer['id']}")
     assert response.json()["online"] is False
     assert response.json()["reserved_cpu"] == 2000 and response.json()["reserved_memory"] == 2048
     assert (await agent_api.post("/agent/v1/heartbeat")).status_code == 409

@@ -5,6 +5,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -15,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[1]
 COOKIE = "tmc_account_session"
+# Keep the API transport and session cookies compatible with existing browsers.
 PREFIX = "/account"
 UUID = r"[0-9a-fA-F-]{36}"
 INVITATION_TOKEN = r"inv_[A-Za-z0-9_-]{43}"
@@ -131,7 +133,7 @@ def create_app(settings=None):
             headers["Authorization"] = "Bearer " + token
         try:
             return await request.app.state.client.request(
-                method, "/api/v1/" + path, headers=headers, **kwargs
+                method, "/v1/" + path, headers=headers, **kwargs
             )
         except httpx.HTTPError:
             raise HTTPException(502, "API is temporarily unavailable") from None
@@ -266,19 +268,24 @@ def create_app(settings=None):
         return result
 
     @app.get(PREFIX)
-    async def redirect():
-        return RedirectResponse(PREFIX + "/")
+    @app.get(PREFIX + "/{path:path}")
+    async def redirect(request: Request):
+        path = request.path_params.get("path", "")
+        target = "/" + quote(path.lstrip("/"), safe="/")
+        if request.url.query:
+            target += "?" + request.url.query
+        return RedirectResponse(target, status_code=308)
 
     dist = ROOT / "dist"
     if (dist / "assets").is_dir():
-        app.mount(PREFIX + "/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
-    @app.get(PREFIX + "/{path:path}")
+    @app.get("/{path:path}")
     async def frontend(path: str):
         candidate = (dist / path).resolve()
         if candidate.is_relative_to(dist.resolve()) and candidate.is_file():
             return FileResponse(candidate)
-        if "." in path or path.startswith("api/"):
+        if "." in path or path.split("/", 1)[0] in {"api", "agent", "health"}:
             raise HTTPException(404)
         if not (dist / "index.html").is_file():
             raise HTTPException(503, "Build the dashboard with npm run build")
