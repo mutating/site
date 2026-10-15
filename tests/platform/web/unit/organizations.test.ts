@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  filterOrganizations,
+  organizationNameKey,
+  organizationPage,
+  organizationSearchParams,
   organizationEntries,
 } from "../../../../platform/web/src/lib/organizations";
 import type {
@@ -239,51 +241,63 @@ describe("organization directory order", () => {
 
   it("handles empty collections", () =>
     expect(organizationEntries([], [], user)).toEqual([]));
+
+  it("uses the server's Unicode casefold key when inserting a newly created organization", () => {
+    const a = {
+      ...company("a", 0, user, "creator", "Straße"),
+      name_key: "strasse",
+    };
+    const b = {
+      ...company("b", 0, user, "creator", "STRASSE"),
+      name_key: "strasse",
+    };
+    expect(ids(organizationEntries([b, a], [], user))).toEqual(["a", "b"]);
+  });
+
+  it("matches database Unicode ordering outside the basic multilingual plane", () => {
+    expect(
+      ids(
+        organizationEntries(
+          [
+            company("emoji", 0, user, "creator", "😀"),
+            company("bmp", 0, user, "creator", "\uE000"),
+          ],
+          [],
+          user,
+        ),
+      ),
+    ).toEqual(["bmp", "emoji"]);
+  });
 });
 
-describe("temporary organization name search", () => {
-  const rows = organizationEntries(
-    [
-      company("owned", 4, user, "creator", "Квантовая Лаборатория"),
-      company("member", 1, "other", "admin", "Research Lab"),
-    ],
-    [invite("pending", 2, "pending", "LAB Collective")],
-    user,
-  );
-  it.each(["lab", " LAB ", "Lab"])(
-    "matches names without case or outer whitespace: %s",
-    (query) => {
-      expect(ids(filterOrganizations(rows, query))).toEqual([
-        "pending",
-        "member",
-      ]);
+describe("organization search URL", () => {
+  it.each(["0", "-1", "NaN", "Infinity", "2.5", "2junk", "9007199254740992"])(
+    "rejects invalid page %s",
+    (value) => {
+      expect(organizationPage(new URLSearchParams({ page: value }))).toBe(1);
     },
   );
-  it("matches Cyrillic and substrings", () =>
-    expect(ids(filterOrganizations(rows, "ЛАБОРАТ"))).toEqual(["owned"]));
-  it("keeps priority and count order in filtered results", () => {
-    const matching = organizationEntries(
-      [
-        company("own-1", 1, user, "creator", "Lab 1"),
-        company("own-9", 9, user, "creator", "Lab 9"),
-        company("member-99", 99, "other", "user", "Lab 99"),
-      ],
-      [invite("invite-0", 0, "pending", "Lab 0")],
-      user,
+  it("reads and bounds valid pages", () => {
+    expect(organizationPage(new URLSearchParams())).toBe(1);
+    expect(organizationPage(new URLSearchParams({ page: "3" }))).toBe(3);
+    expect(organizationPage(new URLSearchParams({ page: "1000001" }))).toBe(
+      1000000,
     );
-    expect(ids(filterOrganizations(matching, "lab"))).toEqual([
-      "invite-0",
-      "own-9",
-      "own-1",
-      "member-99",
-    ]);
   });
-  it("returns the full list for a blank query and no results for unknown names", () => {
-    expect(filterOrganizations(rows, "  ")).toEqual(rows);
-    expect(filterOrganizations(rows, "unknown")).toEqual([]);
+  it("resets pagination, preserves unrelated parameters and does not mutate the original", () => {
+    const params = new URLSearchParams({ q: "old", page: "4", other: "keep" });
+    const updated = organizationSearchParams(params, " Лаб & %_ / ");
+    expect(updated.get("q")).toBe(" Лаб & %_ / ");
+    expect(updated.has("page")).toBe(false);
+    expect(updated.get("other")).toBe("keep");
+    expect(params.get("page")).toBe("4");
+    expect(organizationSearchParams(updated, "").has("q")).toBe(false);
   });
-  it("searches names only and treats regular-expression symbols as literal text", () => {
-    expect(filterOrganizations(rows, "owned")).toEqual([]);
-    expect(filterOrganizations(rows, ".*")).toEqual([]);
+  it("uses the same normalized natural name key as the server", () => {
+    expect(organizationNameKey("ЛАБ É 002")).toBe("лаб é \x010012");
+    expect(organizationNameKey("E\u0301")).toBe(organizationNameKey("É"));
+    expect(organizationNameKey("Team 2") < organizationNameKey("Team 10")).toBe(
+      true,
+    );
   });
 });

@@ -70,9 +70,10 @@ test("account card stays desktop-only across the mobile breakpoint", async ({
     await expect(
       page.getByRole("button", { name: "Выйти", exact: true }),
     ).toHaveCount(1);
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth),
-    ).toBeLessThanOrEqual(width);
+    // The wordmark updates its available width through ResizeObserver.
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+      .toBeLessThanOrEqual(width);
   }
 });
 

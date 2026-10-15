@@ -9,6 +9,7 @@ export interface User {
 export interface Company {
   id: string;
   name: string;
+  name_key?: string;
   created_by_user_id: string;
   my_role: Role;
   my_permissions: Permission[];
@@ -41,6 +42,7 @@ export interface Invitation {
   id: string;
   company_id: string;
   company_name: string;
+  name_key?: string;
   role: Role;
   permissions: Permission[] | null;
   effective_permissions: Permission[];

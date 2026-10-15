@@ -4,6 +4,7 @@ import {
   useNavigate,
   useParams,
   useSearchParams,
+  useLocation,
 } from "react-router-dom";
 import { api, apiURL, allPages, json, request } from "../lib/api";
 import { useData } from "../lib/useData";
@@ -26,6 +27,11 @@ import {
 } from "../components/InvitationUI";
 
 export function Organization() {
+  const location = useLocation();
+  const directorySearch =
+    typeof location.state?.directorySearch === "string"
+      ? location.state.directorySearch
+      : "";
   const { companyId = "" } = useParams();
   const state = useData(
     (signal) => api<Company>(`companies/${companyId}`, { signal }),
@@ -35,7 +41,7 @@ export function Organization() {
   const { t } = useI18n();
   return (
     <>
-      <Link className="back-link" to="/organizations">
+      <Link className="back-link" to={`/organizations${directorySearch}`}>
         ← {t("backOrganizations")}
       </Link>
       <ErrorBox error={state.error} retry={state.reload} />
@@ -180,7 +186,9 @@ function OrganizationContent({
                     <span className="avatar">
                       {member.user.avatar_version ? (
                         <img
-                          src={apiURL(`memberships/${member.id}/avatar?v=${member.user.avatar_version}`)}
+                          src={apiURL(
+                            `memberships/${member.id}/avatar?v=${member.user.avatar_version}`,
+                          )}
                           alt=""
                         />
                       ) : (
