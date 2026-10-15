@@ -229,4 +229,17 @@ jobs:
           assert_platform_status 404 /account
           assert_platform_status 404 /account/
           assert_platform_status 404 /account/api/session
-          assert_platform_status 401 /api/session
+          assert_platform_status 404 /api/session
+          api_session_status="$(curl --silent --show-error --max-time 30 --output /dev/null \
+            --write-out '%{http_code}' https://api.mutating.tech/v1/auth/session)"
+          [[ "$api_session_status" == "401" ]]
+          dashboard_config="$(curl --fail --silent --show-error --max-time 30 https://platform.mutating.tech/config.js)"
+          printf '%s' "$dashboard_config" | rg --quiet '^window\.__TMC_API_URL__ = "https://api\.mutating\.tech/v1";$'
+          cors_headers="$(curl --silent --show-error --max-time 30 --request OPTIONS \
+            --header 'Origin: https://platform.mutating.tech' \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type,x-requested-with' \
+            --dump-header - --output /dev/null https://api.mutating.tech/v1/auth/session)"
+          printf '%s' "$cors_headers" | rg --quiet '^HTTP/[^ ]+ 200'
+          printf '%s' "$cors_headers" | rg --quiet --ignore-case '^access-control-allow-origin: https://platform\.mutating\.tech\r?$'
+          printf '%s' "$cors_headers" | rg --quiet --ignore-case '^access-control-allow-credentials: true\r?$'

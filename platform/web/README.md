@@ -11,7 +11,8 @@ Python/FastAPI в `server/`, тесты в `../../tests/platform/web/`. Код �
 
 ```sh
 uv sync --frozen
-uv run throng-api serve
+THRONG_BROWSER_ORIGINS='["http://127.0.0.1:5173","http://127.0.0.1:8001"]' \
+THRONG_BROWSER_SECURE_COOKIE=false uv run throng-api serve
 ```
 
 В другом терминале, из `platform/web/`:
@@ -29,18 +30,19 @@ uv run uvicorn server.app:app --host 127.0.0.1 --port 8001
 npm run dev
 ```
 
-Открыть <http://127.0.0.1:5173/>. Vite проксирует `/api/` в Python-сервис.
-Для Power Cell используйте `http://127.0.0.1:5173/v1`: Vite также проксирует
-`/v1` и `/agent/v1` в API на порту 8000, сохраняя общий origin для ссылок
-регистрации и кабинета. HTTPS ACME настраивается отдельно согласно `../api/docs/powercell.md`.
-API должен включать миграцию `0007`; `throng-api serve` применяет её автоматически.
-При использовании `localhost` вместо `127.0.0.1` измените `DASHBOARD_PUBLIC_ORIGIN`.
+Открыть <http://127.0.0.1:5173/>. Браузер обращается прямо к
+`http://127.0.0.1:8000/v1`; прокси API в кабинете и Vite отсутствуют.
+Vite получает только публичный `/config.js` от сервера статики на порту 8001.
+Для Power Cell используйте `http://127.0.0.1:8000/v1`. HTTPS ACME настраивается
+отдельно согласно `../api/docs/powercell.md`. API должен включать миграцию `0007`;
+`throng-api serve` применяет её автоматически. При использовании `localhost`
+вместо `127.0.0.1` обновите `THRONG_BROWSER_ORIGINS` и `DASHBOARD_API_URL`.
 
 Для просмотра производственной сборки:
 
 ```sh
 npm run build
-DASHBOARD_PUBLIC_ORIGIN=http://127.0.0.1:8001 uv run uvicorn server.app:app --host 127.0.0.1 --port 8001
+DASHBOARD_API_URL=http://127.0.0.1:8000/v1 uv run uvicorn server.app:app --host 127.0.0.1 --port 8001
 ```
 
 После сборки Python-сервис сам отдаёт HTML, JS, CSS, шрифты и логотип.
@@ -66,7 +68,7 @@ DASHBOARD_PUBLIC_ORIGIN=http://127.0.0.1:8001 uv run uvicorn server.app:app --ho
 - `/invitations/{token}`: просмотр и принятие приглашения. Адрес сохраняется
   при переходе через вход/регистрацию; ссылка одноразовая и имеет срок действия.
 
-Внутренние запросы кабинета используют `/api/*`. Адреса `/account` и `/account/*`
+Кабинет обращается напрямую к `https://api.mutating.tech/v1`. Адреса `/account` и `/account/*`
 не обслуживаются и возвращают `404` без перенаправления.
 Любой закрытый маршрут перенаправляет на вход и сохраняет исходный адрес.
 Создание аккаунта автоматически выполняет вход. Удаление требует ввода email/названия.
@@ -120,55 +122,49 @@ GiB справа. Сплошные линии — выделенные мощн�
 
 ## Сессии и развёртывание
 
-Python-сервис хранит API bearer-токен внутри зашифрованной HttpOnly-cookie,
-`SameSite=Lax`, `Path=/api/`. В production обязательны постоянный ключ и Secure.
-При переходе с прежнего префикса пользователям потребуется войти заново.
-Токен не возвращается в JavaScript и не сохраняется в localStorage. При выходе
-отзывается соответствующий API-токен. Срок сессии определяется API, без скрытого продления.
-Изменяющие запросы проверяются по точному Origin и собственному заголовку.
-Сервис пересылает только разрешённые для кабинета пути и методы.
+Сервер кабинета отдаёт только интерфейс и публичный `/config.js` с
+`DASHBOARD_API_URL`. Значение по умолчанию — `https://api.mutating.tech/v1`.
+Все запросы данных и аватаров идут из браузера прямо в API с `credentials: include`.
+CSP разрешает соединения и изображения только с настроенного origin API.
 
-Сгенерировать ключ:
+API выдаёт собственную host-only cookie `tmc_session` с `HttpOnly`, `SameSite=Lax`,
+`Path=/v1/` и, в production, `Secure`. Она содержит случайный API-токен; сервер
+хранит только его хэш в существующей таблице токенов. Отдельных веб-сессий,
+зашифрованных cookie кабинета и ключа `DASHBOARD_SESSION_KEY` больше нет.
+JWT не используется. Токен не возвращается браузерному JavaScript и не хранится
+в localStorage. Срок определяется API; выход удаляет токен, поэтому его копия
+сразу перестаёт работать. После перехода со старой схемы требуется повторный вход.
 
-```sh
-uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-```
+`POST /v1/users` создаёт аккаунт. `POST /v1/auth/session` выполняет вход и выдаёт
+cookie, `GET /v1/auth/session` возвращает профиль, `DELETE /v1/auth/session`
+завершает сеанс. Прежний `POST /v1/auth/login` по-прежнему выдаёт bearer-токен
+программным клиентам. Отзыв токенов и проверки прав общие для обоих способов входа.
 
-Пример `/etc/throng-dashboard.env`:
+API разрешает CORS с credentials только для `THRONG_BROWSER_ORIGINS` (JSON-массив
+точных origin; production по умолчанию — `https://platform.mutating.tech`).
+Запросы с cookie, изменяющие данные, и вход/выход требуют допустимый `Origin`
+и `X-Requested-With: ThrongDashboard`. Для локального HTTP задайте
+`THRONG_BROWSER_SECURE_COOKIE=false`; в production значение по умолчанию — `true`.
+Параметры API задаются в его окружении, `DASHBOARD_API_URL` — в окружении сервера статики.
 
-```dotenv
-DASHBOARD_API_URL=http://127.0.0.1:8000
-DASHBOARD_PUBLIC_ORIGIN=https://platform.mutating.tech
-DASHBOARD_SECURE_COOKIE=true
-DASHBOARD_SESSION_KEY=<сгенерированный ключ>
-```
+Production использует единый systemd-сервис с API. Сборка интерфейса выполняется
+в CI. Настройка nginx, сервера, SSH-деплоя и SQLite описана в
+[инструкции развёртывания](../../docs/deployment.md).
+Общий локальный запуск — `uv run --project platform/api python deploy/run.py`
+после сборки UI. Кабинету больше не нужен доступ к API с самого сервера.
 
-Сохраните ключ между перезапусками и используйте одинаковый на всех экземплярах.
-Локально при отсутствии ключа создаётся игнорируемый `.runtime/session.key`.
-
-Основной production-деплой теперь использует `platform.mutating.tech` и единый
-сервис systemd вместе с API. Сборка интерфейса выполняется в CI; Docker и Docker
-Compose для этого не требуются. Настройка nginx, SSH-секретов, сервера, миграций и
-SQLite описана в [инструкции развёртывания](../../docs/deployment.md).
-Общий локальный запуск из корня — `uv run --project platform/api python deploy/run.py` после сборки UI.
-
-При отдельном размещении кабинета на собственном поддомене после `npm ci && npm run build`
-и `uv sync --frozen --no-dev` можно использовать
-`deploy/throng-dashboard.service`, адаптировав пользователя и пути. Фрагмент
-`deploy/nginx.conf` добавляется в отдельный HTTPS server block platform.mutating.tech
-и проксирует все пути без переписывания. Основной сайт обслуживается своим виртуальным
-хостом. Для публичного входа/регистрации
-примените принятые на сервере ограничения частоты запросов.
-
-Также есть отдельный Dockerfile:
+Для отдельного размещения можно использовать `deploy/throng-dashboard.service`
+или Dockerfile:
 
 ```sh
 docker build -t throng-dashboard .
-docker run --rm -p 127.0.0.1:8001:8001 --env-file /etc/throng-dashboard.env throng-dashboard
+docker run --rm -p 127.0.0.1:8001:8001 \
+  -e DASHBOARD_API_URL=https://api.mutating.tech/v1 throng-dashboard
 ```
 
-В Docker укажите `DASHBOARD_API_URL`, доступный из контейнера, например имя
-API-сервиса в общей Docker-сети. `127.0.0.1` внутри контейнера означает сам контейнер.
+`DASHBOARD_API_URL` должен быть доступен из браузера пользователя. В самостоятельном
+статическом хостинге укажите адрес API в `dist/config.js` и настройте CSP и SPA fallback
+для страниц; `/account/*`, `/api/*` и `/v1/*` кабинет не обслуживает.
 
 ## Проверки
 
@@ -210,16 +206,16 @@ WebKit (desktop и iPhone). Проверяются закрытые маршру
 при ошибке загрузки мощностей и восстановление после обновления страницы данных.
 Для проверки восстановления регистрации тестовый API один раз возвращает `503`
 при автоматическом входе специального тестового аккаунта после его реального создания.
-Серверные тесты также воспроизводят ошибки транспорта и чтения профиля после регистрации.
-Тесты серверной границы
-дополнительно проверяют зашифрованные cookie и перечень допустимых маршрутов.
+Тесты API проверяют cookie, CORS, CSRF, срок действия и немедленный отзыв токенов.
+Тесты сервера статики проверяют публичную конфигурацию, CSP и отсутствие API-прокси.
 Unit-тесты проверяют ступенчатое представление истории и неизвестные интервалы.
 HTML-отчёты — `playwright-report/{e2e,deploy,visual}/index.html`, скриншоты и трассы —
 `test-results/` с такими же отдельными подпапками.
 
 Для `test:deploy` нужны `nginx` и `openssl` в PATH (`brew install nginx` на macOS,
 `apt-get install nginx openssl` на Ubuntu). Тест запускает собственный nginx на
-18443 с временным TLS-сертификатом, API на 18210 и кабинет на 18211. Он использует
+18443 с временным TLS-сертификатом, API на 18210 и кабинет на 18211.
+Браузер обращается к API через отдельный HTTPS origin на 18444 с настоящим CORS. Он использует
 `deploy/nginx.conf`, заменяя только порт upstream, и проверяет страницы в корне,
 ответ `404` для удалённых адресов, deep links, статику, настройки темы/языка, Secure/HttpOnly/Path,
 CSRF, отзыв токена при выходе, сохранение сессии после перезапуска кабинета и

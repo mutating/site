@@ -66,7 +66,7 @@ async def historical_capacity(data: HistoryFixture):
 @app.middleware("http")
 async def fail_first_automatic_login(request, call_next):
     """Simulate a transient API outage after the real registration has committed."""
-    if request.method == "POST" and request.url.path == "/v1/auth/login":
+    if request.method == "POST" and request.url.path == "/v1/auth/session":
         data = await request.json()
         identity = data.get("login", "")
         if identity.startswith("register_retry_") and identity not in failed_logins:

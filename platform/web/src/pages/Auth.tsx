@@ -31,10 +31,20 @@ export function Auth({ register = false }: { register?: boolean }) {
     const payload = Object.fromEntries(form.entries());
     if (register && !payload.nickname) delete payload.nickname;
     try {
-      const profile = await api<
-        User | { account_created: true; requires_login: true }
-      >(register ? "register" : "session", json("POST", payload));
-      if ("requires_login" in profile) {
+      if (register) {
+        await api<User>("users", json("POST", payload));
+      }
+      let profile: User;
+      try {
+        profile = await api<User>(
+          "auth/session",
+          json("POST", {
+            login: register ? payload.email : payload.login,
+            password: payload.password,
+          }),
+        );
+      } catch (error) {
+        if (!register) throw error;
         navigate("/login", {
           replace: true,
           state: { from, accountCreated: true, login: payload.email },

@@ -37,7 +37,9 @@ uv run --project platform/api python deploy/run.py
 
 API: <http://127.0.0.1:8000/docs>; кабинет:
 <http://127.0.0.1:8001/>. Ctrl+C останавливает оба процесса.
-В общем `.env` кабинету нужен origin `http://127.0.0.1:8001`.
+В общем `.env` задайте `DASHBOARD_API_URL=http://127.0.0.1:8000/v1`,
+`THRONG_BROWSER_ORIGINS=["http://127.0.0.1:8001","http://127.0.0.1:5173"]`
+и `THRONG_BROWSER_SECURE_COOKIE=false`.
 
 Для разработки UI с Vite используйте настройки из
 [platform/web/README.md](platform/web/README.md).
@@ -106,7 +108,7 @@ API на SQLite в Python 3.11/3.12/3.13, API на PostgreSQL, сервер ка
 
 - `mutating.tech` — сайт Hugo;
 - `api.mutating.tech` — API;
-- `platform.mutating.tech` — кабинет в корне `/`, внутренний API на `/api/*`.
+- `platform.mutating.tech` — интерфейс кабинета в корне `/`, прямые запросы браузера к API на `https://api.mutating.tech/v1`.
 
 На сервере используется systemd; для запуска обоих приложений:
 

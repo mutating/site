@@ -3,8 +3,9 @@
 Production работает без Docker и Docker Compose. Репозиторий содержит Hugo в
 `site/`, API в `platform/api/`, кабинет в `platform/web/` и все проверки в `tests/`. Nginx выбирает приложение по
 `server_name`, а единый сервис systemd `throng.service` управляет API, контроллером
-и кабинетом. Кабинет обращается к API через сервер Python на локальном порту;
-браузеру не требуется CORS между поддоменами.
+и кабинетом. Сервер кабинета отдаёт только интерфейс и публичную конфигурацию. Браузер
+обращается прямо к `https://api.mutating.tech/v1`; API разрешает CORS только
+для origin кабинета и сам обслуживает браузерные сессии.
 
 | Адрес | Обработчик |
 | --- | --- |
@@ -18,8 +19,8 @@ Production работает без Docker и Docker Compose. Репозитор�
 На том же поддомене доступны `/agent/v1/*`, `/docs` и `/openapi.json`.
 Страницы кабинета доступны без префикса: `/login`, `/profile`, `/organizations` и т. д.
 Адреса `/account` и `/account/*` не обслуживаются и возвращают `404` без
-перенаправления. Внутренний транспорт кабинета использует `/api/*`, cookie имеет
-`Path=/api/`. После перехода с прежнего префикса пользователям нужно войти заново.
+перенаправления. Cookie выдаётся API с `Path=/v1/` и привязана к его хосту.
+После перехода с прежней схемы пользователям нужно войти заново.
 В production логотип кабинета ведёт на `https://mutating.tech/`.
 
 ## Общий локальный запуск
@@ -36,9 +37,10 @@ uv run --project platform/api python deploy/run.py
 
 API доступен на `http://127.0.0.1:8000`, кабинет — на
 `http://127.0.0.1:8001/`. В `platform/api/.env` укажите
-`DASHBOARD_PUBLIC_ORIGIN=http://127.0.0.1:8001` и `DASHBOARD_SECURE_COOKIE=false`.
-При использовании Vite вместо общего запуска используйте прежние настройки из
-`platform/web/.env.example` с origin `http://127.0.0.1:5173`.
+`DASHBOARD_API_URL=http://127.0.0.1:8000/v1`,
+`THRONG_BROWSER_ORIGINS=["http://127.0.0.1:8001","http://127.0.0.1:5173"]` и
+`THRONG_BROWSER_SECURE_COOKIE=false`. Для Vite также используйте
+`platform/web/.env.example`. Адрес API должен быть доступен браузеру.
 
 Общая команда применяет миграции, ждёт готовности API, запускает кабинет и
 останавливает оба процесса по Ctrl+C/SIGTERM. Неожиданное завершение любого
@@ -166,13 +168,19 @@ CI завершается ошибкой, а новая БД сохраняет�
 | `/var/lib/throng/throng.db` | Рабочая SQLite; при работе также возможны `-wal` и `-shm` |
 | `/var/lib/throng/artifacts/` | Артефакты, аватары и другие данные API |
 | `/var/lib/throng/backups/` | Копии SQLite перед обновлениями; файлы артефактов не копируются |
-| `/etc/throng/throng.env` | Настройки production и постоянный ключ cookie |
+| `/etc/throng/throng.env` | Настройки API, CORS и публичного адреса API для кабинета |
 | `/opt/mutating/releases/` | Hugo, API, интерфейс и `platform/api/.venv` каждого релиза |
 | `/opt/mutating/current` | Ссылка на релиз, соответствующий текущей схеме БД |
 
-Playbook генерирует `DASHBOARD_SESSION_KEY` один раз и сохраняет его при повторном
-запуске. Cookie остаётся Secure/HttpOnly, привязана к хосту платформы и пути
-`/api/`. Для CSRF используется точный origin `https://platform.mutating.tech`.
+Cookie `tmc_session` выдаётся самим API: Secure/HttpOnly, без Domain,
+`Path=/v1/`, SameSite=Lax. Она содержит случайный API-токен; в БД сохраняется
+только его хэш. Отдельного хранилища веб-сессий и ключа шифрования кабинета нет.
+Для CORS и CSRF используется список точных origin `THRONG_BROWSER_ORIGINS`,
+по умолчанию `["https://platform.mutating.tech"]`. В production
+`THRONG_BROWSER_SECURE_COOKIE=true`. Кабинет получает публичный адрес из
+`DASHBOARD_API_URL` (по умолчанию `https://api.mutating.tech/v1`).
+Прежние `DASHBOARD_SESSION_KEY`, `DASHBOARD_SECURE_COOKIE` и
+`DASHBOARD_PUBLIC_ORIGIN` больше не используются.
 В SQLite одновременно работает один API/контроллер; не запускайте дополнительные
 Uvicorn workers или старый независимый API поверх этой базы.
 

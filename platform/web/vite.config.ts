@@ -7,10 +7,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:8001",
-      // Keep the agent API and its registration/dashboard links on one origin.
-      "/v1": "http://127.0.0.1:8000",
-      "/agent/v1": "http://127.0.0.1:8000",
+      // Only public UI configuration is loaded from the static dashboard server.
+      "/config.js": "http://127.0.0.1:8001",
     },
   },
 });

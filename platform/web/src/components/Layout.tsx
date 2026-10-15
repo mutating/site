@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
-import { api, json } from "../lib/api";
+import { api, apiURL, json } from "../lib/api";
 import { ErrorBox, Icon } from "./UI";
 import { Brand } from "./Brand";
 
@@ -48,7 +48,7 @@ export function Avatar({ large = false }: { large?: boolean }) {
     <span className={`avatar ${large ? "large" : ""}`}>
       {user?.avatar_version ? (
         <img
-          src={`/api/users/me/avatar?v=${user.avatar_version}`}
+          src={apiURL(`users/me/avatar?v=${user.avatar_version}`)}
           alt=""
         />
       ) : (

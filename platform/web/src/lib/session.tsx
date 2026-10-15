@@ -22,7 +22,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(() => {
     setLoading(true);
     setError(null);
-    api<User>("session")
+    api<User>("auth/session")
       .then(setUser)
       .catch((e) => {
         if (!(e instanceof ApiError && e.status === 401)) setError(e);

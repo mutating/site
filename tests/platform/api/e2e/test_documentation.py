@@ -31,6 +31,8 @@ async def test_openapi_security_matches_public_and_protected_operations(client):
     public = {
         ("/v1/users", "post"),
         ("/v1/auth/login", "post"),
+        ("/v1/auth/session", "post"),
+        ("/v1/auth/session", "delete"),
         ("/health/live", "get"),
         ("/v1/agent-capabilities", "get"),
         ("/health/ready", "get"),
@@ -40,8 +42,12 @@ async def test_openapi_security_matches_public_and_protected_operations(client):
             if (path, method) in public or path.startswith("/acme/"):
                 assert not operation.get("security"), (path, method)
             else:
-                scheme = "AgentCredential" if path.startswith("/agent/") else "AccessToken"
-                assert operation["security"] == [{scheme: []}], (path, method)
+                expected = (
+                    [{"AgentCredential": []}]
+                    if path.startswith("/agent/")
+                    else [{"AccessToken": []}, {"BrowserSession": []}]
+                )
+                assert operation["security"] == expected, (path, method)
             headers = {
                 item["name"]: item
                 for item in operation.get("parameters", [])
@@ -60,6 +66,12 @@ async def test_openapi_security_matches_public_and_protected_operations(client):
     for scheme in ["AccessToken", "AgentCredential"]:
         assert schema["components"]["securitySchemes"][scheme]["type"] == "http"
         assert schema["components"]["securitySchemes"][scheme]["scheme"] == "bearer"
+    assert schema["components"]["securitySchemes"]["BrowserSession"] == {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "tmc_session",
+        "description": "Host-only HttpOnly cookie issued by POST /v1/auth/session.",
+    }
 
 
 async def test_openapi_includes_every_required_crud_and_execution_operation(client):

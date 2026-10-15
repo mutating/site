@@ -1,3 +1,6 @@
+export const API_BASE = window.__TMC_API_URL__;
+export const apiURL = (path: string) => `${API_BASE}/${path}`;
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -12,9 +15,13 @@ export async function request<T>(
 ): Promise<{ data: T; total: number | null }> {
   let response: Response;
   try {
-    response = await fetch(`/api/${path}`, {
+    response = await fetch(apiURL(path), {
       ...options,
-      credentials: "same-origin",
+      signal: AbortSignal.any([
+        AbortSignal.timeout(20_000),
+        ...(options.signal ? [options.signal] : []),
+      ]),
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "X-Requested-With": "ThrongDashboard",
@@ -26,7 +33,7 @@ export async function request<T>(
     throw new ApiError(0, "Network error");
   }
   if (!response.ok) {
-    if (response.status === 401 && !["session", "register"].includes(path))
+    if (response.status === 401 && path !== "auth/session")
       window.dispatchEvent(new Event("session-expired"));
     let detail = "";
     try {

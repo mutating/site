@@ -113,9 +113,7 @@ def test_native_platform_and_subdomain_routing(tmp_path):
     env_file.write_text(
         f"THRONG_DATABASE_URL=sqlite+aiosqlite:///{database}\n"
         f"THRONG_STORAGE_PATH={tmp_path / 'artifacts'}\n"
-        "DASHBOARD_PUBLIC_ORIGIN=https://platform.mutating.tech\n"
-        "DASHBOARD_SECURE_COOKIE=true\n"
-        "DASHBOARD_SESSION_KEY=MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=\n"
+        "THRONG_BROWSER_SECURE_COOKIE=true\n"
     )
     environment = {
         key: value
@@ -244,8 +242,8 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         credentials = {"login": identity["email"], "password": identity["password"]}
         status, headers, body = request(
             https_port,
-            "/api/session",
-            "platform.mutating.tech",
+            "/v1/auth/session",
+            "api.mutating.tech",
             True,
             "POST",
             json.dumps(credentials),
@@ -254,13 +252,13 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         assert status == 200
         assert "access_token" not in json.loads(body)
         cookie = headers["set-cookie"]
-        assert all(attribute in cookie for attribute in ("HttpOnly", "Secure", "Path=/api/"))
+        assert all(attribute in cookie for attribute in ("HttpOnly", "Secure", "Path=/v1/"))
         assert "Domain=" not in cookie
         assert (
             request(
                 https_port,
-                "/api/session",
-                "platform.mutating.tech",
+                "/v1/auth/session",
+                "api.mutating.tech",
                 True,
                 "POST",
                 json.dumps(credentials),
@@ -285,8 +283,8 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         assert (
             request(
                 https_port,
-                "/api/session",
-                "platform.mutating.tech",
+                "/v1/auth/session",
+                "api.mutating.tech",
                 True,
                 headers={"Cookie": cookie.split(";", 1)[0]},
             )[0]

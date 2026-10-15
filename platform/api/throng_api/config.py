@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     snapshot_timeout_seconds: int = Field(default=300, ge=1, le=86400)
     command_queue_timeout_seconds: int = Field(default=3600, ge=1, le=86400)
     login_token_seconds: int = Field(default=86400, ge=60, le=31536000)
+    browser_origins: list[str] = Field(default_factory=lambda: ["https://platform.mutating.tech"])
+    browser_secure_cookie: bool = True
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, ge=1)
     max_owner_storage_bytes: int = Field(default=1024 * 1024 * 1024, ge=1)
     max_owner_isolates: int = Field(default=10, ge=1)

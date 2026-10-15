@@ -69,6 +69,8 @@ export default defineConfig({
         THRONG_STORAGE_PATH: `${runtime}/artifacts`,
         THRONG_AGENT_LEASE_SECONDS: "3600",
         THRONG_ALLOW_REGISTRATION: "true",
+        THRONG_BROWSER_ORIGINS: '["http://127.0.0.1:18101"]',
+        THRONG_BROWSER_SECURE_COOKIE: "false",
       },
     },
     {
@@ -78,10 +80,7 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 30_000,
       env: {
-        DASHBOARD_API_URL: "http://127.0.0.1:18100",
-        DASHBOARD_PUBLIC_ORIGIN: "http://127.0.0.1:18101",
-        DASHBOARD_SECURE_COOKIE: "false",
-        DASHBOARD_SESSION_KEY: Buffer.alloc(32, 7).toString("base64"),
+        DASHBOARD_API_URL: "http://127.0.0.1:18100/v1",
       },
     },
   ],
