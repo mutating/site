@@ -5,7 +5,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { api, allPages, json, request } from "../lib/api";
+import { api, apiURL, allPages, json, request } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useSession } from "../lib/session";
 import { useI18n, type MessageKey } from "../lib/i18n";
@@ -180,7 +180,7 @@ function OrganizationContent({
                     <span className="avatar">
                       {member.user.avatar_version ? (
                         <img
-                          src={`/account/api/memberships/${member.id}/avatar?v=${member.user.avatar_version}`}
+                          src={apiURL(`memberships/${member.id}/avatar?v=${member.user.avatar_version}`)}
                           alt=""
                         />
                       ) : (

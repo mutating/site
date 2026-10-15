@@ -29,6 +29,9 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     ).toBeVisible();
     await expect(page.locator(".loading")).toHaveCount(0);
     await page.evaluate(() => document.fonts.ready);
+    if (name.startsWith("computer-")) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+    }
     await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true });
   }
   await page.goto("login");
@@ -66,7 +69,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     token: (await auth.json()).access_token,
   };
   const response = await page.request.post(
-    "http://127.0.0.1:18101/account/api/session",
+    "http://127.0.0.1:18100/v1/auth/session",
     {
       headers: {
         Origin: "http://127.0.0.1:18101",
@@ -103,6 +106,25 @@ test("auth, every product page, populated and empty pools, and confirmation dial
       ).status(),
     ).toBe(200);
   }
+  for (const [version, name, number] of [
+    ["1.2.0", "single_core", 1100],
+    ["1.2.0", "legacy_only", 875.25],
+    ["1.9.0", "single_core", 1200.25],
+    ["1.10.0", "single_core", 1250.5],
+    ["1.10.0", "multi_core", 9350.75],
+    ["1.10.0", "memory_copy", 0],
+  ] as const) {
+    const result = await request.post(`${API}/benchmark-results`, {
+      headers: headers(account),
+      data: {
+        computer_id: personal.id,
+        benchmarker_version: version,
+        benchmark_name: name,
+        number,
+      },
+    });
+    expect(result.status()).toBe(201);
+  }
   await reserve(request, account, 1250, 2 * GiB);
   const companyResponse = await request.post(`${API}/companies`, {
     headers: headers(account),
@@ -128,6 +150,24 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await page.goto(`power-cells/computers?user_id=${account.id}`);
   await expect(page.locator("tbody tr")).toHaveCount(2);
   await screenshot("computers");
+  await page.getByRole("link", { name: "workstation-01", exact: true }).click();
+  await expect(page.locator(".benchmark-card")).toHaveCount(3);
+  await screenshot("computer-details");
+  await page.getByRole("link", { name: /single_core/ }).click();
+  await expect(page.locator(".benchmark-history-table tbody tr")).toHaveCount(
+    3,
+  );
+  await screenshot("computer-benchmark-history");
+  await page.locator(".benchmark-archive summary").click();
+  await page
+    .getByLabel(language === "ru" ? "Выберите бенчмарк" : "Choose a benchmark")
+    .selectOption("legacy_only");
+  await expect(page.locator(".benchmark-history-table tbody th")).toHaveText([
+    "1.2.0",
+  ]);
+  await screenshot("computer-benchmark-archive");
+  await page.goto(`power-cells/computers/${mini.id}?user_id=${account.id}`);
+  await screenshot("computer-benchmarks-empty");
   await page.goto("organizations");
   await expect(page.getByRole("heading", { name: company.name })).toBeVisible();
   await screenshot("organizations");
@@ -181,9 +221,12 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await page.goto("profile");
   await screenshot("profile");
   await page
-    .getByText(language === "ru" ? "Управление аккаунтом" : "Account management", {
-      exact: true,
-    })
+    .getByText(
+      language === "ru" ? "Управление аккаунтом" : "Account management",
+      {
+        exact: true,
+      },
+    )
     .click();
   await page
     .getByRole("button", {

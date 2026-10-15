@@ -17,7 +17,6 @@ COPY --from=ui /build/dist ./dist
 RUN useradd --create-home --uid 10002 dashboard
 USER dashboard
 ENV PATH=/app/.venv/bin:$PATH \
-    DASHBOARD_PUBLIC_ORIGIN=https://platform.mutating.tech \
-    DASHBOARD_SECURE_COOKIE=true
+    DASHBOARD_API_URL=https://api.mutating.tech/v1
 EXPOSE 8001
 CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -19,6 +19,9 @@ async def test_authentication_matrix_covers_all_protected_operations(
         ("GET", "/health/ready"),
         ("POST", "/v1/users"),
         ("POST", "/v1/auth/login"),
+        # Cookie login and idempotent logout enforce CSRF; covered in test_browser_sessions.
+        ("POST", "/v1/auth/session"),
+        ("DELETE", "/v1/auth/session"),
     }
     actual = {
         (method.upper(), path) for path, methods in schema["paths"].items() for method in methods

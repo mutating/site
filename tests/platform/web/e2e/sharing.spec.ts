@@ -391,7 +391,7 @@ test("member loading and edits recover from transport errors without discarding 
     })
   ).json();
   await login(page, account);
-  const listPath = "**/account/api/memberships?*";
+  const listPath = "**/v1/memberships?*";
   await page.route(listPath, (route) => route.abort("failed"));
   await page.goto(`organizations/${company.id}`);
   await expect(roster(page).getByRole("alert")).toContainText(
@@ -406,7 +406,7 @@ test("member loading and edits recover from transport errors without discarding 
   await trigger.click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Роль", { exact: true }).selectOption("admin");
-  const patch = `**/account/api/memberships/${member.id}`;
+  const patch = `**/v1/memberships/${member.id}`;
   await page.route(patch, (route) => route.abort("failed"));
   await dialog.getByRole("button", { name: "Сохранить изменения" }).click();
   await expect(dialog.getByRole("alert")).toContainText("Не удалось связаться");
@@ -430,7 +430,7 @@ test("invitation creation can retry and an email recipient can register later an
   const form = await openSharing(page, "invite");
   await form.getByLabel("Email или ник").fill(email);
   await form.getByLabel("Срок приглашения").selectOption("1");
-  const path = "**/account/api/invitations";
+  const path = "**/v1/invitations";
   await page.route(path, (route) => route.abort("failed"));
   await form.getByRole("button", { name: "Пригласить", exact: true }).click();
   await expect(form.getByRole("alert")).toContainText("Не удалось связаться");

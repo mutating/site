@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { apiURL, expect, origin, test } from "./stack";
+import { browserAPI, apiURL, expect, origin, test } from "./stack";
 
 test("nginx serves root dashboard routes over TLS, retains sessions after restart and recovers from API outage", async ({
   page,
@@ -24,14 +24,16 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   const before = await (
     await request.get(`${apiURL}/access-tokens`, { headers })
   ).json();
-  const redirect = await request.get(`${origin}/account`, { maxRedirects: 0 });
-  expect(redirect.status()).toBe(308);
-  expect(new URL(redirect.headers().location, origin).href).toBe(
-    `${origin}/`,
-  );
-  const legacy = await request.get(`${origin}/account/`, { maxRedirects: 0 });
-  expect(legacy.status()).toBe(308);
-  expect(new URL(legacy.headers().location, origin).href).toBe(`${origin}/`);
+  for (const path of [
+    "/account",
+    "/account/",
+    "/account/profile",
+    "/account/api/session",
+  ]) {
+    const response = await request.get(`${origin}${path}`, { maxRedirects: 0 });
+    expect(response.status()).toBe(404);
+    expect(response.headers().location).toBeUndefined();
+  }
   await page.goto(`${origin}/`);
   await expect(page.locator("h1").first()).toBeVisible();
   await page.evaluate(() => {
@@ -40,7 +42,10 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   });
   const failures: string[] = [];
   page.on("response", (response) => {
-    if (response.url().startsWith(`${origin}/`) && response.status() >= 400)
+    if (
+      (response.url().startsWith(`${origin}/`) || response.url().startsWith(browserAPI)) &&
+      response.status() >= 400
+    )
       failures.push(response.url());
   });
   await page.goto("power-cells");
@@ -53,7 +58,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   await page.getByLabel("Password", { exact: true }).fill(password);
   const sessionResponse = page.waitForResponse(
     (r) =>
-      r.url().endsWith("/account/api/session") &&
+      r.url().endsWith("/auth/session") &&
       r.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -64,13 +69,13 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   await expect(page.getByTestId("computer-count")).toHaveText("0");
   await page.evaluate(() => document.fonts.ready);
   const cookie = (await page.context().cookies()).find(
-    (c) => c.name === "tmc_account_session",
+    (c) => c.name === "tmc_session",
   )!;
   expect(cookie).toMatchObject({
     httpOnly: true,
     secure: true,
     sameSite: "Lax",
-    path: "/account/",
+    path: "/v1/",
   });
   expect(cookie.expires).toBeGreaterThan(Date.now() / 1000);
   expect(await page.evaluate(() => document.cookie)).not.toContain(cookie.name);
@@ -78,7 +83,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
     await page.evaluate(() => JSON.stringify({ ...localStorage })),
   ).not.toContain("thr_");
   // The initial anonymous session request is expected; all static assets must load over HTTPS.
-  expect(failures.filter((url) => !url.endsWith("/api/session"))).toEqual([]);
+  expect(failures.filter((url) => !url.endsWith("/auth/session"))).toEqual([]);
   const assets = await page
     .locator('script[src], link[rel="stylesheet"]')
     .evaluateAll((nodes) =>
@@ -88,7 +93,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
     );
   expect(assets.length).toBeGreaterThanOrEqual(2);
   for (const asset of assets) {
-    expect(asset).toMatch(/^\/(assets\/|preferences\.js$)/);
+    expect(asset).toMatch(/^\/(assets\/|preferences\.js$|config\.js$)/);
     const response = await request.get(`${origin}${asset}`);
     expect(response.status()).toBe(200);
     expect(response.headers()["content-type"]).not.toContain("text/html");
@@ -100,7 +105,8 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   const changed = await page.evaluate(
     async () =>
       (
-        await fetch("/account/api/companies", {
+        await fetch(window.__TMC_API_URL__ + "/companies", {
+          credentials: "include",
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -111,10 +117,11 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
       ).status,
   );
   expect(changed).toBe(201);
-  const forbidden = await request.post(`${origin}/account/api/companies`, {
+  const forbidden = await request.post(`${browserAPI}/companies`, {
     headers: {
       Origin: "https://evil.example",
       "X-Requested-With": "ThrongDashboard",
+      Cookie: `${cookie.name}=${cookie.value}`,
     },
     data: { name: "forbidden" },
   });
@@ -150,7 +157,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
     )
     .toBeGreaterThan(0);
   const avatar = await page.request.get(
-    `${origin}/account/api/users/me/avatar`,
+    `${browserAPI}/users/me/avatar`,
   );
   expect(avatar.status()).toBe(200);
   expect(avatar.headers()["content-type"]).toMatch(/^image\//);
@@ -200,7 +207,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   ).toEqual(before);
   expect(
     (
-      await request.get(`${origin}/account/api/session`, {
+      await request.get(`${browserAPI}/auth/session`, {
         headers: { Cookie: `${cookie.name}=${cookie.value}` },
       })
     ).status(),

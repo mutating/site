@@ -90,6 +90,13 @@ export interface Computer {
   session_id: string | null;
   lease_expires_at: string | null;
 }
+export interface BenchmarkResult {
+  id: string;
+  computer_id: string;
+  benchmark_name: string;
+  benchmarker_version: string;
+  number: number;
+}
 export interface Pool {
   id: string;
   kind: "users" | "companies";

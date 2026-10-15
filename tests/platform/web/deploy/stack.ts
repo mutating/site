@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 
 export const origin = "https://127.0.0.1:18443";
 export const apiURL = "http://127.0.0.1:18210/v1";
+export const browserAPI = "https://127.0.0.1:18444/v1";
 type Stack = {
   restartDashboard: () => Promise<void>;
   stopAPI: () => Promise<void>;
@@ -90,6 +91,8 @@ export const test = base.extend<{ ready: void }, { stack: Stack }>({
         THRONG_DATABASE_URL: `sqlite+aiosqlite:///${runtime}/api.db`,
         THRONG_STORAGE_PATH: resolve(runtime, "artifacts"),
         THRONG_ALLOW_REGISTRATION: "true",
+        THRONG_BROWSER_ORIGINS: JSON.stringify([origin]),
+        THRONG_BROWSER_SECURE_COOKIE: "true",
       };
       let api: ChildProcess;
       let bff: ChildProcess;
@@ -125,10 +128,7 @@ export const test = base.extend<{ ready: void }, { stack: Stack }>({
             "18211",
           ],
           {
-            DASHBOARD_API_URL: "http://127.0.0.1:18210",
-            DASHBOARD_PUBLIC_ORIGIN: origin,
-            DASHBOARD_SECURE_COOKIE: "true",
-            DASHBOARD_SESSION_KEY: Buffer.alloc(32, 19).toString("base64"),
+            DASHBOARD_API_URL: browserAPI,
           },
         );
         await ready("http://127.0.0.1:18211/login");
@@ -171,6 +171,15 @@ http {
   client_body_temp_path "${runtime}/body";
   proxy_temp_path "${runtime}/proxy";
   types { text/html html; text/css css; application/javascript js; image/svg+xml svg; image/png png; font/woff2 woff2; }
+  server {
+    listen 127.0.0.1:18444 ssl;
+    server_name localhost;
+    ssl_certificate "${runtime}/cert.pem";
+    ssl_certificate_key "${runtime}/key.pem";
+    location / {
+      proxy_pass http://127.0.0.1:18210;
+    }
+  }
   server {
     listen 127.0.0.1:18443 ssl;
     server_name localhost;

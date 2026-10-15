@@ -58,7 +58,7 @@ export function Profile() {
               setBusy(true);
               setLogoutError(null);
               try {
-                await api("session", json("DELETE"));
+                await api("auth/session", json("DELETE"));
                 setUser(null);
               } catch (e) {
                 setLogoutError(e);

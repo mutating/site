@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
-import { api, json } from "../lib/api";
+import { api, apiURL, json } from "../lib/api";
 import { ErrorBox, Icon } from "./UI";
 import { Brand } from "./Brand";
 
@@ -48,7 +48,7 @@ export function Avatar({ large = false }: { large?: boolean }) {
     <span className={`avatar ${large ? "large" : ""}`}>
       {user?.avatar_version ? (
         <img
-          src={`/account/api/users/me/avatar?v=${user.avatar_version}`}
+          src={apiURL(`users/me/avatar?v=${user.avatar_version}`)}
           alt=""
         />
       ) : (
@@ -97,34 +97,42 @@ export function Layout() {
             ))}
           </nav>
           <div className="sidebar-account">
-            <Link className="account-link" to="/profile">
-              <Avatar />
-              <span>
-                <strong>
-                  {user?.first_name || user?.nickname || user?.email}
-                </strong>
-                <small>{user?.email}</small>
-              </span>
-            </Link>
-            <button
-              className="logout-button"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setError(null);
-                try {
-                  await api("session", json("DELETE"));
-                  setUser(null);
-                } catch (e) {
-                  setError(e);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              <Icon name="exit" size={17} />
-              {t("logout")}
-            </button>
+            <div className="account-card">
+              <Link className="account-link" to="/profile">
+                <Avatar />
+                <span>
+                  <strong>
+                    {user?.first_name || user?.nickname || user?.email}
+                  </strong>
+                  <small>{user?.email}</small>
+                </span>
+              </Link>
+              <div className="account-actions">
+                <Link className="account-action account-profile" to="/profile">
+                  <Icon name="user" size={14} />
+                  {t("profile")}
+                </Link>
+                <button
+                  className="account-action logout-button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError(null);
+                    try {
+                      await api("auth/session", json("DELETE"));
+                      setUser(null);
+                    } catch (e) {
+                      setError(e);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <Icon name="exit" size={14} />
+                  {t("logout")}
+                </button>
+              </div>
+            </div>
             <ErrorBox error={error} />
           </div>
         </aside>

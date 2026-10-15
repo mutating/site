@@ -5,8 +5,8 @@ from datetime import timedelta
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
-from fastapi import HTTPException, Request
-from fastapi.security import HTTPBearer
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import APIKeyCookie, HTTPBearer
 from sqlalchemy import and_, or_, select
 from starlette.concurrency import run_in_threadpool
 
@@ -25,10 +25,11 @@ PASSWORDS = PasswordHasher()
 DUMMY_PASSWORD_HASH = PASSWORDS.hash(secrets.token_urlsafe(32))
 SCOPES = frozenset({"read", "manage", "execute"})
 REQUEST_PERMISSION = object()
+SESSION_COOKIE = "tmc_session"
 
 # These dependencies describe and parse bearer headers. Database-backed checks
 # remain in authenticate()/agent_auth(), inside each endpoint's transaction.
-access_token_scheme = HTTPBearer(
+user_bearer_scheme = HTTPBearer(
     scheme_name="AccessToken",
     auto_error=False,
     description=(
@@ -37,6 +38,20 @@ access_token_scheme = HTTPBearer(
         "В Authorize вставьте только сам токен, без префикса Bearer."
     ),
 )
+browser_cookie_scheme = APIKeyCookie(
+    name=SESSION_COOKIE,
+    scheme_name="BrowserSession",
+    auto_error=False,
+    description="Host-only HttpOnly cookie issued by POST /v1/auth/session.",
+)
+
+
+async def access_token_scheme(
+    token=Depends(user_bearer_scheme), cookie=Depends(browser_cookie_scheme)
+):
+    return token or cookie
+
+
 agent_credential_scheme = HTTPBearer(
     scheme_name="AgentCredential",
     auto_error=False,
@@ -68,6 +83,10 @@ async def verify_password(encoded: str, value: str) -> bool:
 
 
 def bearer(request: Request) -> str:
+    if not request.headers.get("authorization") and request.url.path.startswith("/v1/"):
+        cookie = request.cookies.get(SESSION_COOKIE)
+        if cookie:
+            return cookie
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "Bearer token required", headers={"WWW-Authenticate": "Bearer"})

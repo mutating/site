@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import IntegrityError
 
@@ -17,6 +18,7 @@ from throng_api import (
     artifacts,
     avatars,
     benchmarks,
+    browser,
     computers,
     controller,
     enrollment,
@@ -98,6 +100,16 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
     app.state.clock = clock
     app.state.last_controller_tick = None
 
+    app.add_middleware(browser.BrowserSessionMiddleware, settings=settings)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.browser_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+        allow_headers=["Content-Type", "X-Requested-With", "Authorization"],
+        expose_headers=["X-Total-Count"],
+    )
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exception):
         # Validation diagnostics include the rejected input. Escape lone
@@ -158,6 +170,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         return {"status": "ready"}
 
     for router in (
+        browser.router,
         avatars.router,
         accounts.public_router,
         accounts.router,

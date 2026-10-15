@@ -19,6 +19,7 @@ test("the eye follows the pointer outside the header before and after login", as
   account,
 }) => {
   await page.goto("login");
+  await expect(page.locator(".auth-panel")).toBeVisible();
   await expect(page.locator(".brand-eye")).toBeVisible();
   const viewport = page.viewportSize()!;
   const eye = (await page.locator(".brand-eye").boundingBox())!;
@@ -45,6 +46,7 @@ test("TMC unfolds without moving the header controls and remains open across its
 }, info) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("login");
+  await expect(page.locator(".auth-panel")).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const wordmark = page.locator(".wordmark");
   const stage = page.locator(".brand-wordmark-stage");
@@ -112,6 +114,7 @@ test("keyboard expansion and pointer tracking work with reduced motion", async (
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("login");
+  await expect(page.locator(".auth-panel")).toBeVisible();
   await expect(page.locator(".brand-wordmark-stage")).toHaveAttribute(
     "data-can-expand",
     "true",

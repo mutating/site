@@ -10,19 +10,23 @@ import {
 } from "./fixtures";
 import { randomUUID } from "node:crypto";
 
-test("legacy page URLs redirect to root routes and keep navigation and sessions", async ({
+test("root routes keep navigation and sessions while account URLs are absent", async ({
   page,
+  request,
   account,
 }) => {
   await login(page, account);
-  for (const path of ["/account", "/account/"]) {
-    await page.goto(path);
-    await expect(page).toHaveURL("http://127.0.0.1:18101/");
-    await expect(
-      page.getByRole("heading", { name: `Привет, ${account.first_name}` }),
-    ).toBeVisible();
+  for (const path of [
+    "/account",
+    "/account/",
+    "/account/profile",
+    "/account/api/session",
+  ]) {
+    const response = await request.get(path, { maxRedirects: 0 });
+    expect(response.status()).toBe(404);
+    expect(response.headers().location).toBeUndefined();
   }
-  await page.goto("/account/profile");
+  await page.goto("/profile");
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
@@ -31,12 +35,40 @@ test("legacy page URLs redirect to root routes and keep navigation and sessions"
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
   );
-  await page.goto(`/account/power-cells/computers?user_id=${account.id}&page=1`);
+  await page.goto(`/power-cells/computers?user_id=${account.id}&page=1`);
   await expect(page).toHaveURL(
     new RegExp(`/power-cells/computers\\?user_id=${account.id}&page=1$`),
   );
   await page.getByRole("navigation").getByRole("link", { name: "Обзор" }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/");
+});
+
+test("sidebar account card opens the profile and signs out through the browser session API", async ({
+  page,
+  account,
+}) => {
+  test.skip(
+    (page.viewportSize()?.width ?? 0) <= 800,
+    "The sidebar account card is hidden on mobile layouts",
+  );
+  await login(page, account);
+  const card = page.locator(".account-card");
+  await expect(card.locator("small")).toHaveText(account.email);
+  await card.getByRole("link", { name: "Профиль", exact: true }).click();
+  await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
+  await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
+    account.first_name,
+  );
+  const signedOut = page.waitForResponse(
+    (response) =>
+      response.url() === `${API}/auth/session` &&
+      response.request().method() === "DELETE",
+  );
+  await card.getByRole("button", { name: "Выйти", exact: true }).click();
+  expect((await signedOut).status()).toBe(204);
+  await expect(
+    page.getByRole("heading", { name: "С возвращением." }),
+  ).toBeVisible();
 });
 
 test("created account recovers from failed automatic login without repeating registration", async ({
@@ -143,13 +175,13 @@ test("all private pages require login; registration has optional fields and no p
   await expect(page.getByLabel("Фамилия", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Ник", { exact: true })).toHaveValue("");
   const cookie = (await page.context().cookies()).find(
-    (c) => c.name === "tmc_account_session",
+    (c) => c.name === "tmc_session",
   );
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe("Lax");
-  expect(cookie?.path).toBe("/account/");
+  expect(cookie?.path).toBe("/v1/");
   expect(await page.evaluate(() => document.cookie)).not.toContain(
-    "tmc_account_session",
+    "tmc_session",
   );
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
     "thr_",
@@ -551,7 +583,7 @@ test("wrong password, expired session and cross-origin mutation are rejected", a
   await login(page, account);
   const cookies = await page.context().cookies();
   const response = await request.post(
-    "http://127.0.0.1:18101/account/api/companies",
+    "http://127.0.0.1:18100/v1/companies",
     {
       headers: {
         Origin: "https://example.com",
@@ -579,7 +611,7 @@ test("logout revokes its API token and a revoked active session returns to login
   ).json();
   await login(page, account);
   const sessionCookie = (await page.context().cookies()).find(
-    (cookie) => cookie.name === "tmc_account_session",
+    (cookie) => cookie.name === "tmc_session",
   )!;
   await page.goto("profile");
   const signOut = page
@@ -590,8 +622,11 @@ test("logout revokes its API token and a revoked active session returns to login
   await expect(signOut).toBeEnabled();
   await page.context().setOffline(true);
   await signOut.click();
+  // Firefox can leave a cross-origin preflight pending while offline.
+  // The client must report its bounded request timeout and allow retry.
   await expect(page.getByRole("alert")).toContainText(
     "Не удалось связаться с сервером",
+    { timeout: 30_000 },
   );
   await expect(page.getByRole("alert")).toBeInViewport({ ratio: 1 });
   await expect(signOut).toBeEnabled();
@@ -605,7 +640,7 @@ test("logout revokes its API token and a revoked active session returns to login
   ).json();
   expect(after).toEqual(before);
   const replay = await request.get(
-    "http://127.0.0.1:18101/account/api/session",
+    "http://127.0.0.1:18100/v1/auth/session",
     { headers: { Cookie: `${sessionCookie.name}=${sessionCookie.value}` } },
   );
   expect(replay.status()).toBe(401);

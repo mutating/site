@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { request, allPages } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useSession } from "../lib/session";
@@ -7,10 +7,12 @@ import { useI18n } from "../lib/i18n";
 import { GiB, number } from "../lib/chart";
 import type { Computer, Company } from "../lib/types";
 import { Empty, ErrorBox, Heading, Loading } from "../components/UI";
+import { BenchmarkSummary } from "../components/Benchmarks";
 export function Computers() {
   const { user } = useSession();
   const { t, locale } = useI18n();
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const companyId = params.get("company_id");
   const userId = params.get("user_id") || user!.id;
   const page = Math.max(
@@ -44,6 +46,8 @@ export function Computers() {
   };
   const totalPages = Math.max(1, Math.ceil((data?.total || 0) / 10));
   const outsidePages = !!data && page > totalPages;
+  const previousPage = useRef(page);
+  const firstRow = useRef<HTMLTableRowElement>(null);
   useEffect(() => {
     if (!state.loading && !state.error && outsidePages) {
       const next = new URLSearchParams(params);
@@ -51,6 +55,14 @@ export function Computers() {
       setParams(next, { replace: true });
     }
   }, [state.loading, state.error, outsidePages, totalPages, params, setParams]);
+  useEffect(() => {
+    if (!data || outsidePages || previousPage.current === page) return;
+    previousPage.current = page;
+    const frame = requestAnimationFrame(() => {
+      firstRow.current?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [page, data, outsidePages]);
   const label = companyId
     ? company.data?.find((c) => c.id === companyId)?.name || t("organizations")
     : t("personal");
@@ -82,64 +94,94 @@ export function Computers() {
                       <th>
                         {t("memory")} · {t("free")} / {t("total")}
                       </th>
+                      <th>{t("benchmarks")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.data.map((computer) => (
-                      <tr key={computer.id}>
-                        <td>
-                          <div className="computer-identity">
-                            <strong>
-                              {computer.name || computer.id.slice(0, 8)}
-                            </strong>
-                            <span className="status-badge mobile-status">
+                    {data.data.map((computer, index) => {
+                      const to = `/power-cells/computers/${computer.id}?${params}`;
+                      return (
+                        <tr
+                          key={computer.id}
+                          ref={index === 0 ? firstRow : undefined}
+                          className="computer-row"
+                          onClick={(event) => {
+                            if (
+                              !(event.target as HTMLElement).closest(
+                                "a, button",
+                              ) &&
+                              !window.getSelection()?.toString()
+                            )
+                              navigate(to);
+                          }}
+                        >
+                          <td>
+                            <div className="computer-identity">
+                              <Link className="computer-link" to={to}>
+                                <strong>
+                                  {computer.name || computer.id.slice(0, 8)}
+                                </strong>
+                              </Link>
+                              <span className="status-badge mobile-status">
+                                <span className="signal-dot" />
+                                {t("online")}
+                              </span>
+                            </div>
+                            <small>
+                              {computer.os} · {computer.architecture} ·{" "}
+                              {computer.runtime}
+                            </small>
+                          </td>
+                          <td>
+                            <span className="status-badge">
                               <span className="signal-dot" />
                               {t("online")}
                             </span>
-                          </div>
-                          <small>
-                            {computer.os} · {computer.architecture} ·{" "}
-                            {computer.runtime}
-                          </small>
-                        </td>
-                        <td>
-                          <span className="status-badge">
-                            <span className="signal-dot" />
-                            {t("online")}
-                          </span>
-                        </td>
-                        <td
-                          className="numeric"
-                          data-label={`CPU · ${t("free")} / ${t("total")}`}
-                        >
-                          {number(
-                            Math.max(
-                              0,
-                              computer.cpu_millis - computer.reserved_cpu,
-                            ) / 1000,
-                            locale,
-                          )}{" "}
-                          <span>
-                            / {number(computer.cpu_millis / 1000, locale)}
-                          </span>
-                        </td>
-                        <td
-                          className="numeric"
-                          data-label={`${t("memory")} · ${t("free")} / ${t("total")}`}
-                        >
-                          {number(
-                            Math.max(
-                              0,
-                              computer.memory_bytes - computer.reserved_memory,
-                            ) / GiB,
-                            locale,
-                          )}{" "}
-                          <span>
-                            / {number(computer.memory_bytes / GiB, locale)} GiB
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td
+                            className="numeric"
+                            data-label={`CPU · ${t("free")} / ${t("total")}`}
+                          >
+                            {number(
+                              Math.max(
+                                0,
+                                computer.cpu_millis - computer.reserved_cpu,
+                              ) / 1000,
+                              locale,
+                            )}{" "}
+                            <span>
+                              / {number(computer.cpu_millis / 1000, locale)}
+                            </span>
+                          </td>
+                          <td
+                            className="numeric"
+                            data-label={`${t("memory")} · ${t("free")} / ${t("total")}`}
+                          >
+                            {number(
+                              Math.max(
+                                0,
+                                computer.memory_bytes -
+                                  computer.reserved_memory,
+                              ) / GiB,
+                              locale,
+                            )}{" "}
+                            <span>
+                              / {number(computer.memory_bytes / GiB, locale)}{" "}
+                              GiB
+                            </span>
+                          </td>
+                          <td
+                            className="computer-benchmarks"
+                            data-label={t("benchmarks")}
+                          >
+                            <BenchmarkSummary
+                              computerId={computer.id}
+                              to={to}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

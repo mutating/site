@@ -515,3 +515,23 @@ CI содержит отдельную проверку PostgreSQL. Для её 
 [docs/powercell.md](docs/powercell.md). Перед обновлением примените миграцию `0006`.
 Без настроенного HTTPS ACME и ключа CA регистрация Power Cell отключена;
 существующие универсальные агенты продолжают использовать прежний протокол.
+
+## Прямой доступ из личного кабинета
+
+Браузер на `https://platform.mutating.tech` обращается напрямую к этому API
+по адресу `https://api.mutating.tech/v1`. Сервер кабинета не пересылает запросы.
+`POST /v1/auth/session` принимает те же login/password, что `/v1/auth/login`,
+возвращает профиль пользователя и выдаёт host-only HttpOnly-cookie `tmc_session`
+с Path=/v1/, SameSite=Lax и Secure. GET читает профиль, DELETE отзывает токен.
+Программные клиенты продолжают использовать `/v1/auth/login` и bearer-токены.
+
+Оба способа используют существующую таблицу AccessToken с хэшами случайных
+токенов. JWT и отдельной таблицы веб-сессий нет. Удаление/отзыв токена немедленно
+прекращает доступ и через cookie. Права проверяются по актуальным данным БД.
+
+`THRONG_BROWSER_ORIGINS` — JSON-массив точных разрешённых origin; production
+по умолчанию `["https://platform.mutating.tech"]`. CORS разрешает credentials и
+предоставляет браузеру X-Total-Count для пагинации. Изменяющие запросы с cookie
+и POST/DELETE сессии требуют разрешённый Origin и заголовок
+`X-Requested-With: ThrongDashboard`. Для локального HTTP настройте origins
+явно и задайте `THRONG_BROWSER_SECURE_COOKIE=false`.

@@ -74,8 +74,7 @@ async def create_user(data: UserCreate, request: Request):
         return await saved(session, User(**values))
 
 
-@public_router.post("/auth/login", response_model=out.Login)
-async def login(data: Login, request: Request):
+async def issue_login(data: Login, request: Request):
     async with request.app.state.db.read() as session:
         identifier = data.login.casefold()
         user = await session.scalar(
@@ -102,7 +101,16 @@ async def login(data: Login, request: Request):
             request.app.state.clock()
             + timedelta(seconds=request.app.state.settings.login_token_seconds),
         )
-        return {"access_token": raw, "token_type": "bearer", "token": public(token)}
+        return (
+            {"access_token": raw, "token_type": "bearer", "token": public(token)},
+            UserOut.model_validate(user),
+        )
+
+
+@public_router.post("/auth/login", response_model=out.Login)
+async def login(data: Login, request: Request):
+    issued, _ = await issue_login(data, request)
+    return issued
 
 
 @router.get("/users", response_model=list[UserOut])
