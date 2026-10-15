@@ -36,7 +36,7 @@ uv run --project platform/api python deploy/run.py
 ```
 
 API: <http://127.0.0.1:8000/docs>; кабинет:
-<http://127.0.0.1:8001/account/>. Ctrl+C останавливает оба процесса.
+<http://127.0.0.1:8001/>. Ctrl+C останавливает оба процесса.
 В общем `.env` кабинету нужен origin `http://127.0.0.1:8001`.
 
 Для разработки UI с Vite используйте настройки из
@@ -107,7 +107,7 @@ API на SQLite в Python 3.11/3.12/3.13, API на PostgreSQL, сервер ка
 
 - `mutating.tech` — сайт Hugo;
 - `api.mutating.tech` — API;
-- `platform.mutating.tech` — кабинет с маршрутом `/account/`.
+- `platform.mutating.tech` — кабинет в корне `/`; старые адреса `/account/*` перенаправляются на новые.
 
 На сервере используется systemd; для запуска обоих приложений:
 

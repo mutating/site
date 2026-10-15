@@ -14,7 +14,7 @@ export default defineConfig({
     ["html", { outputFolder: "playwright-report/e2e", open: "never" }],
   ],
   use: {
-    baseURL: "http://127.0.0.1:18101/account/",
+    baseURL: "http://127.0.0.1:18101/",
     locale: "ru-RU",
     colorScheme: "dark",
     trace: "retain-on-failure",
@@ -74,7 +74,7 @@ export default defineConfig({
     {
       command:
         ".venv/bin/python -m uvicorn server.app:app --host 127.0.0.1 --port 18101",
-      url: "http://127.0.0.1:18101/account/login",
+      url: "http://127.0.0.1:18101/login",
       reuseExistingServer: false,
       timeout: 30_000,
       env: {

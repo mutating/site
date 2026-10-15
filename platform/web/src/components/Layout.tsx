@@ -6,12 +6,14 @@ import { api, json } from "../lib/api";
 import { ErrorBox, Icon } from "./UI";
 import { Brand } from "./Brand";
 
+const siteOrigin = import.meta.env.VITE_SITE_ORIGIN || "https://mutating.tech";
+
 export function Header() {
   const { t, language, setLanguage } = useI18n();
   const [theme, setTheme] = useState(document.documentElement.dataset.theme);
   return (
     <header className="site-header">
-      <Brand href={`${import.meta.env.VITE_SITE_ORIGIN || ""}${language === "ru" ? "/ru/" : "/"}`} />
+      <Brand href={`${siteOrigin}${language === "ru" ? "/ru/" : "/"}`} />
       <span className="header-caption">{t("account")}</span>
       <div className="header-actions">
         <button
@@ -129,8 +131,9 @@ export function Layout() {
         <main id="main" className="main-content">
           <Outlet />
           <footer className="page-footer">
-            <span>The Mutating Company</span>
-            <a href={language === "ru" ? "/ru/" : "/"}>{t("website")} ↗</a>
+            <a href={`${siteOrigin}${language === "ru" ? "/ru/" : "/"}`}>
+              {t("website")} ↗
+            </a>
           </footer>
         </main>
       </div>

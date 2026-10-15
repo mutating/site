@@ -48,6 +48,7 @@ export async function login(
   await expect(
     page.getByRole("heading", { name: `Привет, ${account.first_name}` }),
   ).toBeVisible();
+  await expect(page).toHaveURL("http://127.0.0.1:18101/");
 }
 export async function addComputer(
   request: APIRequestContext,

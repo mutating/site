@@ -53,7 +53,11 @@ def request(port, path, host=None, secure=False, method="GET", body=None, header
             method, path, body=body, headers={"Host": host or "localhost", **(headers or {})}
         )
         response = connection.getresponse()
-        return response.status, dict(response.getheaders()), response.read()
+        return (
+            response.status,
+            {name.lower(): value for name, value in response.getheaders()},
+            response.read(),
+        )
 
 
 def test_sqlite_backup_restores_wal_data_and_handles_an_absent_database(tmp_path):
@@ -182,7 +186,7 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         log.close()
         processes.append(child)
         wait_for(lambda: request(api_port, "/health/ready")[0] == 200)
-        wait_for(lambda: request(dashboard_port, "/account/login")[0] == 200)
+        wait_for(lambda: request(dashboard_port, "/login")[0] == 200)
         return child
 
     try:
@@ -196,19 +200,28 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         wait_for(lambda: request(https_port, "/health/ready", "api.mutating.tech", True)[0] == 200)
         status, headers, _ = request(http_port, "/docs?probe=1", "api.mutating.tech")
         assert status == 308
-        assert headers["Location"] == "https://api.mutating.tech/docs?probe=1"
+        assert headers["location"] == "https://api.mutating.tech/docs?probe=1"
         assert request(https_port, "/", "mutating.tech", True)[2] == b"main site"
         assert request(https_port, "/openapi.json", "api.mutating.tech", True)[0] == 200
         assert request(https_port, "/account/login", "api.mutating.tech", True)[0] == 404
         assert request(https_port, "/health/ready", "platform.mutating.tech", True)[0] == 404
-        status, headers, _ = request(https_port, "/", "platform.mutating.tech", True)
-        assert status == 308
-        assert headers["Location"].endswith("/account/")
-        status, _, html = request(https_port, "/account/profile", "platform.mutating.tech", True)
+        status, _, html = request(https_port, "/", "platform.mutating.tech", True)
         assert status == 200
-        for asset in re.findall(rb'(?:src|href)="(/account/assets/[^\"]+)"', html):
+        assets = re.findall(rb'(?:src|href)="(/assets/[^\"]+)"', html)
+        assert assets
+        for asset in assets:
             assert request(https_port, asset.decode(), "platform.mutating.tech", True)[0] == 200
-        assert request(https_port, "/account/missing.js", "platform.mutating.tech", True)[0] == 404
+        for path in ("/login", "/profile", "/organizations"):
+            assert request(https_port, path, "platform.mutating.tech", True)[0] == 200
+        for old, new in (
+            ("/account", "/"),
+            ("/account/", "/"),
+            ("/account/profile?probe=1", "/profile?probe=1"),
+        ):
+            status, headers, _ = request(https_port, old, "platform.mutating.tech", True)
+            assert status == 308
+            assert headers["location"] == new
+        assert request(https_port, "/missing.js", "platform.mutating.tech", True)[0] == 404
         identity = {"email": "deploy@example.com", "password": "a long deployment password"}
         assert (
             request(
@@ -266,7 +279,7 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         os.kill(api_pid, signal.SIGTERM)
         assert platform.wait(timeout=15) == 1
         with pytest.raises(OSError):
-            request(dashboard_port, "/account/login")
+            request(dashboard_port, "/login")
         platform = start()
         assert (
             request(

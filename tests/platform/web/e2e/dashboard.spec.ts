@@ -10,6 +10,35 @@ import {
 } from "./fixtures";
 import { randomUUID } from "node:crypto";
 
+test("legacy page URLs redirect to root routes and keep navigation and sessions", async ({
+  page,
+  account,
+}) => {
+  await login(page, account);
+  for (const path of ["/account", "/account/"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL("http://127.0.0.1:18101/");
+    await expect(
+      page.getByRole("heading", { name: `Привет, ${account.first_name}` }),
+    ).toBeVisible();
+  }
+  await page.goto("/account/profile");
+  await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
+  await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
+    account.first_name,
+  );
+  await page.reload();
+  await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
+    account.first_name,
+  );
+  await page.goto(`/account/power-cells/computers?user_id=${account.id}&page=1`);
+  await expect(page).toHaveURL(
+    new RegExp(`/power-cells/computers\\?user_id=${account.id}&page=1$`),
+  );
+  await page.getByRole("navigation").getByRole("link", { name: "Обзор" }).click();
+  await expect(page).toHaveURL("http://127.0.0.1:18101/");
+});
+
 test("created account recovers from failed automatic login without repeating registration", async ({
   page,
 }) => {
@@ -19,7 +48,7 @@ test("created account recovers from failed automatic login without repeating reg
   await page.getByLabel("Электронная почта").fill(email);
   await page.getByLabel("Пароль", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
-  await expect(page).toHaveURL(/\/account\/login$/);
+  await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("status")).toContainText("Аккаунт создан.");
   await expect(page.getByLabel("Email или ник")).toHaveValue(email);
   await expect(page.getByLabel("Пароль", { exact: true })).toHaveValue("");
@@ -95,7 +124,7 @@ test("all private pages require login; registration has optional fields and no p
     await expect(
       page.getByRole("heading", { name: "С возвращением." }),
     ).toBeVisible();
-    await expect(page).toHaveURL(/\/account\/login$/);
+    await expect(page).toHaveURL(/\/login$/);
   }
   await page.getByRole("link", { name: "Создать аккаунт" }).click();
   await expect(page.locator("input[type=password]")).toHaveCount(1);

@@ -34,7 +34,7 @@ systemctl reset-failed throng.service
 systemctl start throng.service
 for attempt in $(seq 1 60); do
   if curl --fail --silent --max-time 2 http://127.0.0.1:8000/health/ready --output /dev/null \
-    && curl --fail --silent --max-time 2 http://127.0.0.1:8001/account/login --output /dev/null; then
+    && curl --fail --silent --max-time 2 http://127.0.0.1:8001/login --output /dev/null; then
     rsync --archive --checksum --delete-delay --delay-updates --no-links \
       --chmod=D755,F644 "$release/site/public/" /var/www/mutating.tech/
     printf 'Deployed %s; SQLite backup: %s\n' "$release_id" "$backup_id"

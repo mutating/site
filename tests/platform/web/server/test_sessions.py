@@ -11,6 +11,51 @@ from fastapi.testclient import TestClient
 from server.app import Settings, create_app
 
 
+def test_frontend_root_and_legacy_redirects_preserve_queries_and_api_sessions(
+    tmp_path, monkeypatch
+):
+    """Serve root URLs and keep old bookmarks, assets and session transport working."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text('<html><script src="/assets/app.js"></script></html>')
+    (dist / "assets/app.js").write_text("console.log('dashboard')")
+    monkeypatch.setattr("server.app.ROOT", tmp_path)
+    settings = Settings(session_key=Fernet.generate_key().decode(), _env_file=None)
+    with TestClient(create_app(settings)) as client:
+        for path in ("/", "/login", "/register", "/profile", "/organizations/123"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert "/assets/app.js" in response.text
+        assert client.get("/assets/app.js").text == "console.log('dashboard')"
+        for old, new in (
+            ("/account", "/"),
+            ("/account?path=profile", "/?path=profile"),
+            ("/account/?ref=old", "/?ref=old"),
+            ("/account/login", "/login"),
+            ("/account/profile", "/profile"),
+            (
+                "/account/power-cells/computers?user_id=123&page=2",
+                "/power-cells/computers?user_id=123&page=2",
+            ),
+            ("/account/invitations/inv_token", "/invitations/inv_token"),
+            ("/account/assets/app.js", "/assets/app.js"),
+            ("/account//evil.example", "/evil.example"),
+            ("/account/encoded%23fragment", "/encoded%23fragment"),
+        ):
+            response = client.get(old, follow_redirects=False)
+            assert response.status_code == 308
+            assert response.headers["location"] == new
+        assert client.get("/account/api/session", follow_redirects=False).status_code == 401
+        for path in (
+            "/missing.js",
+            "/api/session",
+            "/health/ready",
+            "/agent/v1/session",
+            "/../pyproject.toml",
+        ):
+            assert client.get(path).status_code == 404
+
+
 def test_proxy_requires_session_and_enforces_route_and_origin_boundaries():
     """Anonymous and cross-origin callers cannot use the dashboard as an API proxy."""
     settings = Settings(

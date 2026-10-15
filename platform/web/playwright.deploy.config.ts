@@ -12,7 +12,7 @@ export default defineConfig({
   ],
   use: {
     ...devices["Desktop Chrome"],
-    baseURL: "https://127.0.0.1:18443/account/",
+    baseURL: "https://127.0.0.1:18443/",
     ignoreHTTPSErrors: true,
     locale: "ru-RU",
     trace: "retain-on-failure",

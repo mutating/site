@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { apiURL, expect, origin, test } from "./stack";
 
-test("nginx serves the site and /account over TLS, retains sessions after restart and recovers from API outage", async ({
+test("nginx serves root dashboard routes over TLS, retains sessions after restart and recovers from API outage", async ({
   page,
   request,
   stack,
@@ -27,8 +27,11 @@ test("nginx serves the site and /account over TLS, retains sessions after restar
   const redirect = await request.get(`${origin}/account`, { maxRedirects: 0 });
   expect(redirect.status()).toBe(308);
   expect(new URL(redirect.headers().location, origin).href).toBe(
-    `${origin}/account/`,
+    `${origin}/`,
   );
+  const legacy = await request.get(`${origin}/account/`, { maxRedirects: 0 });
+  expect(legacy.status()).toBe(308);
+  expect(new URL(legacy.headers().location, origin).href).toBe(`${origin}/`);
   await page.goto(`${origin}/`);
   await expect(page.locator("h1").first()).toBeVisible();
   await page.evaluate(() => {
@@ -37,7 +40,7 @@ test("nginx serves the site and /account over TLS, retains sessions after restar
   });
   const failures: string[] = [];
   page.on("response", (response) => {
-    if (response.url().includes("/account/") && response.status() >= 400)
+    if (response.url().startsWith(`${origin}/`) && response.status() >= 400)
       failures.push(response.url());
   });
   await page.goto("power-cells");
@@ -57,7 +60,7 @@ test("nginx serves the site and /account over TLS, retains sessions after restar
   const body = await (await sessionResponse).json();
   expect(body.email).toBe(email);
   expect(body).not.toHaveProperty("access_token");
-  await expect(page).toHaveURL(`${origin}/account/power-cells`);
+  await expect(page).toHaveURL(`${origin}/power-cells`);
   await expect(page.getByTestId("computer-count")).toHaveText("0");
   await page.evaluate(() => document.fonts.ready);
   const cookie = (await page.context().cookies()).find(
@@ -85,12 +88,12 @@ test("nginx serves the site and /account over TLS, retains sessions after restar
     );
   expect(assets.length).toBeGreaterThanOrEqual(2);
   for (const asset of assets) {
-    expect(asset).toMatch(/^\/account\//);
+    expect(asset).toMatch(/^\/(assets\/|preferences\.js$)/);
     const response = await request.get(`${origin}${asset}`);
     expect(response.status()).toBe(200);
     expect(response.headers()["content-type"]).not.toContain("text/html");
   }
-  expect((await request.get(`${origin}/account/missing.js`)).status()).toBe(
+  expect((await request.get(`${origin}/missing.js`)).status()).toBe(
     404,
   );
   expect((await request.get(`${origin}/api/session`)).status()).toBe(404);
@@ -163,11 +166,19 @@ test("nginx serves the site and /account over TLS, retains sessions after restar
   await expect(
     page.locator(".profile-panel form").getByRole("status"),
   ).toHaveText("Changes saved.");
+  await expect(
+    page.getByRole("link", { name: "The Mutating Company", exact: true }).first(),
+  ).toHaveAttribute("href", "https://mutating.tech/");
+  await expect(page.locator(".page-footer a")).toHaveAttribute(
+    "href",
+    "https://mutating.tech/",
+  );
   await page
-    .getByRole("link", { name: "The Mutating Company", exact: true })
-    .first()
+    .getByRole("navigation")
+    .getByRole("link", { name: "Overview", exact: true })
     .click();
   await expect(page).toHaveURL(`${origin}/`);
+  await expect(page.getByRole("heading", { name: "Hello, После сбоя" })).toBeVisible();
   const siteRequest = page.waitForRequest((r) => r.isNavigationRequest());
   await page.reload();
   expect((await (await siteRequest).allHeaders()).cookie || "").not.toContain(

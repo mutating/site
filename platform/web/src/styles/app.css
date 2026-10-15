@@ -568,7 +568,7 @@ h3 {
   margin-top: auto;
   padding: 58px 0 28px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 20px;
   font-size: 10px;
   color: var(--ink-muted);
