@@ -18,7 +18,8 @@ Python-сервисом в корне поддомена платформы и �
 `GET/PATCH/DELETE /v1/benchmark-results/<uuid>`. Также доступен
 `GET /v1/computers/<uuid>/benchmark-results`. Запись содержит `id`, `created_at`,
 `computer_id`, `benchmark_name`, конечное неотрицательное `number` и строгую
-SemVer 2 `benchmarker_version`. PATCH меняет число; идентичность результата
+SemVer 2 `benchmarker_version`. Для проверки и сравнения версий используется
+библиотека `semver`. PATCH меняет число; идентичность результата
 задаётся тройкой компьютер/имя/версия. Повторный POST сохраняет UUID и обновляет
 число; другая версия добавляет запись. Списки по умолчанию возвращают целиком
 наибольшую semver-версию, `latest_only=false` — историю. При равном semver

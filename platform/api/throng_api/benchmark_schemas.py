@@ -1,36 +1,21 @@
 """The benchmark identity includes the name: a version contains an entire suite."""
 
-import re
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import AfterValidator, ConfigDict, Field, model_validator
+from semver import Version as SemVer
 
 from throng_api.schemas import Input
 
-SEMVER = re.compile(
-    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-    r"(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
-    r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?"
-    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-)
 
-
-def semver_key(version: str):
+def semver_key(version: str) -> tuple[SemVer, str]:
     """SemVer 2 precedence; build metadata breaks ties deterministically only."""
-    match = SEMVER.fullmatch(version)
-    if not match:
-        raise ValueError("Expected a SemVer 2 version (for example 1.2.3)")
-    major, minor, patch, prerelease, _ = match.groups()
-    identifiers = tuple(
-        (0, int(part)) if part.isascii() and part.isdigit() else (1, part)
-        for part in (prerelease or "").split(".")
-    )
-    return (int(major), int(minor), int(patch), prerelease is None, identifiers, version)
+    return SemVer.parse(version), version
 
 
 def valid_version(value: str) -> str:
-    semver_key(value)
+    SemVer.parse(value)
     return value
 
 
