@@ -46,7 +46,7 @@ export function Profile() {
     }
   }
   return (
-    <>
+    <div className="profile-page">
       <Heading
         index={`05 / ${t("profile")}`}
         title={t("profile")}
@@ -74,46 +74,60 @@ export function Profile() {
         {t("profileLead")}
       </Heading>
       <ErrorBox error={logoutError} />
-      <section className="panel profile-panel">
-        <div className="avatar-editor">
-          <div className="avatar-controls" aria-busy={avatarBusy}>
-            <Avatar large />
-            <div>
-              <label
-                className={`button secondary compact file-button ${busy ? "is-disabled" : ""}`}
-              >
-                {t(avatarBusy ? "waiting" : "uploadAvatar")}
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  disabled={busy}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void changeAvatar(file);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {user!.avatar_version && (
-                <button
-                  className="text-button"
-                  disabled={busy}
-                  onClick={() => changeAvatar()}
-                >
-                  {t("removeAvatar")}
-                </button>
-              )}
-              <p className="field-help">{t("avatarHelp")}</p>
-            </div>
+      <div className="profile-panel">
+        <section
+          className="profile-section"
+          aria-labelledby="profile-avatar-title"
+        >
+          <div className="profile-section-label">
+            <h2 id="profile-avatar-title">{t("profileAvatar")}</h2>
+            <p>{t("profileAvatarLead")}</p>
           </div>
-          <ErrorBox error={avatarError} />
-          {avatarSuccess && (
-            <p className="success-message" role="status">
-              {t("saved")}
-            </p>
-          )}
-        </div>
+          <div className="panel avatar-editor">
+            <div className="avatar-controls" aria-busy={avatarBusy}>
+              <Avatar large />
+              <div>
+                <div className="profile-avatar-actions">
+                  <label
+                    className={`button secondary compact file-button ${busy ? "is-disabled" : ""}`}
+                  >
+                    <Icon name="camera" size={15} />
+                    {t(avatarBusy ? "waiting" : "uploadAvatar")}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      aria-label={t("uploadAvatar")}
+                      disabled={busy}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void changeAvatar(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {user!.avatar_version && (
+                    <button
+                      className="text-button"
+                      disabled={busy}
+                      onClick={() => changeAvatar()}
+                    >
+                      {t("removeAvatar")}
+                    </button>
+                  )}
+                </div>
+                <p className="field-help">{t("avatarHelp")}</p>
+              </div>
+            </div>
+            <ErrorBox error={avatarError} />
+            {avatarSuccess && (
+              <p className="success-message" role="status">
+                {t("saved")}
+              </p>
+            )}
+          </div>
+        </section>
         <form
+          className="profile-settings-form"
           onSubmit={async (e) => {
             e.preventDefault();
             if (busy) return;
@@ -139,66 +153,101 @@ export function Profile() {
             }
           }}
         >
-          <div className="field-row">
-            <label className="field">
-              {t("firstName")}
-              <input
-                name="first_name"
-                defaultValue={user!.first_name}
-                autoComplete="given-name"
-                maxLength={100}
-              />
-            </label>
-            <label className="field">
-              {t("lastName")}
-              <input
-                name="last_name"
-                defaultValue={user!.last_name}
-                autoComplete="family-name"
-                maxLength={100}
-              />
-            </label>
+          <section
+            className="profile-section"
+            aria-labelledby="profile-details-title"
+          >
+            <div className="profile-section-label">
+              <h2 id="profile-details-title">{t("profileDetails")}</h2>
+              <p>{t("profileDetailsLead")}</p>
+            </div>
+            <div className="panel profile-section-content">
+              <div className="field-row">
+                <label className="field">
+                  {t("firstName")}
+                  <input
+                    name="first_name"
+                    defaultValue={user!.first_name}
+                    autoComplete="given-name"
+                    maxLength={100}
+                  />
+                </label>
+                <label className="field">
+                  {t("lastName")}
+                  <input
+                    name="last_name"
+                    defaultValue={user!.last_name}
+                    autoComplete="family-name"
+                    maxLength={100}
+                  />
+                </label>
+              </div>
+              <label className="field">
+                {t("nickname")}
+                <input
+                  aria-label={t("nickname")}
+                  name="nickname"
+                  defaultValue={user!.nickname || ""}
+                  maxLength={64}
+                  pattern="[A-Za-z0-9_][A-Za-z0-9_.\-]*"
+                  autoComplete="username"
+                />
+                <span className="field-help">{t("nicknameHelp")}</span>
+              </label>
+            </div>
+          </section>
+          <section
+            className="profile-section"
+            aria-labelledby="profile-email-title"
+          >
+            <div className="profile-section-label">
+              <h2 id="profile-email-title">{t("profileEmail")}</h2>
+              <p>{t("profileEmailLead")}</p>
+            </div>
+            <div className="panel profile-section-content">
+              <label className="field">
+                <span className="profile-email-label">
+                  {t("email")}
+                  <Icon name="lock" size={13} />
+                </span>
+                <input value={user!.email} readOnly autoComplete="email" />
+              </label>
+            </div>
+          </section>
+          <div className="profile-form-actions">
+            <div className="profile-form-feedback">
+              <ErrorBox error={error} />
+              {success && (
+                <p className="success-message" role="status">
+                  {t("saved")}
+                </p>
+              )}
+            </div>
+            <button className="button primary" disabled={busy}>
+              {t(busy ? "waiting" : "save")}
+            </button>
           </div>
-          <label className="field">
-            {t("nickname")}
-            <input
-              aria-label={t("nickname")}
-              name="nickname"
-              defaultValue={user!.nickname || ""}
-              maxLength={64}
-              pattern="[A-Za-z0-9_][A-Za-z0-9_.\-]*"
-              autoComplete="username"
-            />
-            <span className="field-help">{t("nicknameHelp")}</span>
-          </label>
-          <label className="field">
-            {t("email")}
-            <input value={user!.email} readOnly autoComplete="email" />
-          </label>
-          <ErrorBox error={error} />
-          {success && (
-            <p className="success-message" role="status">
-              {t("saved")}
-            </p>
-          )}
-          <button className="button primary" disabled={busy}>
-            {t(busy ? "waiting" : "save")}
-          </button>
         </form>
-      </section>
-      <section className="danger-zone">
-        <h2>{t("accountDeletion")}</h2>
-        <p>{t("deletionLead")}</p>
-        <button
-          className="button secondary danger-text"
-          onClick={(event) => {
-            event.currentTarget.focus({ preventScroll: true });
-            setDeleting(true);
-          }}
-        >
-          {t("deleteAccount")}
-        </button>
-      </section>
+      </div>
+      <details className="profile-account-management">
+        <summary>
+          {t("accountManagement")}
+          <Icon name="chevron-down" size={15} />
+        </summary>
+        <section className="danger-zone">
+          <h2>{t("accountDeletion")}</h2>
+          <p>{t("deletionLead")}</p>
+          <button
+            className="button secondary danger-text"
+            onClick={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
+              setDeleting(true);
+            }}
+          >
+            {t("deleteAccount")}
+          </button>
+        </section>
+      </details>
       {deleting && (
         <ConfirmDialog
           title={t("confirmDelete")}
@@ -211,6 +260,6 @@ export function Profile() {
           }}
         />
       )}
-    </>
+    </div>
   );
 }

@@ -68,6 +68,19 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <circle cx="12" cy="12" r="3" />
       </>
     ),
+    camera: (
+      <>
+        <path d="M8 5 9.5 3h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+        <circle cx="12" cy="13" r="4" />
+      </>
+    ),
+    lock: (
+      <>
+        <rect x="4" y="10" width="16" height="12" rx="2" />
+        <path d="M8 10V6a4 4 0 0 1 8 0v4M12 15v2" />
+      </>
+    ),
+    "chevron-down": <path d="m6 9 6 6 6-6" />,
   };
   return (
     <svg

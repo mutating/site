@@ -1227,30 +1227,161 @@ td small {
 .organization-actions button {
   font-size: 11px;
 }
-.profile-panel {
-  max-width: 700px;
-  padding: 30px;
+.profile-page {
+  width: 100%;
+  max-width: 880px;
+}
+.profile-page .page-heading {
+  margin-bottom: 32px;
+}
+.profile-page .page-heading .eyebrow {
+  margin-bottom: 12px;
+}
+.profile-page .page-heading h1 {
+  font-size: clamp(32px, 3vw, 40px);
+  letter-spacing: -0.05em;
+  line-height: 1.12;
+}
+.profile-page .page-heading .lede {
+  font-size: 14px;
+  margin-top: 10px;
+}
+.profile-page .page-heading > .button {
+  align-self: center;
+  margin-bottom: 0;
+}
+.profile-panel,
+.profile-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.profile-section {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.profile-section-label {
+  padding-top: 22px;
+}
+.profile-section-label h2 {
+  font-size: 15px;
+  letter-spacing: -0.025em;
+  line-height: 1.4;
+}
+.profile-section-label p {
+  margin-top: 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.profile-section > .panel {
+  min-width: 0;
+  padding: 24px;
+  border-radius: 14px;
+}
+.profile-section-content > .field:last-child {
+  margin-bottom: 0;
+}
+.profile-section .field input {
+  height: 44px;
+  border-radius: 8px;
+  background: var(--surface);
+}
+.profile-section .field input[readonly] {
+  background: var(--surface-raised);
+}
+.profile-page .field-help {
+  font-size: 11px;
 }
 .avatar-editor {
-  padding-bottom: 28px;
-  margin-bottom: 28px;
-  border-bottom: 1px solid var(--line);
+  min-width: 0;
 }
 .avatar-controls {
   display: flex;
-  gap: 23px;
+  gap: 18px;
   align-items: center;
+}
+.avatar-controls > div {
+  min-width: 0;
+}
+.profile-page .avatar.large {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 26px;
+}
+.profile-avatar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
 }
 .avatar-editor > .error-box,
 .avatar-editor > .success-message {
+  margin-top: 16px;
   margin-bottom: 0;
 }
 .avatar-editor .text-button {
-  margin-left: 15px;
   font-size: 11px;
 }
 .avatar-editor .field-help {
-  margin-top: 12px;
+  margin-top: 8px;
+}
+.profile-email-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.profile-email-label svg {
+  color: var(--ink-muted);
+}
+.profile-form-actions {
+  margin-left: 184px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.profile-form-feedback {
+  flex: 1;
+  min-width: min(100%, 240px);
+}
+.profile-form-feedback:empty {
+  display: none;
+}
+.profile-form-feedback > .error-box,
+.profile-form-feedback > .success-message {
+  margin: 0;
+}
+.profile-form-actions > .button {
+  margin-left: auto;
+  min-height: 44px;
+  border-radius: 9px;
+}
+.profile-account-management {
+  margin-top: 30px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.profile-account-management > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.profile-account-management > summary::-webkit-details-marker {
+  display: none;
+}
+.profile-account-management[open] > summary svg {
+  transform: rotate(180deg);
 }
 .file-button {
   position: relative;
@@ -1273,13 +1404,10 @@ td small {
   opacity: 0.5;
 }
 .danger-zone {
-  margin-top: 35px;
-  padding: 28px 0;
-  border-top: 1px solid var(--line);
-  max-width: 700px;
+  padding: 16px 0 0 184px;
 }
 .danger-zone h2 {
-  font-size: 21px;
+  font-size: 18px;
 }
 .danger-zone p {
   font-size: 12px;
@@ -1621,11 +1749,27 @@ td small {
   .chart-panel {
     padding: 14px;
   }
-  .profile-panel {
-    max-width: none;
+}
+@media (max-width: 640px) {
+  .profile-section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .profile-section-label {
+    padding-top: 0;
+  }
+  .profile-section-label p {
+    margin-top: 3px;
+  }
+  .profile-panel,
+  .profile-settings-form {
+    gap: 24px;
+  }
+  .profile-form-actions {
+    margin-left: 0;
   }
   .danger-zone {
-    max-width: none;
+    padding-left: 0;
   }
 }
 @media (max-width: 540px) {
@@ -1829,8 +1973,8 @@ td small {
   .organization-info {
     flex-basis: calc(100% - 55px);
   }
-  .profile-panel {
-    padding: 23px;
+  .profile-section > .panel {
+    padding: 20px;
   }
   .avatar-controls {
     gap: 16px;
@@ -1838,10 +1982,6 @@ td small {
   .avatar.large {
     width: 72px;
     height: 72px;
-  }
-  .avatar-editor .text-button {
-    display: block;
-    margin: 13px 0 0;
   }
   .field-row {
     grid-template-columns: 1fr;

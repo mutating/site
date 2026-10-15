@@ -195,6 +195,7 @@ test("nickname login, names, avatar, session persistence and confirmed account d
   await expect(page.locator(".avatar.large img")).toBeVisible();
   await page.getByRole("button", { name: "Удалить аватар" }).click();
   await expect(page.locator(".avatar.large img")).toHaveCount(0);
+  await page.getByText("Управление аккаунтом", { exact: true }).click();
   const deleteAccount = page.getByRole("button", {
     name: "Удалить аккаунт",
     exact: true,
@@ -377,6 +378,7 @@ test("organization creation, creator restrictions and safe deletion errors", asy
     page.getByRole("button", { name: "Удалить организацию" }),
   ).toHaveCount(0);
   await page.goto("profile");
+  await page.getByText("Управление аккаунтом", { exact: true }).click();
   await page
     .getByRole("button", { name: "Удалить аккаунт", exact: true })
     .click();
