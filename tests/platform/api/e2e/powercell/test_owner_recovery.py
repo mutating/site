@@ -17,18 +17,18 @@ async def test_account_recovery_revokes_attested_binding(api, client, bound_devi
     if expired:
         clock.now += timedelta(days=366)
         response = await client.post(
-            "/api/v1/auth/login",
+            "/v1/auth/login",
             json={"email": "alice@example.com", "password": "  correct horse battery staple  "},
         )
         assert response.status_code == 200
         api.headers["Authorization"] = "Bearer " + response.json()["access_token"]
-    target = f"/api/v1/computers/{device.binding['computer_id']}/unbind"
+    target = f"/v1/computers/{device.binding['computer_id']}/unbind"
     for _ in range(2):
         response = await api.post(
             target, headers={"Idempotency-Key": "owner-recovery"}, json={"cleanup_confirmed": True}
         )
         assert response.status_code == 200, response.text
-    state = (await api.get(f"/api/v1/computers/{device.binding['computer_id']}")).json()
+    state = (await api.get(f"/v1/computers/{device.binding['computer_id']}")).json()
     assert state["device_id"] == device.binding["device_id"]
     assert state["certificate_sha256"] == device.binding["certificate_sha256"]
     assert state["session_id"] is None

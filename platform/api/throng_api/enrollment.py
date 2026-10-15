@@ -43,7 +43,7 @@ from throng_api.security import (
 )
 
 router = APIRouter(
-    prefix="/api/v1", tags=["Power Cell enrollment"], dependencies=[Depends(access_token_scheme)]
+    prefix="/v1", tags=["Power Cell enrollment"], dependencies=[Depends(access_token_scheme)]
 )
 public_router = APIRouter(tags=["Power Cell capabilities"])
 EXTENSIONS = [
@@ -152,7 +152,7 @@ def authority(request):
     return request.app.state.powercell_authority
 
 
-@public_router.get("/api/v1/agent-capabilities")
+@public_router.get("/v1/agent-capabilities")
 async def capabilities(request: Request):
     configured = request.app.state.powercell_authority is not None
     return {

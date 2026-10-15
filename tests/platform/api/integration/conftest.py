@@ -17,7 +17,7 @@ async def dashboard_downgrade_collision(client, monkeypatch):
 
     collision, unique = uuid.uuid4(), uuid.uuid4()
     existing = await client.post(
-        "/api/v1/users",
+        "/v1/users",
         json={
             "email": "named@example.com",
             "password": "long enough password",
@@ -25,7 +25,7 @@ async def dashboard_downgrade_collision(client, monkeypatch):
         },
     )
     anonymous = await client.post(
-        "/api/v1/users",
+        "/v1/users",
         json={"email": "unnamed@example.com", "password": "long enough password"},
     )
     assert existing.status_code == anonymous.status_code == 201
@@ -179,7 +179,7 @@ async def legacy_occupied_database(
     extra_computers = []
     for company_id in [company["id"], None]:
         response = await api.post(
-            "/api/v1/computers",
+            "/v1/computers",
             json={
                 "company_id": company_id,
                 "os": "linux",
@@ -192,9 +192,7 @@ async def legacy_occupied_database(
         )
         assert response.status_code == 201, response.text
         extra_computers.append(response.json())
-    response = await api.delete(
-        f"/api/v1/computer-ownerships/{extra_computers[-1]['ownership']['id']}"
-    )
+    response = await api.delete(f"/v1/computer-ownerships/{extra_computers[-1]['ownership']['id']}")
     assert response.status_code == 204, response.text
     http_server.server.should_exit = True
     await asyncio.wait_for(http_server.task, timeout=10)
@@ -342,7 +340,7 @@ async def finished_execution(api, agent_api, run_task, command, isolate):
         json={"returncode": 0, "stdout": "saved result"},
     )
     assert response.status_code == 200, response.text
-    response = await api.delete(f"/api/v1/isolates/{isolate['id']}")
+    response = await api.delete(f"/v1/isolates/{isolate['id']}")
     assert response.status_code == 202, response.text
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})
     assert response.status_code == 200, response.text
@@ -483,12 +481,12 @@ async def large_resource_inventory(api, admin_api, computer):
     """Create ten custom resource types and capacities through HTTP alongside CPU and memory."""
     for number in range(10):
         response = await admin_api.post(
-            "/api/v1/resource-types",
+            "/v1/resource-types",
             json={"name": f"Device {number}", "code": f"device{number}", "unit": "device"},
         )
         assert response.status_code == 201, response.text
         response = await api.post(
-            f"/api/v1/computers/{computer['id']}/resources",
+            f"/v1/computers/{computer['id']}/resources",
             json={"resource_type_id": response.json()["id"], "total": number + 1},
         )
         assert response.status_code == 201, response.text
@@ -504,13 +502,13 @@ async def resource_history_series(api, computer, computer_resources, resource_ty
     for number in range(1, 13):
         clock.now += timedelta(seconds=1)
         response = await api.patch(
-            f"/api/v1/computer-resources/{computer_resources['cpu']['id']}",
+            f"/v1/computer-resources/{computer_resources['cpu']['id']}",
             json={"total": 2000 + number},
         )
         assert response.status_code == 200, response.text
         if number == 6:
             response = await api.post(
-                f"/api/v1/computers/{computer['id']}/resources",
+                f"/v1/computers/{computer['id']}/resources",
                 json={"resource_type_id": resource_type["id"], "total": 4},
             )
             assert response.status_code == 201, response.text
@@ -645,7 +643,7 @@ async def polling_commands(api, isolate):
     commands = []
     for number in range(12):
         response = await api.post(
-            f"/api/v1/isolates/{isolate['id']}/commands",
+            f"/v1/isolates/{isolate['id']}/commands",
             headers={"Idempotency-Key": str(uuid4())},
             json={"command": f"echo {number}"},
         )

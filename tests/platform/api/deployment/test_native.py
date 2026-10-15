@@ -226,7 +226,7 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         assert (
             request(
                 https_port,
-                "/api/v1/users",
+                "/v1/users",
                 "api.mutating.tech",
                 True,
                 "POST",

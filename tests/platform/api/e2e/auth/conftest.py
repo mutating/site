@@ -10,7 +10,7 @@ import pytest
 async def company_artifact(api, company):
     """Create initial state owned exclusively by Alice's company."""
     response = await api.post(
-        "/api/v1/artifacts", params={"company_id": company["id"]}, content=b"company state"
+        "/v1/artifacts", params={"company_id": company["id"]}, content=b"company state"
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -36,7 +36,7 @@ def company_isolate_payload(company, company_artifact):
 async def company_isolate(api, client, company_agent, company_isolate_payload):
     """Provision a company isolate through its actual assigned worker's HTTP protocol."""
     response = await api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": str(uuid4())},
         json=company_isolate_payload,
     )
@@ -53,7 +53,7 @@ async def company_isolate(api, client, company_agent, company_isolate_payload):
         f"/agent/v1/tasks/{tasks[0]['id']}/complete", headers=company_agent["headers"], json={}
     )
     assert response.status_code == 200, response.text
-    response = await api.get(f"/api/v1/isolates/{isolate['id']}")
+    response = await api.get(f"/v1/isolates/{isolate['id']}")
     assert response.status_code == 200 and response.json()["status"] == "ready", response.text
     assert response.json()["computer_id"] == company_agent["computer"]["id"]
     return response.json()
@@ -62,11 +62,11 @@ async def company_isolate(api, client, company_agent, company_isolate_payload):
 @pytest.fixture
 async def other_company_agent(other_api, client):
     """Enroll a suitable idle computer in Bob's independent company, inaccessible to Alice."""
-    response = await other_api.post("/api/v1/companies", json={"name": "Bob's company"})
+    response = await other_api.post("/v1/companies", json={"name": "Bob's company"})
     assert response.status_code == 201, response.text
     company = response.json()
     response = await other_api.post(
-        "/api/v1/computers",
+        "/v1/computers",
         json={
             "company_id": company["id"],
             "os": "linux",
@@ -79,7 +79,7 @@ async def other_company_agent(other_api, client):
     )
     assert response.status_code == 201, response.text
     computer = response.json()
-    response = await other_api.post(f"/api/v1/computers/{computer['id']}/credentials")
+    response = await other_api.post(f"/v1/computers/{computer['id']}/credentials")
     assert response.status_code == 201, response.text
     headers = {"Authorization": "Bearer " + response.json()["token"]}
     response = await client.post(
@@ -99,7 +99,7 @@ async def member_execution(other_api, client, membership, company_agent, company
     """Let a current member provision an isolate and finish a command, preserving their retry keys."""
     isolate_key, command_key = str(uuid4()), str(uuid4())
     response = await other_api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": isolate_key},
         json=company_isolate_payload,
     )
@@ -117,7 +117,7 @@ async def member_execution(other_api, client, membership, company_agent, company
     assert response.status_code == 200, response.text
     payload = {"command": "pytest -q"}
     response = await other_api.post(
-        f"/api/v1/isolates/{isolate['id']}/commands",
+        f"/v1/isolates/{isolate['id']}/commands",
         headers={"Idempotency-Key": command_key},
         json=payload,
     )
@@ -161,14 +161,14 @@ def api_requests(
 ):
     """Enumerate protected client operations independently of the application's auth declarations."""
     requests = [
-        ("GET", "/api/v1/users", "read", {}),
-        ("GET", "/api/v1/users/me", "read", {}),
-        ("GET", "/api/v1/users/me/avatar", "read", {}),
-        ("PUT", "/api/v1/users/me/avatar", "manage", {"content": b"avatar"}),
-        ("DELETE", "/api/v1/users/me/avatar", "manage", {}),
-        ("GET", "/api/v1/users/{user_id}", "read", {}),
-        ("PATCH", "/api/v1/users/{user_id}", "manage", {"json": {"first_name": "Changed"}}),
-        ("DELETE", "/api/v1/users/{user_id}", "manage", {}),
+        ("GET", "/v1/users", "read", {}),
+        ("GET", "/v1/users/me", "read", {}),
+        ("GET", "/v1/users/me/avatar", "read", {}),
+        ("PUT", "/v1/users/me/avatar", "manage", {"content": b"avatar"}),
+        ("DELETE", "/v1/users/me/avatar", "manage", {}),
+        ("GET", "/v1/users/{user_id}", "read", {}),
+        ("PATCH", "/v1/users/{user_id}", "manage", {"json": {"first_name": "Changed"}}),
+        ("DELETE", "/v1/users/{user_id}", "manage", {}),
     ]
     resources = [
         ("companies", company["id"], "company_id", {"name": "New company"}, {"name": "Changed"}),
@@ -217,7 +217,7 @@ def api_requests(
     ]
     identifiers = {"user_id": user["id"]}
     for resource, identifier, parameter, create, update in resources:
-        collection = f"/api/v1/{resource}"
+        collection = f"/v1/{resource}"
         item = collection + "/{" + parameter + "}"
         identifiers[item] = {parameter: identifier}
         params = {"params": {"company_id": company["id"]}} if resource == "memberships" else {}
@@ -234,65 +234,65 @@ def api_requests(
         [
             (
                 "GET",
-                "/api/v1/companies/{company_id}/users/lookup",
+                "/v1/companies/{company_id}/users/lookup",
                 "manage",
                 {"params": {"identifier": "alice"}},
             ),
-            ("GET", "/api/v1/memberships/{membership_id}/avatar", "read", {}),
-            ("POST", "/api/v1/invitations", "manage", {"json": {"company_id": company["id"]}}),
-            ("GET", "/api/v1/invitations", "read", {}),
-            ("GET", "/api/v1/invitations/link/{token}", "read", {}),
-            ("POST", "/api/v1/invitations/link/{token}/accept", "manage", {}),
-            ("POST", "/api/v1/invitations/{invitation_id}/accept", "manage", {}),
-            ("POST", "/api/v1/invitations/{invitation_id}/decline", "manage", {}),
-            ("POST", "/api/v1/invitations/{invitation_id}/link", "manage", {}),
-            ("DELETE", "/api/v1/invitations/{invitation_id}", "manage", {}),
-            ("POST", "/api/v1/computers/{computer_id}/credentials", "manage", {}),
+            ("GET", "/v1/memberships/{membership_id}/avatar", "read", {}),
+            ("POST", "/v1/invitations", "manage", {"json": {"company_id": company["id"]}}),
+            ("GET", "/v1/invitations", "read", {}),
+            ("GET", "/v1/invitations/link/{token}", "read", {}),
+            ("POST", "/v1/invitations/link/{token}/accept", "manage", {}),
+            ("POST", "/v1/invitations/{invitation_id}/accept", "manage", {}),
+            ("POST", "/v1/invitations/{invitation_id}/decline", "manage", {}),
+            ("POST", "/v1/invitations/{invitation_id}/link", "manage", {}),
+            ("DELETE", "/v1/invitations/{invitation_id}", "manage", {}),
+            ("POST", "/v1/computers/{computer_id}/credentials", "manage", {}),
             (
                 "POST",
-                "/api/v1/computers/{computer_id}/unbind",
+                "/v1/computers/{computer_id}/unbind",
                 "manage",
                 {"json": {"cleanup_confirmed": True}},
             ),
-            ("GET", "/api/v1/artifacts", "read", {}),
-            ("POST", "/api/v1/artifacts", "execute", {"content": b"unauthorized state"}),
-            ("GET", "/api/v1/artifacts/{artifact_id}", "read", {}),
-            ("GET", "/api/v1/artifacts/{artifact_id}/content", "read", {}),
-            ("DELETE", "/api/v1/artifacts/{artifact_id}", "execute", {}),
-            ("GET", "/api/v1/isolates", "read", {}),
-            ("POST", "/api/v1/isolates", "execute", {"json": isolate_payload}),
-            ("GET", "/api/v1/isolates/{isolate_id}", "read", {}),
-            ("DELETE", "/api/v1/isolates/{isolate_id}", "execute", {}),
-            ("POST", "/api/v1/isolates/{isolate_id}/renew", "execute", {}),
+            ("GET", "/v1/artifacts", "read", {}),
+            ("POST", "/v1/artifacts", "execute", {"content": b"unauthorized state"}),
+            ("GET", "/v1/artifacts/{artifact_id}", "read", {}),
+            ("GET", "/v1/artifacts/{artifact_id}/content", "read", {}),
+            ("DELETE", "/v1/artifacts/{artifact_id}", "execute", {}),
+            ("GET", "/v1/isolates", "read", {}),
+            ("POST", "/v1/isolates", "execute", {"json": isolate_payload}),
+            ("GET", "/v1/isolates/{isolate_id}", "read", {}),
+            ("DELETE", "/v1/isolates/{isolate_id}", "execute", {}),
+            ("POST", "/v1/isolates/{isolate_id}/renew", "execute", {}),
             (
                 "POST",
-                "/api/v1/isolates/{isolate_id}/commands",
+                "/v1/isolates/{isolate_id}/commands",
                 "execute",
                 {"json": {"command": "pytest -q"}},
             ),
             (
                 "POST",
-                "/api/v1/commands/statuses",
+                "/v1/commands/statuses",
                 "read",
                 {"json": {"ids": [running_command["command"]["id"]]}},
             ),
             (
                 "POST",
-                "/api/v1/commands/results",
+                "/v1/commands/results",
                 "read",
                 {"json": {"ids": [running_command["command"]["id"]]}},
             ),
             (
                 "POST",
-                "/api/v1/commands/cancel",
+                "/v1/commands/cancel",
                 "execute",
                 {"json": {"ids": [running_command["command"]["id"]]}},
             ),
-            ("GET", "/api/v1/commands/{command_id}", "read", {}),
-            ("GET", "/api/v1/commands/{command_id}/result", "read", {}),
-            ("POST", "/api/v1/commands/{command_id}/cancel", "execute", {}),
-            ("POST", "/api/v1/isolates/{isolate_id}/snapshots", "execute", {}),
-            ("GET", "/api/v1/operations/{operation_id}", "read", {}),
+            ("GET", "/v1/commands/{command_id}", "read", {}),
+            ("GET", "/v1/commands/{command_id}/result", "read", {}),
+            ("POST", "/v1/commands/{command_id}/cancel", "execute", {}),
+            ("POST", "/v1/isolates/{isolate_id}/snapshots", "execute", {}),
+            ("GET", "/v1/operations/{operation_id}", "read", {}),
         ]
     )
     identifiers.update(
@@ -307,45 +307,45 @@ def api_requests(
     period = {"from": clock.now.isoformat(), "to": (clock.now + timedelta(hours=1)).isoformat()}
     requests.extend(
         [
-            ("GET", "/api/v1/resource-types", "read", {}),
+            ("GET", "/v1/resource-types", "read", {}),
             (
                 "POST",
-                "/api/v1/resource-types",
+                "/v1/resource-types",
                 "manage",
                 {"json": {"code": "gpu", "name": "GPU", "unit": "device"}},
             ),
-            ("GET", "/api/v1/resource-types/{type_id}", "read", {}),
-            ("PATCH", "/api/v1/resource-types/{type_id}", "manage", {"json": {"name": "Changed"}}),
-            ("DELETE", "/api/v1/resource-types/{type_id}", "manage", {}),
-            ("GET", "/api/v1/computers/{computer_id}/resources", "read", {}),
+            ("GET", "/v1/resource-types/{type_id}", "read", {}),
+            ("PATCH", "/v1/resource-types/{type_id}", "manage", {"json": {"name": "Changed"}}),
+            ("DELETE", "/v1/resource-types/{type_id}", "manage", {}),
+            ("GET", "/v1/computers/{computer_id}/resources", "read", {}),
             (
                 "POST",
-                "/api/v1/computers/{computer_id}/resources",
+                "/v1/computers/{computer_id}/resources",
                 "manage",
                 {"json": {"resource_type_id": identifiers["type_id"], "total": 2000}},
             ),
-            ("GET", "/api/v1/computer-resources/{resource_id}", "read", {}),
+            ("GET", "/v1/computer-resources/{resource_id}", "read", {}),
             (
                 "PATCH",
-                "/api/v1/computer-resources/{resource_id}",
+                "/v1/computer-resources/{resource_id}",
                 "manage",
                 {"json": {"total": 2000}},
             ),
-            ("DELETE", "/api/v1/computer-resources/{resource_id}", "manage", {}),
-            ("GET", "/api/v1/computer-resources/{resource_id}/history", "read", {"params": period}),
-            ("GET", "/api/v1/users/{user_id}/resources/summary", "read", {}),
-            ("GET", "/api/v1/users/{user_id}/resources/history", "read", {"params": period}),
+            ("DELETE", "/v1/computer-resources/{resource_id}", "manage", {}),
+            ("GET", "/v1/computer-resources/{resource_id}/history", "read", {"params": period}),
+            ("GET", "/v1/users/{user_id}/resources/summary", "read", {}),
+            ("GET", "/v1/users/{user_id}/resources/history", "read", {"params": period}),
             (
                 "GET",
-                "/api/v1/users/{user_id}/resources/availability-history",
+                "/v1/users/{user_id}/resources/availability-history",
                 "read",
                 {"params": period},
             ),
-            ("GET", "/api/v1/companies/{company_id}/resources/summary", "read", {}),
-            ("GET", "/api/v1/companies/{company_id}/resources/history", "read", {"params": period}),
+            ("GET", "/v1/companies/{company_id}/resources/summary", "read", {}),
+            ("GET", "/v1/companies/{company_id}/resources/history", "read", {"params": period}),
             (
                 "GET",
-                "/api/v1/companies/{company_id}/resources/availability-history",
+                "/v1/companies/{company_id}/resources/availability-history",
                 "read",
                 {"params": period},
             ),
@@ -361,7 +361,7 @@ def api_requests(
         [
             (
                 "POST",
-                "/api/v1/agent-enrollments",
+                "/v1/agent-enrollments",
                 "manage",
                 {
                     "json": {
@@ -373,11 +373,11 @@ def api_requests(
                     }
                 },
             ),
-            ("GET", "/api/v1/agent-enrollments/{enrollment_id}", "read", {}),
-            ("GET", "/api/v1/agent-enrollments/{enrollment_id}/profile", "read", {}),
-            ("GET", "/api/v1/agent-enrollments/{enrollment_id}/verification", "read", {}),
-            ("POST", "/api/v1/agent-enrollments/{enrollment_id}/finish", "manage", {}),
-            ("GET", "/api/v1/computers/{computer_id}/diagnostics/{diagnostic_id}", "read", {}),
+            ("GET", "/v1/agent-enrollments/{enrollment_id}", "read", {}),
+            ("GET", "/v1/agent-enrollments/{enrollment_id}/profile", "read", {}),
+            ("GET", "/v1/agent-enrollments/{enrollment_id}/verification", "read", {}),
+            ("POST", "/v1/agent-enrollments/{enrollment_id}/finish", "manage", {}),
+            ("GET", "/v1/computers/{computer_id}/diagnostics/{diagnostic_id}", "read", {}),
         ]
     )
     return [

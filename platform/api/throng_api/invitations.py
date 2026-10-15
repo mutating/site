@@ -26,7 +26,7 @@ from throng_api.serialization import public
 from throng_api.sharing import grant_allowed, member_profile, member_view, resolve_user
 
 router = APIRouter(
-    prefix="/api/v1", tags=["organization sharing"], dependencies=[Depends(access_token_scheme)]
+    prefix="/v1", tags=["organization sharing"], dependencies=[Depends(access_token_scheme)]
 )
 
 

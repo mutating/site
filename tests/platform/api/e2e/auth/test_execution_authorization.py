@@ -32,9 +32,7 @@ async def test_missing_and_foreign_isolates_have_indistinguishable_errors(
         kwargs = {"headers": {"Idempotency-Key": str(uuid4())}}
         if suffix == "/commands":
             kwargs["json"] = {"command": "pytest -q"}
-        response = await other_api.request(
-            method, f"/api/v1/isolates/{identifier}{suffix}", **kwargs
-        )
+        response = await other_api.request(method, f"/v1/isolates/{identifier}{suffix}", **kwargs)
         assert response.status_code == 404, response.text
         assert response.json() == {"detail": "Resource not found"}
         responses.append(response)
@@ -56,13 +54,13 @@ async def test_command_and_operation_errors_do_not_reveal_foreign_resource_exist
     therefore return the same generic 404 body for both cases.
     """
     for method, template, existing_id in [
-        ("GET", "/api/v1/commands/{id}", command["id"]),
-        ("GET", "/api/v1/commands/{id}/result", command["id"]),
-        ("POST", "/api/v1/commands/{id}/cancel", command["id"]),
-        ("GET", "/api/v1/operations/{id}", run_task["id"]),
-        ("POST", "/api/v1/commands/statuses", command["id"]),
-        ("POST", "/api/v1/commands/results", command["id"]),
-        ("POST", "/api/v1/commands/cancel", command["id"]),
+        ("GET", "/v1/commands/{id}", command["id"]),
+        ("GET", "/v1/commands/{id}/result", command["id"]),
+        ("POST", "/v1/commands/{id}/cancel", command["id"]),
+        ("GET", "/v1/operations/{id}", run_task["id"]),
+        ("POST", "/v1/commands/statuses", command["id"]),
+        ("POST", "/v1/commands/results", command["id"]),
+        ("POST", "/v1/commands/cancel", command["id"]),
     ]:
         responses = []
         for identifier in [str(uuid4()), existing_id]:
@@ -80,7 +78,7 @@ async def test_outsider_cannot_submit_or_replay_commands_in_foreign_isolate(
 ):
     """Knowing an isolate ID and a successful request's retry key grants no execution rights."""
     target, worker = (isolate, agent) if pool == "personal" else (company_isolate, company_agent)
-    path = f"/api/v1/isolates/{target['id']}"
+    path = f"/v1/isolates/{target['id']}"
     key = str(uuid4())
     payload = {"command": "pytest -q"}
     response = await api.post(path + "/commands", headers={"Idempotency-Key": key}, json=payload)
@@ -108,8 +106,8 @@ async def test_outsider_cannot_submit_or_replay_commands_in_foreign_isolate(
         ("POST", path + "/renew", {}),
         ("POST", path + "/snapshots", {"headers": {"Idempotency-Key": str(uuid4())}}),
         ("DELETE", path, {}),
-        ("POST", f"/api/v1/commands/{command['id']}/cancel", {}),
-        ("POST", "/api/v1/commands/cancel", {"json": {"ids": [command["id"]]}}),
+        ("POST", f"/v1/commands/{command['id']}/cancel", {}),
+        ("POST", "/v1/commands/cancel", {"json": {"ids": [command["id"]]}}),
     ]:
         response = await other_api.request(method, url, **kwargs)
         assert response.status_code == 404, (method, url, response.text)
@@ -128,19 +126,19 @@ async def test_shared_company_does_not_grant_access_to_colleagues_personal_compu
 ):
     """Even company creators cannot execute on or take over another member's personal computer."""
     response = await other_api.post(
-        f"/api/v1/isolates/{isolate['id']}/commands",
+        f"/v1/isolates/{isolate['id']}/commands",
         headers={"Idempotency-Key": str(uuid4())},
         json={"command": "pytest"},
     )
     assert response.status_code == 404, response.text
     response = await other_api.patch(
-        f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+        f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"user_id": other_user["id"]},
     )
     assert response.status_code == 404, response.text
-    response = await other_api.post(f"/api/v1/computers/{computer['id']}/credentials")
+    response = await other_api.post(f"/v1/computers/{computer['id']}/credentials")
     assert response.status_code == 404, response.text
-    response = await api.get(f"/api/v1/isolates/{isolate['id']}")
+    response = await api.get(f"/v1/isolates/{isolate['id']}")
     assert response.json()["next_sequence"] == 0
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0.05})
     assert response.status_code == 200 and response.json()["tasks"] == []
@@ -152,7 +150,7 @@ async def test_each_company_role_can_execute_on_company_owned_computer(
 ):
     """All three membership roles can submit work that reaches the company's worker and returns a result."""
     response = await other_api.post(
-        f"/api/v1/isolates/{company_isolate['id']}/commands",
+        f"/v1/isolates/{company_isolate['id']}/commands",
         headers={"Idempotency-Key": str(uuid4())},
         json={"command": "pytest -q"},
     )
@@ -176,7 +174,7 @@ async def test_each_company_role_can_execute_on_company_owned_computer(
         json={"returncode": 0, "stdout": "tests passed"},
     )
     assert response.status_code == 200, response.text
-    response = await other_api.get(f"/api/v1/commands/{command['id']}/result")
+    response = await other_api.get(f"/v1/commands/{command['id']}/result")
     assert response.status_code == 200 and response.json()["result"]["success"] is True
     assert response.json()["result"]["stdout"] == "tests passed"
 
@@ -189,13 +187,13 @@ async def test_outsider_cannot_grant_themself_company_execution_access(
     for method, path, kwargs in [
         (
             "POST",
-            "/api/v1/memberships",
+            "/v1/memberships",
             {"json": {"user_id": other_user["id"], "company_id": company["id"], "role": "creator"}},
         ),
-        ("POST", "/api/v1/token-ownerships", {"json": {"company_id": company["id"]}}),
+        ("POST", "/v1/token-ownerships", {"json": {"company_id": company["id"]}}),
         (
             "POST",
-            "/api/v1/access-tokens",
+            "/v1/access-tokens",
             {
                 "json": {
                     "ownership_id": company_token["ownership_id"],
@@ -206,34 +204,34 @@ async def test_outsider_cannot_grant_themself_company_execution_access(
         ),
         (
             "PATCH",
-            f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+            f"/v1/computer-ownerships/{computer['ownership']['id']}",
             {"json": {"user_id": other_user["id"]}},
         ),
         (
             "POST",
-            "/api/v1/computer-ownerships",
+            "/v1/computer-ownerships",
             {"json": {"computer_id": computer["id"], "user_id": other_user["id"]}},
         ),
-        ("POST", f"/api/v1/computers/{computer['id']}/credentials", {}),
+        ("POST", f"/v1/computers/{computer['id']}/credentials", {}),
         (
             "POST",
-            "/api/v1/artifacts",
+            "/v1/artifacts",
             {"params": {"company_id": company["id"]}, "content": b"intruder state"},
         ),
         (
             "POST",
-            "/api/v1/isolates",
+            "/v1/isolates",
             {"headers": {"Idempotency-Key": str(uuid4())}, "json": company_isolate_payload},
         ),
     ]:
         response = await other_api.request(method, path, **kwargs)
         assert response.status_code == 404, (method, path, response.text)
-    response = await api.get("/api/v1/memberships", params={"company_id": company["id"]})
+    response = await api.get("/v1/memberships", params={"company_id": company["id"]})
     assert response.status_code == 200
     assert all(row["user_id"] != other_user["id"] for row in response.json())
-    response = await api.get(f"/api/v1/computer-ownerships/{computer['ownership']['id']}")
+    response = await api.get(f"/v1/computer-ownerships/{computer['ownership']['id']}")
     assert response.status_code == 200 and response.json() == computer["ownership"]
-    assert (await api.get("/api/v1/isolates")).json() == []
+    assert (await api.get("/v1/isolates")).json() == []
 
 
 @pytest.mark.parametrize("pool", ["personal", "company"])
@@ -257,11 +255,11 @@ async def test_scheduler_never_borrows_capacity_from_another_owner(
         for candidate in [agent, other_agent, company_agent, other_company_agent]
         if candidate is not worker
     ]
-    computer_path = f"/api/v1/computers/{worker['computer']['id']}"
+    computer_path = f"/v1/computers/{worker['computer']['id']}"
     response = await api.patch(computer_path, json={"enabled": False})
     assert response.status_code == 200, response.text
     response = await api.post(
-        "/api/v1/isolates", headers={"Idempotency-Key": str(uuid4())}, json=payload
+        "/v1/isolates", headers={"Idempotency-Key": str(uuid4())}, json=payload
     )
     assert response.status_code == 202, response.text
     isolate = response.json()
@@ -270,7 +268,7 @@ async def test_scheduler_never_borrows_capacity_from_another_owner(
             "/agent/v1/tasks/claim", headers=candidate["headers"], json={"wait_seconds": 0.05}
         )
         assert response.status_code == 200 and response.json()["tasks"] == []
-    response = await api.get(f"/api/v1/isolates/{isolate['id']}")
+    response = await api.get(f"/v1/isolates/{isolate['id']}")
     assert response.status_code == 200
     assert response.json()["computer_id"] is None and response.json()["reserved"] is False
 
@@ -283,7 +281,7 @@ async def test_scheduler_never_borrows_capacity_from_another_owner(
     tasks = response.json()["tasks"]
     assert len(tasks) == 1 and tasks[0]["isolate_id"] == isolate["id"], tasks
     assert tasks[0]["computer_id"] == worker["computer"]["id"]
-    response = await api.get(f"/api/v1/isolates/{isolate['id']}")
+    response = await api.get(f"/v1/isolates/{isolate['id']}")
     assert response.json()["computer_id"] == worker["computer"]["id"]
 
 
@@ -292,13 +290,13 @@ async def test_membership_removal_blocks_new_commands_and_previously_authorized_
     api, other_api, client, membership, member_execution, company_isolate_payload, company_agent
 ):
     """Removing membership immediately forbids both fresh execution and replay using the member's still-valid personal token."""
-    response = await api.delete(f"/api/v1/memberships/{membership['id']}")
+    response = await api.delete(f"/v1/memberships/{membership['id']}")
     assert response.status_code == 204, response.text
-    assert (await other_api.get("/api/v1/users/me")).status_code == 200
-    path = f"/api/v1/isolates/{member_execution['isolate']['id']}"
+    assert (await other_api.get("/v1/users/me")).status_code == 200
+    path = f"/v1/isolates/{member_execution['isolate']['id']}"
     for key in [member_execution["isolate_key"], str(uuid4())]:
         response = await other_api.post(
-            "/api/v1/isolates", headers={"Idempotency-Key": key}, json=company_isolate_payload
+            "/v1/isolates", headers={"Idempotency-Key": key}, json=company_isolate_payload
         )
         assert response.status_code == 404, response.text
     for key in [member_execution["command_key"], str(uuid4())]:
@@ -327,18 +325,18 @@ async def test_company_token_does_not_inherit_issuers_personal_execution_rights(
 ):
     """A delegated company bearer token grants company execution, independently of the caller's personal membership, but no personal rights."""
     response = await other_api.post(
-        f"/api/v1/isolates/{company_isolate['id']}/commands",
+        f"/v1/isolates/{company_isolate['id']}/commands",
         headers={"Idempotency-Key": str(uuid4())},
         json={"command": "pytest"},
     )
     assert response.status_code == 404, response.text
     headers = {"Authorization": "Bearer " + company_token["token"], "Idempotency-Key": str(uuid4())}
     response = await client.post(
-        f"/api/v1/isolates/{isolate['id']}/commands", headers=headers, json={"command": "pytest"}
+        f"/v1/isolates/{isolate['id']}/commands", headers=headers, json={"command": "pytest"}
     )
     assert response.status_code == 404, response.text
     response = await other_api.post(
-        f"/api/v1/isolates/{company_isolate['id']}/commands",
+        f"/v1/isolates/{company_isolate['id']}/commands",
         headers=headers,
         json={"command": "pytest"},
     )
@@ -375,11 +373,7 @@ async def test_payload_cannot_override_execution_owner_or_target_computer(
         "isolate_id": isolate["id"],
         "company_id": company["id"],
     }
-    path = (
-        "/api/v1/isolates"
-        if operation == "isolate"
-        else f"/api/v1/isolates/{isolate['id']}/commands"
-    )
+    path = "/v1/isolates" if operation == "isolate" else f"/v1/isolates/{isolate['id']}/commands"
     payload = isolate_payload if operation == "isolate" else {"command": "pytest"}
     response = await api.post(
         path, headers={"Idempotency-Key": str(uuid4())}, json={**payload, field: values[field]}
@@ -389,7 +383,7 @@ async def test_payload_cannot_override_execution_owner_or_target_computer(
         error["loc"] == ["body", field] and error["type"] == "extra_forbidden"
         for error in response.json()["detail"]
     )
-    response = await api.get("/api/v1/isolates")
+    response = await api.get("/v1/isolates")
     assert response.status_code == 200 and len(response.json()) == 1
     assert response.json()[0]["next_sequence"] == 0
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0.05})

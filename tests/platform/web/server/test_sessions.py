@@ -174,7 +174,7 @@ def test_registration_preserves_created_account_when_automatic_login_fails(stage
     expiry = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
 
     def handler(request):
-        if request.url.path == "/api/v1/users":
+        if request.url.path == "/v1/users":
             assert not state["created"], "The browser must never repeat successful registration"
             state["created"] = True
             return httpx.Response(201, json=profile)

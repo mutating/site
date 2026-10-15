@@ -70,7 +70,7 @@ async def test_history_failure_rolls_back_flushed_resource_changes(
     api, app, computer_resources, rejected_resource_history
 ):
     """A failed history INSERT rolls back the already-flushed capacity update and version, preventing gaps between inventory and charts."""
-    path = f"/api/v1/computer-resources/{computer_resources['cpu']['id']}"
+    path = f"/v1/computer-resources/{computer_resources['cpu']['id']}"
     response = await api.patch(path, json={"total": 3000})
     assert response.status_code == 500
     assert (await api.get(path)).json() == computer_resources["cpu"]
@@ -163,7 +163,7 @@ async def test_downgrade_refuses_capacities_that_legacy_schema_cannot_represent(
 
     assert (
         await api.patch(
-            f"/api/v1/computer-resources/{computer_resources['cpu']['id']}", json={"total": total}
+            f"/v1/computer-resources/{computer_resources['cpu']['id']}", json={"total": total}
         )
     ).status_code == 200
     http_server.server.should_exit = True

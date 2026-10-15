@@ -219,11 +219,11 @@ async def enrollment(api):
     }
     key = str(uuid4())
     response = await api.post(
-        "/api/v1/agent-enrollments", headers={"Idempotency-Key": key}, json=payload
+        "/v1/agent-enrollments", headers={"Idempotency-Key": key}, json=payload
     )
     assert response.status_code == 201, response.text
     row = response.json()
-    response = await api.get(f"/api/v1/agent-enrollments/{row['id']}/profile")
+    response = await api.get(f"/v1/agent-enrollments/{row['id']}/profile")
     assert response.status_code == 200, response.text
     profile = plistlib.loads(response.content)
     url = profile["PayloadContent"][0]["DirectoryURL"]
@@ -339,7 +339,7 @@ async def verified_enrollment(client, acme_order, pki, clock):
 async def bound_device(api, verified_enrollment, user, clock):
     """Finish user enrollment with a genuine possession signature and preserve the issuance retry key."""
     identity = verified_enrollment
-    target = f"/api/v1/agent-enrollments/{identity.order.enrollment.row['id']}/finish"
+    target = f"/v1/agent-enrollments/{identity.order.enrollment.row['id']}/finish"
     headers = {**user["headers"], "Idempotency-Key": str(uuid4())}
     response = await api.post(
         target,

@@ -19,11 +19,7 @@ async def test_committed_artifact_survives_lost_commit_acknowledgement(
     api, agent_api, run_task, uncertain_commit, agent_upload, settings
 ):
     """A post-COMMIT exception cannot delete persisted content, including after an agent upload retry."""
-    path = (
-        f"/agent/v1/tasks/{run_task['id']}/artifacts/stdout"
-        if agent_upload
-        else "/api/v1/artifacts"
-    )
+    path = f"/agent/v1/tasks/{run_task['id']}/artifacts/stdout" if agent_upload else "/v1/artifacts"
     response = await (
         agent_api.put(path, content=b"durable output")
         if agent_upload
@@ -31,12 +27,12 @@ async def test_committed_artifact_survives_lost_commit_acknowledgement(
     )
     assert response.status_code == 500
     uncertain_commit["enabled"] = False
-    artifacts = (await api.get("/api/v1/artifacts")).json()
+    artifacts = (await api.get("/v1/artifacts")).json()
     artifact = next(row for row in artifacts if row["size_bytes"] == 14)
     if agent_upload:
         response = await agent_api.put(path, content=b"durable output")
         assert response.status_code == 200 and response.json()["id"] == artifact["id"]
-    response = await api.get(f"/api/v1/artifacts/{artifact['id']}/content")
+    response = await api.get(f"/v1/artifacts/{artifact['id']}/content")
     assert response.status_code == 200 and response.content == b"durable output"
     assert len(list(settings.storage_path.iterdir())) == 2
 
@@ -101,7 +97,7 @@ async def test_readiness_detects_stalled_controller_and_recovers(client, broken_
 
 async def test_missing_artifact_storage_returns_unavailable(api, missing_artifact_file):
     """An artifact row whose bytes are unavailable returns 503 while its metadata remains readable."""
-    path = f"/api/v1/artifacts/{missing_artifact_file['id']}"
+    path = f"/v1/artifacts/{missing_artifact_file['id']}"
     assert (await api.get(path)).status_code == 200
     response = await api.get(path + "/content")
     assert (
@@ -118,7 +114,7 @@ async def test_api_guards_expired_work_before_controller_observes_expiry(
     from datetime import timedelta
 
     clock.now += timedelta(seconds=11)
-    state = (await api.get(f"/api/v1/isolates/{isolate['id']}")).json()
+    state = (await api.get(f"/v1/isolates/{isolate['id']}")).json()
     assert state["status"] == "ready"
     assert (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})).json()[
         "tasks"
@@ -137,12 +133,12 @@ async def test_expired_provisioning_cannot_finish_before_controller_tick(
     from datetime import timedelta
 
     clock.now += timedelta(seconds=11)
-    state = (await api.get(f"/api/v1/isolates/{create_task['isolate_id']}")).json()
+    state = (await api.get(f"/v1/isolates/{create_task['isolate_id']}")).json()
     assert state["status"] == "provisioning"
     assert (
         await agent_api.post(f"/agent/v1/tasks/{create_task['id']}/complete", json={})
     ).status_code == 409
-    assert (await api.get(f"/api/v1/isolates/{create_task['isolate_id']}")).json()[
+    assert (await api.get(f"/v1/isolates/{create_task['isolate_id']}")).json()[
         "status"
     ] == "provisioning"
 
@@ -179,18 +175,18 @@ async def test_login_cannot_issue_tokens_after_concurrent_credential_change(
     async with asyncio.TaskGroup() as group:
         pending = group.create_task(
             client.post(
-                "/api/v1/auth/login", json={"email": user["email"], "password": user["password"]}
+                "/v1/auth/login", json={"email": user["email"], "password": user["password"]}
             )
         )
         await asyncio.wait_for(paused_login["entered"].wait(), timeout=5)
         if mutation == "password":
             assert (
                 await api.patch(
-                    f"/api/v1/users/{user['id']}", json={"password": "new concurrent password"}
+                    f"/v1/users/{user['id']}", json={"password": "new concurrent password"}
                 )
             ).status_code == 200
         else:
-            assert (await api.delete(f"/api/v1/users/{user['id']}")).status_code == 204
+            assert (await api.delete(f"/v1/users/{user['id']}")).status_code == 204
         paused_login["resume"].set()
     assert pending.result().status_code == 401
     assert pending.result().json()["detail"] == "Credentials changed; retry login"

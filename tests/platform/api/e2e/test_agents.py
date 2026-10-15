@@ -20,10 +20,10 @@ async def test_session_handshake_retries_cannot_clean_up_live_work(
     assert response.status_code == 200
     assert response.json()["session_id"] == agent["session"]["session_id"]
     assert response.json()["lease_expires_at"] == agent["session"]["lease_expires_at"]
-    assert (await api.get(f"/api/v1/commands/{running_command['command']['id']}")).json()[
+    assert (await api.get(f"/v1/commands/{running_command['command']['id']}")).json()[
         "status"
     ] == "running"
-    assert (await api.get(f"/api/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 1000
+    assert (await api.get(f"/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 1000
     response = await agent_api.post(
         "/agent/v1/session", headers={"Idempotency-Key": str(uuid4())}, json=agent["handshake"]
     )
@@ -57,10 +57,10 @@ async def test_new_session_fences_old_tasks_and_handshakes(
     assert (
         await agent_api.get(f"/agent/v1/tasks/{running_command['task']['id']}")
     ).status_code == 409
-    assert (await api.get(f"/api/v1/commands/{running_command['command']['id']}/result")).json()[
+    assert (await api.get(f"/v1/commands/{running_command['command']['id']}/result")).json()[
         "status"
     ] == "isolate_failed"
-    assert (await api.get(f"/api/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 0
+    assert (await api.get(f"/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 0
     assert (await agent_api.post("/agent/v1/heartbeat")).status_code == 200
 
 
@@ -88,13 +88,13 @@ async def test_expired_worker_fails_commands_without_freeing_unconfirmed_capacit
     current = (await agent_api.get("/agent/v1/session")).json()
     assert not current["active"] and current["session_id"] == agent["session"]["session_id"]
     for _ in range(100):
-        response = await api.get(f"/api/v1/commands/{running_command['command']['id']}/result")
+        response = await api.get(f"/v1/commands/{running_command['command']['id']}/result")
         if response.json()["result"] is not None:
             break
         await asyncio.sleep(0.01)
     assert response.json()["status"] == "isolate_failed"
     assert response.json()["result"]["error"] == "agent_lease_expired"
-    state = (await api.get(f"/api/v1/computers/{computer['id']}")).json()
+    state = (await api.get(f"/v1/computers/{computer['id']}")).json()
     assert not state["online"] and state["reserved_cpu"] == 1000
     assert (
         await agent_api.post(
@@ -107,8 +107,8 @@ async def test_expired_worker_fails_commands_without_freeing_unconfirmed_capacit
         json={"clean_start": True, "previous_session_id": current["session_id"]},
     )
     assert response.status_code == 200
-    assert (await api.get(f"/api/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 0
-    assert (await api.get(f"/api/v1/commands/{running_command['command']['id']}/result")).json()[
+    assert (await api.get(f"/v1/computers/{computer['id']}")).json()["reserved_cpu"] == 0
+    assert (await api.get(f"/v1/commands/{running_command['command']['id']}/result")).json()[
         "status"
     ] == "isolate_failed"
 
@@ -116,7 +116,7 @@ async def test_expired_worker_fails_commands_without_freeing_unconfirmed_capacit
 async def test_worker_and_user_credentials_are_not_interchangeable(client, api, agent, user):
     """User tokens cannot act as workers and worker secrets cannot read user resources."""
     assert (await api.get("/agent/v1/session")).status_code == 401
-    assert (await client.get("/api/v1/users/me", headers=agent["headers"])).status_code == 401
+    assert (await client.get("/v1/users/me", headers=agent["headers"])).status_code == 401
     credential_only = {"Authorization": agent["headers"]["Authorization"]}
     assert (await client.get("/agent/v1/session", headers=credential_only)).status_code == 200
     assert (
@@ -140,7 +140,7 @@ async def test_handshake_requires_cleanup_and_supported_protocol(agent_api, payl
 
 async def test_command_idempotency_redelivery_and_completion_replay(api, agent_api, isolate):
     """Concurrent submissions and repeated deliveries use stable IDs, while conflicting reports fail."""
-    path = f"/api/v1/isolates/{isolate['id']}/commands"
+    path = f"/v1/isolates/{isolate['id']}/commands"
     headers, body = {"Idempotency-Key": "one-command"}, {"command": "pytest"}
     first, duplicate = await asyncio.gather(
         api.post(path, headers=headers, json=body), api.post(path, headers=headers, json=body)
@@ -165,7 +165,7 @@ async def test_command_idempotency_redelivery_and_completion_replay(api, agent_a
     ).status_code == 409
     assert (await agent_api.post(f"/agent/v1/tasks/{task['id']}/ack")).status_code == 409
     assert (await agent_api.post(f"/agent/v1/tasks/{task['id']}/started")).status_code == 409
-    assert (await api.get(f"/api/v1/commands/{first.json()['id']}/result")).json()["result"][
+    assert (await api.get(f"/v1/commands/{first.json()['id']}/result")).json()["result"][
         "stdout"
     ] == "done"
 
@@ -180,11 +180,11 @@ async def test_ack_and_started_retries_preserve_times(agent_api, api, clock, com
     assert repeated.json()["accepted_at"] == acknowledged.json()["accepted_at"]
     started = await agent_api.post(path + "/started")
     assert started.status_code == 200
-    first = (await api.get(f"/api/v1/commands/{command['id']}")).json()
+    first = (await api.get(f"/v1/commands/{command['id']}")).json()
     clock.now += timedelta(seconds=1)
     repeated = await agent_api.post(path + "/started")
     assert repeated.json()["deadline"] == started.json()["deadline"]
-    assert (await api.get(f"/api/v1/commands/{command['id']}")).json()["started_at"] == first[
+    assert (await api.get(f"/v1/commands/{command['id']}")).json()["started_at"] == first[
         "started_at"
     ]
     assert (await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})).json()[
@@ -204,7 +204,7 @@ async def test_long_poll_does_not_block_heartbeat_or_command_dispatch(api, agent
         assert not pending.done()
         assert (await agent_api.post("/agent/v1/heartbeat")).status_code == 200
         response = await api.post(
-            f"/api/v1/isolates/{isolate['id']}/commands",
+            f"/v1/isolates/{isolate['id']}/commands",
             headers={"Idempotency-Key": "wakeup"},
             json={"command": "pytest"},
         )
@@ -238,7 +238,7 @@ async def test_unknown_worker_task_and_operation_return_not_found(agent_api, api
     """Unknown task and operation UUIDs return stable not-found responses."""
     key = str(uuid4())
     assert (await agent_api.get(f"/agent/v1/tasks/{key}")).status_code == 404
-    assert (await api.get(f"/api/v1/operations/{key}")).status_code == 404
+    assert (await api.get(f"/v1/operations/{key}")).status_code == 404
 
 
 @pytest.mark.parametrize("key", [None, "", "x" * 129])
@@ -247,13 +247,13 @@ async def test_idempotency_keys_are_required_and_bounded(api, agent_api, isolate
     headers = {"Idempotency-Key": key} if key is not None else {}
     assert (
         await api.post(
-            f"/api/v1/isolates/{isolate['id']}/commands",
+            f"/v1/isolates/{isolate['id']}/commands",
             headers=headers,
             json={"command": "pytest"},
         )
     ).status_code == 422
     assert (
-        await api.post(f"/api/v1/isolates/{isolate['id']}/snapshots", headers=headers)
+        await api.post(f"/v1/isolates/{isolate['id']}/snapshots", headers=headers)
     ).status_code == 422
     assert (
         await agent_api.post("/agent/v1/session", headers=headers, json=agent["handshake"])

@@ -133,7 +133,7 @@ def create_app(settings=None):
             headers["Authorization"] = "Bearer " + token
         try:
             return await request.app.state.client.request(
-                method, "/api/v1/" + path, headers=headers, **kwargs
+                method, "/v1/" + path, headers=headers, **kwargs
             )
         except httpx.HTTPError:
             raise HTTPException(502, "API is temporarily unavailable") from None

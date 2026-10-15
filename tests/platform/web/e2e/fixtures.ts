@@ -5,7 +5,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-export const API = "http://127.0.0.1:18100/api/v1";
+export const API = "http://127.0.0.1:18100/v1";
 export const password = "  a correct horse battery staple  ";
 export type Account = {
   id: string;

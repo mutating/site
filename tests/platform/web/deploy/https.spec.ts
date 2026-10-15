@@ -207,7 +207,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   ).toBe(401);
   expect(
     (
-      await request.post(`${apiURL.replace("/api/v1", "")}/__test__/history`, {
+      await request.post(`${apiURL.replace("/v1", "")}/__test__/history`, {
         data: { computer_id: randomUUID() },
       })
     ).status(),

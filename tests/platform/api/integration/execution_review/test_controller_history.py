@@ -20,12 +20,12 @@ async def test_controller_skips_cleaned_failures_but_reconciles_unfinished_clean
     assert not state["historical_ids"].intersection(loaded)
     assert len(loaded) == 2
 
-    response = await api.get(f"/api/v1/isolates/{state['unfinished_id']}")
+    response = await api.get(f"/v1/isolates/{state['unfinished_id']}")
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "failed"
     assert response.json()["reserved"] is False
     assert response.json()["destroyed_at"] is not None
-    response = await api.get(f"/api/v1/computers/{state['computer_id']}")
+    response = await api.get(f"/v1/computers/{state['computer_id']}")
     assert response.status_code == 200, response.text
     assert response.json()["reserved_cpu"] == 1000
 
@@ -36,12 +36,12 @@ async def test_controller_skips_cleaned_failures_but_reconciles_unfinished_clean
     assert tasks[0]["isolate_id"] == state["reserved_id"]
     response = await agent_api.post(f"/agent/v1/tasks/{tasks[0]['id']}/complete", json={})
     assert response.status_code == 200, response.text
-    response = await api.get(f"/api/v1/isolates/{state['reserved_id']}")
+    response = await api.get(f"/v1/isolates/{state['reserved_id']}")
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "failed"
     assert response.json()["reserved"] is False
     assert response.json()["destroyed_at"] is not None
-    response = await api.get(f"/api/v1/computers/{state['computer_id']}")
+    response = await api.get(f"/v1/computers/{state['computer_id']}")
     assert response.status_code == 200, response.text
     assert response.json()["reserved_cpu"] == 0
 

@@ -2,9 +2,8 @@ name: Tests
 
 on:
   push:
-    # main runs this entire workflow through the deployment gate.
-    branches-ignore:
-      - main
+    branches:
+      - "**"
   pull_request:
   workflow_call:
 

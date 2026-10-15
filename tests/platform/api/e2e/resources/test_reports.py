@@ -11,21 +11,21 @@ async def test_transfer_skips_archived_capacity_and_restoration_belongs_to_new_o
     api, user, company, computer, gpu_resource, resource_type, history_range, clock
 ):
     """An archived resource stays absent during ownership transfer; restoring it adds capacity only to the new owner's graph."""
-    path = f"/api/v1/computer-resources/{gpu_resource['id']}"
+    path = f"/v1/computer-resources/{gpu_resource['id']}"
     assert (await api.delete(path)).status_code == 204
     clock.now += timedelta(seconds=1)
     assert (
         await api.patch(
-            f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+            f"/v1/computer-ownerships/{computer['ownership']['id']}",
             json={"company_id": company["id"]},
         )
     ).status_code == 200
-    current = (await api.get(f"/api/v1/companies/{company['id']}/resources/summary")).json()
+    current = (await api.get(f"/v1/companies/{company['id']}/resources/summary")).json()
     assert {row["code"] for row in current["resources"]} == {"cpu", "memory"}
     assert (await api.get(path + "/history", params=history_range)).json()["points"] == []
     clock.now += timedelta(seconds=1)
     response = await api.post(
-        f"/api/v1/computers/{computer['id']}/resources",
+        f"/v1/computers/{computer['id']}/resources",
         json={"resource_type_id": resource_type["id"], "total": 8},
     )
     assert response.status_code == 201 and response.json()["id"] == gpu_resource["id"]
@@ -34,7 +34,7 @@ async def test_transfer_skips_archived_capacity_and_restoration_belongs_to_new_o
     assert len(history["points"]) == 1 and history["points"][0]["resources"][0]["total"] == 8
     previous = (
         await api.get(
-            f"/api/v1/users/{user['id']}/resources/history",
+            f"/v1/users/{user['id']}/resources/history",
             params={**history_range, "resource_type_id": resource_type["id"]},
         )
     ).json()
@@ -45,20 +45,20 @@ async def test_current_totals_keep_personal_and_company_pools_separate(
     api, user, computer, gpu_resource, company_computer, company
 ):
     """Organization totals exclude members' personal computers and expose exact occupied/free counts per resource type."""
-    personal = await api.get(f"/api/v1/users/{user['id']}/resources/summary")
+    personal = await api.get(f"/v1/users/{user['id']}/resources/summary")
     assert personal.status_code == 200
     amounts = {row["code"]: row for row in personal.json()["resources"]}
     assert {
         code: (row["total"], row["occupied"], row["free"]) for code, row in amounts.items()
     } == {"cpu": (2000, 0, 2000), "memory": (2048, 0, 2048), "gpu": (4, 0, 4)}
-    corporate = await api.get(f"/api/v1/companies/{company['id']}/resources/summary")
+    corporate = await api.get(f"/v1/companies/{company['id']}/resources/summary")
     assert corporate.status_code == 200
     assert {row["code"]: row["total"] for row in corporate.json()["resources"]} == {
         "cpu": 3000,
         "memory": 4096,
     }
     response = await api.post(
-        "/api/v1/computers",
+        "/v1/computers",
         json={
             "os": "linux",
             "architecture": "amd64",
@@ -69,7 +69,7 @@ async def test_current_totals_keep_personal_and_company_pools_separate(
         },
     )
     assert response.status_code == 201
-    amounts = (await api.get(f"/api/v1/users/{user['id']}/resources/summary")).json()["resources"]
+    amounts = (await api.get(f"/v1/users/{user['id']}/resources/summary")).json()["resources"]
     assert {row["code"]: row["free"] for row in amounts} == {"cpu": 3500, "memory": 3072, "gpu": 4}
 
 
@@ -77,15 +77,15 @@ async def test_available_filter_requires_enabled_online_worker_with_live_lease(
     api, user, computer, agent_api, clock, settings
 ):
     """Inventory retains offline capacity, while available-only totals track worker enablement and lease validity."""
-    path = f"/api/v1/users/{user['id']}/resources/summary"
+    path = f"/v1/users/{user['id']}/resources/summary"
     assert len((await api.get(path, params={"only_available": True})).json()["resources"]) == 2
     assert (
-        await api.patch(f"/api/v1/computers/{computer['id']}", json={"enabled": False})
+        await api.patch(f"/v1/computers/{computer['id']}", json={"enabled": False})
     ).status_code == 200
     assert (await api.get(path, params={"only_available": True})).json()["resources"] == []
     assert len((await api.get(path)).json()["resources"]) == 2
     assert (
-        await api.patch(f"/api/v1/computers/{computer['id']}", json={"enabled": True})
+        await api.patch(f"/v1/computers/{computer['id']}", json={"enabled": True})
     ).status_code == 200
     clock.now += timedelta(seconds=settings.agent_lease_seconds)
     assert (await api.get(path, params={"only_available": True})).json()["resources"] == []
@@ -96,11 +96,9 @@ async def test_empty_owner_and_unknown_type_history_return_empty_series(api, use
     """Owners without computers receive empty summaries and a valid empty time series instead of fabricated capacity."""
     from uuid import uuid4
 
-    assert (await api.get(f"/api/v1/users/{user['id']}/resources/summary")).json()[
-        "resources"
-    ] == []
+    assert (await api.get(f"/v1/users/{user['id']}/resources/summary")).json()["resources"] == []
     response = await api.get(
-        f"/api/v1/users/{user['id']}/resources/history",
+        f"/v1/users/{user['id']}/resources/history",
         params={**history_range, "resource_type_id": str(uuid4())},
     )
     assert response.status_code == 200
@@ -116,14 +114,14 @@ async def test_history_has_initial_state_exclusive_end_and_transaction_points(
     clock.now += timedelta(seconds=10)
     assert (
         await api.patch(
-            f"/api/v1/computers/{computer['id']}", json={"cpu_millis": 3000, "memory_bytes": 4096}
+            f"/v1/computers/{computer['id']}", json={"cpu_millis": 3000, "memory_bytes": 4096}
         )
     ).status_code == 200
     clock.now += timedelta(seconds=10)
     assert (
-        await api.patch(f"/api/v1/computers/{computer['id']}", json={"cpu_millis": 5000})
+        await api.patch(f"/v1/computers/{computer['id']}", json={"cpu_millis": 5000})
     ).status_code == 200
-    path = f"/api/v1/users/{user['id']}/resources/history"
+    path = f"/v1/users/{user['id']}/resources/history"
     params = {"from": start.isoformat(), "to": clock.now.isoformat()}
     response = await api.get(path, params=params)
     assert response.status_code == 200, response.text
@@ -142,7 +140,7 @@ async def test_history_has_initial_state_exclusive_end_and_transaction_points(
     ).json()
     assert len(filtered["initial"]) == len(filtered["points"][0]["resources"]) == 1
     direct = await api.get(
-        f"/api/v1/computer-resources/{computer_resources['cpu']['id']}/history", params=params
+        f"/v1/computer-resources/{computer_resources['cpu']['id']}/history", params=params
     )
     assert direct.status_code == 200 and direct.json()["points"] == filtered["points"]
 
@@ -151,10 +149,10 @@ async def test_history_preserves_same_time_events_and_frozen_pagination(
     api, user, computer, computer_resources, history_range
 ):
     """Revision pagination preserves changes sharing a timestamp and excludes writes committed after the first page's snapshot."""
-    path = f"/api/v1/computer-resources/{computer_resources['cpu']['id']}"
+    path = f"/v1/computer-resources/{computer_resources['cpu']['id']}"
     for value in [3000, 4000, 5000]:
         assert (await api.patch(path, json={"total": value})).status_code == 200
-    history_path = f"/api/v1/users/{user['id']}/resources/history"
+    history_path = f"/v1/users/{user['id']}/resources/history"
     first = (await api.get(history_path, params={**history_range, "limit": 1})).json()
     assert len(first["points"]) == 1 and first["next_after_revision"] is not None
     assert {row["code"]: row["total"] for row in first["points"][0]["resources"]} == {
@@ -193,16 +191,16 @@ async def test_noop_and_rejected_mutations_do_not_pollute_history(
     api, user, computer, computer_resources, history_range
 ):
     """Unchanged capacities, failed version checks and failed multi-field updates leave both the ledger and inventory unchanged."""
-    path = f"/api/v1/users/{user['id']}/resources/history"
+    path = f"/v1/users/{user['id']}/resources/history"
     before = (await api.get(path, params=history_range)).json()
-    resource_path = f"/api/v1/computer-resources/{computer_resources['cpu']['id']}"
+    resource_path = f"/v1/computer-resources/{computer_resources['cpu']['id']}"
     assert (await api.patch(resource_path, json={"total": 2000})).status_code == 200
     assert (
         await api.patch(resource_path, json={"total": 3000, "expected_version": 99})
     ).status_code == 409
     assert (
         await api.patch(
-            f"/api/v1/computers/{computer['id']}", json={"cpu_millis": 3000, "memory_bytes": None}
+            f"/v1/computers/{computer['id']}", json={"cpu_millis": 3000, "memory_bytes": None}
         )
     ).status_code == 422
     after = (await api.get(path, params=history_range)).json()
@@ -215,23 +213,17 @@ async def test_deleted_resources_and_computers_keep_historical_contributions(
 ):
     """Resource deletion and computer deletion add zero contributions while retaining old graph data and archived type labels."""
     clock.now += timedelta(seconds=1)
-    resource_path = f"/api/v1/computer-resources/{gpu_resource['id']}"
+    resource_path = f"/v1/computer-resources/{gpu_resource['id']}"
     assert (await api.delete(resource_path)).status_code == 204
-    assert (
-        await admin_api.delete(f"/api/v1/resource-types/{resource_type['id']}")
-    ).status_code == 204
+    assert (await admin_api.delete(f"/v1/resource-types/{resource_type['id']}")).status_code == 204
     response = await api.get(resource_path + "/history", params=history_range)
     assert response.status_code == 200
     assert [point["resources"][0]["total"] for point in response.json()["points"]] == [4, 0]
     assert response.json()["points"][1]["resources"][0]["code"] == "gpu"
     clock.now += timedelta(seconds=1)
-    assert (await api.delete(f"/api/v1/computers/{computer['id']}")).status_code == 204
-    assert (await api.get(f"/api/v1/users/{user['id']}/resources/summary")).json()[
-        "resources"
-    ] == []
-    data = (
-        await api.get(f"/api/v1/users/{user['id']}/resources/history", params=history_range)
-    ).json()
+    assert (await api.delete(f"/v1/computers/{computer['id']}")).status_code == 204
+    assert (await api.get(f"/v1/users/{user['id']}/resources/summary")).json()["resources"] == []
+    data = (await api.get(f"/v1/users/{user['id']}/resources/history", params=history_range)).json()
     assert len(data["points"]) == 4
     assert all(
         row["total"] == row["occupied"] == row["free"] == 0
@@ -244,22 +236,22 @@ async def test_transfer_changes_owner_totals_without_rewriting_or_disclosing_pri
     api, other_api, user, computer, computer_resources, company, membership, clock, history_range
 ):
     """A new owner sees capacity only from transfer onward; the previous owner's chart retains its own past without leaking it to company members."""
-    cpu_path = f"/api/v1/computer-resources/{computer_resources['cpu']['id']}"
+    cpu_path = f"/v1/computer-resources/{computer_resources['cpu']['id']}"
     clock.now += timedelta(seconds=1)
     assert (await api.patch(cpu_path, json={"total": 4500})).status_code == 200
     clock.now += timedelta(seconds=1)
     assert (
         await api.patch(
-            f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+            f"/v1/computer-ownerships/{computer['ownership']['id']}",
             json={"company_id": company["id"]},
         )
     ).status_code == 200
     personal = (
-        await api.get(f"/api/v1/users/{user['id']}/resources/history", params=history_range)
+        await api.get(f"/v1/users/{user['id']}/resources/history", params=history_range)
     ).json()
     corporate = (
         await other_api.get(
-            f"/api/v1/companies/{company['id']}/resources/history", params=history_range
+            f"/v1/companies/{company['id']}/resources/history", params=history_range
         )
     ).json()
     assert len(personal["points"]) == 3
@@ -276,11 +268,9 @@ async def test_transfer_changes_owner_totals_without_rewriting_or_disclosing_pri
     assert len(direct["points"]) == 1 and direct["points"][0]["resources"][0]["total"] == 4500
     assert user["id"] not in str(corporate) and computer["id"] not in str(corporate)
     assert (
-        await other_api.get(f"/api/v1/users/{user['id']}/resources/history", params=history_range)
+        await other_api.get(f"/v1/users/{user['id']}/resources/history", params=history_range)
     ).status_code == 404
-    assert (await api.get(f"/api/v1/users/{user['id']}/resources/summary")).json()[
-        "resources"
-    ] == []
+    assert (await api.get(f"/v1/users/{user['id']}/resources/summary")).json()["resources"] == []
 
 
 async def test_detach_and_reattach_ownership_record_gaps_in_inventory(
@@ -289,22 +279,20 @@ async def test_detach_and_reattach_ownership_record_gaps_in_inventory(
     """An ownerless computer contributes zero; reattachment restores current capacity and records changes made during the gap only on entry."""
     clock.now += timedelta(seconds=1)
     assert (
-        await api.delete(f"/api/v1/computer-ownerships/{computer['ownership']['id']}")
+        await api.delete(f"/v1/computer-ownerships/{computer['ownership']['id']}")
     ).status_code == 204
-    resource_path = f"/api/v1/computer-resources/{computer_resources['cpu']['id']}"
+    resource_path = f"/v1/computer-resources/{computer_resources['cpu']['id']}"
     assert (await api.get(resource_path + "/history", params=history_range)).status_code == 404
     clock.now += timedelta(seconds=1)
     assert (await api.patch(resource_path, json={"total": 3000})).status_code == 200
     clock.now += timedelta(seconds=1)
     assert (
         await api.post(
-            "/api/v1/computer-ownerships",
+            "/v1/computer-ownerships",
             json={"computer_id": computer["id"], "user_id": user["id"]},
         )
     ).status_code == 201
-    data = (
-        await api.get(f"/api/v1/users/{user['id']}/resources/history", params=history_range)
-    ).json()
+    data = (await api.get(f"/v1/users/{user['id']}/resources/history", params=history_range)).json()
     assert [
         next(row["total"] for row in point["resources"] if row["code"] == "cpu")
         for point in data["points"]
@@ -330,7 +318,7 @@ async def test_history_rejects_ambiguous_intervals_and_invalid_cursors(
 ):
     """History requires ordered timezone-aware bounds and a valid fixed snapshot when continuing pagination."""
     response = await api.get(
-        f"/api/v1/users/{user['id']}/resources/history", params={**history_range, **parameters}
+        f"/v1/users/{user['id']}/resources/history", params={**history_range, **parameters}
     )
     assert response.status_code == 422
 
@@ -339,12 +327,12 @@ async def test_history_normalizes_offsets_and_never_moves_backwards(
     api, user, computer_resources, clock, history_range
 ):
     """Offset timestamps identify the same interval, and a backwards application clock cannot reorder committed graph events."""
-    path = f"/api/v1/computer-resources/{computer_resources['cpu']['id']}"
+    path = f"/v1/computer-resources/{computer_resources['cpu']['id']}"
     clock.now += timedelta(seconds=10)
     assert (await api.patch(path, json={"total": 3000})).status_code == 200
     clock.now -= timedelta(seconds=5)
     assert (await api.patch(path, json={"total": 4000})).status_code == 200
-    history_path = f"/api/v1/users/{user['id']}/resources/history"
+    history_path = f"/v1/users/{user['id']}/resources/history"
     utc = (await api.get(history_path, params=history_range)).json()
     offset = (
         await api.get(

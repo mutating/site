@@ -35,7 +35,7 @@ def effective_permissions(role, custom=None):
 
 def request_permission(request, scope):
     """Classify protected organization data; token scopes remain an independent check."""
-    parts = request.url.path.removeprefix("/api/v1/").split("/")
+    parts = request.url.path.removeprefix("/v1/").split("/")
     resource = parts[0]
     if resource == "memberships":
         return "members.manage" if scope == "manage" else "members.read"

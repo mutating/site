@@ -16,14 +16,23 @@ async def test_docs_and_redoc_are_public_and_link_to_the_live_schema(client):
     assert response.json()["info"]["title"] == "Throng API"
 
 
+async def test_public_api_uses_v1_without_an_api_prefix(client):
+    """Publish user routes at /v1 and reject the retired /api/v1 prefix."""
+    schema = (await client.get("/openapi.json")).json()
+    assert "/v1/users" in schema["paths"]
+    assert not any(path.startswith("/api/") for path in schema["paths"])
+    assert (await client.get("/v1/agent-capabilities")).status_code == 200
+    assert (await client.get("/api/v1/agent-capabilities")).status_code == 404
+
+
 async def test_openapi_security_matches_public_and_protected_operations(client):
     """Public operations require no token, and user and worker operations declare different credentials."""
     schema = (await client.get("/openapi.json")).json()
     public = {
-        ("/api/v1/users", "post"),
-        ("/api/v1/auth/login", "post"),
+        ("/v1/users", "post"),
+        ("/v1/auth/login", "post"),
         ("/health/live", "get"),
-        ("/api/v1/agent-capabilities", "get"),
+        ("/v1/agent-capabilities", "get"),
         ("/health/ready", "get"),
     }
     for path, operations in schema["paths"].items():
@@ -66,14 +75,14 @@ async def test_openapi_includes_every_required_crud_and_execution_operation(clie
         "resource-types": "type_id",
     }
     for resource, identifier in resources.items():
-        assert {"get", "post"} <= paths[f"/api/v1/{resource}"].keys()
-        assert {"get", "patch", "delete"} <= paths[f"/api/v1/{resource}/{{{identifier}}}"].keys()
+        assert {"get", "post"} <= paths[f"/v1/{resource}"].keys()
+        assert {"get", "patch", "delete"} <= paths[f"/v1/{resource}/{{{identifier}}}"].keys()
     for path in [
-        "/api/v1/isolates",
-        "/api/v1/isolates/{isolate_id}/commands",
-        "/api/v1/commands/statuses",
-        "/api/v1/commands/results",
-        "/api/v1/commands/cancel",
+        "/v1/isolates",
+        "/v1/isolates/{isolate_id}/commands",
+        "/v1/commands/statuses",
+        "/v1/commands/results",
+        "/v1/commands/cancel",
     ]:
         assert "post" in paths[path]
 
@@ -84,11 +93,11 @@ async def test_resource_contract_describes_inventory_reports_and_server_managed_
     """OpenAPI publishes all resource/report routes and separates writable capacity from server-owned occupancy and privilege fields."""
     schema = (await client.get("/openapi.json")).json()
     paths = schema["paths"]
-    assert {"get", "post"} <= paths["/api/v1/computers/{computer_id}/resources"].keys()
-    assert {"get", "patch", "delete"} <= paths["/api/v1/computer-resources/{resource_id}"].keys()
+    assert {"get", "post"} <= paths["/v1/computers/{computer_id}/resources"].keys()
+    assert {"get", "patch", "delete"} <= paths["/v1/computer-resources/{resource_id}"].keys()
     for owner, identifier in [("users", "user_id"), ("companies", "company_id")]:
-        assert "get" in paths[f"/api/v1/{owner}/{{{identifier}}}/resources/summary"]
-        operation = paths[f"/api/v1/{owner}/{{{identifier}}}/resources/history"]["get"]
+        assert "get" in paths[f"/v1/{owner}/{{{identifier}}}/resources/summary"]
+        operation = paths[f"/v1/{owner}/{{{identifier}}}/resources/history"]["get"]
         parameters = {item["name"]: item for item in operation["parameters"]}
         assert parameters["from"]["required"] and parameters["to"]["required"]
         assert {
@@ -97,7 +106,7 @@ async def test_resource_contract_describes_inventory_reports_and_server_managed_
             "resource_type_id",
             "limit",
         } <= parameters.keys()
-    assert "get" in paths["/api/v1/computer-resources/{resource_id}/history"]
+    assert "get" in paths["/v1/computer-resources/{resource_id}/history"]
     models = schema["components"]["schemas"]
     assert set(models["ComputerResourceUpdate"]["properties"]) == {"total", "expected_version"}
     assert {"total", "occupied", "free", "resource_type", "version"} <= models["ComputerResource"][
@@ -114,7 +123,7 @@ async def test_documented_binary_uploads_match_real_file_transfers(
     """Swagger describes raw binary uploads and downloads, matching the bytes transferred by both APIs."""
     paths = (await client.get("/openapi.json")).json()["paths"]
     for path, method in [
-        ("/api/v1/artifacts", "post"),
+        ("/v1/artifacts", "post"),
         ("/agent/v1/tasks/{task_id}/artifacts/{purpose}", "put"),
     ]:
         content = paths[path][method]["requestBody"]["content"]
@@ -124,7 +133,7 @@ async def test_documented_binary_uploads_match_real_file_transfers(
             "format": "binary",
         }
     for path in [
-        "/api/v1/artifacts/{artifact_id}/content",
+        "/v1/artifacts/{artifact_id}/content",
         "/agent/v1/artifacts/{artifact_id}/content",
     ]:
         assert set(paths[path]["get"]["responses"]["200"]["content"]) == {
@@ -136,7 +145,7 @@ async def test_documented_binary_uploads_match_real_file_transfers(
         content=b"binary\x00output",
     )
     assert response.status_code == 200
-    response = await api.get(f"/api/v1/artifacts/{response.json()['id']}/content")
+    response = await api.get(f"/v1/artifacts/{response.json()['id']}/content")
     assert response.headers["content-type"] == "application/octet-stream"
     assert response.content == b"binary\x00output"
     response = await agent_api.get(f"/agent/v1/artifacts/{artifact['id']}/content")

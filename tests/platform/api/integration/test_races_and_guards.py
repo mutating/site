@@ -25,13 +25,13 @@ async def test_unknown_task_completion_cannot_destroy_an_isolate_or_finish_a_com
     app, api, agent_api, run_task, command, isolate, unknown_task_kind
 ):
     """An unsupported stored task kind returns 409 without reporting success, deleting a sandbox or releasing its reserved capacity."""
-    before = (await api.get(f"/api/v1/isolates/{isolate['id']}")).json()
+    before = (await api.get(f"/v1/isolates/{isolate['id']}")).json()
     async with app.state.db.read() as session:
         count = await session.scalar(select(func.count()).select_from(ComputerResourceChange))
     response = await agent_api.post(f"/agent/v1/tasks/{run_task['id']}/complete", json={})
     assert response.status_code == 409 and response.json() == {"detail": "Unknown task kind"}
-    assert (await api.get(f"/api/v1/isolates/{isolate['id']}")).json() == before
-    result = (await api.get(f"/api/v1/commands/{command['id']}/result")).json()
+    assert (await api.get(f"/v1/isolates/{isolate['id']}")).json() == before
+    result = (await api.get(f"/v1/commands/{command['id']}/result")).json()
     assert result["status"] == "dispatched" and result["result"] is None
     async with app.state.db.read() as session:
         task = await session.get(AgentTask, run_task["id"])
@@ -50,9 +50,9 @@ async def test_company_deleted_between_access_check_and_read_returns_hidden_404(
 ):
     """Concurrent company deletion after authorization returns the same 404 as an unknown resource instead of a server error."""
     async with asyncio.TaskGroup() as group:
-        read = group.create_task(api.get(f"/api/v1/companies/{company['id']}"))
+        read = group.create_task(api.get(f"/v1/companies/{company['id']}"))
         await asyncio.wait_for(paused_company_read["entered"].wait(), timeout=3)
-        assert (await api.delete(f"/api/v1/companies/{company['id']}")).status_code == 204
+        assert (await api.delete(f"/v1/companies/{company['id']}")).status_code == 204
         paused_company_read["resume"].set()
     assert read.result().status_code == 404
     assert read.result().json() == {"detail": "Resource not found"}
@@ -64,13 +64,11 @@ async def test_concurrent_token_ownership_deletion_fails_authentication(
     """An authentication already reading a token still rejects it if its ownership is deleted before owner lookup."""
     async with asyncio.TaskGroup() as group:
         read = group.create_task(
-            client.get(
-                "/api/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]}
-            )
+            client.get("/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]})
         )
         await asyncio.wait_for(paused_token_owner_lookup["entered"].wait(), timeout=3)
         assert (
-            await api.delete(f"/api/v1/token-ownerships/{token_ownership['id']}")
+            await api.delete(f"/v1/token-ownerships/{token_ownership['id']}")
         ).status_code == 204
         paused_token_owner_lookup["resume"].set()
     assert read.result().status_code == 401 and read.result().json() == {
@@ -84,12 +82,10 @@ async def test_concurrent_token_issuer_deletion_fails_authentication(
     """An authentication holding an old token and ownership cannot proceed after the issuing user has been deleted."""
     async with asyncio.TaskGroup() as group:
         read = group.create_task(
-            client.get(
-                "/api/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]}
-            )
+            client.get("/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]})
         )
         await asyncio.wait_for(paused_token_issuer_lookup["entered"].wait(), timeout=3)
-        assert (await api.delete(f"/api/v1/users/{user['id']}")).status_code == 204
+        assert (await api.delete(f"/v1/users/{user['id']}")).status_code == 204
         paused_token_issuer_lookup["resume"].set()
     assert read.result().status_code == 401 and read.result().json() == {
         "detail": "Invalid token issuer"
@@ -101,17 +97,17 @@ async def test_concurrent_issuer_demotion_rechecks_membership_after_token_read(
     api, client, user, company, membership, company_token, paused_corporate_issuer_lookup
 ):
     """A corporate token read before revocation cannot finish authentication after its issuer loses company administration."""
-    rows = (await api.get("/api/v1/memberships", params={"company_id": company["id"]})).json()
+    rows = (await api.get("/v1/memberships", params={"company_id": company["id"]})).json()
     issuer = next(row for row in rows if row["user_id"] == user["id"])
     async with asyncio.TaskGroup() as group:
         read = group.create_task(
             client.get(
-                f"/api/v1/companies/{company['id']}",
+                f"/v1/companies/{company['id']}",
                 headers={"Authorization": "Bearer " + company_token["token"]},
             )
         )
         await asyncio.wait_for(paused_corporate_issuer_lookup["entered"].wait(), timeout=3)
-        response = await api.patch(f"/api/v1/memberships/{issuer['id']}", json={"role": "user"})
+        response = await api.patch(f"/v1/memberships/{issuer['id']}", json={"role": "user"})
         assert response.status_code == 200, response.text
         paused_corporate_issuer_lookup["resume"].set()
     assert read.result().status_code == 401
@@ -124,8 +120,8 @@ async def test_internal_terminal_retries_preserve_results_and_do_not_release_cap
     """Internal transition retries leave a completed result and destroyed isolate unchanged and add no duplicate resource releases."""
     command_id = finished_execution["command"]["id"]
     isolate_id = finished_execution["isolate"]["id"]
-    before_result = (await api.get(f"/api/v1/commands/{command_id}/result")).json()
-    before_isolate = (await api.get(f"/api/v1/isolates/{isolate_id}")).json()
+    before_result = (await api.get(f"/v1/commands/{command_id}/result")).json()
+    before_isolate = (await api.get(f"/v1/isolates/{isolate_id}")).json()
     async with app.state.db.read() as session:
         count = await session.scalar(select(func.count()).select_from(ComputerResourceChange))
     async with app.state.db.write() as session:
@@ -136,8 +132,8 @@ async def test_internal_terminal_retries_preserve_results_and_do_not_release_cap
         )
         await fail_isolate(session, isolate, clock.now, "late failure")
         await release_reservation(session, isolate, clock.now)
-    assert (await api.get(f"/api/v1/commands/{command_id}/result")).json() == before_result
-    assert (await api.get(f"/api/v1/isolates/{isolate_id}")).json() == before_isolate
+    assert (await api.get(f"/v1/commands/{command_id}/result")).json() == before_result
+    assert (await api.get(f"/v1/isolates/{isolate_id}")).json() == before_isolate
     async with app.state.db.read() as session:
         assert (
             await session.scalar(select(func.count()).select_from(ComputerResourceChange)) == count
@@ -161,7 +157,7 @@ async def test_result_reconciliation_preserves_already_terminal_task(
             and task.error == "original worker failure"
             and task.finished_at == clock.now
         )
-    result = (await api.get(f"/api/v1/commands/{command['id']}/result")).json()
+    result = (await api.get(f"/v1/commands/{command['id']}/result")).json()
     assert result["status"] == "failed" and result["result"]["error"] == "reconciled result"
 
 
@@ -169,7 +165,7 @@ async def test_missing_run_assignment_still_requires_confirmed_cancellation(
     api, agent_api, command, isolate, missing_run_assignment
 ):
     """A lost run assignment does not fabricate successful cancellation: the command remains pending until the worker confirms stopping it."""
-    response = await api.post(f"/api/v1/commands/{command['id']}/cancel")
+    response = await api.post(f"/v1/commands/{command['id']}/cancel")
     assert response.status_code == 202 and response.json()["status"] == "cancel_requested"
     response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})
     cancel = response.json()["tasks"][0]
@@ -178,10 +174,8 @@ async def test_missing_run_assignment_still_requires_confirmed_cancellation(
     assert (
         await agent_api.post(f"/agent/v1/tasks/{cancel['id']}/complete", json={})
     ).status_code == 200
-    assert (await api.get(f"/api/v1/commands/{command['id']}/result")).json()[
-        "status"
-    ] == "cancelled"
-    assert (await api.get(f"/api/v1/isolates/{isolate['id']}")).json()["reserved"] is True
+    assert (await api.get(f"/v1/commands/{command['id']}/result")).json()["status"] == "cancelled"
+    assert (await api.get(f"/v1/isolates/{isolate['id']}")).json()["reserved"] is True
 
 
 @pytest.mark.parametrize(
@@ -198,7 +192,7 @@ async def test_completion_after_deadline_is_rejected_even_before_controller_tick
     assert response.status_code == 409 and response.json() == {
         "detail": "Task deadline has expired"
     }
-    assert (await api.get(f"/api/v1/commands/{command['id']}/result")).json()["result"] is None
+    assert (await api.get(f"/v1/commands/{command['id']}/result")).json()["result"] is None
 
 
 async def test_creation_guard_rejects_provisioning_deadline_with_live_isolate(

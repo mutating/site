@@ -55,7 +55,7 @@ router = APIRouter(
     dependencies=[Depends(agent_credential_scheme), Depends(agent_device_proof)],
 )
 user_router = APIRouter(
-    prefix="/api/v1", tags=["Power Cell management"], dependencies=[Depends(access_token_scheme)]
+    prefix="/v1", tags=["Power Cell management"], dependencies=[Depends(access_token_scheme)]
 )
 
 

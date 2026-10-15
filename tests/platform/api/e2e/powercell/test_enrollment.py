@@ -19,7 +19,7 @@ async def test_profile_capabilities_and_enrollment_ownership(
     client, api, other_api, enrollment, clock
 ):
     """The authorized profile contains only a nonextractable attested identity and cannot be read by another account."""
-    response = await client.get("/api/v1/agent-capabilities")
+    response = await client.get("/v1/agent-capabilities")
     assert len(response.json()["extensions"]) == 5 and response.json()["attestation_required"]
     profile = enrollment.profile
     assert profile["PayloadType"] == "Configuration" and len(profile["PayloadContent"]) == 1
@@ -33,26 +33,26 @@ async def test_profile_capabilities_and_enrollment_ownership(
     assert not acme["KeyIsExtractable"] and not acme["AllowAllAppsAccess"]
     assert acme["KeyType"] == "ECSECPrimeRandom" and acme["KeySize"] == 256
     for suffix in ["", "/profile"]:
-        response = await other_api.get(f"/api/v1/agent-enrollments/{enrollment.row['id']}" + suffix)
+        response = await other_api.get(f"/v1/agent-enrollments/{enrollment.row['id']}" + suffix)
         assert response.status_code == 404
     response = await api.post(
-        "/api/v1/agent-enrollments",
+        "/v1/agent-enrollments",
         headers={"Idempotency-Key": enrollment.key},
         json=enrollment.payload,
     )
     assert response.status_code == 201 and response.json() == enrollment.row
     response = await api.post(
-        "/api/v1/agent-enrollments",
+        "/v1/agent-enrollments",
         headers={"Idempotency-Key": enrollment.key},
         json={**enrollment.payload, "name": "different"},
     )
     assert response.status_code == 409
     clock.now += timedelta(hours=2)
-    assert (await api.get(f"/api/v1/agent-enrollments/{enrollment.row['id']}")).json()[
+    assert (await api.get(f"/v1/agent-enrollments/{enrollment.row['id']}")).json()[
         "status"
     ] == "expired"
     assert (
-        await api.get(f"/api/v1/agent-enrollments/{enrollment.row['id']}/profile")
+        await api.get(f"/v1/agent-enrollments/{enrollment.row['id']}/profile")
     ).status_code == 409
     assert (await client.get(enrollment.path + "/directory")).status_code == 401
 
@@ -230,7 +230,7 @@ async def test_attestation_and_csr_cannot_substitute_device(
             ),
         )
     assert response.status_code == 400, response.text
-    response = await api.get(f"/api/v1/agent-enrollments/{e.row['id']}")
+    response = await api.get(f"/v1/agent-enrollments/{e.row['id']}")
     assert response.json()["status"] == "pending_attestation"
 
 
@@ -298,13 +298,13 @@ async def test_reinstallation_and_another_account_share_one_physical_identity(
 ):
     """Another installation/account receives independent credentials while the Apple-certified device ID remains stable."""
     response = await other_api.post(
-        "/api/v1/agent-enrollments",
+        "/v1/agent-enrollments",
         headers={"Idempotency-Key": str(uuid4())},
         json={**bound_device.identity.order.enrollment.payload, "installation_id": str(uuid4())},
     )
     assert response.status_code == 201
     enrollment = response.json()
-    response = await other_api.get(f"/api/v1/agent-enrollments/{enrollment['id']}/profile")
+    response = await other_api.get(f"/v1/agent-enrollments/{enrollment['id']}/profile")
     import plistlib
     from urllib.parse import urlsplit
 
@@ -375,7 +375,7 @@ async def test_reinstallation_and_another_account_share_one_physical_identity(
         ),
     )
     certificate = x509.load_pem_x509_certificate(response.content)
-    target = f"/api/v1/agent-enrollments/{enrollment['id']}/finish"
+    target = f"/v1/agent-enrollments/{enrollment['id']}/finish"
     headers = {**other_user["headers"], "Idempotency-Key": str(uuid4())}
     response = await other_api.post(
         target,

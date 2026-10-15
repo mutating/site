@@ -27,7 +27,7 @@ async def test_optional_isolation_fields_preserve_preupgrade_idempotency(api, ap
     """A stored pre-extension request hash still recovers its isolate after a response was lost across upgrade."""
     key = str(uuid4())
     response = await api.post(
-        "/api/v1/isolates", headers={"Idempotency-Key": key}, json=isolate_payload
+        "/v1/isolates", headers={"Idempotency-Key": key}, json=isolate_payload
     )
     assert response.status_code == 202
     isolate = response.json()
@@ -42,11 +42,11 @@ async def test_optional_isolation_fields_preserve_preupgrade_idempotency(api, ap
         row.request_hash = fingerprint(legacy_payload)
     for fields in [{}, {"isolation_mode": None, "retry_allowed": True}]:
         response = await api.post(
-            "/api/v1/isolates", headers={"Idempotency-Key": key}, json={**isolate_payload, **fields}
+            "/v1/isolates", headers={"Idempotency-Key": key}, json={**isolate_payload, **fields}
         )
         assert response.status_code == 202 and response.json()["id"] == isolate["id"]
     response = await api.post(
-        "/api/v1/isolates",
+        "/v1/isolates",
         headers={"Idempotency-Key": key},
         json={**isolate_payload, "retry_allowed": False},
     )

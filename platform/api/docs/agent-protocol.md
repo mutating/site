@@ -7,10 +7,10 @@ alone cannot enforce on an offline computer.
 
 ## Enrollment and sessions
 
-1. An owner registers the computer using `POST /api/v1/computers`. CPU, memory and
+1. An owner registers the computer using `POST /v1/computers`. CPU, memory and
    disk describe capacity the owner permits the service to consume, not necessarily
    the whole machine. OS, architecture and runtime are exact-match capabilities.
-2. An owner calls `POST /api/v1/computers/{id}/credentials`. The returned random
+2. An owner calls `POST /v1/computers/{id}/credentials`. The returned random
    token is shown once. Store it in the agent's private configuration, never in
    an isolate. Rotating it revokes the old credential, invalidates its session and
    fails outstanding work while retaining reservations until cleanup.
@@ -153,7 +153,7 @@ accepting the body and after the transfer; an expired task receives `409`.
 
 For snapshots, upload binary bytes using
 `PUT /agent/v1/tasks/{id}/artifacts/snapshot`, then complete the task. The client
-polls `/api/v1/operations/{id}` and obtains `artifact_id` for downloading the
+polls `/v1/operations/{id}` and obtains `artifact_id` for downloading the
 state. The plugin is responsible for the state format; it can use tar archives.
 
 Download initial state through `GET /agent/v1/artifacts/{id}/content`. This is
@@ -165,7 +165,7 @@ artifacts inherit the isolate owner; arbitrary owner IDs are never accepted.
 
 The future throng plugin has two independent monitors:
 
-- A result monitor batches `/api/v1/commands/statuses`, fetches terminal results
+- A result monitor batches `/v1/commands/statuses`, fetches terminal results
   through `/commands/results`, stores the result/error and signals the waiting
   `run()` event.
 - A cancellation monitor keeps command/token pairs, periodically observes each

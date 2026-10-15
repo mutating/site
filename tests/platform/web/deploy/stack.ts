@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export const origin = "https://127.0.0.1:18443";
-export const apiURL = "http://127.0.0.1:18210/api/v1";
+export const apiURL = "http://127.0.0.1:18210/v1";
 type Stack = {
   restartDashboard: () => Promise<void>;
   stopAPI: () => Promise<void>;

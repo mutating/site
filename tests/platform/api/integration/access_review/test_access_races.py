@@ -14,17 +14,15 @@ async def test_computer_list_does_not_mix_authorized_rows_with_new_private_capac
     """A list started before ownership transfer may show its authorized snapshot, but must not reveal the new private owner's resource changes; later reads use the same hidden 404 as a missing computer."""
     computer = shared_review_computer
     entered, resume = paused_computer_list
-    pending = asyncio.create_task(other_api.get("/api/v1/computers"))
+    pending = asyncio.create_task(other_api.get("/v1/computers"))
     try:
         await asyncio.wait_for(entered.wait(), timeout=5)
         response = await api.patch(
-            f"/api/v1/computer-ownerships/{computer['ownership']['id']}",
+            f"/v1/computer-ownerships/{computer['ownership']['id']}",
             json={"user_id": user["id"]},
         )
         assert response.status_code == 200, response.text
-        response = await api.patch(
-            f"/api/v1/computers/{computer['id']}", json={"cpu_millis": 777000}
-        )
+        response = await api.patch(f"/v1/computers/{computer['id']}", json={"cpu_millis": 777000})
         assert response.status_code == 200, response.text
     finally:
         resume.set()
@@ -34,9 +32,9 @@ async def test_computer_list_does_not_mix_authorized_rows_with_new_private_capac
     assert response.json()[0]["id"] == computer["id"]
     assert response.json()[0]["cpu_millis"] == computer["cpu_millis"]
     assert response.json()[0]["memory_bytes"] == computer["memory_bytes"]
-    response = await other_api.get(f"/api/v1/computers/{computer['id']}")
+    response = await other_api.get(f"/v1/computers/{computer['id']}")
     assert response.status_code == 404 and response.json() == {"detail": "Resource not found"}
-    response = await other_api.get("/api/v1/computers")
+    response = await other_api.get("/v1/computers")
     assert response.status_code == 200 and response.json() == []
 
 
@@ -49,7 +47,7 @@ async def test_deleted_agent_computer_invalidates_an_authentication_already_in_p
     pending = asyncio.create_task(agent_api.get("/agent/v1/session"))
     try:
         await asyncio.wait_for(entered.wait(), timeout=5)
-        response = await api.delete(f"/api/v1/computers/{computer['id']}")
+        response = await api.delete(f"/v1/computers/{computer['id']}")
         assert response.status_code == 204, response.text
     finally:
         resume.set()
@@ -64,11 +62,11 @@ async def test_user_deletion_between_authentication_and_profile_read_returns_401
 ):
     """Each profile endpoint rejects an issuer deleted after authentication instead of returning a missing user through its required response schema and causing 500."""
     entered, resume = paused_profile_lookup
-    path = "/api/v1" + route.format(user_id=user["id"])
+    path = "/v1" + route.format(user_id=user["id"])
     pending = asyncio.create_task(api.get(path))
     try:
         await asyncio.wait_for(entered.wait(), timeout=5)
-        response = await api.delete(f"/api/v1/users/{user['id']}")
+        response = await api.delete(f"/v1/users/{user['id']}")
         assert response.status_code == 204, response.text
     finally:
         resume.set()
@@ -82,7 +80,7 @@ async def test_computer_list_paginates_computers_without_splitting_their_resourc
     api, paginated_review_computers, limit, offset
 ):
     """The joined resource read preserves computer-level limits, ordering, empty pages and complete CPU/memory values without duplicate computers."""
-    response = await api.get("/api/v1/computers", params={"limit": limit, "offset": offset})
+    response = await api.get("/v1/computers", params={"limit": limit, "offset": offset})
     assert response.status_code == 200, response.text
     expected = paginated_review_computers[offset : offset + limit]
     assert [row["id"] for row in response.json()] == [row["id"] for row in expected]
@@ -106,7 +104,7 @@ async def test_rejected_password_changes_do_not_perform_argon2_work(
         headers = {"Authorization": "Bearer " + access_token["token"]}
         target = user["id"]
     response = await client.patch(
-        f"/api/v1/users/{target}", headers=headers, json={"password": "replacement long password"}
+        f"/v1/users/{target}", headers=headers, json={"password": "replacement long password"}
     )
     assert response.status_code == status, response.text
     assert password_hash_observer["calls"] == 0
@@ -119,20 +117,20 @@ async def test_authorized_password_change_hashes_once_and_keeps_login_and_revoca
 ):
     """A permitted password update performs one real hash, accepts the new password and revokes both login and delegated tokens."""
     replacement = "replacement long password"
-    response = await api.patch(f"/api/v1/users/{user['id']}", json={"password": replacement})
+    response = await api.patch(f"/v1/users/{user['id']}", json={"password": replacement})
     assert response.status_code == 200, response.text
     assert password_hash_observer["calls"] == 1
-    assert (await api.get("/api/v1/users/me")).status_code == 401
+    assert (await api.get("/v1/users/me")).status_code == 401
     response = await client.get(
-        "/api/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]}
+        "/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]}
     )
     assert response.status_code == 401, response.text
     response = await client.post(
-        "/api/v1/auth/login", json={"email": user["email"], "password": user["password"]}
+        "/v1/auth/login", json={"email": user["email"], "password": user["password"]}
     )
     assert response.status_code == 401, response.text
     response = await client.post(
-        "/api/v1/auth/login", json={"email": user["email"], "password": replacement}
+        "/v1/auth/login", json={"email": user["email"], "password": replacement}
     )
     assert response.status_code == 200, response.text
 
@@ -146,7 +144,7 @@ async def test_password_change_rechecks_revocation_after_hashing_without_holding
     replacement = "replacement long password"
     pending = asyncio.create_task(
         client.patch(
-            f"/api/v1/users/{user['id']}",
+            f"/v1/users/{user['id']}",
             headers={"Authorization": "Bearer " + access_token["token"]},
             json={"password": replacement},
         )
@@ -154,7 +152,7 @@ async def test_password_change_rechecks_revocation_after_hashing_without_holding
     try:
         await asyncio.wait_for(observer["entered"].wait(), timeout=5)
         response = await asyncio.wait_for(
-            api.patch(f"/api/v1/access-tokens/{access_token['id']}", json={"revoke": True}),
+            api.patch(f"/v1/access-tokens/{access_token['id']}", json={"revoke": True}),
             timeout=3,
         )
         assert response.status_code == 200, response.text
@@ -163,12 +161,12 @@ async def test_password_change_rechecks_revocation_after_hashing_without_holding
         response = await asyncio.wait_for(pending, timeout=5)
     assert response.status_code == 401, response.text
     assert observer["calls"] == 1
-    assert (await api.get("/api/v1/users/me")).status_code == 200
+    assert (await api.get("/v1/users/me")).status_code == 200
     response = await client.post(
-        "/api/v1/auth/login", json={"email": user["email"], "password": replacement}
+        "/v1/auth/login", json={"email": user["email"], "password": replacement}
     )
     assert response.status_code == 401, response.text
     response = await client.post(
-        "/api/v1/auth/login", json={"email": user["email"], "password": user["password"]}
+        "/v1/auth/login", json={"email": user["email"], "password": user["password"]}
     )
     assert response.status_code == 200, response.text

@@ -71,14 +71,14 @@ expiry even when the controller is stopped.
 
 ## Discovery and enrollment
 
-Public `GET /api/v1/agent-capabilities` returns `protocol_version: 1`, runtime
+Public `GET /v1/agent-capabilities` returns `protocol_version: 1`, runtime
 `powercell-ubuntu-arm64-v1`, image list `["ubuntu:24.04"]`,
 `attestation_required: true`, and supported extensions:
 `powercell.enrollment.v1`, `powercell.capacity.v1`, `powercell.eviction.v1`,
 `powercell.diagnostics.v1`, `powercell.isolation.v1`.
 When the relay is configured, discovery also advertises `powercell.relay.v1`.
 
-With a personal `manage` token, POST `/api/v1/agent-enrollments` and
+With a personal `manage` token, POST `/v1/agent-enrollments` and
 `Idempotency-Key`:
 
 ```json
@@ -86,7 +86,7 @@ With a personal `manage` token, POST `/api/v1/agent-enrollments` and
 ```
 
 Company enrollment requires its administrator role, rechecked when finishing.
-Responses and GET `/api/v1/agent-enrollments/{id}` contain
+Responses and GET `/v1/agent-enrollments/{id}` contain
 `id,status,expires_at,certificate_sha256,relay`. Status is `pending_attestation`,
 `verified` or `expired`. The certificate hash is absent until a matching CSR has
 been signed after successful attestation. Only the initiating user can read or
@@ -244,7 +244,7 @@ certificate. For 24 hours, the revoked token plus device proof can retry only th
 exact unbind. It never authorizes a new operation. Physical identity is retained.
 
 If the device key/profile is lost or its certificate has expired, the owner can
-log in again and POST `/api/v1/computers/{computer_id}/unbind` with a user token
+log in again and POST `/v1/computers/{computer_id}/unbind` with a user token
 having `manage` scope, `Idempotency-Key` and `{"cleanup_confirmed":true}`. The
 client must stop its sandboxes before confirming. Current personal ownership or
 company administration is required. This performs the same cleanup and revokes
@@ -265,7 +265,7 @@ The URL and body IDs must match. Task metadata must belong to that computer and,
 if supplied, the original session. Session-only metadata is an untrusted label.
 Return `{id,sha256}`. Exact bytes deduplicate; conflicting bytes return 409. Bounded
 records, checksum, original owner and retention are stored atomically in the DB.
-GET `/api/v1/computers/{id}/diagnostics/{uuid}` requires authenticated computer
+GET `/v1/computers/{id}/diagnostics/{uuid}` requires authenticated computer
 administration and original log ownership. Transferring the computer does not
 transfer private logs. Storage quota exhaustion returns 409; oversize returns 413.
 These logs never update execution results. stdout/stderr retain the existing live

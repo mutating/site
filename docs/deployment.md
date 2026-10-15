@@ -13,8 +13,9 @@ Production работает без Docker и Docker Compose. Репозитор�
 | `https://platform.mutating.tech/` | Главная кабинета, сервис на `127.0.0.1:8001` |
 
 Используются точные имена двух поддоменов. Для добавления других доменов нужно
-добавить их в nginx и сертификат. Все пути API сохраняются: например,
-`https://api.mutating.tech/api/v1/users`, `/agent/v1/*`, `/docs`, `/openapi.json`.
+добавить их в nginx и сертификат. Базовый адрес API — `https://api.mutating.tech/v1`.
+Пример запроса: `https://api.mutating.tech/v1/users`.
+На том же поддомене доступны `/agent/v1/*`, `/docs` и `/openapi.json`.
 Страницы кабинета доступны без префикса: `/login`, `/profile`, `/organizations` и т. д.
 Старые адреса `/account/` и `/account/*` перенаправляются с кодом 308 на новые,
 сохраняя параметры запроса. Внутренний транспорт `/account/api/*` и путь cookie
@@ -103,9 +104,13 @@ nginx-конфиг `/etc/nginx/sites-available/throng`. Сертификат д�
 ## CI и SSH-секреты
 
 `.github/workflows/deploy.yml` запускается при **каждом push в main**, без фильтров
-по файлам. Также есть ручной `workflow_dispatch`. Деплой ждёт успешного завершения
-всех site-, API- и web-проверок, включая HTTPS и визуальные тесты. Все production-деплои
-сериализованы; выполняющийся деплой не отменяется следующим push.
+по файлам. Также есть ручной `workflow_dispatch`. Сборка и деплой запускаются
+без ожидания результатов тестов. `.github/workflows/tests.yml` независимо запускает
+все site-, API- и web-проверки, включая HTTPS и визуальные тесты, на push в любую
+ветку (в том числе `main`) и на pull request. Ошибки тестов не блокируют деплой.
+Все production-деплои сериализованы; выполняющийся деплой не отменяется следующим
+push. Настройка `queue: max` сохраняет ожидающие запуски вместо замены новым push;
+[GitHub Actions допускает до 100 запусков в очереди](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs).
 
 В GitHub-репозитории добавьте Actions secrets:
 

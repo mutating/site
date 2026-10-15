@@ -45,8 +45,8 @@ from throng_api.security import (
 from throng_api.serialization import public
 from throng_api.sharing import grant_allowed, member_view, resolve_user
 
-public_router = APIRouter(prefix="/api/v1", tags=["accounts"])
-router = APIRouter(prefix="/api/v1", tags=["accounts"], dependencies=[Depends(access_token_scheme)])
+public_router = APIRouter(prefix="/v1", tags=["accounts"])
+router = APIRouter(prefix="/v1", tags=["accounts"], dependencies=[Depends(access_token_scheme)])
 
 
 async def saved(session, row):

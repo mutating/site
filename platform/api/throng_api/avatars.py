@@ -14,7 +14,7 @@ from throng_api.schemas import UserOut
 from throng_api.security import access_token_scheme, authenticate, personal
 
 router = APIRouter(
-    prefix="/api/v1/users/me/avatar", tags=["accounts"], dependencies=[Depends(access_token_scheme)]
+    prefix="/v1/users/me/avatar", tags=["accounts"], dependencies=[Depends(access_token_scheme)]
 )
 MAX_BYTES = 2 * 1024 * 1024
 MAX_PIXELS = 16_000_000

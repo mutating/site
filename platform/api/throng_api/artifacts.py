@@ -14,9 +14,7 @@ from throng_api.schemas import PaginationOffset, StorageText
 from throng_api.security import access_token_scheme, authenticate, owned, owned_filter, owner_values
 from throng_api.serialization import public
 
-router = APIRouter(
-    prefix="/api/v1", tags=["artifacts"], dependencies=[Depends(access_token_scheme)]
-)
+router = APIRouter(prefix="/v1", tags=["artifacts"], dependencies=[Depends(access_token_scheme)])
 
 BINARY_CONTENT = {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}
 BINARY_UPLOAD_DOCS = {

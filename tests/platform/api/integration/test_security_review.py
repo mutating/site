@@ -14,7 +14,7 @@ async def test_result_completion_between_size_check_and_read_is_still_bounded(
     """A worker completing after the lightweight size check cannot bypass the batch response limit."""
     command_id = running_command["command"]["id"]
     async with asyncio.TaskGroup() as group:
-        poll = group.create_task(api.post("/api/v1/commands/results", json={"ids": [command_id]}))
+        poll = group.create_task(api.post("/v1/commands/results", json={"ids": [command_id]}))
         await asyncio.wait_for(paused_command_poll["entered"].wait(), timeout=5)
         response = await agent_api.post(
             f"/agent/v1/tasks/{running_command['task']['id']}/complete",
