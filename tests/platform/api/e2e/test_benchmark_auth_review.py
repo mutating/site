@@ -58,6 +58,7 @@ async def write_responses(client, computer, row, *, headers):
 async def test_token_scopes_independently_gate_every_benchmark_operation(
     api, client, computer, access_token
 ):
+    """Each result read requires the read scope and each mutation requires manage, independently of the user's ownership."""
     row = await create_result(api, computer)
     headers = {"Authorization": "Bearer " + access_token["token"]}
     for response in await read_responses(client, computer, row, headers=headers):
@@ -76,6 +77,7 @@ async def test_token_scopes_independently_gate_every_benchmark_operation(
 async def test_invalidated_personal_token_cannot_read_or_modify_benchmarks(
     api, client, computer, access_token, clock, invalidity
 ):
+    """Expired or revoked personal tokens lose all benchmark access immediately without changing existing scores."""
     row = await create_result(api, computer)
     if invalidity == "expired":
         clock.now += timedelta(seconds=60)
@@ -92,6 +94,7 @@ async def test_invalidated_personal_token_cannot_read_or_modify_benchmarks(
 async def test_company_token_cannot_use_issuers_personal_or_other_company_benchmarks(
     api, client, company, company_token, computer
 ):
+    """A company token reaches only that company's computer results, even when its issuer personally owns other computers."""
     personal_row = await create_result(api, computer)
     response = await api.post("/v1/companies", json={"name": "Separate issuer company"})
     assert response.status_code == 201, response.text
@@ -132,6 +135,7 @@ async def test_company_token_cannot_use_issuers_personal_or_other_company_benchm
 async def test_removed_member_immediately_loses_all_existing_benchmark_access(
     api, other_api, computer, company, membership
 ):
+    """Removing organization membership revokes access to existing benchmark rows and prevents every mutation."""
     response = await api.patch(
         f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
@@ -154,6 +158,7 @@ async def test_removed_member_immediately_loses_all_existing_benchmark_access(
 async def test_benchmark_access_follows_computer_transfer_away_from_original_registrant(
     api, other_api, client, computer, company, company_token, membership, other_user
 ):
+    """Transferring a computer moves benchmark authority to its new owner and invalidates the previous owner's device credential."""
     response = await api.patch(
         f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
@@ -195,6 +200,7 @@ async def test_benchmark_access_follows_computer_transfer_away_from_original_reg
 async def test_company_token_is_revoked_when_issuer_loses_token_management(
     api, other_api, client, computer, company, membership
 ):
+    """A company token stops authorizing benchmark access once its issuer loses permission to manage company tokens."""
     response = await api.patch(
         f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},
@@ -235,6 +241,7 @@ async def test_company_token_is_revoked_when_issuer_loses_token_management(
 async def test_resource_manage_permission_does_not_imply_resource_read(
     api, other_api, computer, company, membership
 ):
+    """Resource management permission permits benchmark writes but does not grant the separately required permission to read results."""
     response = await api.patch(
         f"/v1/computer-ownerships/{computer['ownership']['id']}",
         json={"company_id": company["id"]},

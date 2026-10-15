@@ -15,6 +15,7 @@ pytestmark = pytest.mark.anyio
 async def test_upgrade_downgrade_and_metadata_alignment(
     computer, http_server, migration_database, alembic_config
 ):
+    """The migration can be reversed and reapplied without altering existing computers, and its schema agrees with the SQLAlchemy models."""
     http_server.server.should_exit = True
     await asyncio.wait_for(http_server.task, timeout=10)
     await migration_database.close()
@@ -32,6 +33,7 @@ async def test_upgrade_downgrade_and_metadata_alignment(
 
 
 async def test_database_enforces_identity_score_and_foreign_key(app, computer):
+    """Database constraints independently reject duplicate benchmark identities, negative scores, and references to nonexistent computers."""
     from throng_api.models import BenchmarkResult
 
     def row(**changes):

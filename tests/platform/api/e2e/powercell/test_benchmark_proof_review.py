@@ -33,6 +33,7 @@ def headers_for(device):
 async def test_attested_benchmark_upload_before_session_requires_fresh_proof_on_retry(
     api, client, bound_device, clock
 ):
+    """An attested Mac can upload before an agent session, but retrying a measurement requires fresh possession proof while retaining row identity."""
     device = bound_device
     signed = proof_headers(
         device.identity.key,
@@ -82,6 +83,7 @@ async def test_attested_benchmark_upload_before_session_requires_fresh_proof_on_
 async def test_session_free_upload_rejects_stolen_credential_or_modified_measurement(
     api, client, bound_device, clock, attack
 ):
+    """A stolen credential, unrelated signing key, or body altered after signing cannot upload results or create stored measurements."""
     device = bound_device
     headers = headers_for(device)
     body = BODY
@@ -111,6 +113,7 @@ async def test_session_free_upload_rejects_stolen_credential_or_modified_measure
 async def test_owner_unbind_rejects_signed_benchmark_upload_and_retains_old_measurements(
     api, client, bound_device, clock
 ):
+    """Unbinding disables further device uploads, including correctly signed requests, while preserving previously stored scores."""
     device = bound_device
     response = await client.put(
         TARGET,
@@ -156,6 +159,7 @@ async def test_owner_unbind_rejects_signed_benchmark_upload_and_retains_old_meas
 async def test_expired_certificate_cannot_upload_with_current_signed_proof(
     api, client, bound_device, clock
 ):
+    """A fresh signature cannot restore upload authority after the device certificate expires, and no result is saved."""
     device = bound_device
     clock.now = device.identity.certificate.not_valid_after_utc
     response = await client.put(

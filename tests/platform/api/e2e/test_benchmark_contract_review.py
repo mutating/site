@@ -15,6 +15,7 @@ RESULT_REF = {"$ref": "#/components/schemas/BenchmarkResult"}
 
 
 async def test_openapi_benchmark_input_and_output_contracts(client):
+    """OpenAPI describes the required result fields and bounded suite inputs while allowing future benchmark names."""
     response = await client.get("/openapi.json")
     assert response.status_code == 200
     schema = response.json()
@@ -59,6 +60,7 @@ async def test_openapi_benchmark_input_and_output_contracts(client):
 
 
 async def test_openapi_benchmark_methods_statuses_and_list_parameters(client):
+    """Published routes expose the expected payload models, success statuses, and required computer filtering for both listing forms."""
     paths = (await client.get("/openapi.json")).json()["paths"]
     for path, method, model, success in [
         (OWNER_RESULTS, "post", "BenchmarkCreate", "201"),
@@ -103,6 +105,7 @@ async def test_openapi_benchmark_methods_statuses_and_list_parameters(client):
 async def test_worker_future_names_and_partial_newer_version_match_both_list_routes(
     api, client, computer
 ):
+    """Future benchmark names upload individually, and both listing routes return only the newest version even when that version is incomplete."""
     credential = await api.post(f"/v1/computers/{computer['id']}/credentials")
     assert credential.status_code == 201, credential.text
     headers = {"Authorization": "Bearer " + credential.json()["token"]}
@@ -145,6 +148,7 @@ async def test_worker_future_names_and_partial_newer_version_match_both_list_rou
 async def test_worker_finite_double_extremes_round_trip_without_score_truncation(
     api, agent_api, computer
 ):
+    """Worker uploads preserve finite double precision, including subnormal and maximum values, through storage and owner reads."""
     numbers = [0.0, 5e-324, sys.float_info.min, 0.9999999999999999, 2.0**53, sys.float_info.max]
     payload = {
         "benchmarker_version": "0.0.2",
@@ -180,6 +184,7 @@ async def test_worker_finite_double_extremes_round_trip_without_score_truncation
 async def test_invalid_nested_json_cannot_replace_an_already_uploaded_result(
     api, agent_api, computer
 ):
+    """Malformed suite structures and nested measurements return JSON validation errors without overwriting a previously uploaded result."""
     valid = {"benchmark_name": "single_core", "number": 123.5}
     good = {"benchmarker_version": "0.0.2", "results": [valid]}
     response = await agent_api.put(AGENT_RESULTS, json=good)
@@ -227,6 +232,7 @@ async def test_invalid_nested_json_cannot_replace_an_already_uploaded_result(
 
 
 async def test_agent_nonfinite_wire_numbers_return_json_validation_errors(api, agent_api, computer):
+    """Nonfinite or overflowing numeric wire values produce JSON validation responses and leave the computer without measurements."""
     for value in ["NaN", "Infinity", "-Infinity", "1e999", "1" + "0" * 400]:
         body = (
             '{"benchmarker_version":"0.0.2","results":'

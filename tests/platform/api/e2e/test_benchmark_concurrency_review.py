@@ -82,6 +82,7 @@ async def test_competing_complete_suites_commit_one_coherent_pair(api, agent_api
 async def test_agent_and_owner_updates_share_identity_without_losing_other_results(
     api, agent_api, computer, owner_method
 ):
+    """Concurrent worker and owner updates retain the existing row UUID and preserve unrelated measurements in the same version."""
     original = await owner_result(api, computer)
     retained = await owner_result(api, computer, name="manual_calibration", number=77)
     if owner_method == "post":
@@ -116,6 +117,7 @@ async def test_agent_and_owner_updates_share_identity_without_losing_other_resul
 async def test_delete_racing_upload_is_serializable_and_rerun_restores_missing_measurement(
     api, agent_api, computer
 ):
+    """A delete racing an upload has a valid serial outcome; a later replay restores a deleted measurement without changing unaffected row identities."""
     original = await owner_result(api, computer)
     path = f"/v1/benchmark-results/{original['id']}"
     payload = suite("2.3.0", 10, 20)
@@ -145,6 +147,7 @@ async def test_delete_racing_upload_is_serializable_and_rerun_restores_missing_m
 async def test_concurrent_suites_on_two_computers_keep_versions_scores_and_ids_isolated(
     api, client, computer
 ):
+    """Concurrent uploads preserve separate histories and identities for each computer, with latest listings selecting only its highest SemVer."""
     response = await api.post(
         "/v1/computers",
         json={

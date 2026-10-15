@@ -23,6 +23,7 @@ async def create_result(api, computer, version, *, name="future_metric", number=
 
 
 async def test_history_orders_prerelease_identifiers_and_large_core_components(api, computer):
+    """History follows SemVer identifier ordering, including numeric prereleases and large core components, and latest selects the greatest version."""
     # Numeric identifiers precede every nonnumeric identifier; a shared prefix
     # sorts before a longer prerelease, and ASCII comparison is case sensitive.
     versions = [
@@ -63,6 +64,7 @@ async def test_history_orders_prerelease_identifiers_and_large_core_components(a
 async def test_build_metadata_ties_use_lexical_order_and_preserve_distinct_rows(
     api, computer, base
 ):
+    """Build metadata ties use lexical full-version order while distinct versions retain separate rows and repeated versions retain their UUID."""
     # Metadata has equal SemVer precedence, so the API's lexical tie rule makes
     # build.2 newer than build.10 and a metadata version newer than the bare one.
     versions = [base, base + "+build.10", base + "+build.2"]
@@ -90,6 +92,7 @@ async def test_build_metadata_ties_use_lexical_order_and_preserve_distinct_rows(
     ],
 )
 async def test_valid_unusual_semver_is_stored_without_normalization(api, computer, version):
+    """Valid uncommon SemVer forms survive storage and retrieval exactly as submitted."""
     row = await create_result(api, computer, version)
     assert row["benchmarker_version"] == version
     response = await api.get(f"/v1/benchmark-results/{row['id']}")
@@ -118,6 +121,7 @@ async def test_valid_unusual_semver_is_stored_without_normalization(api, compute
 async def test_malformed_semver_and_nonstring_versions_do_not_replace_existing_row(
     api, computer, version
 ):
+    """Invalid version syntax or types cannot overwrite a valid result or add a new history entry."""
     original = await create_result(api, computer, "1.2.3", number=29)
     response = await api.post(
         "/v1/benchmark-results",
@@ -137,6 +141,7 @@ async def test_malformed_semver_and_nonstring_versions_do_not_replace_existing_r
 
 
 async def test_score_float_boundaries_round_trip_in_create_and_patch(api, computer):
+    """Creating and updating scores preserves supported finite floating-point boundary values and valid integer inputs."""
     row = await create_result(api, computer, "1.0.0", number=sys.float_info.max)
     assert row["number"] == sys.float_info.max
     path = f"/v1/benchmark-results/{row['id']}"
@@ -151,6 +156,7 @@ async def test_score_float_boundaries_round_trip_in_create_and_patch(api, comput
 async def test_patch_rejects_nonfinite_wire_values_and_nonnumeric_types_without_mutation(
     api, computer
 ):
+    """Invalid numeric wire values and wrong JSON types return validation errors while preserving the original score."""
     row = await create_result(api, computer, "1.0.0", number=32)
     path = f"/v1/benchmark-results/{row['id']}"
     wire_numbers = ["NaN", "Infinity", "-Infinity", "1e999", "-1e999"]
@@ -166,6 +172,7 @@ async def test_patch_rejects_nonfinite_wire_values_and_nonnumeric_types_without_
 
 
 async def test_future_name_length_boundary_and_strict_identifier_types(api, computer):
+    """The longest supported future benchmark name is accepted, while malformed or nonstring names cannot create a newer suite."""
     name = "future_" + "x" * 193
     row = await create_result(api, computer, "1.0.0", name=name)
     assert row["benchmark_name"] == name

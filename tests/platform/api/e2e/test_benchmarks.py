@@ -24,6 +24,7 @@ async def create(api, computer, **kwargs):
 
 
 async def test_crud_upsert_retains_identity_and_other_names_and_versions(api, computer):
+    """CRUD preserves the row UUID on overwrite, isolates other names and versions, and exposes older results when the newest version is deleted."""
     first = await create(api, computer)
     assert (await create(api, computer, number=55))["id"] == first["id"]
     second = await create(api, computer, name="multi_core", number=250)
@@ -47,6 +48,7 @@ async def test_crud_upsert_retains_identity_and_other_names_and_versions(api, co
 
 
 async def test_latest_uses_semver_including_prerelease_without_mixing_suites(api, computer):
+    """Latest-result listings follow numeric and prerelease SemVer precedence and never fill a newer suite with older measurements."""
     versions = [
         "1.0.0-alpha",
         "1.0.0-alpha.1",
@@ -74,6 +76,7 @@ async def test_latest_uses_semver_including_prerelease_without_mixing_suites(api
 
 
 async def test_build_metadata_tie_is_deterministic(api, computer):
+    """Versions with equal SemVer precedence choose the lexicographically greatest full version regardless of insertion order."""
     await create(api, computer, version="1.0.0+build.1")
     winner = await create(api, computer, version="1.0.0+build.2")
     await create(api, computer, version="1.0.0+build.0")
@@ -81,6 +84,7 @@ async def test_build_metadata_tie_is_deterministic(api, computer):
 
 
 async def test_access_boundaries_and_computer_deletion_cascade(api, other_api, client, computer):
+    """Unauthenticated and unrelated users cannot access results, and deleting their computer also removes its benchmark rows."""
     row = await create(api, computer)
     path = f"/v1/benchmark-results/{row['id']}"
     listing = f"/v1/computers/{computer['id']}/benchmark-results"
@@ -98,6 +102,7 @@ async def test_access_boundaries_and_computer_deletion_cascade(api, other_api, c
 
 
 async def test_empty_unknown_and_invalid_computers(api, computer):
+    """An authorized computer with no measurements returns an empty list; unknown or malformed computer identifiers return the appropriate errors."""
     assert (await api.get(f"/v1/computers/{computer['id']}/benchmark-results")).json() == []
     unknown = {"id": str(uuid4())}
     assert (await api.get(f"/v1/computers/{unknown['id']}/benchmark-results")).status_code == 404
@@ -125,6 +130,7 @@ async def test_empty_unknown_and_invalid_computers(api, computer):
     ],
 )
 async def test_reject_invalid_versions_without_writing(api, computer, version):
+    """Malformed SemVer values return validation errors and cannot create benchmark history."""
     assert (
         await api.post("/v1/benchmark-results", json=measurement(computer, version=version))
     ).status_code == 422
@@ -147,12 +153,14 @@ async def test_reject_invalid_versions_without_writing(api, computer, version):
     ],
 )
 async def test_reject_invalid_measurement_fields(api, computer, field, value):
+    """Invalid scores, names, computer IDs, and unknown fields cannot enter a benchmark record."""
     payload = {**measurement(computer), field: value}
     assert (await api.post("/v1/benchmark-results", json=payload)).status_code == 422
 
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "1e999"])
 async def test_nonfinite_numbers_are_rejected_over_wire(api, computer, value):
+    """Nonfinite JSON numeric values receive validation errors instead of becoming stored scores."""
     body = (
         '{"computer_id":"'
         + computer["id"]
@@ -168,6 +176,7 @@ async def test_nonfinite_numbers_are_rejected_over_wire(api, computer, value):
 
 
 async def test_patch_only_changes_number_and_validates_it(api, computer):
+    """Updates accept only a valid score and leave the existing result unchanged when the body is incomplete or attempts to change identity fields."""
     row = await create(api, computer)
     path = f"/v1/benchmark-results/{row['id']}"
     for payload in [
@@ -183,6 +192,7 @@ async def test_patch_only_changes_number_and_validates_it(api, computer):
 
 
 async def test_concurrent_upserts_create_one_row_per_name_and_version(api, computer):
+    """Concurrent writes for the same computer, benchmark, and version converge on one row UUID."""
     responses = await asyncio.gather(
         *(
             api.post("/v1/benchmark-results", json=measurement(computer, number=index))
@@ -195,6 +205,7 @@ async def test_concurrent_upserts_create_one_row_per_name_and_version(api, compu
 
 
 async def test_successful_worker_result_upload_before_session_and_retry(api, client, computer):
+    """A device credential can upload individual results before a session, replay them without changing identity, and loses access after credential rotation."""
     credential = (await api.post(f"/v1/computers/{computer['id']}/credentials")).json()
     headers = {"Authorization": "Bearer " + credential["token"]}
     first = {
@@ -220,6 +231,7 @@ async def test_successful_worker_result_upload_before_session_and_retry(api, cli
 
 
 async def test_invalid_worker_payloads_do_not_write_partial_results(api, agent_api, computer):
+    """Invalid suite data rejects the whole request without saving a valid measurement embedded alongside invalid data."""
     valid = {"benchmark_name": "single_core", "number": 5}
     for payload in [
         {"benchmarker_version": "0.0.2", "results": []},
@@ -238,6 +250,7 @@ async def test_invalid_worker_payloads_do_not_write_partial_results(api, agent_a
 async def test_company_resource_permissions_apply_to_benchmarks(
     api, other_api, company, membership, computer
 ):
+    """Organization benchmark access follows the member's live resource read and manage permissions for every CRUD operation."""
     await api.patch(
         f"/v1/computer-ownerships/{computer['ownership']['id']}", json={"company_id": company["id"]}
     )

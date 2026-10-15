@@ -10,6 +10,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_actual_swift_rust_measurements_upload_and_replay(api, server, user):
+    """The real Swift binding executes Rust benchmarks, uploads each result through HTTP, and replays it with a stable database identity."""
     executable = os.environ.get("POWER_CELL_BENCHMARK_CLI")
     if not executable:
         pytest.skip("Set POWER_CELL_BENCHMARK_CLI to the macOS powercell-dev executable")

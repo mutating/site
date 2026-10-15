@@ -35,6 +35,7 @@ async def create_result(api, computer, *, name="single_core", version="0.0.2", n
 async def test_older_version_upsert_retains_identity_after_application_restart(
     api, computer, http_server, settings, clock, user
 ):
+    """After API restart, overwriting an older version keeps its row identity and does not change which newer version is listed."""
     older = await create_result(api, computer, version="0.0.2")
     newer = await create_result(api, computer, version="0.0.3", number=90)
     http_server.server.should_exit = True
@@ -63,6 +64,7 @@ async def test_older_version_upsert_retains_identity_after_application_restart(
 async def test_mid_suite_database_failure_rolls_back_flushed_updates_and_inserts(
     api, agent_api, app, computer
 ):
+    """A storage failure after partial flushing rolls back every update and insert from the failed upload."""
     existing = await create_result(api, computer)
     untouched = await create_result(api, computer, version="0.0.1", number=2)
     payload = {
@@ -106,6 +108,7 @@ async def test_mid_suite_database_failure_rolls_back_flushed_updates_and_inserts
 async def test_uuid_and_finite_double_values_round_trip_through_new_database_connection(
     api, computer, migration_database, number
 ):
+    """Fresh database connections retrieve the same UUID identities and finite double values written by the API."""
     created = await create_result(api, computer, number=number)
     assert str(UUID(created["id"])) == created["id"]
     assert str(UUID(created["computer_id"])) == computer["id"]
@@ -122,6 +125,7 @@ async def test_uuid_and_finite_double_values_round_trip_through_new_database_con
 async def test_populated_downgrade_reupgrade_preserves_workers_and_recreates_usable_table(
     api, computer, http_server, migration_database, alembic_config
 ):
+    """Downgrading removes benchmark history without altering workers; re-upgrading recreates a usable table aligned with model metadata."""
     removed = await create_result(api, computer)
     await create_result(api, computer, name="multi_core", number=50)
     async with migration_database.read() as session:
@@ -175,6 +179,7 @@ async def test_populated_downgrade_reupgrade_preserves_workers_and_recreates_usa
 async def test_company_deletion_and_ownership_detach_preserve_computer_results(
     api, app, computer, company, user
 ):
+    """Changing or removing ownership preserves the computer's benchmark history, which becomes accessible again to a later valid owner."""
     result = await create_result(api, computer)
     response = await api.patch(
         f"/v1/computer-ownerships/{computer['ownership']['id']}",
@@ -201,6 +206,7 @@ async def test_company_deletion_and_ownership_detach_preserve_computer_results(
 async def test_bulk_computer_delete_cascade_rolls_back_and_is_limited_to_that_computer(
     api, app, computer, other_agent
 ):
+    """Computer deletion cascades only to that computer's results and restores them if the transaction rolls back."""
     rows = [
         await create_result(api, computer),
         await create_result(api, computer, version="0.0.3"),
@@ -244,6 +250,7 @@ async def test_bulk_computer_delete_cascade_rolls_back_and_is_limited_to_that_co
 async def test_postgres_benchmark_schema_uses_native_uuid_and_cascading_foreign_key(
     postgres_configuration,
 ):
+    """PostgreSQL compilation uses native UUID columns, the benchmark identity constraint, and a cascading computer foreign key."""
     engine = postgres_configuration.engine.sync_engine
     ddl = str(CreateTable(BenchmarkResult.__table__).compile(bind=engine))
     assert "id UUID NOT NULL" in ddl
