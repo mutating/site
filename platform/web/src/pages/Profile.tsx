@@ -10,7 +10,6 @@ export function Profile() {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [logoutError, setLogoutError] = useState<unknown>(null);
   const [success, setSuccess] = useState(false);
   const [avatarError, setAvatarError] = useState<unknown>(null);
   const [avatarSuccess, setAvatarSuccess] = useState(false);
@@ -50,30 +49,9 @@ export function Profile() {
       <Heading
         index={`05 / ${t("profile")}`}
         title={t("profile")}
-        action={
-          <button
-            className="button secondary compact"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setLogoutError(null);
-              try {
-                await api("auth/session", json("DELETE"));
-                setUser(null);
-              } catch (e) {
-                setLogoutError(e);
-                setBusy(false);
-              }
-            }}
-          >
-            <Icon name="exit" size={16} />
-            {t("logout")}
-          </button>
-        }
       >
         {t("profileLead")}
       </Heading>
-      <ErrorBox error={logoutError} />
       <div className="profile-panel">
         <section
           className="profile-section"

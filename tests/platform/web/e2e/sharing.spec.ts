@@ -42,7 +42,7 @@ async function openSharing(page: Page, mode: "add" | "invite" | "link") {
 async function signOut(page: Page) {
   await page.goto("profile");
   await page
-    .getByRole("main")
+    .locator(".account-card")
     .getByRole("button", { name: "Выйти", exact: true })
     .click();
   await expect(

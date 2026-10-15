@@ -60,7 +60,7 @@ export function Avatar({ large = false }: { large?: boolean }) {
   );
 }
 export function Layout() {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const { user, setUser } = useSession();
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -69,7 +69,6 @@ export function Layout() {
     ["/power-cells", "Power Cells", "cells"],
     ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
-    ["/profile", "profile", "user"],
   ];
   return (
     <>
@@ -98,7 +97,7 @@ export function Layout() {
           </nav>
           <div className="sidebar-account">
             <div className="account-card">
-              <Link className="account-link" to="/profile">
+              <div className="account-identity">
                 <Avatar />
                 <span>
                   <strong>
@@ -106,7 +105,7 @@ export function Layout() {
                   </strong>
                   <small>{user?.email}</small>
                 </span>
-              </Link>
+              </div>
               <div className="account-actions">
                 <Link className="account-action account-profile" to="/profile">
                   <Icon name="user" size={14} />
@@ -138,11 +137,6 @@ export function Layout() {
         </aside>
         <main id="main" className="main-content">
           <Outlet />
-          <footer className="page-footer">
-            <a href={`${siteOrigin}${language === "ru" ? "/ru/" : "/"}`}>
-              {t("website")} ↗
-            </a>
-          </footer>
         </main>
       </div>
     </>

@@ -481,34 +481,27 @@ h3 {
   border-radius: 13px;
   background: var(--surface);
 }
-.account-link {
+.account-identity {
   display: flex;
   gap: 10px;
   align-items: center;
   min-width: 0;
   padding: 13px 12px;
 }
-.account-link:hover {
-  background: var(--surface-raised);
-}
-.account-link:focus-visible {
-  outline-offset: -4px;
-  border-radius: 12px 12px 0 0;
-}
-.account-link .avatar {
+.account-identity .avatar {
   border-radius: 50%;
 }
-.account-link > span:last-child {
+.account-identity > span:last-child {
   min-width: 0;
 }
-.account-link strong {
+.account-identity strong {
   display: block;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.account-link small {
+.account-identity small {
   display: block;
   color: var(--ink-muted);
   font-size: 10px;
@@ -608,19 +601,6 @@ h3 {
   flex-shrink: 0;
   align-self: flex-end;
   margin-bottom: 3px;
-}
-.page-footer {
-  margin-top: auto;
-  padding: 58px 0 28px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 20px;
-  font-size: 10px;
-  color: var(--ink-muted);
-  font-family: var(--font-geist-mono);
-}
-.page-footer a:hover {
-  color: var(--ink);
 }
 .product-grid {
   display: grid;
@@ -1441,10 +1421,6 @@ td small {
   font-size: 14px;
   margin-top: 10px;
 }
-.profile-page .page-heading > .button {
-  align-self: center;
-  margin-bottom: 0;
-}
 .profile-panel,
 .profile-settings-form {
   display: flex;
@@ -1848,9 +1824,30 @@ td small {
     margin-bottom: 16px;
     border-bottom: 1px solid var(--line);
   }
-  .sidebar-label,
-  .sidebar-account {
+  .sidebar-label {
     display: none;
+  }
+  .sidebar-account {
+    padding-top: 14px;
+  }
+  .account-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .account-identity {
+    padding: 10px;
+  }
+  .account-actions {
+    align-self: stretch;
+    align-content: center;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+  .account-action {
+    min-height: 40px;
+    padding-inline: 9px;
+    font-size: 11px;
   }
   .sidebar nav {
     flex-direction: row;
@@ -1919,6 +1916,13 @@ td small {
   }
 }
 @media (max-width: 540px) {
+  .account-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .account-actions {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
   .site-header,
   .app-shell {
     width: calc(100% - 28px);
@@ -1938,16 +1942,12 @@ td small {
     font-size: 26px;
   }
   .nav-link {
-    min-width: calc(33.3% - 6px);
-    flex: initial;
+    min-width: calc(50% - 4px);
+    flex: 1;
     font-size: 11px;
   }
   .sidebar nav {
     gap: 7px;
-  }
-  .nav-link:nth-child(4),
-  .nav-link:nth-child(5) {
-    flex: 1;
   }
   .page-heading {
     align-items: flex-start;
@@ -2152,9 +2152,6 @@ td small {
   }
   .confirm-dialog {
     padding: 25px;
-  }
-  .page-footer {
-    padding-top: 44px;
   }
   .cloud-empty {
     min-height: 350px;

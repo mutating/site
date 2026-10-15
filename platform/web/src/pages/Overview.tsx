@@ -21,7 +21,7 @@ export function Overview() {
       </Heading>
       <div className="product-grid">
         <Link className="product-card power-product" to="/power-cells">
-          <span className="eyebrow">01 / {t("powerTag")}</span>
+          <span className="eyebrow">02 / {t("powerTag")}</span>
           <div className="product-card-title">
             <h2>Power Cells</h2>
             <Icon name="cells" size={50} />
@@ -32,7 +32,7 @@ export function Overview() {
           </span>
         </Link>
         <Link className="product-card cloud-product" to="/cloud">
-          <span className="eyebrow">02 / {t("cloudTag")}</span>
+          <span className="eyebrow">03 / {t("cloudTag")}</span>
           <div className="product-card-title">
             <h2>{t("cloud")}</h2>
             <Icon name="cloud" size={50} />
