@@ -214,4 +214,19 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/health/ready
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/v1/agent-capabilities --output /dev/null
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/openapi.json --output /dev/null
-          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --max-time 30 https://platform.mutating.tech/ --output /dev/null
+          assert_platform_status() {
+            local expected="$1"
+            local path="$2"
+            local actual
+            actual="$(curl --silent --show-error --retry 5 --retry-all-errors --max-time 30 \
+              --output /dev/null --write-out '%{http_code}' "https://platform.mutating.tech$path")"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "Expected $expected from platform $path, got $actual." >&2
+              exit 1
+            fi
+          }
+          assert_platform_status 200 /
+          assert_platform_status 404 /account
+          assert_platform_status 404 /account/
+          assert_platform_status 404 /account/api/session
+          assert_platform_status 401 /api/session

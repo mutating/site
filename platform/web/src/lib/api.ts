@@ -12,7 +12,7 @@ export async function request<T>(
 ): Promise<{ data: T; total: number | null }> {
   let response: Response;
   try {
-    response = await fetch(`/account/api/${path}`, {
+    response = await fetch(`/api/${path}`, {
       ...options,
       credentials: "same-origin",
       headers: {

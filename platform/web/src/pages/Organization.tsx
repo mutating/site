@@ -180,7 +180,7 @@ function OrganizationContent({
                     <span className="avatar">
                       {member.user.avatar_version ? (
                         <img
-                          src={`/account/api/memberships/${member.id}/avatar?v=${member.user.avatar_version}`}
+                          src={`/api/memberships/${member.id}/avatar?v=${member.user.avatar_version}`}
                           alt=""
                         />
                       ) : (

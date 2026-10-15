@@ -7,8 +7,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      // Keep API requests and legacy page redirects consistent with production.
-      "/account": "http://127.0.0.1:8001",
+      "/api": "http://127.0.0.1:8001",
       // Keep the agent API and its registration/dashboard links on one origin.
       "/v1": "http://127.0.0.1:8000",
       "/agent/v1": "http://127.0.0.1:8000",

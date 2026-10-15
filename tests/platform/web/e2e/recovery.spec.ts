@@ -9,7 +9,7 @@ test("profile changes survive a network failure and only commit on successful re
   await page.goto("profile");
   await page.getByLabel("Имя", { exact: true }).fill("Новое имя");
   await page.getByLabel("Фамилия", { exact: true }).fill("Новая фамилия");
-  const path = `**/account/api/users/${account.id}`;
+  const path = `**/api/users/${account.id}`;
   await page.route(path, (route) => route.abort("failed"));
   const save = page.getByRole("button", { name: "Сохранить изменения" });
   await save.click();
@@ -70,7 +70,7 @@ test("organization creation preserves the draft on failure and creates once on r
   await page.goto("organizations");
   await expect(page.locator(".loading")).toHaveCount(0);
   await page.getByLabel("Название организации").fill("Надёжная команда");
-  const path = "**/account/api/companies";
+  const path = "**/api/companies";
   await page.route(path, (route) => route.abort("failed"));
   const create = page.getByRole("button", { name: "Создать организацию" });
   await create.click();
@@ -124,7 +124,7 @@ for (const endpoint of ["summary", "availability-history"]) {
   }) => {
     await addComputer(request, account, "Узел восстановления");
     await login(page, account);
-    const path = `**/account/api/users/${account.id}/resources/${endpoint}?*`;
+    const path = `**/api/users/${account.id}/resources/${endpoint}?*`;
     await page.route(path, (route) => route.abort("failed"));
     await page.goto("power-cells");
     const pool = page.getByRole("region", { name: "Личные компьютеры" });

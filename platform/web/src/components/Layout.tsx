@@ -48,7 +48,7 @@ export function Avatar({ large = false }: { large?: boolean }) {
     <span className={`avatar ${large ? "large" : ""}`}>
       {user?.avatar_version ? (
         <img
-          src={`/account/api/users/me/avatar?v=${user.avatar_version}`}
+          src={`/api/users/me/avatar?v=${user.avatar_version}`}
           alt=""
         />
       ) : (

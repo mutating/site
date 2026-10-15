@@ -11,10 +11,8 @@ from fastapi.testclient import TestClient
 from server.app import Settings, create_app
 
 
-def test_frontend_root_and_legacy_redirects_preserve_queries_and_api_sessions(
-    tmp_path, monkeypatch
-):
-    """Serve root URLs and keep old bookmarks, assets and session transport working."""
+def test_frontend_root_routes_and_removed_account_prefix(tmp_path, monkeypatch):
+    """Serve root pages and the API while removed URLs return 404 without redirects."""
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text('<html><script src="/assets/app.js"></script></html>')
@@ -27,28 +25,27 @@ def test_frontend_root_and_legacy_redirects_preserve_queries_and_api_sessions(
             assert response.status_code == 200
             assert "/assets/app.js" in response.text
         assert client.get("/assets/app.js").text == "console.log('dashboard')"
-        for old, new in (
-            ("/account", "/"),
-            ("/account?path=profile", "/?path=profile"),
-            ("/account/?ref=old", "/?ref=old"),
-            ("/account/login", "/login"),
-            ("/account/profile", "/profile"),
-            (
-                "/account/power-cells/computers?user_id=123&page=2",
-                "/power-cells/computers?user_id=123&page=2",
-            ),
-            ("/account/invitations/inv_token", "/invitations/inv_token"),
-            ("/account/assets/app.js", "/assets/app.js"),
-            ("/account//evil.example", "/evil.example"),
-            ("/account/encoded%23fragment", "/encoded%23fragment"),
+        for path in (
+            "/account",
+            "/account?path=profile",
+            "/account/?ref=old",
+            "/account/login",
+            "/account/profile",
+            "/account/power-cells/computers?user_id=123&page=2",
+            "/account/invitations/inv_token",
+            "/account/assets/app.js",
+            "/account/api/session",
+            "/account/api/users/me",
+            "/account//evil.example",
+            "/account/encoded%23fragment",
         ):
-            response = client.get(old, follow_redirects=False)
-            assert response.status_code == 308
-            assert response.headers["location"] == new
-        assert client.get("/account/api/session", follow_redirects=False).status_code == 401
+            response = client.get(path, follow_redirects=False)
+            assert response.status_code == 404
+            assert "location" not in response.headers
+        assert client.get("/api/session", follow_redirects=False).status_code == 401
         for path in (
             "/missing.js",
-            "/api/session",
+            "/api/missing",
             "/health/ready",
             "/agent/v1/session",
             "/../pyproject.toml",
@@ -65,16 +62,16 @@ def test_proxy_requires_session_and_enforces_route_and_origin_boundaries():
         _env_file=None,
     )
     with TestClient(create_app(settings)) as client:
-        assert client.get("/account/api/session").status_code == 401
-        assert client.get("/account/api/users/me").status_code == 401
-        assert client.get("/account/api/access-tokens").status_code == 404
+        assert client.get("/api/session").status_code == 401
+        assert client.get("/api/users/me").status_code == 401
+        assert client.get("/api/access-tokens").status_code == 404
         assert (
-            client.post("/account/api/session", json={"login": "x", "password": "x"}).status_code
+            client.post("/api/session", json={"login": "x", "password": "x"}).status_code
             == 403
         )
         assert (
             client.post(
-                "/account/api/session",
+                "/api/session",
                 headers={"Origin": "https://evil.example", "X-Requested-With": "ThrongDashboard"},
                 json={},
             ).status_code
@@ -82,7 +79,7 @@ def test_proxy_requires_session_and_enforces_route_and_origin_boundaries():
         )
         assert (
             client.get(
-                "/account/api/session", cookies={"tmc_account_session": "malformed"}
+                "/api/session", cookies={"tmc_account_session": "malformed"}
             ).status_code
             == 401
         )
@@ -107,11 +104,11 @@ def test_expired_encrypted_cookie_is_rejected_before_api_request():
         .decode()
     )
     with TestClient(create_app(settings)) as client:
-        response = client.get("/account/api/session", cookies={"tmc_account_session": value})
+        response = client.get("/api/session", cookies={"tmc_account_session": value})
         assert response.status_code == 401
         assert "Max-Age=0" in response.headers["set-cookie"]
         response = client.delete(
-            "/account/api/session",
+            "/api/session",
             headers={"Origin": settings.public_origin, "X-Requested-With": "ThrongDashboard"},
         )
         assert response.status_code == 204
@@ -153,15 +150,16 @@ def test_login_keeps_bearer_token_inside_encrypted_secure_cookie():
         transport = httpx.MockTransport(handler)
         client.app.state.client = httpx.AsyncClient(base_url="http://api.test", transport=transport)
         response = client.post(
-            "/account/api/session",
+            "/api/session",
             headers={"Origin": "https://mutating.tech", "X-Requested-With": "ThrongDashboard"},
             json={"login": "user@example.com", "password": "password"},
         )
         assert response.json() == profile
         cookie = response.headers["set-cookie"]
         assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=lax" in cookie
+        assert "Path=/api/" in cookie
         assert "thr_secret" not in cookie and "thr_secret" not in response.text
-        assert client.get("/account/api/session").json() == profile
+        assert client.get("/api/session").json() == profile
 
 
 @pytest.mark.parametrize("stage", ["/auth/login", "/users/me"])
@@ -200,7 +198,7 @@ def test_registration_preserves_created_account_when_automatic_login_fails(stage
         try:
             headers = {"Origin": settings.public_origin, "X-Requested-With": "ThrongDashboard"}
             response = client.post(
-                "/account/api/register",
+                "/api/register",
                 headers=headers,
                 json={"email": profile["email"], "password": "sufficiently long password"},
             )
@@ -209,11 +207,11 @@ def test_registration_preserves_created_account_when_automatic_login_fails(stage
             assert "tmc_account_session" not in client.cookies
             state["fail"] = False
             login = client.post(
-                "/account/api/session",
+                "/api/session",
                 headers=headers,
                 json={"login": profile["email"], "password": "sufficiently long password"},
             )
             assert login.status_code == 200 and login.json() == profile
-            assert client.get("/account/api/session").json() == profile
+            assert client.get("/api/session").json() == profile
         finally:
             client.portal.call(upstream.aclose)

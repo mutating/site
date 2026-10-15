@@ -78,22 +78,22 @@ def test_sharing_routes_forward_session_and_preserve_api_contract(method, path):
             kwargs = (
                 {"json": {"role": "user", "permissions": []}} if method in {"POST", "PATCH"} else {}
             )
-            response = client.request(method, "/account/api/" + path, headers=headers, **kwargs)
+            response = client.request(method, "/api/" + path, headers=headers, **kwargs)
             assert response.status_code == 200 and response.json() == {"success": True}
             assert response.headers["x-total-count"] == "2" and "thr_private" not in response.text
             if method != "GET":
                 wrong = {**headers, "Origin": "https://evil.example"}
                 assert (
                     client.request(
-                        method, "/account/api/" + path, headers=wrong, **kwargs
+                        method, "/api/" + path, headers=wrong, **kwargs
                     ).status_code
                     == 403
                 )
             assert len(called) == 1
             assert (
-                client.get("/account/api/invitations/link/not-a-token", headers=headers).status_code
+                client.get("/api/invitations/link/not-a-token", headers=headers).status_code
                 == 404
             )
-            assert client.get(f"/account/api/users/{ID}", headers=headers).status_code == 404
+            assert client.get(f"/api/users/{ID}", headers=headers).status_code == 404
         finally:
             client.portal.call(upstream.aclose)

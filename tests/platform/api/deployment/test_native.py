@@ -213,14 +213,15 @@ def test_native_platform_and_subdomain_routing(tmp_path):
             assert request(https_port, asset.decode(), "platform.mutating.tech", True)[0] == 200
         for path in ("/login", "/profile", "/organizations"):
             assert request(https_port, path, "platform.mutating.tech", True)[0] == 200
-        for old, new in (
-            ("/account", "/"),
-            ("/account/", "/"),
-            ("/account/profile?probe=1", "/profile?probe=1"),
+        for path in (
+            "/account",
+            "/account/",
+            "/account/profile?probe=1",
+            "/account/api/session",
         ):
-            status, headers, _ = request(https_port, old, "platform.mutating.tech", True)
-            assert status == 308
-            assert headers["location"] == new
+            status, headers, _ = request(https_port, path, "platform.mutating.tech", True)
+            assert status == 404
+            assert "location" not in headers
         assert request(https_port, "/missing.js", "platform.mutating.tech", True)[0] == 404
         identity = {"email": "deploy@example.com", "password": "a long deployment password"}
         assert (
@@ -243,7 +244,7 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         credentials = {"login": identity["email"], "password": identity["password"]}
         status, headers, body = request(
             https_port,
-            "/account/api/session",
+            "/api/session",
             "platform.mutating.tech",
             True,
             "POST",
@@ -253,12 +254,12 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         assert status == 200
         assert "access_token" not in json.loads(body)
         cookie = headers["set-cookie"]
-        assert all(attribute in cookie for attribute in ("HttpOnly", "Secure", "Path=/account/"))
+        assert all(attribute in cookie for attribute in ("HttpOnly", "Secure", "Path=/api/"))
         assert "Domain=" not in cookie
         assert (
             request(
                 https_port,
-                "/account/api/session",
+                "/api/session",
                 "platform.mutating.tech",
                 True,
                 "POST",
@@ -284,7 +285,7 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         assert (
             request(
                 https_port,
-                "/account/api/session",
+                "/api/session",
                 "platform.mutating.tech",
                 True,
                 headers={"Cookie": cookie.split(";", 1)[0]},

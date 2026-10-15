@@ -66,7 +66,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     token: (await auth.json()).access_token,
   };
   const response = await page.request.post(
-    "http://127.0.0.1:18101/account/api/session",
+    "http://127.0.0.1:18101/api/session",
     {
       headers: {
         Origin: "http://127.0.0.1:18101",

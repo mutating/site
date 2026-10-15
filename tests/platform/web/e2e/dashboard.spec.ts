@@ -10,19 +10,23 @@ import {
 } from "./fixtures";
 import { randomUUID } from "node:crypto";
 
-test("legacy page URLs redirect to root routes and keep navigation and sessions", async ({
+test("root routes keep navigation and sessions while account URLs are absent", async ({
   page,
+  request,
   account,
 }) => {
   await login(page, account);
-  for (const path of ["/account", "/account/"]) {
-    await page.goto(path);
-    await expect(page).toHaveURL("http://127.0.0.1:18101/");
-    await expect(
-      page.getByRole("heading", { name: `Привет, ${account.first_name}` }),
-    ).toBeVisible();
+  for (const path of [
+    "/account",
+    "/account/",
+    "/account/profile",
+    "/account/api/session",
+  ]) {
+    const response = await request.get(path, { maxRedirects: 0 });
+    expect(response.status()).toBe(404);
+    expect(response.headers().location).toBeUndefined();
   }
-  await page.goto("/account/profile");
+  await page.goto("/profile");
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
@@ -31,7 +35,7 @@ test("legacy page URLs redirect to root routes and keep navigation and sessions"
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
   );
-  await page.goto(`/account/power-cells/computers?user_id=${account.id}&page=1`);
+  await page.goto(`/power-cells/computers?user_id=${account.id}&page=1`);
   await expect(page).toHaveURL(
     new RegExp(`/power-cells/computers\\?user_id=${account.id}&page=1$`),
   );
@@ -147,7 +151,7 @@ test("all private pages require login; registration has optional fields and no p
   );
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe("Lax");
-  expect(cookie?.path).toBe("/account/");
+  expect(cookie?.path).toBe("/api/");
   expect(await page.evaluate(() => document.cookie)).not.toContain(
     "tmc_account_session",
   );
@@ -551,7 +555,7 @@ test("wrong password, expired session and cross-origin mutation are rejected", a
   await login(page, account);
   const cookies = await page.context().cookies();
   const response = await request.post(
-    "http://127.0.0.1:18101/account/api/companies",
+    "http://127.0.0.1:18101/api/companies",
     {
       headers: {
         Origin: "https://example.com",
@@ -605,7 +609,7 @@ test("logout revokes its API token and a revoked active session returns to login
   ).json();
   expect(after).toEqual(before);
   const replay = await request.get(
-    "http://127.0.0.1:18101/account/api/session",
+    "http://127.0.0.1:18101/api/session",
     { headers: { Cookie: `${sessionCookie.name}=${sessionCookie.value}` } },
   );
   expect(replay.status()).toBe(401);

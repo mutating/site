@@ -5,19 +5,17 @@ import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import quote
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[1]
 COOKIE = "tmc_account_session"
-# Keep the API transport and session cookies compatible with existing browsers.
-PREFIX = "/account"
+API_PREFIX = "/api"
 UUID = r"[0-9a-fA-F-]{36}"
 INVITATION_TOKEN = r"inv_[A-Za-z0-9_-]{43}"
 ROUTES = {
@@ -91,7 +89,7 @@ def create_app(settings=None):
 
     @app.middleware("http")
     async def headers_and_csrf(request, call_next):
-        if request.url.path.startswith(PREFIX + "/api/") and request.method not in {
+        if request.url.path.startswith(API_PREFIX + "/") and request.method not in {
             "GET",
             "HEAD",
             "OPTIONS",
@@ -124,7 +122,7 @@ def create_app(settings=None):
 
     def clear_cookie(response):
         response.delete_cookie(
-            COOKIE, path=PREFIX + "/", secure=settings.secure_cookie, httponly=True, samesite="lax"
+            COOKIE, path=API_PREFIX + "/", secure=settings.secure_cookie, httponly=True, samesite="lax"
         )
 
     async def upstream(request, method, path, token=None, **kwargs):
@@ -150,7 +148,7 @@ def create_app(settings=None):
             clear_cookie(result)
         return result
 
-    @app.get(PREFIX + "/api/session")
+    @app.get(API_PREFIX + "/session")
     async def session(request: Request):
         session = read_session(request)
         return forward(await upstream(request, "GET", "users/me", session["token"]))
@@ -178,7 +176,7 @@ def create_app(settings=None):
             result.set_cookie(
                 COOKIE,
                 value,
-                path=PREFIX + "/",
+                path=API_PREFIX + "/",
                 secure=settings.secure_cookie,
                 httponly=True,
                 samesite="lax",
@@ -203,12 +201,12 @@ def create_app(settings=None):
         except (ValueError, UnicodeDecodeError):
             raise HTTPException(422, "Invalid JSON request") from None
 
-    @app.post(PREFIX + "/api/session")
+    @app.post(API_PREFIX + "/session")
     async def login(request: Request):
         data = await json_body(request)
         return await establish_session(request, data.get("login", ""), data.get("password", ""))
 
-    @app.post(PREFIX + "/api/register")
+    @app.post(API_PREFIX + "/register")
     async def register(request: Request):
         data = await json_body(request)
         response = await upstream(request, "POST", "users", json=data)
@@ -226,7 +224,7 @@ def create_app(settings=None):
         clear_cookie(result)
         return result
 
-    @app.delete(PREFIX + "/api/session")
+    @app.delete(API_PREFIX + "/session")
     async def logout(request: Request):
         try:
             session = read_session(request)
@@ -243,7 +241,7 @@ def create_app(settings=None):
         clear_cookie(result)
         return result
 
-    @app.api_route(PREFIX + "/api/{path:path}", methods=["GET", "POST", "PATCH", "PUT", "DELETE"])
+    @app.api_route(API_PREFIX + "/{path:path}", methods=["GET", "POST", "PATCH", "PUT", "DELETE"])
     async def proxy(path: str, request: Request):
         if not any(re.fullmatch(pattern, path) for pattern in ROUTES[request.method]):
             raise HTTPException(404, "Resource not found")
@@ -267,15 +265,6 @@ def create_app(settings=None):
             clear_cookie(result)
         return result
 
-    @app.get(PREFIX)
-    @app.get(PREFIX + "/{path:path}")
-    async def redirect(request: Request):
-        path = request.path_params.get("path", "")
-        target = "/" + quote(path.lstrip("/"), safe="/")
-        if request.url.query:
-            target += "?" + request.url.query
-        return RedirectResponse(target, status_code=308)
-
     dist = ROOT / "dist"
     if (dist / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
@@ -285,7 +274,7 @@ def create_app(settings=None):
         candidate = (dist / path).resolve()
         if candidate.is_relative_to(dist.resolve()) and candidate.is_file():
             return FileResponse(candidate)
-        if "." in path or path.split("/", 1)[0] in {"api", "agent", "health"}:
+        if "." in path or path.split("/", 1)[0] in {"account", "api", "agent", "health"}:
             raise HTTPException(404)
         if not (dist / "index.html").is_file():
             raise HTTPException(503, "Build the dashboard with npm run build")

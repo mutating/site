@@ -106,7 +106,7 @@ API на SQLite в Python 3.11/3.12/3.13, API на PostgreSQL, сервер ка
 
 - `mutating.tech` — сайт Hugo;
 - `api.mutating.tech` — API;
-- `platform.mutating.tech` — кабинет в корне `/`; старые адреса `/account/*` перенаправляются на новые.
+- `platform.mutating.tech` — кабинет в корне `/`, внутренний API на `/api/*`.
 
 На сервере используется systemd; для запуска обоих приложений:
 
