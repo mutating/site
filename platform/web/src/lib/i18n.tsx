@@ -416,6 +416,8 @@ const messages = {
     "Объединяйте компьютеры, распределяйте работу и создавайте вместе.",
     "Connect computers, distribute work and build together.",
   ],
+  authDevices: ["ВАШИ УСТРОЙСТВА", "YOUR DEVICES"],
+  authCapacity: ["ОБЩАЯ МОЩНОСТЬ", "SHARED CAPACITY"],
   organizationCreated: ["Организация создана.", "Organization created."],
   sessionExpired: ["Войдите, чтобы продолжить.", "Sign in to continue."],
 } as const;

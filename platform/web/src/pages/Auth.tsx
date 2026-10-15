@@ -78,16 +78,57 @@ export function Auth({ register = false }: { register?: boolean }) {
           </h1>
           <p>{t("authDescription")}</p>
           <div className="network-art" aria-hidden="true">
-            <span className="network-orbit" />
-            <span className="network-orbit orbit-two" />
-            <span className="network-center">
-              <Icon name="cells" size={62} />
-            </span>
-            {[0, 1, 2, 3].map((i) => (
-              <span key={i} className={`network-node node-${i}`}>
-                <Icon name="computer" size={24} />
-              </span>
-            ))}
+            <svg
+              viewBox="13.5 0 572 300"
+              preserveAspectRatio="xMinYMid meet"
+              focusable="false"
+            >
+              <g fill="none" strokeLinecap="round">
+                <path
+                  className="network-route-ink"
+                  strokeWidth="7"
+                  d="M17 74H179q31 0 53 22l80 80q22 22 53 22h217"
+                />
+                <path
+                  className="network-route-hot"
+                  strokeWidth="7"
+                  d="M17 228h120q32 0 55-23l112-112q23-23 55-23h223"
+                />
+                <path
+                  className="network-route-muted"
+                  strokeWidth="5"
+                  d="M91 18v128q0 29 29 29h389q29 0 29 29v72"
+                />
+              </g>
+              <g className="network-stations" strokeWidth="2.5">
+                {[
+                  [91, 74, "ink"],
+                  [175, 74, "ink"],
+                  [170, 175, "muted"],
+                  [244, 153, "hot"],
+                  [365, 198, "ink"],
+                  [404, 70, "hot"],
+                  [485, 198, "ink"],
+                  [538, 70, "hot"],
+                ].map(([cx, cy, color]) => (
+                  <circle
+                    key={`${cx}-${cy}`}
+                    cx={cx}
+                    cy={cy}
+                    r="8"
+                    className={`network-route-${color}`}
+                  />
+                ))}
+              </g>
+              <g className="network-labels">
+                <text x="15" y="48">
+                  {t("authDevices")}
+                </text>
+                <text x="582" y="251" textAnchor="end">
+                  {t("authCapacity")}
+                </text>
+              </g>
+            </svg>
           </div>
           <div className="auth-signal">
             <span className="signal-dot" />

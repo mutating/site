@@ -1600,18 +1600,20 @@ td small {
   align-items: center;
 }
 .auth-story h1 {
-  font-size: clamp(46px, 5.5vw, 80px);
-  margin: 30px 0 26px;
-  line-height: 0.98;
+  max-width: 550px;
+  font-size: clamp(46px, 5vw, 70px);
+  margin: 30px 0 24px;
+  line-height: 0.99;
   letter-spacing: -0.075em;
 }
 .auth-story h1 > span {
   display: block;
 }
 .auth-story > p:not(.eyebrow) {
-  font-size: 17px;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--ink-muted);
-  max-width: 410px;
+  max-width: 330px;
   letter-spacing: -0.025em;
 }
 .auth-panel {
@@ -1659,89 +1661,38 @@ td small {
   font: 9px var(--font-geist-mono);
   letter-spacing: 0.02em;
   color: var(--ink-muted);
-  border-top: 1px solid var(--line);
   padding-top: 18px;
   margin-top: 10px;
 }
 .auth-signal .signal-dot {
   background: var(--hot);
-  box-shadow: 0 0 18px var(--hot);
 }
 .network-art {
-  height: 270px;
-  max-width: 400px;
-  position: relative;
-  display: grid;
-  place-items: center;
-  margin-top: 8px;
+  height: 220px;
+  max-width: 550px;
+  margin-top: 25px;
 }
-.network-art::before,
-.network-art::after {
-  content: "";
-  position: absolute;
-  width: 85%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--hot-soft), transparent);
-  transform: rotate(27deg);
+.network-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
-.network-art::after {
-  transform: rotate(-27deg);
+.network-route-ink {
+  stroke: var(--ink);
 }
-.network-orbit {
-  position: absolute;
-  width: 250px;
-  height: 250px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  transform: rotateX(55deg) rotateZ(25deg);
+.network-route-hot {
+  stroke: var(--hot);
 }
-.network-orbit.orbit-two {
-  width: 350px;
-  height: 350px;
-  transform: rotateX(55deg) rotateZ(-25deg);
-  border-style: dashed;
+.network-route-muted {
+  stroke: color-mix(in srgb, var(--hot-soft) 45%, var(--line));
 }
-.network-center {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 108px;
-  height: 108px;
-  border: 1px solid color-mix(in srgb, var(--hot) 50%, var(--line));
-  border-radius: 30px;
-  color: var(--hot);
-  background: var(--surface-raised);
-  box-shadow: 0 0 60px color-mix(in srgb, var(--hot) 14%, transparent);
-  transform: rotate(-8deg);
+.network-stations {
+  fill: var(--bg);
 }
-.network-node {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface);
-  z-index: 1;
-  color: var(--ink-muted);
-}
-.node-0 {
-  left: 3%;
-  top: 18%;
-}
-.node-1 {
-  right: 3%;
-  top: 18%;
-}
-.node-2 {
-  left: 3%;
-  bottom: 18%;
-}
-.node-3 {
-  right: 3%;
-  bottom: 18%;
+.network-labels {
+  fill: var(--ink-muted);
+  font: 9px var(--font-geist-mono);
+  letter-spacing: 0.02em;
 }
 @media (min-width: 1600px) {
   .app-shell {
