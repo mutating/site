@@ -43,6 +43,34 @@ test("root routes keep navigation and sessions while account URLs are absent", a
   await expect(page).toHaveURL("http://127.0.0.1:18101/");
 });
 
+test("sidebar account card opens the profile and signs out through the browser session API", async ({
+  page,
+  account,
+}) => {
+  test.skip(
+    (page.viewportSize()?.width ?? 0) <= 800,
+    "The sidebar account card is hidden on mobile layouts",
+  );
+  await login(page, account);
+  const card = page.locator(".account-card");
+  await expect(card.locator("small")).toHaveText(account.email);
+  await card.getByRole("link", { name: "Профиль", exact: true }).click();
+  await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
+  await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
+    account.first_name,
+  );
+  const signedOut = page.waitForResponse(
+    (response) =>
+      response.url() === `${API}/auth/session` &&
+      response.request().method() === "DELETE",
+  );
+  await card.getByRole("button", { name: "Выйти", exact: true }).click();
+  expect((await signedOut).status()).toBe(204);
+  await expect(
+    page.getByRole("heading", { name: "С возвращением." }),
+  ).toBeVisible();
+});
+
 test("created account recovers from failed automatic login without repeating registration", async ({
   page,
 }) => {

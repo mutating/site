@@ -475,11 +475,28 @@ h3 {
   margin-top: auto;
   padding-top: 36px;
 }
+.account-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+}
 .account-link {
   display: flex;
   gap: 10px;
   align-items: center;
   min-width: 0;
+  padding: 13px 12px;
+}
+.account-link:hover {
+  background: var(--surface-raised);
+}
+.account-link:focus-visible {
+  outline-offset: -4px;
+  border-radius: 12px 12px 0 0;
+}
+.account-link .avatar {
+  border-radius: 50%;
 }
 .account-link > span:last-child {
   min-width: 0;
@@ -524,15 +541,43 @@ h3 {
   font-size: 38px;
   border-radius: 24px;
 }
-.logout-button {
+.account-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 4px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--line) 55%, var(--bg));
+}
+.account-action {
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: none;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 31px;
+  padding: 6px;
   border: none;
-  padding: 18px 0 0;
-  font-size: 12px;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 550;
   color: var(--ink-muted);
+}
+.account-action svg {
+  flex-shrink: 0;
+}
+.account-profile {
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.account-action:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+.account-action:focus-visible {
+  outline-offset: -2px;
 }
 .main-content {
   min-width: 0;
