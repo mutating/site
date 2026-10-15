@@ -13,6 +13,8 @@ export interface Company {
   my_role: Role;
   my_permissions: Permission[];
   my_membership_id: string;
+  computer_count: number;
+  member_count: number;
 }
 export type Role = "creator" | "admin" | "user";
 export type Permission =
@@ -45,6 +47,8 @@ export interface Invitation {
   email: string | null;
   status: "pending" | "accepted" | "declined" | "revoked" | "expired";
   expires_at: string;
+  computer_count: number;
+  member_count: number;
 }
 export interface CreatedInvitation extends Invitation {
   token: string;

@@ -475,6 +475,9 @@ h3 {
   margin-top: auto;
   padding-top: 36px;
 }
+.mobile-account-actions {
+  display: none;
+}
 .account-card {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -1831,18 +1834,16 @@ td small {
     padding-top: 14px;
   }
   .account-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    display: none;
   }
-  .account-identity {
-    padding: 10px;
+  .mobile-account-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
-  .account-actions {
-    align-self: stretch;
-    align-content: center;
-    border-top: 0;
-    border-left: 1px solid var(--line);
+  .mobile-account-actions .account-profile {
+    background: transparent;
+    box-shadow: none;
   }
   .account-action {
     min-height: 40px;
@@ -1916,13 +1917,6 @@ td small {
   }
 }
 @media (max-width: 540px) {
-  .account-card {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .account-actions {
-    border-top: 1px solid var(--line);
-    border-left: 0;
-  }
   .site-header,
   .app-shell {
     width: calc(100% - 28px);
@@ -2445,5 +2439,344 @@ td small {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Organizations / study 17: a single directory and a separate creation dialog. */
+.organizations-page .page-heading {
+  align-items: center;
+  margin-bottom: 30px;
+}
+.organizations-page .page-heading h1 {
+  font-size: clamp(32px, 3vw, 40px);
+  letter-spacing: -0.05em;
+  line-height: 1.12;
+}
+.organizations-page .page-heading .eyebrow {
+  margin-bottom: 14px;
+}
+.organizations-page .page-heading .lede {
+  font-size: 14px;
+  margin-top: 12px;
+}
+.create-organization-trigger {
+  min-height: 40px;
+  font-size: 12px;
+}
+.organization-directory-heading {
+  margin-bottom: 20px;
+}
+.organization-directory-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+}
+.directory-count {
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--ink-muted);
+  font: 10px var(--font-geist-mono);
+}
+.organization-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+  min-height: 47px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-muted);
+  border-radius: 9px;
+  margin-bottom: 12px;
+}
+.organization-search input {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  font-size: 13px;
+  outline-offset: 5px;
+}
+.organization-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.organization-search input::placeholder {
+  color: var(--ink-muted);
+}
+.organization-search button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 3px;
+}
+.organizations-page .organization-list {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+.organizations-page .organization-row {
+  display: grid;
+  grid-template-columns: 40px minmax(140px, 1fr) 100px 56px 62px 106px;
+  gap: 15px;
+  padding: 21px 0;
+  min-height: 87px;
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+}
+.organizations-page .organization-row:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.organization-monogram {
+  display: grid;
+  place-items: center;
+  width: 37px;
+  height: 37px;
+  border-radius: 10px;
+  background: var(--hot-pale);
+  color: var(--active-ink);
+  font-size: 11px;
+  font-weight: 650;
+  flex: none;
+}
+.organizations-page .organization-row:nth-child(3n + 2) .organization-monogram {
+  background: color-mix(in srgb, var(--violet) 12%, var(--surface));
+  color: var(--violet);
+}
+.organizations-page .organization-row:nth-child(3n) .organization-monogram {
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
+}
+.organizations-page .organization-info h3 {
+  font-size: 16px;
+  font-weight: 550;
+  margin: 0;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.organization-info small {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 10px;
+  margin-top: 4px;
+}
+.organization-role {
+  justify-self: start;
+  font-size: 9px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  white-space: normal;
+}
+.invitation-badge {
+  color: var(--active-ink);
+  border-color: transparent;
+  background: var(--hot-pale);
+}
+.organization-metric {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.organization-metric svg {
+  flex: none;
+  opacity: 0.75;
+}
+a.organization-metric:hover {
+  color: var(--hot);
+}
+.organizations-page .organization-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 7px;
+  margin: 0;
+  justify-content: flex-end;
+  align-items: center;
+}
+.organization-icon-button,
+.organization-open {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 32px;
+  padding: 4px;
+  flex: none;
+  border-radius: 6px;
+  color: var(--ink-muted);
+}
+.organization-icon-button.danger-text {
+  color: var(--danger);
+}
+.organization-icon-button:hover,
+.organization-open:hover {
+  background: var(--surface-raised);
+}
+.organization-open {
+  margin-left: 1px;
+}
+.organizations-page .invitation-row {
+  background: transparent;
+}
+.invitation-actions {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+}
+.invitation-actions .button {
+  font-size: 10px;
+  min-height: 34px;
+  padding: 8px 10px;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+.invitation-actions .text-button {
+  font-size: 10px;
+}
+.organizations-page .empty-state {
+  min-height: 230px;
+  padding: 35px 20px;
+}
+.organizations-page .empty-state h2 {
+  font-size: 22px;
+}
+.organizations-page .empty-state p {
+  max-width: 450px;
+  font-size: 13px;
+}
+.organization-directory > .success-message {
+  margin: 17px 0;
+}
+.create-organization-dialog h2 {
+  font-size: 25px;
+  letter-spacing: -0.04em;
+}
+.create-organization-dialog .muted {
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 25px;
+}
+.create-organization-dialog .field {
+  margin-bottom: 9px;
+}
+.create-organization-dialog .field-help {
+  margin-bottom: 0;
+}
+.create-organization-dialog .form-actions {
+  justify-content: flex-end;
+  gap: 12px;
+}
+.create-organization-dialog .button {
+  font-size: 12px;
+}
+@media (max-width: 1100px) {
+  .organizations-page .organization-row {
+    grid-template-columns: 36px minmax(100px, 1fr) 85px 43px 47px 98px;
+    gap: 10px;
+  }
+  .organizations-page .organization-info h3 {
+    font-size: 14px;
+  }
+  .organization-role {
+    font-size: 8px;
+  }
+}
+@media (max-width: 640px) {
+  .organizations-page .page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .organizations-page .page-heading h1 {
+    font-size: 36px;
+  }
+  .organizations-page .page-heading .lede {
+    font-size: 13px;
+  }
+  .organizations-page .page-heading > .create-organization-trigger {
+    width: 100%;
+    height: auto;
+    justify-content: center;
+    min-height: 44px;
+    font-size: 12px;
+    gap: 8px;
+    padding: 11px 18px;
+    margin-top: 0;
+  }
+  .organization-directory-heading {
+    margin-bottom: 16px;
+  }
+  .organization-directory-heading h2 {
+    font-size: 14px;
+  }
+  .organizations-page .organization-row,
+  .organizations-page .invitation-row {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 12px 10px;
+    padding: 20px 0;
+  }
+  .organizations-page .organization-info h3 {
+    font-size: 15px;
+  }
+  .organization-monogram {
+    width: 31px;
+    height: 31px;
+    font-size: 9px;
+  }
+  .organization-info small {
+    font-size: 9px;
+  }
+  .organization-role {
+    grid-column: 3;
+    grid-row: 1;
+    max-width: 94px;
+    font-size: 8px;
+  }
+  .organization-metric {
+    grid-row: 2;
+    font-size: 11px;
+  }
+  .organization-members-metric {
+    display: none;
+  }
+  .organization-computers-metric {
+    grid-column: 2;
+  }
+  .organizations-page .organization-actions {
+    grid-column: 3;
+    grid-row: 2;
+    justify-content: flex-end;
+  }
+  .organizations-page .invitation-row .invitation-actions {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    justify-content: flex-start;
+    flex-direction: row;
+    align-items: center;
+  }
+  .organization-search {
+    padding: 12px;
+  }
+  .organization-search input {
+    font-size: 12px;
+  }
+  .create-organization-dialog {
+    padding: 24px;
+  }
+  .create-organization-dialog .form-actions {
+    flex-direction: column-reverse;
+  }
+  .create-organization-dialog .form-actions .button {
+    width: 100%;
   }
 }

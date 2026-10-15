@@ -44,6 +44,8 @@ class Company(Identity):
     my_role: Role | None = None
     my_permissions: list[Permission] = []
     my_membership_id: str | None = None
+    computer_count: int = 0
+    member_count: int = 0
 
 
 class MemberProfile(BaseModel):
@@ -75,6 +77,8 @@ class Invitation(Identity):
     expires_at: datetime
     status: Literal["pending", "accepted", "declined", "revoked", "expired"]
     accepted_by_user_id: str | None
+    computer_count: int = 0
+    member_count: int = 0
 
 
 class CreatedInvitation(Invitation):

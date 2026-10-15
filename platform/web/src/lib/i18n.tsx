@@ -77,6 +77,36 @@ const messages = {
   ],
   createOrganization: ["Создать организацию", "Create organization"],
   organizationName: ["Название организации", "Organization name"],
+  allOrganizations: ["Все организации", "All organizations"],
+  openOrganization: ["Открыть организацию", "Open organization"],
+  searchOrganizations: ["Найти организацию", "Find an organization"],
+  clearSearch: ["Очистить поиск", "Clear search"],
+  organizationsNoMatches: [
+    "Организации не найдены",
+    "No matching organizations",
+  ],
+  organizationsNoMatchesLead: [
+    "Попробуйте другое название.",
+    "Try a different name.",
+  ],
+  organizationsEmptyTitle: [
+    "Ваша команда начинается здесь",
+    "Your team starts here",
+  ],
+  organizationsEmptyLead: [
+    "Создайте организацию или примите приглашение — все команды появятся в одном списке.",
+    "Create an organization or accept an invitation. All your teams will appear in one list.",
+  ],
+  sharedWorkspace: ["Общее рабочее пространство", "Shared workspace"],
+  invitedOrganization: ["Приглашение", "Invited"],
+  createOrganizationLead: [
+    "Дайте название общему пространству команды.",
+    "Give your team’s shared space a name.",
+  ],
+  createOrganizationNote: [
+    "Вы станете создателем и сможете пригласить участников.",
+    "You’ll be the creator and can invite your team next.",
+  ],
   createdOrganizations: ["Созданные вами", "Created by you"],
   joinedOrganizations: ["Ваши организации", "Your organizations"],
   noCreatedOrganizations: [

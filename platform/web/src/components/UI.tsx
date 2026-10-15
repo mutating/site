@@ -52,6 +52,18 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
       </>
     ),
     plus: <path d="M12 4v16M4 12h16" />,
+    search: (
+      <>
+        <circle cx="10.5" cy="10.5" r="6.5" />
+        <path d="m16 16 5 5" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" />
+      </>
+    ),
+    close: <path d="m6 6 12 12M6 18 18 6" />,
     exit: (
       <>
         <path d="M10 3H4v18h6m-1-9h13m-5-5 5 5-5 5" />

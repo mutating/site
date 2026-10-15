@@ -10,6 +10,7 @@ from sqlalchemy import and_, func, or_, select
 from throng_api import outputs as out
 from throng_api.accounts import membership_change_allowed
 from throng_api.models import Company, CompanyInvitation, Membership, User
+from throng_api.organization_counts import organization_counts
 from throng_api.permissions import effective_permissions
 from throng_api.schemas import InvitationCreate, PaginationOffset
 from throng_api.security import (
@@ -142,7 +143,11 @@ async def create_invitation(data: InvitationCreate, request: Request):
         )
         session.add(row)
         await session.flush()
-        return {**invitation_view(row, now), "token": raw}
+        return {
+            **invitation_view(row, now),
+            **(await organization_counts(session, [company_id]))[company_id],
+            "token": raw,
+        }
 
 
 @router.get("/invitations", response_model=list[out.Invitation])
@@ -172,14 +177,17 @@ async def list_invitations(
                 select(func.count()).select_from(CompanyInvitation).where(condition)
             )
         )
-        rows = await session.scalars(
-            select(CompanyInvitation)
-            .where(condition)
-            .order_by(CompanyInvitation.created_at.desc(), CompanyInvitation.id)
-            .limit(limit)
-            .offset(offset)
-        )
-        return [invitation_view(row, now) for row in rows]
+        rows = (
+            await session.scalars(
+                select(CompanyInvitation)
+                .where(condition)
+                .order_by(CompanyInvitation.created_at.desc(), CompanyInvitation.id)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+        counts = await organization_counts(session, (row.company_id for row in rows))
+        return [{**invitation_view(row, now), **counts.get(row.company_id, {})} for row in rows]
 
 
 @router.get("/invitations/link/{token}", response_model=out.Invitation)
@@ -195,7 +203,10 @@ async def read_link(token: str, request: Request):
         if not addressed_to(row, user):
             raise HTTPException(403, "Invitation belongs to another account")
         pending(row, request.app.state.clock())
-        return invitation_view(row, request.app.state.clock())
+        return {
+            **invitation_view(row, request.app.state.clock()),
+            **(await organization_counts(session, [row.company_id])).get(row.company_id, {}),
+        }
 
 
 async def accept(session, principal, row, now):
