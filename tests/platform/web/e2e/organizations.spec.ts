@@ -130,7 +130,7 @@ test("one directory prioritizes pending, authored and member organizations and s
   await expect(page.getByLabel("Название организации")).toHaveCount(0);
 });
 
-test("temporary search matches names locally, preserves ordering and clears without API requests", async ({
+test("server search matches names, preserves ordering and clears with a new request", async ({
   page,
   request,
   account,
@@ -145,7 +145,7 @@ test("temporary search matches names locally, preserves ordering and clears with
   await expect(page.locator(".organization-row")).toHaveCount(3);
   const calls: string[] = [];
   page.on("request", (req) => {
-    if (/\/v1\/(companies|invitations)(?:\?|$)/.test(req.url()))
+    if (/\/v1\/organization-directory(?:\?|$)/.test(req.url()))
       calls.push(req.url());
   });
   const search = page.getByRole("searchbox", { name: "Найти организацию" });
@@ -166,7 +166,12 @@ test("temporary search matches names locally, preserves ordering and clears with
   await page.getByRole("button", { name: "Очистить поиск" }).click();
   await expect(search).toHaveValue("");
   await expect(page.locator(".organization-row")).toHaveCount(3);
-  expect(calls).toEqual([]);
+  expect(calls.map((url) => new URL(url).searchParams.get("q"))).toEqual([
+    "lAb",
+    "ЛАБОРАТ",
+    ".*",
+    "",
+  ]);
 });
 
 test("create button opens an accessible dialog; whitespace, cancellation, Escape and focus restoration work", async ({
@@ -266,10 +271,11 @@ test("creation inserts once and resorts immediately while the background list re
   await page.goto("organizations");
   await expect(page.locator(".organization-row")).toHaveCount(3);
   let navigations = 0;
-  page.on("framenavigated", (frame) => {
-    if (frame === page.mainFrame()) navigations++;
+  page.on("domcontentloaded", () => {
+    navigations++;
   });
   await page.getByRole("searchbox").fill(mine.name);
+  await expect(page.locator(".organization-row")).toHaveCount(1);
   await page
     .getByRole("button", { name: "Создать организацию", exact: true })
     .click();
@@ -288,7 +294,7 @@ test("creation inserts once and resorts immediately while the background list re
     await postGate;
     await route.continue();
   });
-  await page.route("**/v1/companies?*", async (route) => {
+  await page.route("**/v1/organization-directory?*", async (route) => {
     await refreshGate;
     await route.continue();
   });
@@ -416,7 +422,9 @@ test("failed directory load shows a retry without fabricating an empty list", as
 }) => {
   await space(request, account, "Команда после повтора");
   await login(page, account);
-  await page.route("**/v1/invitations?*", (route) => route.abort("failed"));
+  await page.route("**/v1/organization-directory?*", (route) =>
+    route.abort("failed"),
+  );
   await page.goto("organizations");
   await expect(page.getByRole("alert")).toContainText(
     "Не удалось связаться с сервером",
@@ -425,7 +433,7 @@ test("failed directory load shows a retry without fabricating an empty list", as
   await expect(
     page.getByRole("heading", { name: "Ваша команда начинается здесь" }),
   ).toHaveCount(0);
-  await page.unroute("**/v1/invitations?*");
+  await page.unroute("**/v1/organization-directory?*");
   await page.getByRole("button", { name: "Попробовать снова" }).click();
   await expect(page.locator(".organization-row h3")).toHaveText([
     "Команда после повтора",

@@ -1,10 +1,14 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { api, allPages, json } from "../lib/api";
-import { useData } from "../lib/useData";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { api, json } from "../lib/api";
+import { useOrganizationDirectory } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n, type MessageKey } from "../lib/i18n";
-import { filterOrganizations, organizationEntries } from "../lib/organizations";
+import {
+  ORGANIZATIONS_PAGE_SIZE,
+  organizationPage,
+  organizationSearchParams,
+} from "../lib/organizations";
 import type { Company, Invitation } from "../lib/types";
 import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
 import {
@@ -19,18 +23,12 @@ import {
 export function Organizations() {
   const { user } = useSession();
   const { t, locale } = useI18n();
-  const state = useData(
-    async (signal) => {
-      const [companies, invitations] = await Promise.all([
-        allPages<Company>("companies", signal),
-        allPages<Invitation>("invitations", signal),
-      ]);
-      return { companies, invitations };
-    },
-    user!.id,
-    true,
-  );
-  const [query, setQuery] = useState("");
+  const [params, setParams] = useSearchParams();
+  const query = params.get("q") || "";
+  const page = organizationPage(params);
+  const state = useOrganizationDirectory(user!.id, query, page);
+  const setQuery = (value: string) =>
+    setParams(organizationSearchParams(params, value), { replace: true });
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState<MessageKey | null>(null);
   const [busyInvitation, setBusyInvitation] = useState<string | null>(null);
@@ -39,12 +37,22 @@ export function Organizations() {
     type: "delete" | "leave";
     company: Company;
   } | null>(null);
-  const entries = organizationEntries(
-    state.data?.companies ?? [],
-    state.data?.invitations ?? [],
-    user!.id,
+  const entries = state.data?.entries ?? [];
+  const totalPages = Math.max(
+    1,
+    Math.ceil((state.data?.total ?? 0) / ORGANIZATIONS_PAGE_SIZE),
   );
-  const filtered = filterOrganizations(entries, query);
+  const outsidePages = !!state.data && page > totalPages;
+  const updatePage = (value: number, replace = false) => {
+    const next = new URLSearchParams(params);
+    if (value === 1) next.delete("page");
+    else next.set("page", String(value));
+    setParams(next, { replace });
+  };
+  useEffect(() => {
+    if (!state.loading && !state.error && outsidePages)
+      updatePage(totalPages, true);
+  }, [state.loading, state.error, outsidePages, totalPages, params, setParams]);
   const number = (value: number) => value.toLocaleString(locale);
 
   async function invitationAction(
@@ -57,15 +65,7 @@ export function Organizations() {
     setMessage(null);
     try {
       await api(`invitations/${invitation.id}/${kind}`, json("POST"));
-      state.update(
-        (data) =>
-          data && {
-            ...data,
-            invitations: data.invitations.filter(
-              (row) => row.company_id !== invitation.company_id,
-            ),
-          },
-      );
+      state.remove(invitation.company_id);
       setMessage(
         kind === "accept" ? "invitationAccepted" : "invitationDeclined",
       );
@@ -101,7 +101,7 @@ export function Organizations() {
       <section
         className="organization-directory"
         aria-label={t("allOrganizations")}
-        aria-busy={state.loading}
+        aria-busy={state.loading || outsidePages}
       >
         <header className="organization-directory-heading">
           <h2>
@@ -110,8 +110,8 @@ export function Organizations() {
               {!state.data
                 ? "—"
                 : query.trim()
-                  ? `${number(filtered.length)} / ${number(entries.length)}`
-                  : number(entries.length)}
+                  ? `${number(state.data.total)} / ${number(state.data.totalAll)}`
+                  : number(state.data.total)}
             </span>
           </h2>
         </header>
@@ -122,6 +122,7 @@ export function Organizations() {
             aria-label={t("searchOrganizations")}
             placeholder={t("searchOrganizations")}
             value={query}
+            maxLength={200}
             onChange={(event) => setQuery(event.target.value)}
           />
           {query && (
@@ -142,13 +143,13 @@ export function Organizations() {
         )}
         <ErrorBox error={invitationError} conflict="invitationConflict" />
         <ErrorBox error={state.error} retry={state.reload} />
-        {!state.data ? (
+        {!state.data || outsidePages ? (
           state.loading ? (
             <Loading />
           ) : null
-        ) : filtered.length ? (
+        ) : entries.length ? (
           <div className="organization-list">
-            {filtered.map((entry) => {
+            {entries.map((entry) => {
               const pending = entry.kind === "invitation";
               const row = pending ? entry.invitation : entry.company;
               const name = entry.name;
@@ -234,6 +235,9 @@ export function Organizations() {
                         className="organization-metric organization-members-metric"
                         aria-label={`${t("members")}: ${number(row.member_count)}`}
                         to={`/organizations/${entry.company.id}`}
+                        state={{
+                          directorySearch: params.size ? `?${params}` : "",
+                        }}
                       >
                         <Icon name="users" size={16} />
                         <span>{number(row.member_count)}</span>
@@ -289,6 +293,9 @@ export function Organizations() {
                           className="organization-open"
                           aria-label={`${t("openOrganization")}: ${name}`}
                           to={`/organizations/${entry.company.id}`}
+                          state={{
+                            directorySearch: params.size ? `?${params}` : "",
+                          }}
                         >
                           <Icon name="arrow" size={18} />
                         </Link>
@@ -299,7 +306,7 @@ export function Organizations() {
               );
             })}
           </div>
-        ) : entries.length ? (
+        ) : query.trim() ? (
           <Empty icon="search" title={t("organizationsNoMatches")}>
             {t("organizationsNoMatchesLead")}
           </Empty>
@@ -308,6 +315,31 @@ export function Organizations() {
             {t("organizationsEmptyLead")}
           </Empty>
         )}
+        {state.data &&
+          !outsidePages &&
+          (state.data.total > ORGANIZATIONS_PAGE_SIZE || page > 1) && (
+            <nav className="pagination" aria-label={t("page")}>
+              <span>
+                {t("page")} {page} {t("of")} {totalPages}
+              </span>
+              <div>
+                <button
+                  className="button secondary compact"
+                  disabled={state.loading || page <= 1}
+                  onClick={() => updatePage(page - 1)}
+                >
+                  ← {t("previous")}
+                </button>
+                <button
+                  className="button secondary compact"
+                  disabled={state.loading || page >= totalPages}
+                  onClick={() => updatePage(page + 1)}
+                >
+                  {t("next")} →
+                </button>
+              </div>
+            </nav>
+          )}
       </section>
       {creating && (
         <CreateOrganizationDialog
@@ -317,15 +349,7 @@ export function Organizations() {
               "companies",
               json("POST", { name }),
             );
-            state.update((data) => ({
-              companies: [
-                ...(data?.companies ?? []).filter(
-                  (row) => row.id !== company.id,
-                ),
-                company,
-              ],
-              invitations: data?.invitations ?? [],
-            }));
+            state.insert(company);
             setQuery("");
             setMessage("organizationCreated");
             state.reload();
@@ -351,15 +375,7 @@ export function Organizations() {
               json("DELETE"),
             );
             setMessage(null);
-            state.update(
-              (data) =>
-                data && {
-                  ...data,
-                  companies: data.companies.filter(
-                    (row) => row.id !== action.company.id,
-                  ),
-                },
-            );
+            state.remove(action.company.id);
             state.reload();
           }}
         />

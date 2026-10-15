@@ -40,6 +40,7 @@ class Owner(BaseModel):
 
 class Company(Identity):
     name: str
+    name_key: str = ""
     created_by_user_id: str
     my_role: Role | None = None
     my_permissions: list[Permission] = []
@@ -79,6 +80,25 @@ class Invitation(Identity):
     accepted_by_user_id: str | None
     computer_count: int = 0
     member_count: int = 0
+    name_key: str = ""
+
+
+class DirectoryCompany(BaseModel):
+    kind: Literal["company"]
+    group: Literal[1, 2]
+    company: Company
+
+
+class DirectoryInvitation(BaseModel):
+    kind: Literal["invitation"]
+    group: Literal[0]
+    invitation: Invitation
+
+
+class OrganizationDirectory(BaseModel):
+    items: list[DirectoryCompany | DirectoryInvitation]
+    total: int
+    total_all: int
 
 
 class CreatedInvitation(Invitation):

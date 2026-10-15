@@ -19,8 +19,10 @@ from sqlalchemy import (
     Uuid,
     false,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import TypeDecorator
+
+from throng_api.organization_names import name_key, normalize_name
 
 
 def utcnow() -> datetime:
@@ -101,7 +103,15 @@ class User(Identity, Base):
 class Company(Identity, Base):
     __tablename__ = "companies"
     name: Mapped[str] = mapped_column(String(200))
+    name_search: Mapped[str] = mapped_column(Text, server_default="")
+    name_key: Mapped[str] = mapped_column(Text, server_default="")
     created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+
+    @validates("name")
+    def prepare_name(self, _, value):
+        self.name_search = normalize_name(value)
+        self.name_key = name_key(value)
+        return value
 
 
 class Membership(Identity, Base):
