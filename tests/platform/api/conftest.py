@@ -676,6 +676,8 @@ async def cli_server(tmp_path):
             "THRONG_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path}/cli/throng.db",
             "THRONG_STORAGE_PATH": str(tmp_path / "cli" / "artifacts"),
             "THRONG_CONTROLLER_INTERVAL": "0.01",
+            # CLI must not inherit the developer's relay listener or keys from .env.
+            "THRONG_ENV_FILE": str(tmp_path / "absent-test.env"),
         }
     )
     log = tmp_path / "cli-server.log"

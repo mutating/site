@@ -171,6 +171,18 @@ def api_requests(
         ("DELETE", "/v1/users/{user_id}", "manage", {}),
     ]
     resources = [
+        (
+            "benchmark-results",
+            str(uuid4()),
+            "result_id",
+            {
+                "computer_id": computer["id"],
+                "benchmark_name": "single_core",
+                "number": 123.5,
+                "benchmarker_version": "0.0.2",
+            },
+            {"number": 234.5},
+        ),
         ("companies", company["id"], "company_id", {"name": "New company"}, {"name": "Changed"}),
         (
             "memberships",
@@ -221,6 +233,8 @@ def api_requests(
         item = collection + "/{" + parameter + "}"
         identifiers[item] = {parameter: identifier}
         params = {"params": {"company_id": company["id"]}} if resource == "memberships" else {}
+        if resource == "benchmark-results":
+            params = {"params": {"computer_id": computer["id"]}}
         requests.extend(
             [
                 ("GET", collection, "read", params),
@@ -248,6 +262,7 @@ def api_requests(
             ("POST", "/v1/invitations/{invitation_id}/link", "manage", {}),
             ("DELETE", "/v1/invitations/{invitation_id}", "manage", {}),
             ("POST", "/v1/computers/{computer_id}/credentials", "manage", {}),
+            ("GET", "/v1/computers/{computer_id}/benchmark-results", "read", {}),
             (
                 "POST",
                 "/v1/computers/{computer_id}/unbind",
@@ -397,6 +412,16 @@ def agent_requests(agent, artifact, running_command):
     """Enumerate every worker operation with real IDs and schema-valid bodies and headers."""
     requests = [
         ("GET", "/agent/v1/session", {}),
+        (
+            "PUT",
+            "/agent/v1/benchmark-results",
+            {
+                "json": {
+                    "benchmarker_version": "0.0.2",
+                    "results": [{"benchmark_name": "single_core", "number": 123.5}],
+                }
+            },
+        ),
         (
             "POST",
             "/agent/v1/session",

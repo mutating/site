@@ -51,6 +51,7 @@ async def test_openapi_security_matches_public_and_protected_operations(client):
                 "/agent/v1/session",
                 "/agent/v1/unbind",
                 "/agent/v1/diagnostics/{diagnostic_id}",
+                "/agent/v1/benchmark-results",
             }:
                 assert headers["X-Agent-Session"]["required"] is True
                 assert headers["X-Agent-Session"]["schema"]["format"] == "uuid"
@@ -73,6 +74,7 @@ async def test_openapi_includes_every_required_crud_and_execution_operation(clie
         "access-tokens": "token_id",
         "token-ownerships": "ownership_id",
         "resource-types": "type_id",
+        "benchmark-results": "result_id",
     }
     for resource, identifier in resources.items():
         assert {"get", "post"} <= paths[f"/v1/{resource}"].keys()

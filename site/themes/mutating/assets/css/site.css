@@ -234,8 +234,8 @@ img {
 }
 
 .platform-link svg {
-  width: 47px;
-  height: 47px;
+  width: 36px;
+  height: 36px;
 }
 
 .brand {
@@ -3050,8 +3050,8 @@ a.section-index:focus-visible {
   }
 
   .platform-link svg {
-    width: 43px;
-    height: 43px;
+    width: 32px;
+    height: 32px;
   }
 
   .brand__mark {

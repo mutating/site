@@ -109,7 +109,7 @@ async def test_alembic_cli_reads_environment_database_url(
     stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
     assert process.returncode == 0, (stdout.decode(), stderr.decode())
     async with migration_database.engine.connect() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0007"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0008"
 
 
 async def test_offline_migration_fails_before_emitting_partial_sql(
@@ -137,4 +137,4 @@ async def test_offline_migration_fails_before_emitting_partial_sql(
         "CREATE TABLE" not in output and "ALTER TABLE" not in output and "Traceback" not in output
     )
     async with migration_database.engine.connect() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0007"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0008"

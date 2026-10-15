@@ -173,6 +173,7 @@ async def test_every_session_bound_agent_operation_requires_a_live_session(
             "/agent/v1/session",
             "/agent/v1/unbind",
             "/agent/v1/diagnostics/{diagnostic_id}",
+            "/agent/v1/benchmark-results",
         }:
             continue
         kwargs = {

@@ -13,6 +13,27 @@ Python-сервисом в корне поддомена платформы и �
 
 Базовый адрес production API: `https://api.mutating.tech/v1`.
 
+Результаты benchset хранятся в `benchmark_results` (миграция `0008`). CRUD:
+`POST /v1/benchmark-results`, `GET /v1/benchmark-results?computer_id=<uuid>`,
+`GET/PATCH/DELETE /v1/benchmark-results/<uuid>`. Также доступен
+`GET /v1/computers/<uuid>/benchmark-results`. Запись содержит `id`, `created_at`,
+`computer_id`, `benchmark_name`, конечное неотрицательное `number` и строгую
+SemVer 2 `benchmarker_version`. PATCH меняет число; идентичность результата
+задаётся тройкой компьютер/имя/версия. Повторный POST сохраняет UUID и обновляет
+число; другая версия добавляет запись. Списки по умолчанию возвращают целиком
+наибольшую semver-версию, `latest_only=false` — историю. При равном semver
+precedence build metadata разрешает ничью лексикографически по полной версии.
+
+Агент отправляет каждый завершённый тест через
+`PUT /agent/v1/benchmark-results` с `benchmarker_version` и массивом `results`
+из `{benchmark_name, number}`. Компьютер определяется по credential; ID из
+тела не принимается. Сессия вычислений не требуется, device proof для
+подтверждённых устройств обязательна. Несколько измерений в одном запросе
+записываются транзакционно; частично невалидный запрос не меняет прежние данные.
+Права CRUD совпадают с правами компьютера и `resources.read`/`resources.manage`.
+Для тестирования Swift-клиента на macOS задайте `POWER_CELL_BENCHMARK_CLI`
+путём к `powercell-dev` и запустите `test_benchmark_swift_client.py`.
+
 ## Запуск
 
 Нужны обычный CPython 3.12 и `uv`. Поддерживаемый диапазон Python начинается с 3.11;
