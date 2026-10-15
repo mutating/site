@@ -17,6 +17,7 @@ import { Auth } from "./pages/Auth";
 import { Overview } from "./pages/Overview";
 import { PowerCells } from "./pages/PowerCells";
 import { Computers } from "./pages/Computers";
+import { Computer } from "./pages/Computer";
 import { Organizations } from "./pages/Organizations";
 import { Organization } from "./pages/Organization";
 import { Invitation } from "./pages/Invitation";
@@ -76,6 +77,7 @@ function App() {
           <Route index element={<Overview />} />
           <Route path="power-cells" element={<PowerCells />} />
           <Route path="power-cells/computers" element={<Computers />} />
+          <Route path="power-cells/computers/:computerId" element={<Computer />} />
           <Route path="organizations" element={<Organizations />} />
           <Route path="organizations/:companyId" element={<Organization />} />
           <Route path="invitations/:token" element={<Invitation />} />

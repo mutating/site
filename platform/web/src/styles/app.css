@@ -1167,6 +1167,143 @@ td small {
 .mobile-status {
   display: none;
 }
+.computer-row {
+  cursor: pointer;
+  scroll-margin-top: 110px;
+}
+.computer-row:hover,
+.computer-row:focus-within {
+  background: var(--surface-raised);
+}
+.computer-link:hover {
+  color: var(--hot);
+}
+.computer-benchmarks {
+  min-width: 190px;
+  max-width: 270px;
+}
+.benchmark-summary {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.computer-table .benchmark-summary small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0 0 8px;
+}
+.benchmark-summary dl {
+  margin: 0;
+}
+.benchmark-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 5px;
+}
+.benchmark-summary dd {
+  margin: 0;
+  font-family: var(--font-geist-mono);
+  max-width: 55%;
+}
+.benchmark-summary dt {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.benchmark-summary > .text-button {
+  font-size: 11px;
+}
+.benchmark-summary .loading,
+.benchmark-summary .error-box {
+  padding: 0;
+  font-size: 11px;
+}
+.benchmark-summary .error-box {
+  flex-wrap: wrap;
+  margin: 0;
+  background: none;
+  border: 0;
+}
+.computer-details,
+.benchmark-panel {
+  padding: 25px 27px;
+  margin-bottom: 25px;
+  min-width: 0;
+  scroll-margin-top: 110px;
+}
+.computer-details h2,
+.benchmark-panel h2 {
+  font-size: 23px;
+  overflow-wrap: anywhere;
+  margin-bottom: 12px;
+}
+.computer-details dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 24px;
+  margin: 24px 0 0;
+}
+.computer-details dt {
+  color: var(--ink-muted);
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.computer-details dd {
+  font: 12px var(--font-geist-mono);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.benchmark-version {
+  overflow-wrap: anywhere;
+  margin-bottom: 16px;
+}
+.benchmark-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
+}
+.benchmark-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  font-size: 13px;
+}
+.benchmark-card:hover,
+.benchmark-card[aria-current] {
+  border-color: var(--hot);
+}
+.benchmark-card strong {
+  font: 24px var(--font-geist-mono);
+  max-width: 100%;
+}
+.benchmark-card small {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+.benchmark-history-table th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.benchmark-history-table tbody th {
+  color: var(--ink);
+  font: 12px var(--font-geist-mono);
+}
+.benchmark-history-table .numeric {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -2050,6 +2187,23 @@ td small {
   }
   .computer-table td:nth-child(2) {
     display: none;
+  }
+  .computer-table .computer-benchmarks {
+    grid-column: 1 / -1;
+    max-width: none;
+    min-width: 0;
+    border-top: 1px solid var(--line);
+  }
+  .computer-benchmarks::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--ink-muted);
+    font-size: 10px;
+    margin-bottom: 8px;
+  }
+  .computer-details,
+  .benchmark-panel {
+    padding: 22px 18px;
   }
   .computer-table .mobile-status {
     display: inline-flex;

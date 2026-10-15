@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>30 композиций — The Mutating Company</title>
+    <link rel="icon" href="../favicon.ico" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./concepts.js"></script>
+    <script defer src="./gallery.js"></script>
+  </head>
+  <body>
+    <header class="gallery-header">
+      <a class="gallery-brand" href="./index.html" aria-label="Все варианты">
+        <span class="brand-eye"><i></i></span><span class="wordmark">TMC</span>
+        <span class="brand-divider"></span><span class="header-label">DESIGN EXPLORATIONS / 2026</span>
+      </a>
+      <button class="shortlist-toggle" id="shortlist-toggle" aria-pressed="false">Избранное <span id="favorite-count">0</span></button>
+    </header>
+
+    <main class="gallery-main" id="main">
+      <section class="gallery-intro">
+        <div>
+          <p class="study-kicker"><span></span> ЛИЧНЫЙ КАБИНЕТ / ЛЕВАЯ КОМПОЗИЦИЯ</p>
+          <h1>Одна сеть.<br><span>30 характеров.</span></h1>
+        </div>
+        <div class="intro-note">
+          <span class="edition">01 — 30</span>
+          <p>Выберите характер вашей сети.<br> Каждый вариант можно открыть<br> в контексте страницы входа.</p>
+          <p class="tiny-note">♡ — сохранить для сравнения</p>
+        </div>
+      </section>
+
+      <nav class="filter-bar" aria-label="Направления дизайна">
+        <div class="filter-list" id="filters">
+          <button class="filter active" data-filter="all" aria-pressed="true">Все <span>30</span></button>
+          <button class="filter" data-filter="type" aria-pressed="false">Типографика <span>05</span></button>
+          <button class="filter" data-filter="network" aria-pressed="false">Сеть <span>05</span></button>
+          <button class="filter" data-filter="geometry" aria-pressed="false">Геометрия <span>05</span></button>
+          <button class="filter" data-filter="flow" aria-pressed="false">Пластика <span>05</span></button>
+          <button class="filter" data-filter="product" aria-pressed="false">Продукт <span>05</span></button>
+          <button class="filter" data-filter="brand" aria-pressed="false">Смелые <span>05</span></button>
+        </div>
+        <p id="visible-count" aria-live="polite">30 вариантов</p>
+      </nav>
+
+      <div class="gallery-grid" id="gallery"></div>
+      <div class="empty-state" id="empty-state" hidden>Сохраните понравившиеся варианты сердечком — здесь будет ваша подборка.</div>
+      <footer class="gallery-footer"><span>THE MUTATING COMPANY</span><span>30 направлений. Ваш выбор.</span></footer>
+    </main>
+
+    <dialog class="preview-dialog" id="preview-dialog" aria-labelledby="preview-title">
+      <div class="preview-toolbar">
+        <button class="back-button" id="close-preview">← <span>Все варианты</span></button>
+        <div class="preview-ident"><span id="preview-number"></span><h2 id="preview-title"></h2></div>
+        <div class="preview-actions">
+          <button class="preview-favorite" id="preview-favorite" aria-pressed="false">♡ <span>В избранное</span></button>
+          <button class="arrow-button" id="previous-design" aria-label="Предыдущий вариант">←</button>
+          <button class="arrow-button" id="next-design" aria-label="Следующий вариант">→</button>
+        </div>
+      </div>
+      <div class="preview-description" id="preview-description"></div>
+      <div class="context-viewport" id="context-viewport">
+        <div class="context-page" id="context-page">
+          <header class="context-header">
+            <div class="context-logo"><span class="brand-eye"><i></i></span><span class="wordmark">TMC</span></div>
+            <span class="context-caption">Личный кабинет</span>
+            <div class="context-preferences"><span>RU</span><span class="context-theme">☾ <b>☀</b></span></div>
+          </header>
+          <div class="context-main">
+            <div id="context-scene"></div>
+            <section class="login-panel" aria-label="Предпросмотр формы входа">
+              <p class="panel-kicker">01 / WELCOME</p>
+              <h2>С возвращением<span>.</span></h2>
+              <p class="panel-lead">Войдите, чтобы управлять своими мощностями.</p>
+              <label>Email или ник<input type="text" placeholder="you@example.com" readonly tabindex="-1"></label>
+              <label>Пароль<span class="mock-password"><input type="password" placeholder="••••••••••••" readonly tabindex="-1"><span>◉</span></span></label>
+              <div class="mock-submit">Войти <span>→</span></div>
+              <p class="mock-register">Ещё нет аккаунта? <strong>Создать аккаунт ↗</strong></p>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div class="preview-bottom"><p>← → переключать · Esc закрыть · F в избранное</p><div id="design-pagination" class="design-pagination" aria-label="Выбрать вариант"></div><p>Концепция экрана входа</p></div>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
