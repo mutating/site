@@ -178,13 +178,35 @@ class IsolateCreate(Input):
     retry_allowed: bool = True
     company_id: UUID | None = None
     state_artifact_id: UUID
-    image: str = Field(min_length=1, max_length=300)
+    image: str = Field(
+        default="ubuntu",
+        min_length=1,
+        max_length=300,
+        description=(
+            "Image reference; defaults to ubuntu when omitted. "
+            "For powercell-ubuntu-arm64-v1, aliases ubuntu and actions "
+            "resolve to ubuntu:24.04 and ghcr.io/actions/actions-runner:latest; "
+            "responses contain the full reference. Explicit runner tags/digests are also accepted."
+        ),
+    )
     os: str = Field(min_length=1, max_length=40)
     architecture: str = Field(min_length=1, max_length=40)
     runtime: str = Field(min_length=1, max_length=80)
     cpu_millis: int = Field(gt=0, le=1_000_000)
     memory_bytes: Positive
     disk_bytes: Positive
+
+    @model_validator(mode="after")
+    def supported_powercell_image(self):
+        from throng_api.workload_images import IMAGE_ALIASES, RUNNER_IMAGE
+
+        if self.runtime == "powercell-ubuntu-arm64-v1":
+            self.image = IMAGE_ALIASES.get(self.image, self.image)
+            if self.image != "ubuntu:24.04" and not RUNNER_IMAGE.fullmatch(self.image):
+                raise ValueError(
+                    "Power Cell supports bundled Ubuntu and official GitHub runner images"
+                )
+        return self
 
 
 class CommandCreate(Input):

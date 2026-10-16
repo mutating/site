@@ -11,7 +11,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[4]
 
 
-@pytest.mark.parametrize("failure", ["", "backup", "migrate", "health"])
+@pytest.mark.parametrize(
+    "failure", ["", "backup", "migrate", "health", "unsafe", "concurrent", "protected"]
+)
 def test_activation_preserves_the_database_and_current_release_on_failure(tmp_path, failure):
     """Recover before startup, preserve accepted writes afterwards and only switch migrated code."""
     deploy_root = tmp_path / "server"
@@ -26,6 +28,14 @@ def test_activation_preserves_the_database_and_current_release_on_failure(tmp_pa
     current.symlink_to(old)
     server_env = tmp_path / "server.env"
     server_env.touch()
+    if failure in {"unsafe", "protected"}:
+        server_env.write_text('THRONG_POWERCELL_RELAY_URL="https://api.example:8444"\n')
+        (new / "deploy").mkdir()
+        (new / "deploy/run.py").write_text(
+            "launch('--no-access-log')\n"
+            if failure == "protected"
+            else "# Previous supervisor without ACME protection\n"
+        )
     activation = tmp_path / "activate.sh"
     activation.write_text(
         (ROOT / "deploy/activate.sh")
@@ -77,16 +87,24 @@ elif command == "mv":
             "PATH": f"{binary_directory}:{os.environ['PATH']}",
             "ACTION_LOG": str(log),
             "FAILURE": failure,
+            "MUTATING_EXPECTED_CURRENT": str(releases / "another")
+            if failure == "concurrent"
+            else "",
         },
         text=True,
         capture_output=True,
     )
     actions = [json.loads(line) for line in log.read_text().splitlines()]
+    if failure in {"unsafe", "concurrent"}:
+        assert result.returncode == 2, result.stderr
+        assert current.resolve() == old
+        assert all(action[0] == "flock" for action in actions)
+        return
     maintenance = [action for action in actions if action[0] == "runuser"]
     stops = [action for action in actions if action[:2] == ["systemctl", "stop"]]
     starts = [action for action in actions if action[:2] == ["systemctl", "start"]]
     assert stops and actions.index(stops[0]) < actions.index(maintenance[0])
-    assert result.returncode == (0 if not failure else 1), result.stderr
+    assert result.returncode == (0 if failure in {"", "protected"} else 1), result.stderr
     assert current.resolve() == (old if failure in {"backup", "migrate"} else new)
     assert any("restore" in action for action in maintenance) == (failure == "migrate")
     assert any("migrate" in action for action in maintenance) == (failure != "backup")

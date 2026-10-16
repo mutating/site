@@ -164,6 +164,7 @@ def api_requests(
         ("GET", "/v1/users", "read", {}),
         ("GET", "/v1/users/me", "read", {}),
         ("GET", "/v1/auth/session", "read", {}),
+        ("GET", "/v1/organization-directory", "read", {}),
         ("GET", "/v1/users/me/avatar", "read", {}),
         ("PUT", "/v1/users/me/avatar", "manage", {"content": b"avatar"}),
         ("DELETE", "/v1/users/me/avatar", "manage", {}),

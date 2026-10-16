@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+# Other sites have independent Certbot lineages and must not restart this API.
+if [ "${RENEWED_LINEAGE:-}" = {{ powercell_tls_lineage | quote }} ]; then
+    exec /usr/bin/python3 /usr/local/sbin/throng-powercell-setup renew \
+        --directory {{ powercell_directory | quote }} \
+        --env-file {{ powercell_env_file | quote }} \
+        --tls-lineage {{ powercell_tls_lineage | quote }} --restart
+fi

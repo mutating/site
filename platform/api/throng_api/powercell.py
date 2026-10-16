@@ -111,6 +111,9 @@ async def capacity(data: Capacity, request: Request, idempotency_key: str = Head
     async with request.app.state.db.write() as session:
         computer = await agent_auth(session, request)
         payload = data.model_dump(mode="json")
+        # Keep replay fingerprints compatible with reports predating image support.
+        if not data.image_families:
+            payload.pop("image_families")
         previous = await mutation_replay(session, request, "capacity", idempotency_key, payload)
         if previous:
             return previous

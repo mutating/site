@@ -56,6 +56,9 @@ class Binding(Input):
 
 
 class Capacity(Input):
+    image_families: list[Literal["ghcr.io/actions/actions-runner"]] = Field(
+        default_factory=list, max_length=1
+    )
     revision: int = Field(ge=0, le=2**63 - 1, strict=True)
     accepting_work: bool
     mode: Literal["active", "idle", "suspended"]

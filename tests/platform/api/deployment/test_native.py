@@ -201,6 +201,14 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         assert headers["location"] == "https://api.mutating.tech/docs?probe=1"
         assert request(https_port, "/", "mutating.tech", True)[2] == b"main site"
         assert request(https_port, "/openapi.json", "api.mutating.tech", True)[0] == 200
+        # The ACME directory URL contains a bearer capability. Neither the
+        # supervisor's Uvicorn nor nginx may retain it, including on failures.
+        marker = "audit-directory-capability-must-not-be-logged"
+        acme_path = "/acme/powercell/00000000-0000-0000-0000-000000000001/" + marker + "/directory"
+        assert request(https_port, acme_path, "api.mutating.tech", True)[0] == 503
+        assert request(http_port, acme_path, "api.mutating.tech")[0] == 308
+        for name in ("platform-0.log", "nginx-access.log", "nginx-error.log"):
+            assert marker not in (tmp_path / name).read_text(), name
         assert request(https_port, "/account/login", "api.mutating.tech", True)[0] == 404
         assert request(https_port, "/health/ready", "platform.mutating.tech", True)[0] == 404
         status, _, html = request(https_port, "/", "platform.mutating.tech", True)
@@ -294,6 +302,9 @@ def test_native_platform_and_subdomain_routing(tmp_path):
         assert platform.wait(timeout=15) == 0
         with pytest.raises(OSError):
             request(api_port, "/health/ready")
+        assert request(https_port, acme_path, "api.mutating.tech", True)[0] == 502
+        for name in ("nginx-access.log", "nginx-error.log"):
+            assert marker not in (tmp_path / name).read_text(), name
     finally:
         for child in processes:
             if child.poll() is None:

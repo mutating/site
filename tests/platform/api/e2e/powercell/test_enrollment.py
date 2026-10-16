@@ -20,7 +20,15 @@ async def test_profile_capabilities_and_enrollment_ownership(
 ):
     """The authorized profile contains only a nonextractable attested identity and cannot be read by another account."""
     response = await client.get("/v1/agent-capabilities")
-    assert len(response.json()["extensions"]) == 5 and response.json()["attestation_required"]
+    assert set(response.json()["extensions"]) == {
+        "powercell.enrollment.v1",
+        "powercell.capacity.v1",
+        "powercell.eviction.v1",
+        "powercell.diagnostics.v1",
+        "powercell.isolation.v1",
+        "powercell.images.v1",
+    }
+    assert response.json()["attestation_required"]
     profile = enrollment.profile
     assert profile["PayloadType"] == "Configuration" and len(profile["PayloadContent"]) == 1
     assert profile["PayloadScope"] == "User"

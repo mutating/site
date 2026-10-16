@@ -10,6 +10,17 @@ release="$deploy_root/releases/$release_id"
 [[ "$(realpath "$release")" == "$release" ]] || { echo "Release must not be a symlink." >&2; exit 2; }
 exec 9>"$deploy_root/deploy.lock"
 flock --exclusive --wait 1200 9
+# Refuse an accidental rollback to a supervisor that would log enrollment
+# capability URLs once Power Cell has been enabled on this server.
+if grep -Eq '^[[:space:]]*THRONG_POWERCELL_(ACME_URL|RELAY_URL)=' "$server_env" \
+  && ! grep -Fq -- '--no-access-log' "$release/deploy/run.py"; then
+  echo "Release lacks ACME access-log protection; the current service was not stopped." >&2
+  exit 2
+fi
+if [[ -n "${MUTATING_EXPECTED_CURRENT:-}" && "$(readlink -f "$deploy_root/current")" != "$MUTATING_EXPECTED_CURRENT" ]]; then
+  echo "The active release changed during preparation; inspect it before activating this release." >&2
+  exit 2
+fi
 was_running=false
 if systemctl is-active --quiet throng.service; then was_running=true; fi
 systemctl stop throng.service
