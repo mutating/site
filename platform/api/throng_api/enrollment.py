@@ -41,6 +41,7 @@ from throng_api.security import (
     personal,
     secret,
 )
+from throng_api.workload_images import IMAGE_ALIASES
 
 router = APIRouter(
     prefix="/v1", tags=["Power Cell enrollment"], dependencies=[Depends(access_token_scheme)]
@@ -158,9 +159,12 @@ async def capabilities(request: Request):
     return {
         "protocol_version": 1,
         "extensions": (EXTENSIONS if configured else EXTENSIONS[1:])
-        + (["powercell.relay.v1"] if request.app.state.powercell_relay else []),
+        + (["powercell.relay.v1"] if request.app.state.powercell_relay else [])
+        + ["powercell.images.v1"],
         "runtime": "powercell-ubuntu-arm64-v1",
         "images": ["ubuntu:24.04"],
+        "image_families": ["ghcr.io/actions/actions-runner"],
+        "image_aliases": IMAGE_ALIASES,
         "attestation_required": True,
     }
 

@@ -1,0 +1,109 @@
+---
+# Add only the relay exception to an already active firewall. Enabling/resetting
+# a firewall here could change the operator's SSH and unrelated service policy.
+- name: Derive the TCP port from the configured relay URL
+  ansible.builtin.set_fact:
+    powercell_relay_port: "{{ (powercell_relay_url | ansible.builtin.urlsplit('port')) | default(443, true) | int }}"
+
+- name: Validate the unprivileged relay port
+  ansible.builtin.assert:
+    that:
+      - powercell_relay_port | int >= 1024
+      - powercell_relay_port | int <= 65535
+
+- name: Locate UFW
+  ansible.builtin.shell: "command -v {{ powercell_ufw_binary | default('ufw') | quote }}"
+  register: powercell_ufw_binary_status
+  changed_when: false
+  # bash returns 1 for a missing command; Debian's dash returns 127.
+  failed_when: powercell_ufw_binary_status.rc not in [0, 1, 127]
+  check_mode: false
+
+- name: Locate firewalld
+  ansible.builtin.shell: "command -v {{ powercell_firewalld_binary | default('firewall-cmd') | quote }}"
+  register: powercell_firewalld_binary_status
+  changed_when: false
+  failed_when: powercell_firewalld_binary_status.rc not in [0, 1, 127]
+  check_mode: false
+
+- name: Inspect UFW without changing its state
+  ansible.builtin.command:
+    argv: ["{{ powercell_ufw_binary | default('ufw') }}", status]
+  environment:
+    LC_ALL: C
+  register: powercell_ufw_status
+  changed_when: false
+  failed_when: powercell_ufw_status.rc != 0
+  check_mode: false
+  when: powercell_ufw_binary_status.rc == 0
+
+- name: Inspect firewalld without changing its state
+  ansible.builtin.command:
+    argv: ["{{ powercell_firewalld_binary | default('firewall-cmd') }}", --state]
+  environment:
+    LC_ALL: C
+  register: powercell_firewalld_status
+  changed_when: false
+  failed_when: powercell_firewalld_status.rc not in [0, 252]
+  check_mode: false
+  when: powercell_firewalld_binary_status.rc == 0
+
+- name: Identify the active host firewall
+  ansible.builtin.set_fact:
+    powercell_ufw_active: "{{ powercell_ufw_status.rc | default(-1) == 0 and 'Status: active' in (powercell_ufw_status.stdout | default('')) }}"
+    powercell_firewalld_active: "{{ powercell_firewalld_status.rc | default(-1) == 0 }}"
+
+- name: Require one firewall manager
+  ansible.builtin.assert:
+    that: not (powercell_ufw_active and powercell_firewalld_active)
+    fail_msg: Both UFW and firewalld are active. Select one manager before applying the relay exception.
+
+- name: Allow inbound TCP to the relay with UFW
+  ansible.builtin.command:
+    argv: ["{{ powercell_ufw_binary | default('ufw') }}", allow, "{{ powercell_relay_port }}/tcp", comment, Power Cell relay]
+  environment:
+    LC_ALL: C
+  register: powercell_ufw_rule
+  changed_when: "'Rule added' in powercell_ufw_rule.stdout or 'Rules updated' in powercell_ufw_rule.stdout"
+  when: powercell_ufw_active
+
+- name: Read the default firewalld zone
+  ansible.builtin.command:
+    argv: ["{{ powercell_firewalld_binary | default('firewall-cmd') }}", --get-default-zone]
+  register: powercell_default_zone
+  changed_when: false
+  check_mode: false
+  when:
+    - powercell_firewalld_active
+    - (powercell_firewalld_zone | default('')) | length == 0
+
+- name: Choose the relay firewalld zone
+  ansible.builtin.set_fact:
+    powercell_selected_zone: "{{ powercell_firewalld_zone | default('') or powercell_default_zone.stdout | default('') | trim }}"
+  when: powercell_firewalld_active
+
+- name: Query the firewalld runtime and persistent relay exception
+  ansible.builtin.command:
+    argv: "{{ [powercell_firewalld_binary | default('firewall-cmd')] + (['--permanent'] if item else []) + ['--zone=' + powercell_selected_zone, '--query-port=' + (powercell_relay_port | string) + '/tcp'] }}"
+  loop: [false, true]
+  register: powercell_firewalld_queries
+  changed_when: false
+  failed_when: powercell_firewalld_queries.rc not in [0, 1]
+  check_mode: false
+  when: powercell_firewalld_active
+
+- name: Add missing firewalld runtime and persistent relay exceptions
+  ansible.builtin.command:
+    argv: "{{ [powercell_firewalld_binary | default('firewall-cmd')] + (['--permanent'] if item.item else []) + ['--zone=' + powercell_selected_zone, '--add-port=' + (powercell_relay_port | string) + '/tcp'] }}"
+  loop: "{{ powercell_firewalld_queries.results | default([]) }}"
+  loop_control:
+    label: "{{ 'persistent' if item.item else 'runtime' }}"
+  when:
+    - powercell_firewalld_active
+    - item.rc == 1
+  changed_when: true
+
+- name: Report an unmanaged or disabled host firewall
+  ansible.builtin.debug:
+    msg: No active UFW or firewalld detected; the playbook leaves the existing policy in place and checks public TCP reachability next.
+  when: not powercell_ufw_active and not powercell_firewalld_active

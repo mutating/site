@@ -1,0 +1,140 @@
+---
+# Explicit one-time administrator action after deploying the current release.
+# Uses the API domain's existing public TLS certificate; exposes TCP 8444 directly.
+- name: Enable Power Cell enrollment and authenticated relay
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    project_source: "{{ playbook_dir }}/../.."
+    certificate_path: /etc/letsencrypt/live/throng-mutating.tech
+    powercell_tls_lineage: "{{ certificate_path }}"
+    powercell_directory: /etc/throng/powercell
+    powercell_env_file: /etc/throng/throng.env
+    powercell_acme_url: https://api.mutating.tech/acme/powercell
+    powercell_relay_url: https://api.mutating.tech:8444
+    powercell_relay_host: 0.0.0.0
+    powercell_manage_firewall: true
+    powercell_firewalld_zone: ""
+    powercell_verify_external: true
+  handlers:
+    - name: Validate nginx
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      listen: powercell nginx changed
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      listen: powercell nginx changed
+  tasks:
+    - name: Require Debian or Ubuntu
+      ansible.builtin.assert:
+        that: ansible_facts.distribution in ['Debian', 'Ubuntu']
+
+    - name: Read the deployed supervisor
+      ansible.builtin.slurp:
+        src: /opt/mutating/current/deploy/run.py
+      register: deployed_supervisor
+
+    - name: Require the release that protects ACME capability URLs
+      ansible.builtin.assert:
+        that: "'--no-access-log' in (deployed_supervisor.content | b64decode)"
+        fail_msg: Deploy the current release first; the old API supervisor logs secret ACME URLs.
+
+    - name: Install issuer provisioning tools
+      ansible.builtin.apt:
+        name: [openssl, python3]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install the root-owned provisioning helper
+      ansible.builtin.copy:
+        src: "{{ project_source }}/deploy/powercell_setup.py"
+        dest: /usr/local/sbin/throng-powercell-setup
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Keep future activations from restoring unsafe ACME logging
+      ansible.builtin.copy:
+        src: "{{ project_source }}/deploy/activate.sh"
+        dest: /usr/local/sbin/mutating-activate
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install ACME log protection in the existing nginx hosts
+      ansible.builtin.template:
+        src: "{{ project_source }}/deploy/nginx.conf.j2"
+        dest: /etc/nginx/sites-available/throng
+        owner: root
+        mode: '0644'
+      notify: powercell nginx changed
+
+    - name: Provision the persistent issuer, recovery secret and relay TLS pair
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /usr/local/sbin/throng-powercell-setup
+          - configure
+          - --create-issuer
+          - --directory
+          - "{{ powercell_directory }}"
+          - --env-file
+          - "{{ powercell_env_file }}"
+          - --tls-lineage
+          - "{{ powercell_tls_lineage }}"
+          - --acme-url
+          - "{{ powercell_acme_url }}"
+          - --relay-url
+          - "{{ powercell_relay_url }}"
+          - --relay-host
+          - "{{ powercell_relay_host }}"
+      register: provisioning
+      changed_when: (provisioning.stdout | from_json).changed
+
+    - name: Install certificate renewal and relay restart hook
+      ansible.builtin.template:
+        src: "{{ project_source }}/deploy/powercell-renew.sh.j2"
+        dest: /etc/letsencrypt/renewal-hooks/deploy/throng-powercell
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Apply protected nginx routing
+      ansible.builtin.meta: flush_handlers
+
+    # This explicit administrative command also retries a previous failed
+    # activation when the files already contain their intended values.
+    - name: Activate the configured enrollment and relay
+      ansible.builtin.systemd_service:
+        name: throng.service
+        state: restarted
+
+    - name: Require both enrollment and relay capabilities from the running API
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8000/v1/agent-capabilities
+        return_content: true
+      register: capabilities
+      until:
+        - capabilities.status == 200
+        - "'powercell.enrollment.v1' in capabilities.json.extensions"
+        - "'powercell.relay.v1' in capabilities.json.extensions"
+        - capabilities.json.attestation_required
+      retries: 30
+      delay: 2
+
+    - name: Allow the relay in the active host firewall
+      ansible.builtin.include_tasks: tasks/powercell-firewall.yml
+      when: powercell_manage_firewall | bool
+
+    - name: Verify the public relay port from the Ansible controller
+      ansible.builtin.include_tasks: tasks/powercell-connectivity.yml
+      when: powercell_verify_external | bool
+
+    - name: Report the remaining enrollment check
+      ansible.builtin.debug:
+        msg: "Power Cell enabled at {{ powercell_relay_url }}. Host firewall management={{ powercell_manage_firewall | bool }}, external TCP check={{ powercell_verify_external | bool }}. Finish enrollment on a physical Mac."

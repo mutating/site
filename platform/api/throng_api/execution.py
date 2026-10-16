@@ -24,6 +24,7 @@ from throng_api.models import (
     new_id,
 )
 from throng_api.resource_ledger import change_resource
+from throng_api.workload_images import supports_image
 
 TERMINAL = frozenset({"completed", "cancelled", "timed_out", "isolate_failed", "failed"})
 TASK_TERMINAL = frozenset({"completed", "failed", "obsolete"})
@@ -528,9 +529,12 @@ async def tick(session, now, settings):
             (
                 candidate
                 for candidate in candidates
-                if not candidate.isolation_modes
-                or (isolate.isolation_mode or candidate.default_isolation)
-                in candidate.isolation_modes
+                if supports_image(candidate, isolate.image)
+                and (
+                    not candidate.isolation_modes
+                    or (isolate.isolation_mode or candidate.default_isolation)
+                    in candidate.isolation_modes
+                )
             ),
             None,
         )

@@ -191,7 +191,7 @@ jobs:
       - run: uv sync --project platform/web --frozen
       - run: npm ci
       - run: npx playwright install --with-deps chromium firefox webkit
-      - run: sudo apt-get update && sudo apt-get install -y nginx openssl
+      - run: sudo apt-get update && sudo apt-get install -y nginx openssl ansible
       - run: npm run build:web && npm run test:web:unit
       - name: Verify the native service and subdomain nginx routing
         run: uv run --project platform/api pytest -c platform/api/pyproject.toml -q tests/platform/api/deployment

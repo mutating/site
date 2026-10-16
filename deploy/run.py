@@ -77,7 +77,9 @@ def main():
         return child
 
     try:
-        api = launch("throng_api.app:app", arguments.api_port)
+        # ACME paths contain an enrollment capability. nginx keeps ordinary
+        # API access logs and suppresses those paths; Uvicorn must not log them.
+        api = launch("throng_api.app:app", arguments.api_port, ("--no-access-log",))
         deadline = time.monotonic() + 60
         while not stopping.is_set():
             if api.poll() is not None or time.monotonic() >= deadline:

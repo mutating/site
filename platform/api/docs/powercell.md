@@ -8,6 +8,15 @@ runtime cannot be created using the legacy `/computers` endpoint.
 
 ## Deployment
 
+For the existing native systemd deployment, first deploy the current release,
+then run `infra/playbooks/setup-powercell.yml` with administrative SSH access.
+It explicitly provisions the persistent issuer/recovery secret, updates the
+existing environment without replacing unrelated settings, installs the relay's
+TLS renewal hook, and checks discovery. See `docs/deployment.md` in the repository
+root. Its default relay is `https://api.mutating.tech:8444`, using the API's
+existing public TLS certificate; expose that port directly and preserve TLS.
+The following settings describe the equivalent manual configuration.
+
 Configure all four values together:
 
 ```dotenv
@@ -187,6 +196,46 @@ by the deployment, but forwarded certificate headers never bypass request proofs
 Only the API's own relay listener can supply the authenticated TLS identity.
 
 ## Capacity and isolation
+
+Optional extension `powercell.images.v1` adds
+`image_families: ["ghcr.io/actions/actions-runner"]` to discovery and capacity
+reports. Discovery `images` continues to list the built-in `ubuntu:24.04`.
+Only advertise the family after installing the host/guest runtime with OCI
+support. The scheduler sends public runner images with an explicit tag or
+`@sha256:<64 lowercase hex>` only to Power Cells advertising the family in
+their current session with networking enabled. Missing/empty families preserve
+old agents' Ubuntu-only behavior. Session clean-start clears the advertisement.
+The optional field lives in `capacity_report`, so no database migration is needed.
+
+For `POST /v1/isolates` with `runtime: "powercell-ubuntu-arm64-v1"`, `image`
+accepts these aliases in addition to full image references:
+
+| Alias | Full image reference |
+| --- | --- |
+| `ubuntu` | `ubuntu:24.04` |
+| `actions` | `ghcr.io/actions/actions-runner:latest` |
+
+Omitting `image` selects `ubuntu` (`ubuntu:24.04`). Explicit `null` or empty
+strings are rejected. An omitted image, `ubuntu` and `ubuntu:24.04` are equivalent
+for idempotency checks.
+
+Aliases are case-sensitive and expanded before storage, scheduling and
+idempotency checks. Isolate responses and agent tasks contain the full reference;
+retrying with the equivalent alias/full reference and the same idempotency key
+returns the same isolate. Discovery exposes this mapping as `image_aliases`.
+Other runtimes continue to interpret image names literally.
+`actions` follows the mutable `latest` tag; use a full reference with a version
+tag or digest when pinning is required. It requires the same advertised image
+support and enabled networking as an explicit runner reference.
+
+The updated Mac agent downloads the Linux ARM64 image with an anonymous,
+size-bounded, checksum-verified GHCR transport, then imports it with guest umoci
+inside the isolate's disk quota. Image user/working-directory/environment are
+honored; mounts/hooks/capabilities never override Power Cell security policy.
+Image commands use `cwd` relative to the image's working directory, while state
+archives and snapshots still cover `/workspace` only. The official runner image
+does not enable privileged commands or Docker service/container actions.
+Preparing the image does not register a GitHub runner or implement CI autoscaling.
 
 POST `/agent/v1/capacity` requires a live session and Idempotency-Key:
 
