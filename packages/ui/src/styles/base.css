@@ -1,0 +1,45 @@
+/* Page styling is opt-in: put tmc-page on body or a standalone surface. */
+.tmc-page {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+}
+.tmc-page, .tmc-page *, .tmc-page *::before, .tmc-page *::after {
+  box-sizing: border-box;
+}
+.tmc-page ::selection {
+  background: color-mix(in srgb, var(--hot) 55%, transparent);
+  color: #fff;
+}
+.tmc-shell {
+  width: min(var(--tmc-shell-width), calc(100% - 64px));
+  margin-inline: auto;
+}
+.tmc-surface {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--tmc-radius-panel);
+}
+.tmc-surface--raised { background: var(--surface-raised); }
+.tmc-eyebrow {
+  margin: 0;
+  color: var(--ink-muted);
+  font: 650 11px/1.4 var(--font-geist-mono), monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.tmc-text-link {
+  color: inherit;
+  font-size: 14px;
+  font-weight: 680;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+}
+.tmc-text-link:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--hot) 55%, transparent);
+  outline-offset: 3px;
+}
+@media (max-width: 860px) { .tmc-shell { width: min(calc(100% - 32px), 720px); } }
+@media (max-width: 580px) { .tmc-shell { width: calc(100% - 24px); } }

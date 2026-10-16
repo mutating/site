@@ -1,0 +1,35 @@
+.tmc-button {
+  box-sizing: border-box;
+  min-height: 58px;
+  padding: 0 22px;
+  border: 1px solid transparent;
+  border-radius: var(--tmc-radius-control);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  font: 720 14px var(--font-geist-sans), Arial, sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform var(--tmc-motion-fast) ease, box-shadow var(--tmc-motion-fast) ease;
+}
+.tmc-button:not(:disabled):not([aria-disabled="true"]):hover {
+  transform: translateY(-3px) rotate(-0.6deg);
+}
+.tmc-button--primary {
+  background: var(--hot);
+  color: #fff;
+  box-shadow: 0 16px 46px color-mix(in srgb, var(--hot) 25%, transparent);
+}
+.tmc-button--dark { background: #0b0709; color: #fff; }
+.tmc-button--secondary { border-color: var(--line); background: var(--surface); color: var(--ink); }
+.tmc-button--compact { min-height: 42px; padding: 8px 14px; gap: 12px; font-size: 13px; }
+.tmc-button:disabled, .tmc-button[aria-disabled="true"] { cursor: default; opacity: 0.5; }
+.tmc-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--hot) 55%, transparent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tmc-button { transition: none; }
+  .tmc-button:not(:disabled):not([aria-disabled="true"]):hover { transform: none; }
+}

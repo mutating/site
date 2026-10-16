@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@mutating/ui · Hugo fixture</title>
+    <link rel="stylesheet" href="/dist/styles/index.css"><link rel="stylesheet" href="/demo/demo.css">
+  </head>
+  <body class="tmc-page">
+    {{ partial "tmc-ui/header.html" (dict
+      "brand" (dict "href" "/")
+      "items" (slice (dict "id" "components" "href" "#components" "label" "Компоненты") (dict "id" "react" "href" "/react.html" "label" "React-версия"))
+      "navigationLabel" "Навигация"
+      "themeLabel" "Переключить тему"
+      "menuLabel" "Открыть меню"
+      "menuText" "Меню"
+      "language" (dict "current" "ru" "label" "Выбрать язык" "groupLabel" "Языки" "options" (slice (dict "code" "ru" "href" "#ru") (dict "code" "en" "href" "#en")))
+    ) }}
+    <main class="tmc-shell demo-content" id="components">
+      <h1>Шаблоны Hugo<span>.</span></h1>
+      <p>Текущая тема: <strong data-testid="theme"></strong>.</p>
+      <div class="demo-row">
+        {{ partial "tmc-ui/button.html" (dict "text" "Действие →") }}
+        {{ partial "tmc-ui/button.html" (dict "text" "Недоступна" "disabled" true) }}
+        {{ partial "tmc-ui/button.html" (dict "text" "Вторичная" "variant" "secondary" "size" "compact" "href" "#components") }}
+      </div>
+      <p>Выполнено действий: <span data-testid="count">0</span></p>
+    </main>
+    <script type="module">
+      import { createThemeController, mountHeader } from "/dist/index.js";
+      const theme = createThemeController();
+      mountHeader(document.querySelector(".tmc-header-shell"), { theme });
+      const label = document.querySelector('[data-testid="theme"]');
+      label.textContent = theme.getTheme();
+      theme.subscribe((value) => { label.textContent = value; });
+      let count = 0;
+      document.querySelector(".tmc-button").addEventListener("click", () => {
+        document.querySelector('[data-testid="count"]').textContent = String(++count);
+      });
+    </script>
+  </body>
+</html>

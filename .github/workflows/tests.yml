@@ -15,6 +15,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ui:
+    name: Shared UI library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: peaceiris/actions-hugo@v3.2.0
+        with:
+          hugo-version: "0.164.0"
+          extended: true
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: shared-ui-playwright
+          path: packages/ui/test-results
+
   seo_contracts:
     name: SEO contracts
     runs-on: ubuntu-latest

@@ -3,9 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
+    "packages/ui",
     "platform/web"
   ],
   "scripts": {
+    "build:ui": "npm run build --workspace @mutating/ui",
+    "dev:ui": "npm run dev --workspace @mutating/ui",
+    "test:ui": "npm run test --workspace @mutating/ui",
     "build:site": "hugo --source site --cleanDestinationDir --minify --environment production",
     "build:web": "npm run build --workspace platform/web",
     "test:web:unit": "npm run test:unit --workspace platform/web",

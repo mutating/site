@@ -1,0 +1,117 @@
+---
+# Build web/site locally, then provide a code-only archive and immutable release ID.
+# Activation uses the existing backup/migration/health-check wrapper installed by Ansible.
+- name: Deploy a prepared platform release
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    deploy_user: user
+    release_root: /opt/mutating/releases
+  tasks:
+    - name: Validate release arguments
+      ansible.builtin.assert:
+        that:
+          - release_id is defined
+          - release_id is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+          - release_archive is defined
+
+    - name: Capture the current release before staging
+      ansible.builtin.command:
+        argv: [readlink, -f, /opt/mutating/current]
+      register: previous_release
+      changed_when: false
+
+    - name: Check the immutable destination
+      ansible.builtin.stat:
+        path: "{{ release_root }}/{{ release_id }}"
+      register: release_destination
+
+    - name: Require an unused release ID
+      ansible.builtin.assert:
+        that: not release_destination.stat.exists
+        fail_msg: Choose a new immutable release_id instead of changing an existing release.
+
+    - name: Upload the code archive
+      ansible.builtin.copy:
+        src: "{{ release_archive }}"
+        dest: "{{ release_root }}/{{ release_id }}.tar.gz"
+        owner: "{{ deploy_user }}"
+        mode: '0644'
+
+    - name: Create the staging directory
+      ansible.builtin.file:
+        path: "{{ release_root }}/{{ release_id }}.uploading"
+        state: directory
+        owner: "{{ deploy_user }}"
+        mode: '0755'
+
+    - name: Unpack the prepared code
+      ansible.builtin.unarchive:
+        src: "{{ release_root }}/{{ release_id }}.tar.gz"
+        dest: "{{ release_root }}/{{ release_id }}.uploading"
+        remote_src: true
+        owner: "{{ deploy_user }}"
+
+    - name: Preserve the existing static site for an API-only release
+      ansible.builtin.command:
+        argv:
+          - cp
+          - -a
+          - "{{ previous_release.stdout }}/site/public"
+          - "{{ release_root }}/{{ release_id }}.uploading/site/public"
+      when: release_reuse_static_site | default(false) | bool
+
+    - name: Publish the immutable directory
+      ansible.builtin.command:
+        argv:
+          - mv
+          - "{{ release_root }}/{{ release_id }}.uploading"
+          - "{{ release_root }}/{{ release_id }}"
+
+    - name: Assign ownership of implicit archive directories to the deployment user
+      ansible.builtin.file:
+        path: "{{ release_root }}/{{ release_id }}"
+        state: directory
+        recurse: true
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+
+    - name: Prepare the Python environment as the deployment user
+      become_user: "{{ deploy_user }}"
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/uv
+          - sync
+          - --project
+          - "{{ release_root }}/{{ release_id }}/platform/api"
+          - --frozen
+          - --no-dev
+          - --python
+          - '3.12'
+      environment:
+        UV_PYTHON_INSTALL_DIR: /opt/mutating/python
+
+    - name: Make the code and environment readable by the runtime account
+      ansible.builtin.command:
+        argv: [chmod, -R, a+rX, "{{ release_root }}/{{ release_id }}"]
+
+    - name: Activate with SQLite backup and a concurrent-deployment guard
+      ansible.builtin.command:
+        argv: [/usr/local/sbin/mutating-activate, "{{ release_id }}"]
+      environment:
+        MUTATING_EXPECTED_CURRENT: "{{ previous_release.stdout }}"
+      register: activation
+
+    - name: Verify the API and dashboard
+      ansible.builtin.uri:
+        url: "{{ item }}"
+      loop:
+        - http://127.0.0.1:8000/health/ready
+        - http://127.0.0.1:8001/login
+
+    - name: Remove the uploaded archive after successful activation
+      ansible.builtin.file:
+        path: "{{ release_root }}/{{ release_id }}.tar.gz"
+        state: absent

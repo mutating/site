@@ -165,6 +165,29 @@ def api_requests(
         ("GET", "/v1/users/me", "read", {}),
         ("GET", "/v1/auth/session", "read", {}),
         ("GET", "/v1/organization-directory", "read", {}),
+        ("GET", "/v1/github/status", "read", {}),
+        ("POST", "/v1/github/authorize", "manage", {}),
+        ("POST", "/v1/github/installations/authorize", "manage", {}),
+        ("GET", "/v1/github/installations", "read", {}),
+        ("GET", "/v1/github/installations/{installation_id}/repositories", "read", {}),
+        ("DELETE", "/v1/github/connection", "manage", {}),
+        ("GET", "/v1/github/routes", "read", {}),
+        (
+            "POST",
+            "/v1/github/routes",
+            "manage",
+            {
+                "json": {
+                    "installation_id": 123,
+                    "repository_id": 456,
+                    "workflow_path": ".github/workflows/ci.yml",
+                    "job_key": "test",
+                }
+            },
+        ),
+        ("DELETE", "/v1/github/routes/{route_id}", "manage", {}),
+        ("GET", "/v1/github/routes/{route_id}/runs", "read", {}),
+        ("GET", "/v1/github/routes/{route_id}/workflow", "read", {}),
         ("GET", "/v1/users/me/avatar", "read", {}),
         ("PUT", "/v1/users/me/avatar", "manage", {"content": b"avatar"}),
         ("DELETE", "/v1/users/me/avatar", "manage", {}),
@@ -374,6 +397,8 @@ def api_requests(
     identifiers["token"] = "inv_" + "x" * 43
     identifiers["enrollment_id"] = str(uuid4())
     identifiers["diagnostic_id"] = str(uuid4())
+    identifiers["installation_id"] = 123
+    identifiers["route_id"] = str(uuid4())
     requests.extend(
         [
             (

@@ -1,0 +1,14 @@
+{{- $current := .current -}}
+{{- $maxLength := len $current -}}
+{{- range .options -}}{{- $maxLength = math.Max $maxLength (len .code) -}}{{- end -}}
+{{- $width := math.Max 48 (add 24 (mul $maxLength 7)) -}}
+<details class="tmc-language-switcher tmc-language-switcher--{{ .variant | default "standalone" }}" style="--tmc-language-switcher-desktop-width: {{ $width }}px"{{ with .storageKey }} data-tmc-language-storage-key="{{ . }}"{{ end }}>
+  <summary aria-label="{{ .label | default "Choose language" }}"><span>{{ upper $current }}</span></summary>
+  <div class="tmc-language-switcher__list" role="group" aria-label="{{ .groupLabel | default "Languages" }}">
+    {{- range .options -}}
+      {{- if ne .code $current -}}
+        <a class="tmc-language-switcher__option" href="{{ .href }}" lang="{{ .code }}" hreflang="{{ .code }}" data-language-option="{{ .code }}">{{ .label | default (upper .code) }}</a>
+      {{- end -}}
+    {{- end -}}
+  </div>
+</details>

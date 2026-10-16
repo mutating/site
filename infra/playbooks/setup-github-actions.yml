@@ -1,0 +1,120 @@
+---
+# Run after deploying the GitHub-enabled API. Keep the credentials JSON outside Git.
+# ansible-playbook -i 'SERVER_IP,' infra/playbooks/setup-github-actions.yml -u root \
+#   -e github_credentials_file=/private/path/github-app.json
+- name: Configure the platform GitHub App
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    github_directory: /etc/throng/github
+    github_env_file: /etc/throng/throng.env
+    github_release_directory: /opt/mutating/current
+  handlers:
+    - name: Restart the platform with GitHub credentials
+      ansible.builtin.systemd_service:
+        name: throng.service
+        state: restarted
+  tasks:
+    - name: Require a private local credentials file
+      ansible.builtin.assert:
+        that: github_credentials_file is defined
+        fail_msg: Pass github_credentials_file pointing to a private JSON file outside the checkout.
+
+    - name: Load credentials without logging their values
+      ansible.builtin.include_vars:
+        file: "{{ github_credentials_file }}"
+        name: github_app
+      no_log: true
+
+    - name: Validate the complete credential bundle
+      ansible.builtin.assert:
+        that:
+          - github_app.app_id | int > 0
+          - github_app.slug is match('^[a-z0-9-]{1,100}$')
+          - github_app.client_id | length > 0
+          - github_app.client_secret is match('^[A-Za-z0-9_-]+$')
+          - github_app.webhook_secret is match('^[A-Za-z0-9_-]{32,}$')
+          - github_app.token_key is match('^[A-Za-z0-9_-]{43}=$')
+          - github_app.private_key_path | length > 0
+          - github_app.public_api_url is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+          - github_app.dashboard_url is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+      no_log: true
+
+    - name: Check the active release supports GitHub
+      ansible.builtin.stat:
+        path: "{{ github_release_directory }}/platform/api/throng_api/github.py"
+      register: github_module
+
+    - name: Require the GitHub-enabled release before changing configuration
+      ansible.builtin.assert:
+        that: github_module.stat.isreg | default(false)
+        fail_msg: Deploy the GitHub-enabled API release before configuring its credentials.
+
+    - name: Read the existing environment privately
+      ansible.builtin.slurp:
+        src: "{{ github_env_file }}"
+      register: existing_environment
+      no_log: true
+
+    - name: Prevent accidental replacement of the persistent encryption key or App identity
+      ansible.builtin.assert:
+        that:
+          - "(existing_environment.content | b64decode | regex_findall('(?m)^THRONG_GITHUB_TOKEN_KEY=(.*)$')) | difference([github_app.token_key]) | length == 0"
+          - "(existing_environment.content | b64decode | regex_findall('(?m)^THRONG_GITHUB_APP_ID=(.*)$')) | difference([github_app.app_id | string]) | length == 0"
+        fail_msg: GitHub App or token encryption key differs; perform an explicit migration instead of overwriting saved credentials.
+      no_log: true
+
+    - name: Create the protected App key directory
+      ansible.builtin.file:
+        path: "{{ github_directory }}"
+        state: directory
+        owner: root
+        group: throng
+        mode: '0750'
+
+    - name: Install the App private key for the runtime account
+      ansible.builtin.copy:
+        src: "{{ github_app.private_key_path }}"
+        dest: "{{ github_directory }}/app.pem"
+        owner: root
+        group: throng
+        mode: '0640'
+      no_log: true
+      diff: false
+      notify: Restart the platform with GitHub credentials
+
+    - name: Manage GitHub settings while preserving database and Power Cell settings
+      ansible.builtin.blockinfile:
+        path: "{{ github_env_file }}"
+        marker: '# {mark} ANSIBLE MANAGED GITHUB APP'
+        backup: true
+        owner: root
+        group: throng
+        mode: '0640'
+        block: |
+          THRONG_GITHUB_APP_ID={{ github_app.app_id }}
+          THRONG_GITHUB_APP_SLUG={{ github_app.slug }}
+          THRONG_GITHUB_CLIENT_ID={{ github_app.client_id }}
+          THRONG_GITHUB_CLIENT_SECRET={{ github_app.client_secret }}
+          THRONG_GITHUB_PRIVATE_KEY_PATH={{ github_directory }}/app.pem
+          THRONG_GITHUB_WEBHOOK_SECRET={{ github_app.webhook_secret }}
+          THRONG_GITHUB_TOKEN_KEY={{ github_app.token_key }}
+          THRONG_GITHUB_PUBLIC_API_URL={{ github_app.public_api_url }}
+          THRONG_GITHUB_DASHBOARD_URL={{ github_app.dashboard_url }}
+      no_log: true
+      diff: false
+      notify: Restart the platform with GitHub credentials
+
+    - name: Activate changed configuration
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for the API after configuration
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8000/health/ready
+      register: github_readiness
+      until: github_readiness.status == 200
+      retries: 20
+      delay: 1
+      when: not ansible_check_mode

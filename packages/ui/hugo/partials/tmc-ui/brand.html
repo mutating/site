@@ -1,0 +1,14 @@
+<a class="tmc-brand" href="{{ .href | default "/" }}" aria-label="{{ .label | default "The Mutating Company" }}"{{ with .animation }} data-tmc-brand-options="{{ . | jsonify }}"{{ end }}>
+  <span class="tmc-brand__mark tmc-brand__mark--eye" aria-hidden="true">
+    <span class="tmc-eye"><span class="tmc-eye__clip">
+      <span class="tmc-eye__outline"></span><span class="tmc-eye__surface"></span><span class="tmc-eye__pupil"></span>
+    </span></span>
+  </span>
+  <span class="tmc-brand__wordmark-stage" data-can-expand="true" aria-hidden="true">
+    <span class="tmc-brand__wordmark">
+      <span class="tmc-brand__word-part tmc-brand__word-part--t"><span class="tmc-brand__word-anchor">T</span><span class="tmc-brand__word-reveal" data-text="he">he</span></span>
+      <span class="tmc-brand__word-part tmc-brand__word-part--m"><span class="tmc-brand__word-anchor">M</span><span class="tmc-brand__word-reveal" data-text="utating">utating</span></span>
+      <span class="tmc-brand__word-part"><span class="tmc-brand__word-anchor">C</span><span class="tmc-brand__word-reveal" data-text="ompany">ompany</span></span>
+    </span>
+  </span>
+</a>

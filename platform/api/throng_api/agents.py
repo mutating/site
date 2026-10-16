@@ -27,7 +27,7 @@ from throng_api.execution import (
     replay,
     task_for_agent,
 )
-from throng_api.models import AgentTask, Artifact, Command, Isolate, TaskArtifact
+from throng_api.models import AgentTask, Artifact, CIReservation, Command, Isolate, TaskArtifact
 from throng_api.schemas import Claim, SessionStart, TaskComplete
 from throng_api.security import agent_auth, agent_credential_scheme, renew_agent
 from throng_api.serialization import public
@@ -51,6 +51,35 @@ AGENT_SESSION_DOCS = {
         }
     ]
 }
+
+
+async def delivery_payload(session, task, request):
+    """Decrypt runner configuration only for its authenticated assigned agent."""
+    result = public(task)
+    if task.kind != "run":
+        return result
+    reservation = await session.scalar(
+        select(CIReservation).where(CIReservation.command_id == task.command_id)
+    )
+    if reservation is None:
+        return result
+    if task.status in TASK_TERMINAL:
+        return result
+    now = request.app.state.clock()
+    if (
+        request.app.state.github is None
+        or not reservation.credentials
+        or reservation.status not in {"preparing", "ready", "selected", "running"}
+        or reservation.expires_at <= now
+        or (reservation.status in {"preparing", "ready"} and reservation.deadline <= now)
+    ):
+        return None
+    credentials = request.app.state.github.unseal(reservation.credentials)
+    result["payload"] = {
+        **task.payload,
+        "env": {**task.payload.get("env", {}), "POWERCELL_GITHUB_JIT_CONFIG": credentials["jit"]},
+    }
+    return result
 
 
 def session_info(computer, now):
@@ -164,10 +193,16 @@ async def claim(data: Claim, request: Request):
                     .limit(data.limit)
                 )
             ).all()
+            delivered = []
             for task in tasks:
+                payload = await delivery_payload(session, task, request)
+                if payload is None:
+                    continue
                 task.status = "dispatched"
                 task.delivered_at = task.delivered_at or now
-            response = {**session_info(computer, now), "tasks": [public(task) for task in tasks]}
+                payload.update(status=task.status, delivered_at=task.delivered_at)
+                delivered.append(payload)
+            response = {**session_info(computer, now), "tasks": delivered}
         if tasks or time.monotonic() >= until:
             return response
         if await request.is_disconnected():
@@ -179,7 +214,11 @@ async def claim(data: Claim, request: Request):
 async def get_task(task_id: UUID, request: Request):
     async with request.app.state.db.read() as session:
         computer = await agent_auth(session, request)
-        return public(await task_for_agent(session, task_id, computer))
+        task = await task_for_agent(session, task_id, computer)
+        result = await delivery_payload(session, task, request)
+        if result is None:
+            raise HTTPException(409, "CI task no longer accepts delivery")
+        return result
 
 
 @router.post("/tasks/{task_id}/ack", response_model=out.AgentTask, openapi_extra=AGENT_SESSION_DOCS)

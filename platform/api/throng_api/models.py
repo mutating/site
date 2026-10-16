@@ -552,3 +552,85 @@ class Idempotency(Base):
     request_hash: Mapped[str] = mapped_column(String(64))
     resource_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+
+class GitHubAccount(Base):
+    """User tokens are encrypted; App credentials are kept in server configuration."""
+
+    __tablename__ = "github_accounts"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    github_user_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    login: Mapped[str] = mapped_column(String(100))
+    tokens: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    refresh_nonce: Mapped[str | None] = mapped_column(String(64))
+    refresh_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class GitHubOAuthFlow(Base):
+    """One-time state tied to the initiating user session, including installation flows."""
+
+    __tablename__ = "github_oauth_flows"
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    session_hash: Mapped[str] = mapped_column(String(64))
+    purpose: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
+
+
+class CIRoute(Identity, Ownership, Base):
+    """An explicitly authorized repository/workflow/job to resource-pool binding."""
+
+    __tablename__ = "ci_routes"
+    __table_args__ = (owner_check(),)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    installation_id: Mapped[int] = mapped_column(BigInteger)
+    repository_id: Mapped[int] = mapped_column(BigInteger)
+    repository_owner_id: Mapped[int] = mapped_column(BigInteger)
+    repository: Mapped[str] = mapped_column(String(250))
+    workflow_path: Mapped[str] = mapped_column(String(250))
+    ref: Mapped[str] = mapped_column(String(250))
+    job_key: Mapped[str] = mapped_column(String(100))
+    computer_ids: Mapped[list] = mapped_column(JSON)
+    cpu_millis: Mapped[int] = mapped_column(Integer)
+    memory_bytes: Mapped[int] = mapped_column(BigInteger)
+    disk_bytes: Mapped[int] = mapped_column(BigInteger)
+    preparation_seconds: Mapped[int] = mapped_column(Integer)
+    timeout_seconds: Mapped[int] = mapped_column(Integer)
+    max_parallel: Mapped[int] = mapped_column(Integer)
+    fallback: Mapped[str] = mapped_column(String(100))
+    state_artifact_id: Mapped[str] = mapped_column(ForeignKey("artifacts.id"))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CIReservation(Identity, Base):
+    """Durable decision; runner credentials are encrypted separately from Command/env."""
+
+    __tablename__ = "ci_reservations"
+    __table_args__ = (UniqueConstraint("route_id", "run_id", "run_attempt", "instance"),)
+    route_id: Mapped[str] = mapped_column(ForeignKey("ci_routes.id"), index=True)
+    run_id: Mapped[int] = mapped_column(BigInteger)
+    run_attempt: Mapped[int] = mapped_column(Integer)
+    instance: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(24), default="preparing", index=True)
+    reason: Mapped[str | None] = mapped_column(String(100))
+    label: Mapped[str] = mapped_column(String(100), unique=True)
+    isolate_id: Mapped[str | None] = mapped_column(ForeignKey("isolates.id"), unique=True)
+    command_id: Mapped[str | None] = mapped_column(ForeignKey("commands.id"), unique=True)
+    runner_id: Mapped[int | None] = mapped_column(BigInteger)
+    credentials: Mapped[str | None] = mapped_column(Text)
+    deadline: Mapped[datetime] = mapped_column(UTCDateTime())
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    fallback: Mapped[str] = mapped_column(String(100))
+    lease_nonce: Mapped[str | None] = mapped_column(String(64))
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    next_check: Mapped[datetime] = mapped_column(UTCDateTime())
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    cleaned_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class GitHubDelivery(Base):
+    __tablename__ = "github_deliveries"
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)

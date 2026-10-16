@@ -36,6 +36,7 @@ dev = [
     "anyio>=4,<5",
     "ruff>=0.9,<1",
     "pytest-cov>=7.1,<8",
+    "pyyaml>=6,<7",
 ]
 
 [project.scripts]

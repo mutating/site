@@ -2,7 +2,18 @@ from sqlalchemy import inspect
 
 from throng_api.models import Computer
 
-HIDDEN = {"password_hash", "token_hash", "storage_key", "avatar_data", "name_search"}
+HIDDEN = {
+    "password_hash",
+    "token_hash",
+    "storage_key",
+    "avatar_data",
+    "name_search",
+    "credentials",
+    "tokens",
+    "state_hash",
+    "session_hash",
+    "refresh_nonce",
+}
 
 
 def public(row):

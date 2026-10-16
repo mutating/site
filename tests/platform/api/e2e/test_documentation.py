@@ -35,11 +35,16 @@ async def test_openapi_security_matches_public_and_protected_operations(client):
         ("/v1/auth/session", "delete"),
         ("/health/live", "get"),
         ("/v1/agent-capabilities", "get"),
+        ("/v1/github/oauth/callback", "get"),
+        ("/v1/github/installations/callback", "get"),
+        ("/v1/github/webhook", "post"),
         ("/health/ready", "get"),
     }
     for path, operations in schema["paths"].items():
         for method, operation in operations.items():
-            if (path, method) in public or path.startswith("/acme/"):
+            if path.startswith("/v1/github/ci/"):
+                assert operation["security"] == [{"GitHubActionsOIDC": []}]
+            elif (path, method) in public or path.startswith("/acme/"):
                 assert not operation.get("security"), (path, method)
             else:
                 expected = (

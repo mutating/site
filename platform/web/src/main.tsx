@@ -23,6 +23,7 @@ import { Organization } from "./pages/Organization";
 import { Invitation } from "./pages/Invitation";
 import { Profile } from "./pages/Profile";
 import { Cloud } from "./pages/Cloud";
+import { Actions } from "./pages/Actions";
 import "./styles/brand.css";
 import "./styles/app.css";
 function Guard() {
@@ -83,6 +84,7 @@ function App() {
           <Route path="invitations/:token" element={<Invitation />} />
           <Route path="profile" element={<Profile />} />
           <Route path="cloud" element={<Cloud />} />
+          <Route path="actions" element={<Actions />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

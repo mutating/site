@@ -2780,3 +2780,14 @@ a.organization-metric:hover {
     width: 100%;
   }
 }
+.actions-panels { display: grid; gap: 24px; }
+.actions-connection, .actions-repositories { padding: 28px; }
+.actions-connection, .actions-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.actions-connection h2, .actions-section-heading h2 { margin: 0 0 10px; }
+.actions-section-heading { margin-bottom: 24px; }
+.actions-repository-list { display: grid; margin-top: 20px; }
+.actions-repository { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.actions-ci-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; margin-block: 24px; }
+.actions-ci-form > p { grid-column: 1 / -1; }
+.actions-ci-detail { margin-top: 24px; }
+.actions-ci-detail textarea { width: 100%; resize: vertical; font-family: var(--font-mono, monospace); font-size: 12px; }

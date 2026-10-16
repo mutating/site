@@ -13,6 +13,8 @@ from throng_api.models import (
     CPU_RESOURCE_ID,
     MEMORY_RESOURCE_ID,
     AgentTask,
+    CIReservation,
+    CIRoute,
     Command,
     CommandResult,
     Computer,
@@ -484,6 +486,15 @@ async def tick(session, now, settings):
         )
     ).all()
     for isolate in waiting:
+        ci = await session.scalar(
+            select(CIReservation).where(CIReservation.isolate_id == isolate.id)
+        )
+        route = await session.get(CIRoute, ci.route_id) if ci else None
+        if ci:
+            from throng_api.ci import creator_authorized
+
+            if ci.status != "preparing" or not await creator_authorized(session, route):
+                continue
         cpu, memory = aliased(ComputerResource), aliased(ComputerResource)
         owner_match = (
             ComputerOwnership.user_id == isolate.user_id
@@ -514,6 +525,7 @@ async def tick(session, now, settings):
                 Computer.os == isolate.os,
                 Computer.architecture == isolate.architecture,
                 Computer.runtime == isolate.runtime,
+                Computer.id.in_(route.computer_ids) if route and route.computer_ids else True,
                 func.coalesce(Computer.target_cpu, cpu.total) - cpu.occupied >= isolate.cpu_millis,
                 func.coalesce(Computer.target_memory, memory.total) - memory.occupied
                 >= isolate.memory_bytes,

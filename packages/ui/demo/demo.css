@@ -1,0 +1,13 @@
+/* Showcase layout only; these rules are not part of the library. */
+.demo-content { padding-block: 72px 100px; max-width: 1060px; }
+.demo-content h1 { margin: 16px 0 24px; font-size: clamp(38px, 6vw, 76px); font-weight: 780; line-height: 1.02; letter-spacing: -0.065em; }
+.demo-content h1 span { color: var(--hot); }
+.demo-content p { max-width: 700px; line-height: 1.6; color: var(--ink-muted); }
+.demo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-block: 40px; }
+.demo-panel { padding: 28px; }
+.demo-panel h2 { margin-top: 0; font-size: 22px; letter-spacing: -0.04em; }
+.demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+.demo-swatch { display: grid; gap: 10px; font: 11px var(--font-geist-mono), monospace; color: var(--ink-muted); }
+.demo-swatch i { width: 68px; height: 68px; border-radius: 14px; border: 1px solid var(--line); }
+.demo-footer { border-top: 1px solid var(--line); padding-top: 24px; }
+@media (max-width: 760px) { .demo-grid { grid-template-columns: 1fr; } .demo-content { padding-top: 48px; } .demo-panel { padding: 22px; } }

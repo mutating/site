@@ -16,6 +16,13 @@ async def test_authentication_matrix_covers_all_protected_operations(
     public = {
         ("GET", "/health/live"),
         ("GET", "/v1/agent-capabilities"),
+        ("GET", "/v1/github/oauth/callback"),
+        ("GET", "/v1/github/installations/callback"),
+        ("POST", "/v1/github/webhook"),
+        # Uses GitHub OIDC rather than platform tokens; adversarial claims are tested separately.
+        ("POST", "/v1/github/ci/routes/{route_id}/reserve"),
+        ("POST", "/v1/github/ci/routes/{route_id}/commit"),
+        ("POST", "/v1/github/ci/routes/{route_id}/cancel"),
         ("GET", "/health/ready"),
         ("POST", "/v1/users"),
         ("POST", "/v1/auth/login"),

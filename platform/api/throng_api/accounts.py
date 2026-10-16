@@ -9,6 +9,8 @@ from throng_api.models import (
     AccessToken,
     Company,
     CompanyInvitation,
+    GitHubAccount,
+    GitHubOAuthFlow,
     Membership,
     TokenOwnership,
     User,
@@ -192,6 +194,10 @@ async def delete_user(user_id: UUID, request: Request):
         ):
             raise HTTPException(409, "Leave company memberships before deleting the user")
         owners = select(TokenOwnership.id).where(TokenOwnership.user_id == str(user_id))
+        await session.execute(
+            delete(GitHubOAuthFlow).where(GitHubOAuthFlow.user_id == str(user_id))
+        )
+        await session.execute(delete(GitHubAccount).where(GitHubAccount.user_id == str(user_id)))
         await session.execute(delete(AccessToken).where(AccessToken.ownership_id.in_(owners)))
         await session.execute(delete(TokenOwnership).where(TokenOwnership.user_id == str(user_id)))
         await session.delete(await session.get(User, str(user_id)))

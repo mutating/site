@@ -5,6 +5,8 @@ import { useSession } from "../lib/session";
 import { api, apiURL, json } from "../lib/api";
 import { ErrorBox, Icon } from "./UI";
 import { Brand } from "./Brand";
+import { useData } from "../lib/useData";
+import type { GitHubStatus } from "../lib/github";
 
 const siteOrigin = import.meta.env.VITE_SITE_ORIGIN || "https://mutating.tech";
 
@@ -64,12 +66,17 @@ export function Layout() {
   const { user, setUser } = useSession();
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const github = useData(
+    (signal) => api<GitHubStatus>("github/status", { signal }),
+    user!.id,
+  );
   const links: [string, MessageKey | "Power Cells", string][] = [
     ["/", "home", "grid"],
     ["/power-cells", "Power Cells", "cells"],
     ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
   ];
+  if (github.data?.enabled) links.splice(2, 0, ["/actions", "actions", "play"]);
   const accountActions = (
     <>
       <Link className="account-action account-profile" to="/profile">
