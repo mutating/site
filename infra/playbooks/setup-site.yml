@@ -21,6 +21,7 @@
     deploy_user: user
     deploy_group: user
     local_site_path: "{{ playbook_dir }}/../../site"
+    local_ui_path: "{{ local_site_path }}/../packages/ui"
     source_path: /opt/mutating.tech
     source_staging_path: /var/tmp/mutating-tech-source-sync
     deploy_path: /var/www/mutating.tech
@@ -122,14 +123,29 @@
         - { path: "{{ acme_webroot }}/.well-known/acme-challenge", owner: root, group: root, mode: '0755' }
         - { path: /etc/letsencrypt/renewal-hooks/deploy, owner: root, group: root, mode: '0755' }
 
-    - name: Create remote source synchronization staging directory
+    - name: Build the shared UI locally before source synchronization
+      tags:
+        - source_sync
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: npm run build:ui
+      args:
+        chdir: "{{ local_ui_path }}/../.."
+      changed_when: true
+
+    - name: Create remote source synchronization staging directories
       tags:
         - source_sync
       ansible.builtin.file:
-        path: "{{ source_staging_path }}"
+        path: "{{ item }}"
         state: directory
         owner: "{{ ansible_user }}"
         mode: '0700'
+      loop:
+        - "{{ source_staging_path }}"
+        - "{{ source_staging_path }}/site"
+        - "{{ source_staging_path }}/packages/ui"
 
     - name: Synchronize the local site checkout to the server
       tags:
@@ -137,7 +153,7 @@
       become: false
       ansible.posix.synchronize:
         src: "{{ local_site_path }}/"
-        dest: "{{ source_staging_path }}/"
+        dest: "{{ source_staging_path }}/site/"
         archive: true
         checksum: true
         compress: true
@@ -157,6 +173,27 @@
           - --exclude=/.pytest_cache/
           - --exclude=/.hugo_build.lock
           - --exclude=/.DS_Store
+
+    - name: Synchronize shared UI templates and distribution to the server
+      tags:
+        - source_sync
+      become: false
+      ansible.posix.synchronize:
+        src: "{{ local_ui_path }}/{{ item }}/"
+        dest: "{{ source_staging_path }}/packages/ui/{{ item }}/"
+        archive: true
+        checksum: true
+        compress: true
+        delete: true
+        owner: false
+        group: false
+        perms: false
+        times: false
+        use_ssh_args: true
+        ssh_connection_multiplexing: true
+      loop:
+        - hugo
+        - dist
 
     - name: Promote the synchronized checkout into the source directory
       tags:
@@ -333,7 +370,7 @@
                   add_header Cache-Control "no-cache" always;
               }
 
-              location ~* "^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
+              location ~* "^/(?:css|js|ui/styles)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
                   try_files $uri =404;
                   add_header Cache-Control "public, max-age=31536000, immutable" always;
                   add_header X-Content-Type-Options "nosniff" always;
@@ -525,7 +562,7 @@
                   add_header Referrer-Policy "strict-origin-when-cross-origin" always;
               }
 
-              location ~* "^/(?:css|js)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
+              location ~* "^/(?:css|js|ui/styles)/.+\.[0-9a-f]{64}\.(?:css|js)$" {
                   try_files $uri =404;
                   add_header Cache-Control "public, max-age=31536000, immutable" always;
                   add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
@@ -579,7 +616,7 @@
         --baseURL "https://{{ site_domain }}/"
         --destination "{{ deploy_path }}"
       args:
-        chdir: "{{ source_path }}"
+        chdir: "{{ source_path }}/site"
       changed_when: true
 
     - name: Install initial certificate bootstrap script
