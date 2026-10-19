@@ -37,7 +37,6 @@ export type CIRoute = {
   preparation_seconds: number;
   timeout_seconds: number;
   max_parallel: number;
-  fallback: string;
   enabled: boolean;
 };
 export type CIRun = {

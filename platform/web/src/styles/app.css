@@ -2781,13 +2781,56 @@ a.organization-metric:hover {
   }
 }
 .actions-panels { display: grid; gap: 24px; }
-.actions-connection, .actions-repositories { padding: 28px; }
+.actions-connection, .actions-repositories { padding: 28px; min-width: 0; }
 .actions-connection, .actions-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .actions-connection h2, .actions-section-heading h2 { margin: 0 0 10px; }
 .actions-section-heading { margin-bottom: 24px; }
 .actions-repository-list { display: grid; margin-top: 20px; }
 .actions-repository { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.actions-repository > div:first-child { min-width: 0; }
+.actions-panels .form-actions { flex-wrap: wrap; margin-top: 0; }
+.actions-repository .form-actions { flex-shrink: 0; }
+.actions-repository .button { overflow-wrap: normal; }
+.actions-repository.is-selected { border-bottom-color: var(--hot); }
 .actions-ci-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; margin-block: 24px; }
+.actions-ci-form .field { margin-bottom: 0; }
+.actions-ci-computers { min-width: 0; }
+.actions-ci-computers .text-button { margin-top: 8px; }
+.actions-ci-computers .field-help { margin-top: 8px; }
+.actions-ci-create { margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.actions-ci-create > summary { cursor: pointer; font-weight: 650; }
+.actions-ci-create > summary:focus-visible { outline: 2px solid var(--hot); outline-offset: 6px; }
+.actions-ci-create > p { margin-top: 16px; }
+.actions-ci-binding-state { font-weight: 650; }
+.actions-ci-binding-state[data-enabled="true"] { color: var(--success); }
+.actions-ci-form > .button { justify-self: start; }
 .actions-ci-form > p { grid-column: 1 / -1; }
-.actions-ci-detail { margin-top: 24px; }
-.actions-ci-detail textarea { width: 100%; resize: vertical; font-family: var(--font-mono, monospace); font-size: 12px; }
+.actions-ci-detail { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+.actions-ci-detail h3 { margin: 0; }
+.actions-ci-detail h4 { margin: 24px 0 12px; }
+.actions-ci-steps { padding-left: 24px; }
+.actions-ci-steps li + li { margin-top: 8px; }
+.actions-ci-detail h3:focus, .actions-ci-feedback:focus { outline: none; }
+.actions-ci-detail h3, .actions-ci-feedback { scroll-margin-top: 110px; }
+.actions-ci-context { margin: 12px 0; overflow-wrap: anywhere; }
+.actions-ci-policy { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px 24px; margin: 20px 0; }
+.actions-ci-policy > div { min-width: 0; }
+.actions-ci-policy dt { color: var(--ink-muted); font-size: 13px; }
+.actions-ci-policy dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.actions-ci-detail > .field { margin-top: 20px; }
+.actions-ci-detail textarea { width: 100%; resize: vertical; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: 12px/1.6 var(--font-geist-mono); white-space: pre; overflow-wrap: normal; }
+.actions-ci-detail textarea:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.actions-ci-runs { margin-top: 16px; }
+.actions-ci-runs p { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.actions-ci-runs a { text-decoration: underline; text-underline-offset: 3px; }
+.actions-ci-status { font-size: 13px; font-weight: 650; }
+.actions-ci-status[data-result="github_success"] { color: var(--success); }
+.actions-ci-status:is([data-result="github_failure"], [data-result="github_startup_failure"], [data-result="github_timed_out"], [data-result="failed"], [data-result="timed_out"]) { color: var(--danger); }
+@media (max-width: 800px) {
+  .actions-repository:has(.form-actions) { flex-direction: column; align-items: stretch; }
+  .actions-repository .form-actions { justify-content: flex-start; }
+}
+@media (max-width: 540px) {
+  .actions-connection, .actions-repositories { padding: 20px; }
+  .actions-connection .form-actions, .actions-section-heading .form-actions { justify-content: flex-start; }
+}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, json } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useI18n } from "../lib/i18n";
@@ -15,11 +16,13 @@ import { CIRoutes } from "../components/CIRoutes";
 export function Actions() {
   const { t } = useI18n();
   const { user } = useSession();
+  const [query] = useSearchParams();
+  const authorizationResult = query.get("github");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [installationId, setInstallationId] = useState<number | null>(null);
   const [installationPage, setInstallationPage] = useState(1);
-  const [repositoryPage, setRepositoryPage] = useState(1);
+  const [repositoryPagination, setRepositoryPagination] = useState<{ installationId: number; page: number } | null>(null);
   const status = useData(
     (signal) => api<GitHubStatus>("github/status", { signal }),
     user!.id,
@@ -32,10 +35,12 @@ export function Actions() {
         )
       : Promise.resolve({ installations: [], total_count: 0 }),
     `${user!.id}/${accountId ?? ""}/${installationPage}`,
+    true,
   );
-  const selected = installations.data?.installations.find((row) => row.id === installationId)
+  const selected = installations.data?.installations.find((row) => row.id === installationId && !row.suspended)
     ?? installations.data?.installations.find((row) => !row.suspended);
   const selectedId = selected?.id;
+  const repositoryPage = repositoryPagination && repositoryPagination.installationId === selectedId ? repositoryPagination.page : 1;
   const repositories = useData(
     (signal) => accountId && selectedId && !selected?.suspended
       ? api<{ repositories: GitHubRepository[]; total_count: number }>(
@@ -43,6 +48,7 @@ export function Actions() {
         )
       : Promise.resolve({ repositories: [], total_count: 0 }),
     `${user!.id}/${accountId ?? ""}/${selectedId ?? ""}/${repositoryPage}`,
+    true,
   );
   async function authorize(path: "authorize" | "installations/authorize") {
     setError(null);
@@ -62,7 +68,7 @@ export function Actions() {
       await api("github/connection", json("DELETE"));
       setInstallationId(null);
       setInstallationPage(1);
-      setRepositoryPage(1);
+      setRepositoryPagination(null);
       status.reload();
     } catch (error) {
       setError(error);
@@ -71,7 +77,6 @@ export function Actions() {
     }
   }
   const refresh = () => {
-    status.reload();
     installations.reload();
     repositories.reload();
   };
@@ -81,6 +86,8 @@ export function Actions() {
         {t("actionsLead")}
       </Heading>
       <ErrorBox error={error} />
+      {authorizationResult === "cancelled" && <p role="status">{t("githubAuthorizationCancelled")}</p>}
+      {authorizationResult === "authorization_failed" && <p role="alert">{t("githubAuthorizationFailed")}</p>}
       {status.loading ? <Loading /> : status.error ? (
         <ErrorBox error={status.error} retry={status.reload} />
       ) : !status.data?.enabled ? (
@@ -92,9 +99,10 @@ export function Actions() {
               <p className="eyebrow">GitHub</p>
               <h2>{status.data.account ? `@${status.data.account.login}` : t("connectGitHub")}</h2>
               <p className="muted">{status.data.account ? t("githubConnected") : t("githubConnectionLead")}</p>
+              {status.data.account && <p className="muted">{t("githubDisconnectHelp")}</p>}
             </div>
             <div className="form-actions">
-              <button className="button" disabled={busy} onClick={() => authorize("authorize")}>
+              <button className={`button ${status.data.account ? "secondary" : "primary"}`} disabled={busy} onClick={() => authorize("authorize")}>
                 {status.data.account ? t("reconnectGitHub") : t("connectGitHub")}
               </button>
               {status.data.account && (
@@ -110,7 +118,7 @@ export function Actions() {
                 <h2>{t("githubRepositories")}</h2>
                 <div className="form-actions">
                   <button className="button secondary compact" disabled={busy} onClick={refresh}>{t("refresh")}</button>
-                  <button className="button compact" disabled={busy} onClick={() => authorize("installations/authorize")}>{t("githubChooseRepositories")}</button>
+                  <button className="button primary compact" disabled={busy} onClick={() => authorize("installations/authorize")}>{t("githubChooseRepositories")}</button>
                 </div>
               </div>
               {installations.loading ? <Loading /> : installations.error ? (
@@ -123,7 +131,7 @@ export function Actions() {
                     {t("githubRepositoryOwner")}
                     <select value={selectedId ?? ""} onChange={(event) => {
                       setInstallationId(Number(event.target.value));
-                      setRepositoryPage(1);
+                      setRepositoryPagination(null);
                     }}>
                       <option value="" disabled>{t("githubSelectOwner")}</option>
                       {installations.data.installations.map((row) => (
@@ -135,11 +143,13 @@ export function Actions() {
                   </label>
                   {(installationPage > 1 || installations.data.total_count > 100) && (
                     <div className="form-actions">
-                      <button className="button secondary compact" disabled={installationPage === 1} onClick={() => { setInstallationPage((x) => x - 1); setInstallationId(null); setRepositoryPage(1); }}>{t("previous")}</button>
-                      <button className="button secondary compact" disabled={installationPage * 100 >= installations.data.total_count} onClick={() => { setInstallationPage((x) => x + 1); setInstallationId(null); setRepositoryPage(1); }}>{t("next")}</button>
+                      <button className="button secondary compact" disabled={installationPage === 1} onClick={() => { setInstallationPage((x) => x - 1); setInstallationId(null); setRepositoryPagination(null); }}>{t("previous")}</button>
+                      <button className="button secondary compact" disabled={installationPage * 100 >= installations.data.total_count} onClick={() => { setInstallationPage((x) => x + 1); setInstallationId(null); setRepositoryPagination(null); }}>{t("next")}</button>
                     </div>
                   )}
-                  {repositories.loading ? <Loading /> : repositories.error ? (
+                  {!selectedId && installations.data.installations.length > 0 ? (
+                    <p className="muted" role="status">{t("githubInstallationsSuspended")}</p>
+                  ) : repositories.loading ? <Loading /> : repositories.error ? (
                     <ErrorBox error={repositories.error} retry={repositories.reload} />
                   ) : (
                     <>
@@ -154,8 +164,8 @@ export function Actions() {
                       </div>
                       {(repositoryPage > 1 || (repositories.data?.total_count ?? 0) > 100) && (
                         <div className="form-actions">
-                          <button className="button secondary compact" disabled={repositoryPage === 1} onClick={() => setRepositoryPage((x) => x - 1)}>{t("previous")}</button>
-                          <button className="button secondary compact" disabled={repositoryPage * 100 >= (repositories.data?.total_count ?? 0)} onClick={() => setRepositoryPage((x) => x + 1)}>{t("next")}</button>
+                          <button className="button secondary compact" disabled={repositoryPage === 1} onClick={() => setRepositoryPagination({ installationId: selectedId!, page: repositoryPage - 1 })}>{t("previous")}</button>
+                          <button className="button secondary compact" disabled={repositoryPage * 100 >= (repositories.data?.total_count ?? 0)} onClick={() => setRepositoryPagination({ installationId: selectedId!, page: repositoryPage + 1 })}>{t("next")}</button>
                         </div>
                       )}
                     </>
@@ -164,7 +174,7 @@ export function Actions() {
               )}
             </section>
           )}
-          {status.data.account && <CIRoutes installationId={selectedId} repositories={repositories.data?.repositories ?? []} />}
+          {status.data.account && <CIRoutes installationId={selectedId} repositories={repositories.data?.repositories ?? []} discoveryReady={!installations.loading && !installations.error && !repositories.loading && !repositories.error} />}
         </div>
       )}
     </>
