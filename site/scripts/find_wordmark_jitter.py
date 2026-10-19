@@ -34,7 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DELAYS_MS = (0.0, 175.0, 400.0)
 FINISH_WORDMARK_ANIMATIONS = """
 () => {
-  const wordmark = document.querySelector(".brand__wordmark");
+  const wordmark = document.querySelector(".tmc-brand__wordmark");
   for (const animation of wordmark.getAnimations({subtree: true})) {
     animation.finish();
   }
@@ -43,8 +43,8 @@ FINISH_WORDMARK_ANIMATIONS = """
 """
 SAMPLE_WORDMARK = """
 ([durationMs]) => new Promise((resolve) => {
-  const wordmark = document.querySelector(".brand__wordmark");
-  const reveals = [...wordmark.querySelectorAll(".brand__word-reveal")];
+  const wordmark = document.querySelector(".tmc-brand__wordmark");
+  const reveals = [...wordmark.querySelectorAll(".tmc-brand__word-reveal")];
   const samples = [];
   let startedAt = null;
 
@@ -353,7 +353,7 @@ async def prepare_page(
     await page.wait_for_function(
         "document.documentElement.dataset.wordmarkFontReady !== 'false'"
     )
-    await page.locator(".brand__wordmark-stage").wait_for(state="visible")
+    await page.locator(".tmc-brand__wordmark-stage").wait_for(state="visible")
     return context, page
 
 
@@ -377,9 +377,9 @@ async def read_geometry(page: Page) -> dict[str, Any]:
               height: box.height,
             };
           };
-          const stage = document.querySelector(".brand__wordmark-stage");
+          const stage = document.querySelector(".tmc-brand__wordmark-stage");
           const anchor = document.querySelector(
-            ".brand__word-part--t .brand__word-anchor",
+            ".tmc-brand__word-part--t .tmc-brand__word-anchor",
           );
           return {
             stage: rect(stage),
