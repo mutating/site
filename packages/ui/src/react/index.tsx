@@ -1,9 +1,9 @@
 import {
   createContext, useContext, useEffect, useRef, useState, useSyncExternalStore,
-  type ComponentPropsWithoutRef, type CSSProperties, type ReactNode,
+  type ComponentPropsWithoutRef, type CSSProperties, type DOMAttributes, type ReactNode, type Ref,
 } from "react";
 import { mountBrand, type BrandOptions } from "../brand";
-import type { HeaderConfig, HeaderItem, LanguageOption } from "../header-config";
+import type { HeaderConfig, HeaderItem, HeaderLanguage } from "../header-config";
 import { GITHUB_PATH } from "../icons";
 export type { HeaderConfig, HeaderItem, HeaderBrand, HeaderLanguage, HeaderLink, LanguageOption } from "../header-config";
 import { mountLanguageSwitcher, mountMobileMenu } from "../header";
@@ -19,16 +19,15 @@ export function Button({ variant = "primary", size = "default", className, type 
   return <button {...props} type={type} className={classes("tmc-button", `tmc-button--${variant}`, size === "compact" ? "tmc-button--compact" : undefined, className)} />;
 }
 
-export interface BrandProps extends ComponentPropsWithoutRef<"a"> {
+export interface BrandProps extends Omit<ComponentPropsWithoutRef<"a">, keyof DOMAttributes<HTMLAnchorElement>>, DOMAttributes<HTMLElement> {
   href: string;
   animation?: BrandOptions;
 }
 export function Brand({ href, animation, className, "aria-label": label = "The Mutating Company", ...props }: BrandProps) {
-  const ref = useRef<HTMLAnchorElement>(null);
+  const ref = useRef<HTMLElement>(null);
   const { expandWordmark, scrollTone, blinkIntervalMs, activation } = animation ?? {};
   useEffect(() => mountBrand(ref.current!, { expandWordmark, scrollTone, blinkIntervalMs, activation }), [expandWordmark, scrollTone, blinkIntervalMs, activation]);
-  return (
-    <a {...props} ref={ref} href={href} aria-label={label} className={classes("tmc-brand", className)}>
+  const content = <>
       <span className="tmc-brand__mark tmc-brand__mark--eye" aria-hidden="true">
         <span className="tmc-eye"><span className="tmc-eye__clip">
           <span className="tmc-eye__outline" /><span className="tmc-eye__surface" /><span className="tmc-eye__pupil" />
@@ -41,19 +40,21 @@ export function Brand({ href, animation, className, "aria-label": label = "The M
           <span className="tmc-brand__word-part"><span className="tmc-brand__word-anchor">C</span><span className="tmc-brand__word-reveal" data-text="ompany">ompany</span></span>
         </span>
       </span>
-    </a>
-  );
+  </>;
+  return activation === "reload-home"
+    ? <div {...props} ref={ref as Ref<HTMLDivElement>} role="link" tabIndex={0} data-home-url={href} aria-label={label} className={classes("tmc-brand", className)}>{content}</div>
+    : <a {...props} ref={ref as Ref<HTMLAnchorElement>} href={href} aria-label={label} className={classes("tmc-brand", className)}>{content}</a>;
 }
 
 const ThemeContext = createContext<{ controller: ThemeController | null; initialTheme: Theme } | undefined>(undefined);
 export interface ThemeProviderProps extends ThemeOptions { children: ReactNode }
-export function ThemeProvider({ children, root, storageKey, initialTheme }: ThemeProviderProps) {
+export function ThemeProvider({ children, root, storageKey, initialTheme, syncAcrossTabs, preferenceSource }: ThemeProviderProps) {
   const [controller, setController] = useState<ThemeController | null>(null);
   useEffect(() => {
-    const next = createThemeController({ root, storageKey, initialTheme });
+    const next = createThemeController({ root, storageKey, initialTheme, syncAcrossTabs, preferenceSource });
     setController(next);
     return next.destroy;
-  }, [root, storageKey, initialTheme]);
+  }, [root, storageKey, initialTheme, syncAcrossTabs, preferenceSource]);
   return <ThemeContext.Provider value={{ controller, initialTheme: initialTheme ?? "dark" }}>{children}</ThemeContext.Provider>;
 }
 const noopSubscribe = () => () => {};
@@ -87,20 +88,15 @@ export function ThemeToggle({ className, type = "button", ...props }: ComponentP
   );
 }
 
-export interface LanguageSwitcherProps {
-  current: string;
-  options: readonly LanguageOption[];
-  label: string;
-  groupLabel: string;
+export interface LanguageSwitcherProps extends HeaderLanguage {
   variant?: "standalone" | "desktop" | "mobile";
-  storageKey?: string;
 }
-export function LanguageSwitcher({ current, options, label, groupLabel, variant = "standalone", storageKey }: LanguageSwitcherProps) {
+export function LanguageSwitcher({ current, options, label, groupLabel, variant = "standalone", storageKey, supportedCodes = [] }: LanguageSwitcherProps) {
   const ref = useRef<HTMLDetailsElement>(null);
   // Option changes can replace DOM nodes, so remount their listeners too.
   const signature = JSON.stringify(options);
-  useEffect(() => mountLanguageSwitcher(ref.current!, storageKey), [storageKey, variant, signature]);
-  const width = Math.max(48, 24 + Math.max(current.length, ...options.map((option) => option.code.length)) * 7);
+  useEffect(() => mountLanguageSwitcher(ref.current!, storageKey), [storageKey, variant, signature, current]);
+  const width = Math.max(48, 24 + Math.max(current.length, ...options.map((option) => option.code.length), ...supportedCodes.map(code => code.length)) * 7);
   return (
     <details ref={ref} className={`tmc-language-switcher tmc-language-switcher--${variant}`} style={{ "--tmc-language-switcher-desktop-width": `${width}px` } as CSSProperties}>
       <summary aria-label={label}><span>{current.toUpperCase()}</span></summary>
@@ -135,16 +131,18 @@ export function Header({
   items = [], brand = { href: "/" }, language, themeLabel = "Toggle color theme", showThemeToggle = true,
   navigationLabel = "Navigation", mobileNavigationLabel = navigationLabel,
   menuLabel = "Open navigation menu", menuText = "Menu", adjacentLink, className, renderLink,
+  inheritTypography = false,
 }: HeaderProps) {
   const menuRef = useRef<HTMLDetailsElement>(null);
   const hasMenu = items.length > 0 || !!language;
   const itemsSignature = JSON.stringify(items);
+  const languageSignature = JSON.stringify(language?.options);
   useEffect(() => {
-    if (menuRef.current) return mountMobileMenu(menuRef.current);
-  }, [hasMenu, itemsSignature, language?.current]);
+    if (menuRef.current) return mountMobileMenu(menuRef.current, { delegateLinks: true });
+  }, [hasMenu, itemsSignature, language?.current, languageSignature]);
   const links = items.map((item) => <MenuLink key={item.id} item={item} renderLink={renderLink} />);
   return (
-    <header className={classes("tmc-header-shell", className)}>
+    <header className={classes("tmc-header-shell", className)} data-tmc-inherit-typography={inheritTypography ? "" : undefined}>
       <div className="tmc-header">
         <Brand href={brand.href} aria-label={brand.label} animation={brand.animation} />
         {items.length > 0 && <nav className="tmc-nav" aria-label={navigationLabel}>{links}</nav>}

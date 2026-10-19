@@ -1,4 +1,4 @@
-<button class="tmc-theme-toggle" type="button" aria-label="{{ .label | default "Toggle color theme" }}">
+<button class="tmc-theme-toggle" type="button" aria-label="{{ partial "tmc-ui/internal/option.html" (slice . "label" "Toggle color theme") }}">
   <span class="tmc-theme-toggle__track" aria-hidden="true">
     <span class="tmc-theme-toggle__sun"><span class="tmc-theme-toggle__sun-core"></span><span class="tmc-theme-toggle__sun-rays"></span><span class="tmc-theme-toggle__sun-rays tmc-theme-toggle__sun-rays--diagonal"></span></span>
     <span class="tmc-theme-toggle__moon"></span><span class="tmc-theme-toggle__thumb"></span>

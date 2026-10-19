@@ -1,4 +1,11 @@
-<a class="tmc-brand" href="{{ .href | default "/" }}" aria-label="{{ .label | default "The Mutating Company" }}"{{ with .animation }} data-tmc-brand-options="{{ . | jsonify }}"{{ end }}>
+{{- $reload := eq .animation.activation "reload-home" -}}
+{{- $href := partial "tmc-ui/internal/option.html" (slice . "href" "/") -}}
+{{- $label := partial "tmc-ui/internal/option.html" (slice . "label" "The Mutating Company") -}}
+{{- if $reload -}}
+<div class="tmc-brand" role="link" tabindex="0" data-home-url="{{ $href }}" aria-label="{{ $label }}" data-tmc-brand-options="{{ .animation | jsonify }}">
+{{- else -}}
+<a class="tmc-brand" href="{{ $href }}" aria-label="{{ $label }}"{{ with .animation }} data-tmc-brand-options="{{ . | jsonify }}"{{ end }}>
+{{- end }}
   <span class="tmc-brand__mark tmc-brand__mark--eye" aria-hidden="true">
     <span class="tmc-eye"><span class="tmc-eye__clip">
       <span class="tmc-eye__outline"></span><span class="tmc-eye__surface"></span><span class="tmc-eye__pupil"></span>
@@ -11,4 +18,4 @@
       <span class="tmc-brand__word-part"><span class="tmc-brand__word-anchor">C</span><span class="tmc-brand__word-reveal" data-text="ompany">ompany</span></span>
     </span>
   </span>
-</a>
+{{ if $reload }}</div>{{ else }}</a>{{ end }}

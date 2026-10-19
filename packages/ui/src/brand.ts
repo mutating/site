@@ -19,7 +19,7 @@ function environment(brand: HTMLElement) {
   const { window, document } = scope;
   const frames = new Set<number>();
   const on = <E extends Event>(target: EventTarget, type: string, listener: (event: E) => void, options: AddEventListenerOptions = {}) => {
-    target.addEventListener(type, listener as EventListener, { ...options, signal: scope.signal });
+    scope.on(target, type, listener, options);
   };
   const requestAnimationFrame = (callback: FrameRequestCallback) => {
     if (scope.disposed) return 0;
@@ -28,8 +28,17 @@ function environment(brand: HTMLElement) {
     return id;
   };
   const cancelAnimationFrame = (id: number) => { window.cancelAnimationFrame(id); frames.delete(id); };
-  class ResizeObserver extends window.ResizeObserver {
-    constructor(callback: ResizeObserverCallback) { super(callback); scope.add(() => this.disconnect()); }
+  // Resolve the native API when an observer is actually created. Defining an
+  // inherited class eagerly would fail before the original pointer listeners.
+  class ResizeObserver {
+    private readonly observer: globalThis.ResizeObserver;
+    constructor(callback: ResizeObserverCallback) {
+      this.observer = new window.ResizeObserver(callback);
+      scope.add(() => this.observer.disconnect());
+    }
+    observe(target: Element, options?: ResizeObserverOptions) { this.observer.observe(target, options); }
+    unobserve(target: Element) { this.observer.unobserve(target); }
+    disconnect() { this.observer.disconnect(); }
   }
   const setInterval = (callback: () => void, delay: number) => {
     const id = window.setInterval(callback, delay); scope.add(() => window.clearInterval(id)); return id;
@@ -215,11 +224,11 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     const activate = () => {
       if (scheduled) return;
       scheduled = true;
-      const homeUrl = brand.getAttribute("href") || brand.dataset.homeUrl || "/";
+      const homeUrl = brand.getAttribute("href") ?? brand.dataset.homeUrl ?? "/";
       const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
-      const normalizedHome = new URL(homeUrl, location.href).pathname
-        .replace(/\/+$/, "") || "/";
-      if (currentPath !== normalizedHome) {
+      const home = new URL(homeUrl, location.href);
+      const normalizedHome = home.pathname.replace(/\/+$/, "") || "/";
+      if (home.origin !== location.origin || currentPath !== normalizedHome) {
         window.location.assign(homeUrl);
         return;
       }

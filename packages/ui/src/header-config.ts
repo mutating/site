@@ -17,6 +17,8 @@ export interface HeaderLanguage {
   label: string;
   groupLabel: string;
   storageKey?: string;
+  /** Reserve consistent width even when some languages lack the current page. */
+  supportedCodes?: readonly string[];
 }
 export interface HeaderBrand {
   href: string;
@@ -27,6 +29,8 @@ export interface HeaderLink { href: string; label: string }
 
 /** The same data contract is accepted by React and Hugo. */
 export interface HeaderConfig {
+  /** Inherit the embedding page's color, font family and line height, as the original site did. */
+  inheritTypography?: boolean;
   items?: readonly HeaderItem[];
   brand?: HeaderBrand;
   language?: HeaderLanguage;
@@ -44,6 +48,7 @@ export function createMutatingHomeHeader(language: "en" | "ru" = "en"): HeaderCo
   const ru = language === "ru";
   const home = ru ? "/ru/" : "/";
   return {
+    inheritTypography: true,
     brand: {
       href: home,
       label: ru ? "Перезагрузить главную страницу The Mutating Company" : "Reload The Mutating Company home page",

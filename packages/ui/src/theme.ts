@@ -11,6 +11,10 @@ export interface ThemeOptions {
   storageKey?: string;
   /** Without an explicit theme, prefer saved choice, then system preference. */
   initialTheme?: Theme;
+  /** Defaults to true; false keeps each document's theme until reload/system change. */
+  syncAcrossTabs?: boolean;
+  /** Storage rechecks saved choice on each system change, including denied/cleared storage. */
+  preferenceSource?: "memory" | "storage";
 }
 
 export interface ThemeController {
@@ -23,6 +27,11 @@ export interface ThemeController {
   destroy(): void;
 }
 
+export interface ThemeToggleOptions {
+  /** Defaults to true; false retains a plain action button's existing semantics. */
+  exposePressedState?: boolean;
+}
+
 export function isTheme(value: unknown): value is Theme {
   return value === "light" || value === "dark";
 }
@@ -31,7 +40,7 @@ export function isTheme(value: unknown): value is Theme {
 export function createThemeController(options: ThemeOptions = {}): ThemeController {
   const root = options.root ?? document.documentElement;
   const scope = createScope(root);
-  const { window, signal } = scope;
+  const { window, on } = scope;
   const dark = window.matchMedia("(prefers-color-scheme: dark)");
   const light = window.matchMedia("(prefers-color-scheme: light)");
   const key = options.storageKey ?? DEFAULT_THEME_STORAGE_KEY;
@@ -51,17 +60,25 @@ export function createThemeController(options: ThemeOptions = {}): ThemeControll
     root.dispatchEvent(new window.CustomEvent(THEME_CHANGE_EVENT, { detail: { theme }, bubbles: true }));
   };
   root.dataset.theme = theme;
-  const syncSystem = () => { if (!preference) publish(systemTheme()); };
-  dark.addEventListener("change", syncSystem, { signal });
-  light.addEventListener("change", syncSystem, { signal });
-  window.addEventListener("storage", (event) => {
+  const syncSystem = () => {
+    if (options.preferenceSource === "storage") {
+      let stored: string | null = null;
+      try { stored = window.localStorage.getItem(key); } catch { /* Follow the system without persistence. */ }
+      preference = isTheme(stored) ? stored : null;
+    }
+    if (!preference) publish(systemTheme());
+  };
+  on(dark, "change", syncSystem);
+  on(light, "change", syncSystem);
+  on<StorageEvent>(window, "storage", (event) => {
+    if (options.syncAcrossTabs === false) return;
     if (event.key !== key && event.key !== null) return;
     if (event.storageArea) {
       try { if (event.storageArea !== window.localStorage) return; } catch { return; }
     }
     preference = isTheme(event.newValue) ? event.newValue : null;
     publish(preference ?? systemTheme());
-  }, { signal });
+  });
   const setTheme = (next: Theme) => {
     if (scope.disposed) return;
     preference = next;
@@ -93,11 +110,15 @@ export function createThemeController(options: ThemeOptions = {}): ThemeControll
   };
 }
 
-export function mountThemeToggle(button: HTMLButtonElement, controller: ThemeController): Cleanup {
+export function mountThemeToggle(button: HTMLButtonElement, controller: ThemeController, options: ThemeToggleOptions = {}): Cleanup {
   const scope = createScope(button);
   const update = (theme: Theme) => button.setAttribute("aria-pressed", String(theme === "dark"));
-  update(controller.getTheme());
-  scope.add(controller.subscribe(update));
-  button.addEventListener("click", () => controller.toggle(), { signal: scope.signal });
+  if (options.exposePressedState !== false) {
+    update(controller.getTheme());
+    scope.add(controller.subscribe(update));
+  } else {
+    button.removeAttribute("aria-pressed");
+  }
+  scope.on(button, "click", () => controller.toggle());
   return scope.destroy;
 }

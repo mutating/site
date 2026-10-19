@@ -1,5 +1,5 @@
 /* Header geometry and breakpoints preserved from the original Hugo theme. */
-.tmc-header-shell { color: var(--ink); font-family: var(--font-geist-sans), Arial, sans-serif; line-height: normal; }
+.tmc-header-shell:where(:not([data-tmc-inherit-typography])) { color: var(--ink); font-family: var(--font-geist-sans), Arial, sans-serif; line-height: normal; }
 .tmc-header-shell, .tmc-header-shell * { box-sizing: border-box; }
 .tmc-header-shell :where(a) { color: inherit; text-decoration: none; }
 .tmc-header-shell :where(button, summary) { font: inherit; }
@@ -544,4 +544,3 @@
     scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important;
   }
 }
-
