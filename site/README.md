@@ -3,7 +3,7 @@
 Hugo sources live in this `site/` directory. Shared CI, deployment, API, web UI,
 and test commands are documented in the [repository README](../README.md).
 
-The company website is a self-contained [Hugo](https://gohugo.io/) site. The
+The company website produces a self-contained [Hugo](https://gohugo.io/) build. The
 landing page, responsive interactions, light/dark themes, blog, local fonts,
 artwork, WebGL tentacles, and tokamak renderer all ship with the custom
 `mutating` theme.
@@ -11,6 +11,7 @@ artwork, WebGL tentacles, and tokamak renderer all ship with the custom
 ## Requirements
 
 - Hugo Extended `0.164.0` (the version used by local development and CI)
+- Node.js `24` and npm for the shared `@mutating/ui` header
 - Python `3.11` or newer for the browser test suite
 
 On macOS, Hugo can be installed with:
@@ -30,11 +31,17 @@ hugo version
 Run Hugo commands from this `site/` directory. Start the development server:
 
 ```bash
+npm --prefix .. ci
+npm --prefix .. run build:ui
 hugo server
 ```
 
 Open [http://localhost:1313](http://localhost:1313). Hugo watches the content,
 theme templates, CSS, JavaScript, and static assets and rebuilds after changes.
+Rebuild `@mutating/ui` after editing `../packages/ui`. Hugo mounts its generated
+assets and Hugo partials directly from that package. Build it before running
+Hugo or the Python browser tests; `npm run build:site` from the repository root
+performs both build steps in order.
 
 Build the static site with the URL configured in `hugo.toml`:
 
@@ -80,10 +87,12 @@ Shared interface copy lives in Hugo translation tables:
 - `i18n/en.toml` contains the complete default-language catalog.
 - `i18n/ru.toml` contains the Russian interface translation.
 
-Everything that defines presentation or behavior lives in `themes/mutating/`:
+Site presentation and behavior live in `themes/mutating/`, with the shared header
+implemented in `../packages/ui`:
 
 - `layouts/_default/baseof.html` is the shared HTML document.
-- `layouts/partials/header.html` and `footer.html` are shared by every page.
+- `layouts/partials/header.html` configures the library header's localized menu
+  and page-specific language URLs; `footer.html` remains a site partial.
 - `layouts/index.html` composes the landing page from `layouts/partials/home/`;
   those partials own its shared structure, assets, and interactive mounts.
 - `layouts/blog/list.html` and `single.html` render the blog entry points.
@@ -99,7 +108,7 @@ Everything that defines presentation or behavior lives in `themes/mutating/`:
 - `assets/css/site.css` contains both themes and responsive styles and is
   fingerprinted by Hugo.
 - `assets/js/site.js` contains the site interactions and is fingerprinted by
-  Hugo.
+  Hugo. Hugo bundles its import of the shared header runtime.
 - `static/` also contains every local image, font, SVG, and standalone
   interactive HTML asset.
 - The Tentacles and Tokamak iframes keep stable static paths, while their home
@@ -330,6 +339,8 @@ source venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements_dev.txt
 python -m playwright install chromium
+npm ci
+npm run build:ui
 ```
 
 On Windows, activate it with:
@@ -343,6 +354,11 @@ Run the complete suite:
 ```bash
 python -m pytest tests/site -n 2 --dist loadgroup
 ```
+
+Header screenshot regressions run separately with `npm run test:site:header`
+(install browsers using `npx playwright install chromium firefox`). The frozen original
+header, interaction matrix and behavior audit are documented in
+[`tests/site/header/README.md`](../tests/site/header/README.md).
 
 The command uses two `pytest-xdist` workers. Override the degree of parallelism
 for local diagnostics or CI capacity planning; `-n auto` selects one worker per
@@ -445,8 +461,9 @@ copy of the generated site without deleting it before a successful transfer.
 Shared platform setup and release activation are described in
 [the deployment guide](../docs/deployment.md). The commands below run from the
 repository root. The repository includes `infra/playbooks/setup-server.yml`. Run it from a
-clean local checkout. The playbook supports Debian-based servers, copies the
-checkout to the server, installs Git, Hugo Extended, nginx, Certbot, OpenSSL,
+clean local checkout. The playbook supports Debian-based servers, builds the
+shared UI locally, copies `site/` and `packages/ui/{hugo,dist}` to the server,
+installs Git, Hugo Extended, nginx, Certbot, OpenSSL,
 and rsync, performs a production Hugo build, and configures nginx, TLS
 certificate issuance/renewal, and the crawler-log report timer. The VPS needs
 outbound Internet access, but it does not need access to the private GitHub
@@ -484,7 +501,15 @@ git clone https://github.com/mutating/site.git
 cd site
 ```
 
-#### 2. Check that Ansible is installed
+#### 2. Prepare local build tools and Ansible
+
+Install Node.js 24 locally, then install the workspace dependencies from the
+repository root. The playbook runs `npm run build:ui` on this machine before
+synchronizing sources; Node.js is not needed on the static-site VPS.
+
+```bash
+npm ci
+```
 
 ```bash
 ansible-playbook --version
@@ -542,10 +567,11 @@ disabled, replace `root` with an account that can use sudo and add
 `--ask-become-pass`. The unprivileged deployment account `user` is not suitable
 unless it has explicitly been granted sudo access.
 
-The defaults use `/opt/mutating.tech` for the copied source checkout and
+The defaults use `/opt/mutating.tech` for the copied source tree, with Hugo in
+`/opt/mutating.tech/site` and the library in `/opt/mutating.tech/packages/ui`, and
 `/var/www/mutating.tech` for the generated site served by nginx and updated
 by CI. They target `mutating.tech` and the deployment account `user`.
-Override `local_site_path`, `site_domain`, `site_aliases`, `certbot_email`,
+Override `local_site_path`, `local_ui_path`, `site_domain`, `site_aliases`, `certbot_email`,
 `deploy_user`, `deploy_group`, `source_path`, `source_staging_path`, and
 `deploy_path` with additional variables when provisioning another site. Keep
 the domain-dependent values consistent; for structured values such as
