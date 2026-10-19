@@ -105,7 +105,7 @@ def validate_attestation(encoded, token, now):
 
 
 async def verify_proof(session, request, certificate_hash, *, allow_revoked=False):
-    """Called under the protocol write lock; successful nonces are durable before dispatch."""
+    """Recheck TLS possession, or durably consume signed-proof nonces under the write lock."""
     now = request.app.state.clock()
     from throng_api.relay import RelayPeer
 
@@ -222,9 +222,18 @@ async def agent_device_proof(request: Request):
             if row and row.expires_at > request.app.state.clock():
                 certificate_hash, tombstone = row.certificate_sha256, True
     if certificate_hash:
+        from throng_api.relay import RelayPeer
+
         limit = request.app.state.settings.max_artifact_bytes
         if "/diagnostics/" in request.url.path:
             limit = request.app.state.settings.max_diagnostic_bytes
         await bounded_body(request, limit)
-        async with request.app.state.db.write() as session:
+        # TLS possession checks have no nonce to consume. Signed HTTP proofs
+        # still require the durable write lock for their replay protection.
+        context = (
+            request.app.state.db.read
+            if isinstance(request.scope.get("powercell.relay_peer"), RelayPeer)
+            else request.app.state.db.write
+        )
+        async with context() as session:
             await verify_proof(session, request, certificate_hash, allow_revoked=tombstone)

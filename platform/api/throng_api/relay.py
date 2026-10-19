@@ -7,6 +7,7 @@ this path. The original Apple-attested certificate remains the device identity.
 
 import asyncio
 import hashlib
+import logging
 import socket
 import ssl
 from dataclasses import dataclass
@@ -29,6 +30,14 @@ from h2.exceptions import H2Error
 from h2.settings import SettingCodes
 from uvicorn.protocols.http.h11_impl import H11Protocol
 from uvicorn.server import ServerState
+
+logger = logging.getLogger("throng.transport")
+
+
+class RelayHTTPProtocol(H11Protocol):
+    def timeout_keep_alive_handler(self):
+        logger.info('{"event":"relay_close","reason":"idle_timeout"}')
+        super().timeout_keep_alive_handler()
 
 
 @dataclass(frozen=True)
@@ -222,6 +231,7 @@ class _Connection:
             log_level="critical",
             server_header=False,
             date_header=False,
+            timeout_keep_alive=self.server.settings.powercell_relay_keep_alive_seconds,
         )
         config.load()
         left, right = socket.socketpair()
@@ -230,7 +240,7 @@ class _Connection:
         transport = None
         try:
             transport, _ = await asyncio.get_running_loop().connect_accepted_socket(
-                lambda: H11Protocol(config, self.server.http_state, {}), left
+                lambda: RelayHTTPProtocol(config, self.server.http_state, {}), left
             )
             reader, writer = await asyncio.open_connection(sock=right)
         except BaseException:
@@ -288,6 +298,7 @@ class _Stream:
                 self.connection.flush()
             self.writer.write_eof()
         except (H2Error, OSError):
+            logger.info('{"event":"relay_close","reason":"backend_upload_error"}')
             self.writer.close()
 
     async def download(self):
@@ -297,7 +308,7 @@ class _Stream:
             self.connection.h2.end_stream(self.id)
             self.connection.flush()
         except (H2Error, OSError):
-            pass
+            logger.info('{"event":"relay_close","reason":"backend_download_error"}')
         finally:
             self.writer.close()
             # The receive task may be awaiting another chunk when the backend

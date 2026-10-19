@@ -1,10 +1,16 @@
 """Bounded GitHub App transport. Credentials and response bodies stay out of errors."""
 
+import asyncio
 import base64
+import hashlib
 import json
+import math
 import re
 import time
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from http.cookiejar import CookieJar, DefaultCookiePolicy
+from urllib.parse import urlsplit
 
 import httpx
 from cryptography.hazmat.primitives import hashes, serialization
@@ -19,9 +25,19 @@ MAX_RESPONSE = 4 * 1024 * 1024
 class GitHubError(Exception):
     """A deliberately redacted external failure suitable for API diagnostics."""
 
-    def __init__(self, status=502):
+    def __init__(self, status=502, retry_after=None):
         self.status = status
+        self.retry_after = retry_after
         super().__init__(f"GitHub request failed (HTTP {status})")
+
+
+class GitHubToken(str):
+    """Carry quota identity locally; only the string is sent as a credential."""
+
+    def __new__(cls, value, bucket):
+        result = super().__new__(cls, value)
+        result.bucket = bucket
+        return result
 
 
 class GitHubClient:
@@ -34,6 +50,71 @@ class GitHubClient:
         self._key = key
         self._transport = transport
         self._clock = clock
+        self._cooldowns = {}
+        self._connection = ContextVar("github_connection", default=None)
+
+    @asynccontextmanager
+    async def connection(self):
+        """Reuse keep-alive within one operation, without retaining credentials/cookies."""
+        client = self._connection.get()
+        if client is not None and not client.is_closed:
+            yield client
+            return
+        async with httpx.AsyncClient(
+            transport=self._transport,
+            timeout=10,
+            trust_env=False,
+            follow_redirects=False,
+            cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=[])),
+        ) as client:
+            mark = self._connection.set(client)
+            try:
+                yield client
+            finally:
+                self._connection.reset(mark)
+
+    def _check_rate_limit(self, bucket):
+        limited = self._cooldowns.get(bucket)
+        if limited and limited[0] > self._clock():
+            raise GitHubError(limited[1], math.ceil(limited[0] - self._clock()))
+
+    def _rate_limit(self, bucket, response, content):
+        status, headers, now = response.status_code, response.headers, self._clock()
+        if status != 429 and not (
+            status == 403
+            and (
+                "retry-after" in headers
+                or headers.get("x-ratelimit-remaining") == "0"
+                or b"rate limit" in content.lower()
+            )
+        ):
+            return None
+        previous = self._cooldowns.get(bucket)
+        waits = []
+        for value, offset in (
+            (headers.get("retry-after"), 0),
+            (
+                headers.get("x-ratelimit-reset")
+                if headers.get("x-ratelimit-remaining") == "0"
+                else None,
+                now,
+            ),
+        ):
+            try:
+                delay = float(value) - offset
+                if math.isfinite(delay) and 0 <= delay < 2**31:
+                    waits.append(max(1, math.ceil(delay)))
+            except (TypeError, ValueError, OverflowError):
+                pass
+        delay = max(waits, default=min(3600, 2 * previous[2]) if previous else 60)
+        if previous:
+            delay = max(delay, math.ceil(previous[0] - now))
+        # Only rate-limited identities occupy the cache; discard abandoned limits.
+        self._cooldowns = {
+            key: value for key, value in self._cooldowns.items() if value[0] > now - 3600
+        }
+        self._cooldowns[bucket] = (now + delay, status, delay)
+        return delay
 
     def app_token(self):
         def encode(value):
@@ -49,27 +130,39 @@ class GitHubClient:
         return (message + b"." + base64.urlsafe_b64encode(signature).rstrip(b"=")).decode()
 
     async def _json(self, method, url, *, token=None, payload=None, form=None, params=None):
+        bucket = getattr(token, "bucket", None) or (
+            ("token", hashlib.sha256(token.encode()).digest())
+            if token is not None
+            else ("origin", urlsplit(url).netloc)
+        )
+        previous_limit = self._cooldowns.get(bucket)
+        self._check_rate_limit(bucket)
         headers = {"Accept": "application/json", "X-GitHub-Api-Version": API_VERSION}
         if token is not None:
             headers["Authorization"] = "Bearer " + token
         try:
-            async with httpx.AsyncClient(
-                transport=self._transport, timeout=10, trust_env=False, follow_redirects=False
-            ) as client:
+            async with asyncio.timeout(10), self.connection() as client:
                 async with client.stream(
                     method, url, headers=headers, json=payload, data=form, params=params
                 ) as response:
-                    if response.status_code not in {200, 201, 204}:
-                        raise GitHubError(response.status_code)
+                    retry_after = self._rate_limit(bucket, response, b"")
+                    if retry_after is not None:
+                        raise GitHubError(response.status_code, retry_after)
                     content = bytearray()
                     async for chunk in response.aiter_bytes():
                         content.extend(chunk)
                         if len(content) > MAX_RESPONSE:
                             raise GitHubError()
+                    if response.status_code not in {200, 201, 204}:
+                        raise GitHubError(
+                            response.status_code, self._rate_limit(bucket, response, content)
+                        )
+                    if self._cooldowns.get(bucket) is previous_limit:
+                        self._cooldowns.pop(bucket, None)
                     if response.status_code == 204:
                         return None
                     result = json.loads(content)
-        except (httpx.HTTPError, ValueError, UnicodeError) as error:
+        except (httpx.HTTPError, TimeoutError, ValueError, UnicodeError) as error:
             raise GitHubError() from error
         if not isinstance(result, (dict, list)):
             raise GitHubError()
@@ -77,12 +170,18 @@ class GitHubClient:
 
     async def api(self, method, path, *, token=None, payload=None, params=None):
         # Callers construct API paths from verified numeric IDs, not arbitrary URLs.
-        if not re.fullmatch(r"/[A-Za-z0-9_./-]+", path) or ".." in path or "//" in path:
+        if (
+            not re.fullmatch(r"/[A-Za-z0-9_./-]+", path)
+            or any(segment in {".", ".."} for segment in path.split("/"))
+            or "//" in path
+        ):
             raise ValueError("Invalid GitHub API path")
         return await self._json(
             method,
             API_URL + path,
-            token=token if token is not None else self.app_token(),
+            token=token
+            if token is not None
+            else GitHubToken(self.app_token(), ("app", self.client_id)),
             payload=payload,
             params=params,
         )
@@ -103,6 +202,8 @@ class GitHubClient:
     @asynccontextmanager
     async def installation_token(self, installation_id, repository_ids, permissions):
         """Short operations use an explicitly scoped token and revoke it afterwards."""
+        bucket = ("installation", int(installation_id))
+        self._check_rate_limit(bucket)
         result = await self.api(
             "POST",
             f"/app/installations/{int(installation_id)}/access_tokens",
@@ -110,7 +211,7 @@ class GitHubClient:
         )
         if not isinstance(result, dict) or not isinstance(result.get("token"), str):
             raise GitHubError()
-        token = result["token"]
+        token = GitHubToken(result["token"], bucket)
         try:
             yield token
         finally:

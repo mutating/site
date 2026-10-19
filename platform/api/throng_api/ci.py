@@ -1,26 +1,28 @@
 """Repository CI bindings and OIDC-authenticated, idempotent runner reservations."""
 
+import asyncio
 import hashlib
 import io
 import re
 import tarfile
+import time
 from datetime import timedelta
-from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPBearer
 from pydantic import Field, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from throng_api.artifacts import check_storage_quota
-from throng_api.execution import destroy_isolate
-from throng_api.github import external_error, service, user_token
+from throng_api.execution import allocate_isolate, destroy_isolate
+from throng_api.github import external_error, service, user_get, user_token
 from throng_api.github_client import GitHubError
 from throng_api.models import (
     Artifact,
     CIReservation,
     CIRoute,
+    Command,
     Computer,
     ComputerOwnership,
     GitHubAccount,
@@ -69,29 +71,23 @@ class RouteCreate(Input):
     company_id: UUID | None = None
     computer_ids: list[UUID] = Field(default_factory=list, max_length=100)
     cpu_millis: int = Field(default=2000, gt=0, le=1000000)
-    memory_bytes: int = Field(default=4 * GiB, gt=0, le=2**50)
-    disk_bytes: int = Field(default=10 * GiB, ge=GiB, le=2**50)
-    preparation_seconds: int = Field(default=90, ge=10, le=180)
+    memory_bytes: int = Field(default=4 * GiB, ge=16 * 1024**2, le=2**50)
+    disk_bytes: int = Field(default=10 * GiB, ge=GiB, le=1024 * GiB)
+    preparation_seconds: int = Field(default=90, ge=10, le=300)
     timeout_seconds: int = Field(default=3600, ge=60, le=21600)
     max_parallel: int = Field(default=1, ge=1, le=100)
-    fallback: Literal["ubuntu-24.04-arm", "none"] = "ubuntu-24.04-arm"
 
     @model_validator(mode="after")
-    def fallback_resources(self):
-        # Conservative limits also cover private repositories on standard runners.
-        if self.fallback != "none" and (
-            self.cpu_millis > 2000 or self.memory_bytes > 8 * GiB or self.disk_bytes > 14 * GiB
-        ):
-            raise ValueError(
-                "Standard fallback requires at most 2 CPU, 8 GiB RAM and 14 GiB disk; select none for larger jobs"
-            )
+    def workflow_policy(self):
         if (
             ".." in self.workflow_path
             or ".." in self.ref
             or "//" in self.ref
+            or self.ref.endswith(("/", "."))
+            or any(part.startswith(".") or part.endswith(".lock") for part in self.ref.split("/"))
             or self.job_key == "powercell_route"
         ):
-            raise ValueError("Invalid workflow path or branch")
+            raise ValueError("Invalid workflow path, branch or job ID")
         return self
 
 
@@ -122,22 +118,49 @@ async def creator_authorized(session, route):
     )
 
 
+async def runner_isolate(session, reservation, now):
+    """Admission uses current local runner/VM/session facts in one transaction."""
+    return await session.scalar(
+        select(Isolate)
+        .join(Command, Command.isolate_id == Isolate.id)
+        .join(Computer, Computer.id == Isolate.computer_id)
+        .where(
+            Isolate.id == reservation.isolate_id,
+            Isolate.status == "ready",
+            Isolate.expires_at > now,
+            Command.id == reservation.command_id,
+            Command.status == "running",
+            Computer.online.is_(True),
+            Computer.session_id == Isolate.session_id,
+            Computer.lease_expires_at > now,
+        )
+    )
+
+
+def repository_name(repository, repository_id):
+    name = repository.get("full_name") if isinstance(repository, dict) else None
+    if (
+        not isinstance(name, str)
+        or repository.get("id") != repository_id
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", name)
+    ):
+        raise GitHubError()
+    return name
+
+
 async def verify_repository(request, user_id, installation_id, repository_id):
     integration = service(request)
-    token = await user_token(request, user_id)
     try:
+        token = await user_token(request, user_id)
         installation = await integration.client.api("GET", f"/app/installations/{installation_id}")
         if installation.get("app_id") != integration.app_id or installation.get("suspended_at"):
             raise HTTPException(404, "GitHub installation unavailable")
-        repository = await integration.client.api(
-            "GET", f"/repositories/{repository_id}", token=token
-        )
+        repository = await user_get(request, user_id, f"/repositories/{repository_id}", token=token)
         if repository.get("id") != repository_id or not repository.get("permissions", {}).get(
             "admin"
         ):
             raise HTTPException(403, "GitHub repository administrator required")
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository["full_name"]):
-            raise GitHubError()
+        repository_name(repository, repository_id)
         # A user token can see several installations: also prove access through THIS installation.
         async with integration.client.installation_token(
             installation_id, [repository_id], {"metadata": "read"}
@@ -159,6 +182,16 @@ async def create_route(data: RouteCreate, request: Request):
         await authenticate(session, request, "execute")
         user_id = personal(principal)
         await pool_permission(session, principal, data.company_id)
+    # Refresh first so ordinary token rotation does not invalidate this snapshot.
+    try:
+        await user_token(request, user_id)
+    except GitHubError as error:
+        raise external_error(error) from error
+    async with request.app.state.db.read() as session:
+        account = await session.get(GitHubAccount, user_id)
+        if account is None:
+            raise HTTPException(409, "GitHub connection changed; retry creating the binding")
+        grant = account.tokens
     repository = await verify_repository(request, user_id, data.installation_id, data.repository_id)
     # A deterministic empty tar initializes a fresh isolate; never a registered runner snapshot.
     content = io.BytesIO()
@@ -167,13 +200,16 @@ async def create_route(data: RouteCreate, request: Request):
     content = content.getvalue()
     key = new_id()
     path = request.app.state.settings.storage_path / key
-    path.write_bytes(content)
     keep = False
     try:
+        path.write_bytes(content)
         async with request.app.state.db.write() as session:
             principal = await authenticate(session, request, "manage")
             await authenticate(session, request, "execute")
             await pool_permission(session, principal, data.company_id)
+            account = await session.get(GitHubAccount, user_id)
+            if not account or account.tokens != grant:
+                raise HTTPException(409, "GitHub connection changed; retry creating the binding")
             owner = await owner_values(session, principal, data.company_id)
             for computer_id in set(map(str, data.computer_ids)):
                 computer = await session.get(Computer, computer_id)
@@ -232,24 +268,27 @@ async def list_routes(
 ):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request)
+        memberships = await session.scalars(
+            select(Membership).where(
+                Membership.user_id == (principal.user_id or principal.actor_id)
+            )
+        )
+        readable = [
+            member.company_id
+            for member in memberships
+            if "execution.read" in effective_permissions(member.role, member.permissions)
+        ]
         rows = await session.scalars(
             select(CIRoute)
-            .where(owned_filter(CIRoute, principal))
+            .where(
+                owned_filter(CIRoute, principal),
+                or_(CIRoute.company_id.is_(None), CIRoute.company_id.in_(readable)),
+            )
             .order_by(CIRoute.created_at, CIRoute.id)
             .limit(limit)
             .offset(offset)
         )
-        result = []
-        for route in rows:
-            if route.company_id:
-                try:
-                    await company_access(
-                        session, principal, route.company_id, permission="execution.read"
-                    )
-                except HTTPException:
-                    continue
-            result.append(public(route))
-        return result
+        return [public(route) for route in rows]
 
 
 @router.delete("/routes/{route_id}", status_code=204)
@@ -285,7 +324,7 @@ async def route_runs(route_id: UUID, request: Request, limit: int = Query(50, ge
                 "isolate_id": row.isolate_id,
                 "created_at": row.created_at,
                 "finished_at": row.finished_at,
-                "url": f"https://github.com/{route.repository}/actions/runs/{row.run_id}",
+                "url": f"https://github.com/{route.repository}/actions/runs/{row.run_id}/attempts/{row.run_attempt}",
             }
             for row in rows
         ]
@@ -316,24 +355,103 @@ def decision(row):
         return {
             "id": row.id,
             "status": "ready",
-            "backend": "powercell",
-            "runs_on": ["self-hosted", row.label],
+            "runs_on": [row.label],
         }
     if row.status == "preparing":
         return {"id": row.id, "status": "preparing"}
-    if row.status == "fallback" and row.fallback != "none":
-        return {
-            "id": row.id,
-            "status": "ready",
-            "backend": "github",
-            "reason": row.reason,
-            "runs_on": row.fallback,
-        }
     return {"id": row.id, "status": "failed", "reason": row.reason or row.status}
 
 
+def watch_decision(row, now):
+    """Distinguish confirmed execution from an admitted or provisionally exited runner."""
+    if row is None:
+        return {"status": "failed", "reason": "reservation_unavailable"}
+    if row.started_at is not None:
+        return {"status": "started"}
+    if row.status not in ACTIVE and not (
+        row.status == "completed" and row.reason == "runner_exited"
+    ):
+        if (
+            row.status in {"completed", "cancelled"}
+            and (row.reason or "").startswith("github_")
+            and row.reason != "github_outcome_unavailable"
+        ):
+            return {"status": "started"}
+        return {"status": "failed", "reason": row.reason or row.status}
+    if row.expires_at <= now:
+        return {"status": "failed", "reason": "runner_timeout"}
+    if row.status in {"preparing", "ready"} and row.deadline <= now:
+        return {"status": "failed", "reason": "preparation_timeout"}
+    return {"status": "started" if row.status == "running" else "waiting"}
+
+
+@public_router.post("/routes/{route_id}/watch")
+async def watch_selection(route_id: UUID, data: Reserve, request: Request):
+    claims = await routing_identity(request, route_id)
+    async with request.app.state.db.read() as session:
+        # A concurrent start can renew the lease after this snapshot is read.
+        now = request.app.state.clock()
+        route = await session.get(CIRoute, str(route_id))
+        if route is None:
+            raise HTTPException(404, "CI route unavailable")
+        row = await session.scalar(
+            select(CIReservation).where(
+                CIReservation.route_id == route.id,
+                CIReservation.run_id == int(claims["run_id"]),
+                CIReservation.run_attempt == int(claims["run_attempt"]),
+                CIReservation.instance == data.instance,
+            )
+        )
+        if not await creator_authorized(session, route):
+            return {"status": "failed", "reason": "authorization_revoked"}
+        return watch_decision(row, now)
+
+
 @public_router.post("/routes/{route_id}/reserve")
-async def reserve(route_id: UUID, data: Reserve, request: Request):
+async def reserve(
+    route_id: UUID,
+    data: Reserve,
+    request: Request,
+    wait_seconds: float = Query(default=0, ge=0, le=20),
+):
+    until = time.monotonic() + wait_seconds
+    result = await reserve_once(route_id, data, request)
+    while result["status"] == "preparing" and time.monotonic() < until:
+        if await request.is_disconnected():
+            break
+        await asyncio.sleep(
+            min(request.app.state.settings.long_poll_interval, max(0, until - time.monotonic()))
+        )
+        async with request.app.state.db.read() as session:
+            row = await session.get(CIReservation, result["id"])
+            if row is None:
+                raise HTTPException(404, "CI reservation unavailable")
+            result = decision(row)
+    if result["status"] != "ready":
+        return result
+    async with request.app.state.db.write() as session:
+        now = request.app.state.clock()
+        row = await session.get(CIReservation, result["id"])
+        if row is None:
+            raise HTTPException(404, "CI reservation unavailable")
+        route = await session.get(CIRoute, row.route_id)
+        if row.expires_at <= now or not await creator_authorized(session, route):
+            raise HTTPException(409, "CI selection has expired or authorization was revoked")
+        if row.status not in {"ready", "selected", "running"} or (
+            row.status == "ready" and row.deadline <= now
+        ):
+            raise HTTPException(409, "CI runner is no longer ready")
+        isolate = await runner_isolate(session, row, now)
+        if isolate is None:
+            raise HTTPException(409, "CI runner is no longer available")
+        if row.status == "ready":
+            row.status = "selected"
+            row.expires_at = min(row.expires_at, now + timedelta(seconds=300))
+            isolate.expires_at = row.expires_at
+        return decision(row)
+
+
+async def reserve_once(route_id, data, request):
     started_at = request.app.state.clock()
     claims = await routing_identity(request, route_id)
     async with request.app.state.db.read() as session:
@@ -360,8 +478,8 @@ async def reserve(route_id: UUID, data: Reserve, request: Request):
             await verify_repository(request, creator_id, installation_id, repository_id)
         except (GitHubError, HTTPException):
             github_available = False
-    now = request.app.state.clock()
     async with request.app.state.db.write() as session:
+        now = request.app.state.clock()
         route = await session.get(CIRoute, str(route_id))
         previous = await session.scalar(
             select(CIReservation).where(
@@ -399,7 +517,6 @@ async def reserve(route_id: UUID, data: Reserve, request: Request):
             expires_at=now
             + timedelta(seconds=route.timeout_seconds + route.preparation_seconds + 300),
             next_check=now,
-            fallback=route.fallback,
             created_at=now,
         )
         session.add(row)
@@ -420,7 +537,7 @@ async def reserve(route_id: UUID, data: Reserve, request: Request):
             or active >= route.max_parallel
             or isolates >= request.app.state.settings.max_owner_isolates
         ):
-            row.status = "fallback"
+            row.status = "failed"
             row.reason = (
                 "route_disabled"
                 if not authorized
@@ -453,44 +570,23 @@ async def reserve(route_id: UUID, data: Reserve, request: Request):
             )
             session.add(isolate)
             await session.flush()
-            row.isolate_id = isolate.id
+            if await allocate_isolate(
+                session, isolate, now, request.app.state.settings, computer_ids=route.computer_ids
+            ):
+                row.isolate_id = isolate.id
+            else:
+                await session.delete(isolate)
+                row.status, row.reason = "failed", "no_capacity"
+                row.finished_at = row.cleaned_at = now
         await session.flush()
-        return decision(row)
-
-
-@public_router.post("/routes/{route_id}/commit")
-async def commit_selection(route_id: UUID, data: Reserve, request: Request):
-    claims = await routing_identity(request, route_id)
-    now = request.app.state.clock()
-    async with request.app.state.db.write() as session:
-        row = await session.scalar(
-            select(CIReservation).where(
-                CIReservation.route_id == str(route_id),
-                CIReservation.run_id == int(claims["run_id"]),
-                CIReservation.run_attempt == int(claims["run_attempt"]),
-                CIReservation.instance == data.instance,
-            )
-        )
-        if row is None:
-            raise HTTPException(409, "CI reservation does not exist")
-        route = await session.get(CIRoute, row.route_id)
-        if row.expires_at <= now or not await creator_authorized(session, route):
-            raise HTTPException(409, "CI selection has expired or authorization was revoked")
-        if row.status == "ready" and row.deadline > now:
-            row.status = "selected"
-            row.expires_at = min(row.expires_at, now + timedelta(seconds=300))
-            isolate = await session.get(Isolate, row.isolate_id)
-            isolate.expires_at = row.expires_at
-        elif row.status not in {"selected", "running"}:
-            raise HTTPException(409, "CI runner is no longer ready")
         return decision(row)
 
 
 @public_router.post("/routes/{route_id}/cancel")
 async def cancel_selection(route_id: UUID, data: Reserve, request: Request):
     claims = await routing_identity(request, route_id)
-    now = request.app.state.clock()
     async with request.app.state.db.write() as session:
+        now = request.app.state.clock()
         route = await session.get(CIRoute, str(route_id))
         row = await session.scalar(
             select(CIReservation).where(
@@ -520,19 +616,19 @@ async def cancel_selection(route_id: UUID, data: Reserve, request: Request):
                 run_attempt=int(claims["run_attempt"]),
                 instance=data.instance,
                 label="powercell-" + new_id(),
-                status="fallback",
+                status="cancelled",
                 reason="bootstrap_cancelled",
                 deadline=now,
                 expires_at=now,
                 next_check=now,
                 finished_at=now,
                 cleaned_at=now,
-                fallback=route.fallback,
             )
             session.add(row)
         elif row.status in ACTIVE:
-            row.status, row.reason, row.finished_at = "fallback", "bootstrap_cancelled", now
+            row.status, row.reason, row.finished_at = "cancelled", "bootstrap_cancelled", now
             row.credentials = None
+            row.next_check = min(row.next_check, now)
             if row.isolate_id:
                 await destroy_isolate(
                     session,

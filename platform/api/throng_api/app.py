@@ -36,6 +36,7 @@ from throng_api import (
 from throng_api.config import Settings
 from throng_api.database import Database
 from throng_api.models import utcnow
+from throng_api.transport import ProtocolError, RequestLog
 
 
 def create_app(settings: Settings | None = None, *, clock=utcnow):
@@ -112,6 +113,14 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
     app.state.github = github.configure(settings)
     app.state.clock = clock
     app.state.last_controller_tick = None
+    app.add_middleware(RequestLog)
+
+    @app.exception_handler(ProtocolError)
+    async def protocol_error(request, exception):
+        return JSONResponse(
+            status_code=exception.status_code,
+            content={"detail": exception.detail, "code": exception.code},
+        )
 
     app.add_middleware(browser.BrowserSessionMiddleware, settings=settings)
     app.add_middleware(

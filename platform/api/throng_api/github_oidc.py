@@ -26,6 +26,7 @@ class ActionsOIDC:
         self.lock = asyncio.Lock()
 
     async def verify(self, token, now):
+        started = self.monotonic()
         try:
             if not isinstance(token, str) or not 0 < len(token) <= 20000:
                 raise ValueError()
@@ -52,7 +53,7 @@ class ActionsOIDC:
             self.keys[kid].verify(
                 unb64(signature), (head + "." + body).encode(), padding.PKCS1v15(), hashes.SHA256()
             )
-            timestamp = now.timestamp()
+            timestamp = now.timestamp() + max(0, self.monotonic() - started)
             if (
                 claims.get("iss") != ISSUER
                 or claims.get("aud") != self.audience

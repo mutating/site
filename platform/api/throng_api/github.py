@@ -1,5 +1,6 @@
 """GitHub account authorization and installation discovery for Actions routing."""
 
+import asyncio
 import json
 import secrets
 from datetime import timedelta
@@ -10,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, update
 
-from throng_api.github_client import GitHubClient, GitHubError
+from throng_api.github_client import GitHubClient, GitHubError, GitHubToken
 from throng_api.github_oidc import ActionsOIDC
 from throng_api.models import CIRoute, GitHubAccount, GitHubOAuthFlow
 from throng_api.security import access_token_scheme, authenticate, bearer, digest, personal
@@ -100,8 +101,16 @@ def service(request):
 
 
 def external_error(error):
-    status = {401: 409, 403: 403, 404: 404, 429: 503}.get(error.status, 502)
-    return HTTPException(status, "GitHub request failed; reconnect the account or retry later")
+    status = (
+        503
+        if error.retry_after
+        else {401: 409, 403: 403, 404: 404, 429: 503}.get(error.status, 502)
+    )
+    return HTTPException(
+        status,
+        "GitHub request failed; reconnect the account or retry later",
+        headers={"Retry-After": str(error.retry_after)} if error.retry_after else None,
+    )
 
 
 def save_tokens(integration, account, tokens, now):
@@ -115,37 +124,57 @@ def save_tokens(integration, account, tokens, now):
 async def user_token(request, user_id):
     """Refresh rotating user tokens under a durable claim, outside the DB lock."""
     integration = service(request)
-    now = request.app.state.clock()
     nonce = secrets.token_urlsafe(24)
     async with request.app.state.db.write() as session:
         account = await session.get(GitHubAccount, user_id)
+        now = request.app.state.clock()
         if not account:
             raise HTTPException(409, "Connect a GitHub account first")
         tokens = integration.unseal(account.tokens)
         if account.expires_at is None or account.expires_at > now + timedelta(seconds=60):
-            return tokens["access_token"]
+            return GitHubToken(tokens["access_token"], ("user", account.github_user_id))
         if not tokens.get("refresh_token"):
             raise HTTPException(409, "Reconnect the GitHub account")
         if account.refresh_until and account.refresh_until > now:
             raise HTTPException(409, "GitHub authorization is being refreshed; retry shortly")
+        deadline = asyncio.get_running_loop().time() + 20
         account.refresh_nonce = nonce
         account.refresh_until = now + timedelta(seconds=30)
     try:
-        renewed = await integration.client.oauth(refresh_token=tokens["refresh_token"])
-        async with request.app.state.db.write() as session:
-            account = await session.get(GitHubAccount, user_id)
-            if not account or account.refresh_nonce != nonce:
-                raise HTTPException(409, "GitHub connection changed; retry")
-            save_tokens(integration, account, renewed, request.app.state.clock())
-            account.refresh_nonce = None
-            account.refresh_until = None
-        return renewed["access_token"]
+        # Include the claim's commit in this budget, so the operation finishes
+        # before the durable 30-second claim can be reused.
+        async with asyncio.timeout_at(deadline):
+            renewed = await integration.client.oauth(refresh_token=tokens["refresh_token"])
+            async with request.app.state.db.write() as session:
+                account = await session.get(GitHubAccount, user_id)
+                if not account or account.refresh_nonce != nonce:
+                    raise HTTPException(409, "GitHub connection changed; retry")
+                save_tokens(integration, account, renewed, request.app.state.clock())
+                account.refresh_nonce = None
+                account.refresh_until = None
+        return GitHubToken(renewed["access_token"], ("user", account.github_user_id))
+    except TimeoutError as error:
+        raise GitHubError() from error
     finally:
         async with request.app.state.db.write() as session:
             account = await session.get(GitHubAccount, user_id)
             if account and account.refresh_nonce == nonce:
                 account.refresh_nonce = None
                 account.refresh_until = None
+
+
+async def user_get(request, user_id, path, *, token, params=None):
+    """Recover a GET invalidated by concurrent rotation, with one changed-token retry."""
+    client = service(request).client
+    try:
+        return await client.api("GET", path, token=token, params=params)
+    except GitHubError as error:
+        if error.status != 401:
+            raise
+        replacement = await user_token(request, user_id)
+        if replacement == token:
+            raise
+        return await client.api("GET", path, token=replacement, params=params)
 
 
 async def principal_user(request, scope="read"):
@@ -181,7 +210,7 @@ async def begin_flow(request, purpose):
     return integration, state
 
 
-async def consume_flow(request, state, purpose):
+async def consume_flow(request, state, purpose, *, claim=None):
     async with request.app.state.db.write() as session:
         user_id = personal(await authenticate(session, request, "manage"))
         row = await session.get(GitHubOAuthFlow, digest(state))
@@ -193,7 +222,12 @@ async def consume_flow(request, state, purpose):
             or row.expires_at <= request.app.state.clock()
         ):
             raise HTTPException(400, "Invalid or expired GitHub authorization state")
-        await session.delete(row)
+        if claim:
+            # Rotate the public state to a private claim. New flows/disconnect
+            # can invalidate an exchange that is already outside the DB lock.
+            row.state_hash = digest(claim)
+        else:
+            await session.delete(row)
         return user_id
 
 
@@ -239,10 +273,18 @@ async def authorize_installation(request: Request):
 async def oauth_callback(
     request: Request,
     state: str = Query(min_length=1, max_length=200),
-    code: str = Query(min_length=1, max_length=2000),
+    code: str | None = Query(default=None, min_length=1, max_length=2000),
+    error: str | None = Query(default=None, min_length=1, max_length=200),
 ):
     integration = service(request)
-    user_id = await consume_flow(request, state, "authorize")
+    claim = secrets.token_urlsafe(32) if code and not error else None
+    user_id = await consume_flow(request, state, "authorize", claim=claim)
+    if error:
+        return integration.redirect(
+            "cancelled" if error == "access_denied" else "authorization_failed"
+        )
+    if code is None:
+        raise HTTPException(400, "Missing GitHub authorization code")
     try:
         tokens = await integration.client.oauth(code=code)
         identity = await integration.client.api("GET", "/user", token=tokens["access_token"])
@@ -258,6 +300,10 @@ async def oauth_callback(
             # The initiating session may have been revoked during the exchange.
             if personal(await authenticate(session, request, "manage")) != user_id:
                 raise HTTPException(400, "GitHub authorization session changed")
+            flow = await session.get(GitHubOAuthFlow, digest(claim))
+            if flow is None or flow.expires_at <= request.app.state.clock():
+                raise HTTPException(409, "GitHub authorization changed; reconnect")
+            await session.delete(flow)
             account = await session.get(GitHubAccount, user_id)
             if account is None:
                 account = GitHubAccount(user_id=user_id)
@@ -269,6 +315,11 @@ async def oauth_callback(
             account.refresh_until = None
     except GitHubError as error:
         raise external_error(error) from error
+    finally:
+        async with request.app.state.db.write() as session:
+            await session.execute(
+                delete(GitHubOAuthFlow).where(GitHubOAuthFlow.state_hash == digest(claim))
+            )
     return integration.redirect("connected")
 
 
@@ -288,8 +339,9 @@ async def installation_callback(
     user_id = await consume_flow(request, state, "install")
     try:
         token = await user_token(request, user_id)
-        result = await integration.client.api(
-            "GET",
+        result = await user_get(
+            request,
+            user_id,
             f"/user/installations/{installation_id}/repositories",
             token=token,
             params={"per_page": 1},
@@ -307,8 +359,12 @@ async def installations(request: Request, page: int = Query(default=1, ge=1, le=
     integration = service(request)
     try:
         token = await user_token(request, user_id)
-        data = await integration.client.api(
-            "GET", "/user/installations", token=token, params={"per_page": 100, "page": page}
+        data = await user_get(
+            request,
+            user_id,
+            "/user/installations",
+            token=token,
+            params={"per_page": 100, "page": page},
         )
         return {
             "total_count": data["total_count"],
@@ -338,8 +394,9 @@ async def repositories(
         installation = await integration.client.api("GET", f"/app/installations/{installation_id}")
         if installation["app_id"] != integration.app_id or installation.get("suspended_at"):
             raise HTTPException(404, "GitHub installation not available")
-        data = await integration.client.api(
-            "GET",
+        data = await user_get(
+            request,
+            user_id,
             f"/user/installations/{installation_id}/repositories",
             token=token,
             params={"per_page": 100, "page": page},
@@ -365,8 +422,13 @@ async def repositories(
 async def disconnect(request: Request):
     async with request.app.state.db.write() as session:
         user_id = personal(await authenticate(session, request, "manage"))
-        await session.execute(
-            update(CIRoute).where(CIRoute.created_by == user_id).values(enabled=False)
-        )
-        await session.execute(delete(GitHubOAuthFlow).where(GitHubOAuthFlow.user_id == user_id))
-        await session.execute(delete(GitHubAccount).where(GitHubAccount.user_id == user_id))
+        await disconnect_user(session, user_id)
+
+
+async def disconnect_user(session, user_id):
+    """Invalidate local authority and outstanding exchanges after either revocation source."""
+    await session.execute(
+        update(CIRoute).where(CIRoute.created_by == user_id).values(enabled=False)
+    )
+    await session.execute(delete(GitHubOAuthFlow).where(GitHubOAuthFlow.user_id == user_id))
+    await session.execute(delete(GitHubAccount).where(GitHubAccount.user_id == user_id))

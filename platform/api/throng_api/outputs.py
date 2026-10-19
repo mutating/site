@@ -26,6 +26,11 @@ class Identity(BaseModel):
     created_at: datetime
 
 
+class TaskReceipt(BaseModel):
+    accepted: bool
+    active: bool
+
+
 class BenchmarkResult(Identity):
     computer_id: str
     benchmark_name: str

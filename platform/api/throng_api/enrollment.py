@@ -52,6 +52,7 @@ EXTENSIONS = [
     "powercell.capacity.v1",
     "powercell.eviction.v1",
     "powercell.diagnostics.v1",
+    "powercell.recovery.v1",
     "powercell.isolation.v1",
 ]
 

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     powercell_relay_certificate: Path | None = None
     powercell_relay_key: Path | None = None
     powercell_relay_host: str = "127.0.0.1"
+    powercell_relay_keep_alive_seconds: int = Field(default=30, ge=5, le=300)
     enrollment_seconds: int = Field(default=3600, ge=60, le=86400)
     device_certificate_days: int = Field(default=365, ge=1, le=3650)
     device_proof_seconds: int = Field(default=300, ge=30, le=600)

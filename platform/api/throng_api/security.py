@@ -288,7 +288,11 @@ async def agent_auth(session, request, require_session=True):
             or request.headers.get("x-agent-session") != computer.session_id
             or computer.lease_expires_at <= request.app.state.clock()
         ):
-            raise HTTPException(409, "Agent session expired; a clean start is required")
+            from throng_api.transport import ProtocolError
+
+            raise ProtocolError(
+                "session_expired", "Agent session expired; a clean start is required"
+            )
     return computer
 
 

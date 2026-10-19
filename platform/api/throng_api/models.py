@@ -598,7 +598,6 @@ class CIRoute(Identity, Ownership, Base):
     preparation_seconds: Mapped[int] = mapped_column(Integer)
     timeout_seconds: Mapped[int] = mapped_column(Integer)
     max_parallel: Mapped[int] = mapped_column(Integer)
-    fallback: Mapped[str] = mapped_column(String(100))
     state_artifact_id: Mapped[str] = mapped_column(ForeignKey("artifacts.id"))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -621,10 +620,10 @@ class CIReservation(Identity, Base):
     credentials: Mapped[str | None] = mapped_column(Text)
     deadline: Mapped[datetime] = mapped_column(UTCDateTime())
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
-    fallback: Mapped[str] = mapped_column(String(100))
     lease_nonce: Mapped[str | None] = mapped_column(String(64))
     lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
     next_check: Mapped[datetime] = mapped_column(UTCDateTime())
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     cleaned_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 

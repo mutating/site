@@ -6,13 +6,13 @@ import re
 from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 
 from throng_api.ci import ACTIVE
-from throng_api.ci_controller import close, mark_running
+from throng_api.ci_controller import close_github, mark_running
 from throng_api.device_security import strict_json
-from throng_api.github import service
-from throng_api.models import CIReservation, CIRoute, GitHubDelivery
+from throng_api.github import disconnect_user, service
+from throng_api.models import CIReservation, CIRoute, GitHubAccount, GitHubDelivery
 from throng_api.powercell import bounded_body
 
 router = APIRouter(prefix="/v1/github", tags=["GitHub webhooks"])
@@ -25,7 +25,9 @@ async def webhook(request: Request):
     expected = (
         "sha256=" + hmac.new(integration.webhook_secret.encode(), body, hashlib.sha256).hexdigest()
     )
-    if not hmac.compare_digest(expected, request.headers.get("x-hub-signature-256", "")):
+    if not hmac.compare_digest(
+        expected.encode(), request.headers.get("x-hub-signature-256", "").encode()
+    ):
         raise HTTPException(401, "Invalid GitHub webhook signature")
     delivery = request.headers.get("x-github-delivery", "")
     if not re.fullmatch(r"[A-Za-z0-9-]{1,100}", delivery):
@@ -34,7 +36,7 @@ async def webhook(request: Request):
         payload = strict_json(body)
         if not isinstance(payload, dict):
             raise ValueError()
-        for name in ("installation", "repository", "workflow_job", "workflow_run"):
+        for name in ("installation", "repository", "workflow_job", "workflow_run", "sender"):
             if name in payload and not isinstance(payload[name], dict):
                 raise ValueError()
         removed = payload.get("repositories_removed", [])
@@ -43,8 +45,8 @@ async def webhook(request: Request):
     except ValueError as error:
         raise HTTPException(400, "Invalid GitHub webhook payload") from error
     checksum = hashlib.sha256(body).hexdigest()
-    now = request.app.state.clock()
     async with request.app.state.db.write() as session:
+        now = request.app.state.clock()
         previous = await session.get(GitHubDelivery, delivery)
         if previous:
             if previous.payload_hash != checksum:
@@ -56,7 +58,15 @@ async def webhook(request: Request):
         )
         event, action = request.headers.get("x-github-event"), payload.get("action")
         installation = payload.get("installation", {}).get("id")
-        if event in {"installation", "installation_repositories"}:
+        if event == "github_app_authorization" and action == "revoked":
+            sender = payload.get("sender", {}).get("id")
+            if type(sender) is int and sender > 0:
+                account = await session.scalar(
+                    select(GitHubAccount).where(GitHubAccount.github_user_id == sender)
+                )
+                if account:
+                    await disconnect_user(session, account.user_id)
+        elif event in {"installation", "installation_repositories"}:
             routes = (
                 await session.scalars(
                     select(CIRoute).where(CIRoute.installation_id == installation)
@@ -81,7 +91,18 @@ async def webhook(request: Request):
                             CIRoute.installation_id == installation,
                             CIReservation.run_id == run_id,
                             CIReservation.run_attempt == attempt,
-                            CIReservation.status.in_(ACTIVE),
+                            or_(
+                                CIReservation.status.in_(ACTIVE),
+                                and_(
+                                    CIReservation.status == "completed",
+                                    CIReservation.reason == "runner_exited",
+                                ),
+                                and_(
+                                    event == "workflow_job" and action == "completed",
+                                    CIReservation.status.in_({"completed", "cancelled"}),
+                                    CIReservation.reason.startswith("github_", autoescape=True),
+                                ),
+                            ),
                         )
                     )
                 ).all()
@@ -93,12 +114,7 @@ async def webhook(request: Request):
                     ):
                         continue
                     if action == "completed":
-                        close(
-                            row,
-                            "cancelled" if item.get("conclusion") == "cancelled" else "completed",
-                            "github_" + str(item.get("conclusion", "completed"))[:50],
-                            now,
-                        )
+                        close_github(row, item.get("conclusion", "completed"), now)
                     elif (
                         event == "workflow_job"
                         and action == "in_progress"
