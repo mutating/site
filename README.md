@@ -20,7 +20,8 @@ deploy/                 Общий запуск и активация одног
 
 ## Разработка
 
-Общая UI-библиотека пока развивается отдельно от сайта и платформы:
+Статический сайт использует хэдер из общей UI-библиотеки. Платформа пока
+использует собственную реализацию:
 
 ```sh
 npm ci
@@ -29,14 +30,23 @@ npm run build:ui
 npm run test:ui     # Нужны Hugo, Chromium и Firefox для Playwright
 ```
 
-Состав, API и примеры будущего подключения описаны в
+Состав, API и примеры подключения описаны в
 [packages/ui/README.md](packages/ui/README.md).
 
 Из корня:
 
 ```sh
+npm ci
+npm run build:ui
 hugo server --source site
 ```
+
+После изменений в `packages/ui` повторите `npm run build:ui`.
+Production-сборка сайта: `npm run build:site` — библиотека собирается первой.
+
+Скриншотные регрессии хэдера: `npm run test:site:header`. Эталон старого
+хэдера, матрица состояний и аудит e2e находятся в
+[tests/site/header](tests/site/header/README.md).
 
 API и кабинет после установки зависимостей и сборки запускаются одной командой:
 
