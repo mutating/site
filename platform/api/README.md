@@ -468,7 +468,8 @@ THRONG_DATABASE_URL='postgresql+asyncpg://user:password@localhost/throng' uv run
 ## GitHub Actions
 
 API поддерживает подключение GitHub App, привязки workflow к личным и
-организационным Power Cells, одноразовые JIT runners и GitHub-hosted fallback.
+организационным Power Cells и одноразовые JIT runners. Нет свободного Mac —
+немедленная ошибка routing, без резервного запуска на GitHub.
 Конфигурация, endpoints, модель доступа, генерация workflow и ограничения
 описаны в [GitHub Actions](docs/github.md). Перед публичным использованием
 требуются серверные credentials и проверка настоящего job: локальные HTTP-тесты
