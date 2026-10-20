@@ -460,6 +460,7 @@ def agent_requests(agent, artifact, running_command):
         ("POST", "/agent/v1/tasks/{task_id}/ack", {}),
         ("POST", "/agent/v1/tasks/{task_id}/started", {}),
         ("POST", "/agent/v1/tasks/{task_id}/complete", {"json": {"returncode": 0}}),
+        ("POST", "/agent/v1/tasks/{task_id}/receipt", {"json": {"returncode": 0}}),
         (
             "PUT",
             "/agent/v1/tasks/{task_id}/artifacts/{purpose}",
