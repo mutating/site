@@ -38,13 +38,18 @@ class Database:
             # This MUST precede reads: avoids SQLite read-to-write upgrade races and
             # also takes a PostgreSQL row lock. No network IO while this lock is held.
             started = time.monotonic()
-            result = await session.execute(
-                update(Coordination)
-                .where(Coordination.id == 1)
-                .values(revision=Coordination.revision + 1)
-            )
-            if (timing := db_wait.get()) is not None:
-                timing[0] += time.monotonic() - started
+            timing = db_wait.get()
+            try:
+                result = await session.execute(
+                    update(Coordination)
+                    .where(Coordination.id == 1)
+                    .values(revision=Coordination.revision + 1)
+                )
+            finally:
+                # Lock failure/cancellation still explains request latency.
+                if timing is not None:
+                    timing[0] += time.monotonic() - started
+            if timing is not None:
                 timing[1] += 1
             if result.rowcount != 1:
                 raise RuntimeError("Database is not initialized; run throng-api migrate")
