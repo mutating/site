@@ -32,6 +32,7 @@ pytestmark = [
 async def test_startup_probe_is_short_bounded_and_shared(
     client, route, ci_peer, powercell, app, clock, age, peers, interval
 ):
+    """Bound the startup readiness probe and share it between waiting requests."""
     result, _ = await ready_runner(
         client, route, ci_peer, powercell, app, clock, select_runner=False
     )
@@ -68,6 +69,7 @@ async def test_startup_probe_is_short_bounded_and_shared(
 async def test_wait_observes_state_changes_without_holding_transaction(
     client, route, ci_peer, powercell, app, clock, transition
 ):
+    """Observe readiness changes without keeping a database transaction open."""
     result, _ = await ready_runner(
         client, route, ci_peer, powercell, app, clock, select_runner=False
     )
@@ -111,6 +113,7 @@ async def test_wait_observes_state_changes_without_holding_transaction(
 async def test_wait_timeout_and_legacy_poll_share_one_reservation(
     client, route, ci_peer, powercell, app
 ):
+    """Keep one reservation across a readiness timeout and a legacy poll."""
     first = await reserve(client, route, ci_peer)
     started = time.monotonic()
     response = await client.post(
@@ -127,6 +130,7 @@ async def test_wait_timeout_and_legacy_poll_share_one_reservation(
 
 @pytest.mark.parametrize("wait", [-1, 20.1, "nan", "inf"])
 async def test_wait_bound_is_validated_before_reserving(client, route, ci_peer, app, wait):
+    """Reject an invalid readiness wait bound before allocating a reservation."""
     response = await client.post(
         f"/v1/github/ci/routes/{route['id']}/reserve?wait_seconds={wait}",
         headers={"Authorization": "Bearer " + ci_peer.token()},
@@ -140,6 +144,7 @@ async def test_wait_bound_is_validated_before_reserving(client, route, ci_peer, 
 # Assertions: an already known outcome returns immediately even when the caller
 # permits twenty seconds of waiting. Client disconnect stops waiting promptly.
 async def test_ready_response_does_not_wait(client, route, ci_peer, powercell, app, clock):
+    """Return an already ready reservation without waiting for a notification."""
     result, _ = await ready_runner(
         client, route, ci_peer, powercell, app, clock, select_runner=False
     )
@@ -157,6 +162,7 @@ async def test_ready_response_does_not_wait(client, route, ci_peer, powercell, a
 async def test_disconnected_client_does_not_leave_waiting_handler(
     client, route, ci_peer, powercell, monkeypatch
 ):
+    """Release the readiness waiter when its HTTP client disconnects."""
     checked = []
 
     async def disconnected(self):

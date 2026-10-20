@@ -8,6 +8,7 @@ pytestmark = pytest.mark.anyio
 
 
 def suite(version, single, multi):
+    """Build a complete single-core and multi-core benchmark upload."""
     return {
         "benchmarker_version": version,
         "results": [
@@ -18,6 +19,7 @@ def suite(version, single, multi):
 
 
 async def owner_result(api, computer, *, name="single_core", version="2.3.0", number=0):
+    """Create an owner-managed benchmark measurement for concurrency checks."""
     response = await api.post(
         "/v1/benchmark-results",
         json={
@@ -32,6 +34,7 @@ async def owner_result(api, computer, *, name="single_core", version="2.3.0", nu
 
 
 async def listed(api, computer, *, latest_only=True):
+    """Read the computer's benchmark results with the requested version filter."""
     response = await api.get(
         f"/v1/computers/{computer['id']}/benchmark-results",
         params={"latest_only": latest_only},

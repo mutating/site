@@ -9,6 +9,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def create_result(api, computer, version, *, name="future_metric", number=1):
+    """Create a benchmark result through the API and return its persisted representation."""
     response = await api.post(
         "/v1/benchmark-results",
         json={

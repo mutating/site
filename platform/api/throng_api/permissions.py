@@ -40,7 +40,14 @@ def request_permission(request, scope):
     if resource == "memberships":
         return "members.manage" if scope == "manage" else "members.read"
     if (
-        resource in {"computers", "computer-ownerships", "computer-resources", "agent-enrollments", "benchmark-results"}
+        resource
+        in {
+            "computers",
+            "computer-ownerships",
+            "computer-resources",
+            "agent-enrollments",
+            "benchmark-results",
+        }
         or "resources" in parts
     ):
         return "resources.manage" if scope == "manage" else "resources.read"

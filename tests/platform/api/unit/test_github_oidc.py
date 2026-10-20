@@ -55,9 +55,7 @@ def oidc(signing_key):
         peer.calls += 1
         return httpx.Response(peer.status, json={"keys": keys})
 
-    client = GitHubClient(
-        "test", "secret", pem, transport=httpx.MockTransport(transport)
-    )
+    client = GitHubClient("test", "secret", pem, transport=httpx.MockTransport(transport))
     peer.verifier = ActionsOIDC(client, "ci-audience", monotonic=lambda: peer.time)
     peer.now = datetime(2026, 10, 16, tzinfo=UTC)
 
@@ -82,13 +80,9 @@ def oidc(signing_key):
             "sub": "repo:org/repo:ref:refs/heads/main",
         }
         claims.update(updates or {})
-        message = (
-            encoded(header or {"alg": "RS256", "kid": "one"}) + "." + encoded(claims)
-        )
+        message = encoded(header or {"alg": "RS256", "kid": "one"}) + "." + encoded(claims)
         return (
-            message
-            + "."
-            + encoded(key.sign(message.encode(), padding.PKCS1v15(), hashes.SHA256()))
+            message + "." + encoded(key.sign(message.encode(), padding.PKCS1v15(), hashes.SHA256()))
         )
 
     peer.token = token
@@ -101,15 +95,11 @@ async def test_valid_and_bounded_key_cache(oidc):
     await oidc.verifier.verify(oidc.token(), oidc.now)
     assert oidc.calls == 1
     with pytest.raises(HTTPException) as caught:
-        await oidc.verifier.verify(
-            oidc.token(header={"alg": "RS256", "kid": "unknown"}), oidc.now
-        )
+        await oidc.verifier.verify(oidc.token(header={"alg": "RS256", "kid": "unknown"}), oidc.now)
     assert caught.value.status_code == 401 and oidc.calls == 1
     oidc.time = 31
     with pytest.raises(HTTPException):
-        await oidc.verifier.verify(
-            oidc.token(header={"alg": "RS256", "kid": "unknown"}), oidc.now
-        )
+        await oidc.verifier.verify(oidc.token(header={"alg": "RS256", "kid": "unknown"}), oidc.now)
     assert oidc.calls == 2
     oidc.time = 700
     await oidc.verifier.verify(oidc.token(), oidc.now)
@@ -160,9 +150,7 @@ async def test_rejects_algorithm_confusion(oidc, header):
     assert caught.value.status_code == 401 and oidc.calls == 0
 
 
-@pytest.mark.parametrize(
-    "token", [None, "", "a" * 20001, "not.a.jwt", "a.b", "a.b.c.d"]
-)
+@pytest.mark.parametrize("token", [None, "", "a" * 20001, "not.a.jwt", "a.b", "a.b.c.d"])
 async def test_malformed_tokens(oidc, token):
     """Malformed wire values are rejected without leaking parsing exceptions."""
     with pytest.raises(HTTPException) as caught:
