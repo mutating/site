@@ -137,7 +137,9 @@ async def test_generated_guard_observes_start_while_oidc_refresh_is_unavailable(
             await chain.start_job(selection)
 
     chain.on_pump = progress
-    assert await chain.bootstrap(watch=True) == {}
+    # Simulating 122 seconds performs many real DB/HTTP rounds. Bound the host
+    # separately from the logical clock assertions on slower PostgreSQL runners.
+    assert await chain.bootstrap(watch=True, watchdog=60) == {}
     assert chain.clock.now - started == timedelta(seconds=122)
     assert (await chain.state()).status == "running"
     await chain.finish_job()

@@ -9,26 +9,56 @@ import pytest
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+@pytest.mark.parametrize("reconciled", [False, True])
 @pytest.mark.parametrize("status", ["obsolete", "failed", "delivered"])
 async def test_receipt_exposes_original_task_state_without_reviving_session(
-    app, agent_api, run_task, clock, status
+    app, api, agent_api, provisioning_isolate, clock, status, reconciled
 ):
     """Recovery must distinguish terminal controls from merely inactive ones.
     The ordinary task GET remains fenced after lease expiry; receipt provides
     the assigned task state without renewing execution rights or its lease.
     """
+    from throng_api.controller import run_once
     from throng_api.models import AgentTask
 
+    # Drive the real scheduler explicitly so expiry reconciliation cannot race
+    # the receipt assertions. Provision and dispatch through the ordinary API.
+    await run_once(app)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})
+    assert response.status_code == 200, response.text
+    create = response.json()["tasks"][0]
+    assert create["kind"] == "create" and create["isolate_id"] == provisioning_isolate["id"]
+    assert (
+        await agent_api.post(f"/agent/v1/tasks/{create['id']}/complete", json={})
+    ).status_code == 200
+    response = await api.post(
+        f"/v1/isolates/{provisioning_isolate['id']}/commands",
+        headers={"Idempotency-Key": str(uuid4())},
+        json={"command": "pytest -q"},
+    )
+    assert response.status_code == 202, response.text
+    await run_once(app)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})
+    assert response.status_code == 200, response.text
+    run_task = response.json()["tasks"][0]
+    assert run_task["kind"] == "run"
     async with app.state.db.write() as session:
         task = await session.get(AgentTask, run_task["id"])
         task.kind, task.status = "cancel", status
     clock.now += timedelta(seconds=120)
+    if reconciled:
+        await run_once(app)
+    expected = "obsolete" if reconciled and status == "delivered" else status
     path = f"/agent/v1/tasks/{run_task['id']}"
     assert (await agent_api.get(path)).status_code == 409
     response = await agent_api.post(path + "/receipt", json={})
     assert response.status_code == 200, response.text
-    assert response.json() == {"accepted": False, "active": False, "task_status": status}
+    assert response.json() == {"accepted": False, "active": False, "task_status": expected}
     assert (await agent_api.post("/agent/v1/heartbeat")).status_code == 409
+    async with app.state.db.read() as session:
+        task = await session.get(AgentTask, run_task["id"])
+        assert task.status == expected
 
 
 async def test_completion_receipt_survives_expiry_and_rejects_changed_or_foreign_result(

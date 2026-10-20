@@ -130,27 +130,49 @@ async def test_expired_claim_commit_cannot_issue_http_or_release_a_successor(
             assert row.next_check <= clock.now
 
 
-@pytest.mark.parametrize("elapsed,budget,expected_calls", [(0, 40, 5), (59, 1, 1)])
+@pytest.mark.parametrize("elapsed,budget,max_calls", [(0, 40, 5), (59, 1, 1)])
+@pytest.mark.parametrize("connection_delay", [0, 1.1])
 async def test_reconciliation_uses_only_the_committed_claim_remaining_time(
-    app, clock, github, ci_peer, due_cleanup, monkeypatch, elapsed, budget, expected_calls
+    app,
+    clock,
+    github,
+    ci_peer,
+    due_cleanup,
+    monkeypatch,
+    elapsed,
+    budget,
+    max_calls,
+    connection_delay,
 ):
-    """Fresh work retains 40 seconds; a 59-second commit leaves only one for HTTP.
+    """Include HTTP client setup and response reads in the real remaining lease.
 
-    Scale only the controller timer while keeping actual TCP reads active. The
-    token response fits inside a fresh budget, but cannot finish inside the short
-    remainder: removing the cap causes extra provider operations, not just a
-    different timer argument.
+    A two-second token response fits a fresh 40-second budget, but not its
+    one-second remainder. Slow connection setup may consume that remainder
+    before any request. Removing the cap causes extra real provider operations.
     """
     barrier = stalled_claim_commit(app, monkeypatch)
     original = github.service.client._transport
     timeout = asyncio.timeout
     budgets, delivered = [], []
+    connection = github.service.client.connection
+    prepared = False
 
-    def scaled(value):
+    @asynccontextmanager
+    async def delayed_connection():
+        nonlocal prepared
+        async with connection() as client:
+            if not prepared:
+                prepared = True
+                await asyncio.sleep(connection_delay)
+            yield client
+
+    monkeypatch.setattr(github.service.client, "connection", delayed_connection)
+
+    def observed_timeout(value):
         budgets.append(value)
-        return timeout(value * 0.02)
+        return timeout(value)
 
-    monkeypatch.setattr(ci_controller, "asyncio", SimpleNamespace(timeout=scaled))
+    monkeypatch.setattr(ci_controller, "asyncio", SimpleNamespace(timeout=observed_timeout))
 
     async def provider(request, writer):
         upstream = await upstream_response(original, request)
@@ -164,7 +186,7 @@ async def test_reconciliation_uses_only_the_committed_claim_remaining_time(
             for _ in range(40):
                 writer.write(b" ")
                 await writer.drain()
-                await asyncio.sleep(0.005)
+                await asyncio.sleep(0.05)
             writer.write(body)
             delivered.append(True)
         else:
@@ -181,8 +203,13 @@ async def test_reconciliation_uses_only_the_committed_claim_remaining_time(
         await asyncio.wait_for(barrier.held.wait(), 2)
         clock.now += timedelta(seconds=elapsed)
         barrier.release.set()
-        await asyncio.wait_for(pending, 5)
-        assert len(peer.requests) == expected_calls
+        await asyncio.wait_for(pending, 10)
+        if elapsed == 0:
+            assert len(peer.requests) == max_calls
+        else:
+            assert len(peer.requests) <= max_calls
+            if connection_delay:
+                assert not peer.requests
         assert bool(delivered) == (elapsed == 0)
         assert budgets == [budget]
     async with app.state.db.read() as session:

@@ -269,7 +269,7 @@ class WorkflowChain:
         await schedule(self.app, self.clock)
         await self.deliver_tasks()
 
-    async def bootstrap(self, instance="default", *, watch=False):
+    async def bootstrap(self, instance="default", *, watch=False, watchdog=15):
         """Execute the exact embedded script; preserve its urllib serialization and HTTP errors."""
         step = self.guard_step if watch else self.routing_step
         script = step["run"]
@@ -357,7 +357,7 @@ class WorkflowChain:
             ),
         )
         self.outputs.append(output)
-        await asyncio.wait_for(asyncio.to_thread(namespace["main"]), timeout=15)
+        await asyncio.wait_for(asyncio.to_thread(namespace["main"]), timeout=watchdog)
         if watch:
             assert not output.exists()
             return {}
