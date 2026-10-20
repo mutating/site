@@ -92,6 +92,7 @@ class RelayServer:
         self.app, self.settings, self.info = app, settings, info
         self.listener = None
         self.connections = set()
+        self.closing = False
         self.http_state = ServerState()
 
     async def start(self):
@@ -114,9 +115,23 @@ class RelayServer:
             limit=65536,
         )
 
-    async def connected(self, reader, writer):
-        task = asyncio.current_task()
+    def connected(self, reader, writer):
+        # Accept ownership before scheduling: close() may race a queued callback,
+        # and cancellation before the first coroutine step cannot run finally.
+        if self.closing:
+            writer.transport.abort()
+            return
+        task = asyncio.create_task(self.handle_connection(reader, writer))
         self.connections.add(task)
+
+        def finished(task):
+            writer.transport.abort()
+            self.connections.discard(task)
+
+        task.add_done_callback(finished)
+        return task
+
+    async def handle_connection(self, reader, writer):
         try:
             tls = writer.get_extra_info("ssl_object")
             if tls.selected_alpn_protocol() != "h2":
@@ -133,9 +148,9 @@ class RelayServer:
                 await writer.wait_closed()
             except (OSError, ssl.SSLError):
                 pass
-            self.connections.discard(task)
 
     async def close(self):
+        self.closing = True
         if self.listener:
             self.listener.close()
         tasks = list(self.connections)
