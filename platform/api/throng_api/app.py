@@ -3,7 +3,7 @@ import json
 import math
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -178,14 +178,18 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         return {"status": "ok", "version": __version__}
 
     @app.get("/health/ready", tags=["health"])
-    async def ready():
+    async def ready(request: Request):
+        # FastAPI caches endpoint callables. Resolve the current instance from
+        # the request so that cache does not retain discarded app/database graphs.
+        app = request.app
+        settings = app.state.settings
         try:
             await app.state.db.check()
         except Exception as error:
             raise HTTPException(503, "Database unavailable") from error
         if settings.controller_enabled:
             last = app.state.last_controller_tick
-            if last is None or (clock() - last).total_seconds() > max(
+            if last is None or (app.state.clock() - last).total_seconds() > max(
                 10, settings.controller_interval * 5
             ):
                 raise HTTPException(503, "Controller is not making progress")
