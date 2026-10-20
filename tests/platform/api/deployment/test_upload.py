@@ -54,6 +54,11 @@ if command == 'rsync':
     sys.exit(int(os.environ.get('TRANSFER_STATUS', '0')))
 if command == 'uv' and os.environ.get('FAILURE') == 'uv':
     sys.exit(42)
+if command == 'chmod' and os.environ.get('FAILURE') == 'cache-permissions':
+    if any('__pycache__' in arg for arg in args):
+        sys.exit(77)
+    if '-R' in args and any(Path(arg).is_dir() and list(Path(arg).rglob('__pycache__')) for arg in args):
+        sys.exit(77)
 if command == 'sudo':
     time.sleep(float(os.environ.get('ACTIVATION_DELAY', '0')))
     print('Activation worker finished', flush=True)
@@ -419,3 +424,27 @@ def test_new_static_site_release_replaces_content_adds_assets_and_removes_old_ou
     assert not (published / "app.oldhash.css").exists()
     for name, content in old_files.items():
         assert (old_public / name).read_text() == content
+
+
+def test_python_permissions_skip_bytecode_created_by_other_runtime_users(deployment):
+    """Prepare successfully when runtime-created bytecode cannot be chmodded by SSH user."""
+    checkout, server, _, env, log = deployment
+    python = server / "python/cpython-test/lib"
+    cache = python / "__pycache__"
+    cache.mkdir(parents=True)
+    (cache / "runtime.pyc").write_bytes(b"foreign bytecode")
+    (python / "runtime.py").write_text("source")
+    result = subprocess.run(
+        ["bash", str(checkout / "deploy/deploy.sh"), "new", "prepare"],
+        env={**env, "FAILURE": "cache-permissions"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    actions = [json.loads(line) for line in log.read_text().splitlines()]
+    changed = [arg for action in actions if action[0] == "chmod" for arg in action[1:]]
+    assert str(python / "runtime.py") in changed
+    assert not any("__pycache__" in arg for arg in changed)
+    assert not any(action[0] == "sudo" for action in actions)
+    assert "Release permissions (deadline 60s): completed" in result.stdout
