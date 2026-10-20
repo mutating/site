@@ -1,0 +1,156 @@
+---
+# Apply the shared UI fingerprint cache rule to an existing site without replacing
+# the rest of its nginx configuration. The full setup-site.yml already has it.
+- name: Update the existing site's fingerprinted UI stylesheet cache policy
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+    nginx_ui_cache_config: /etc/nginx/sites-available/mutating.tech-tls
+    nginx_ui_cache_enabled: /etc/nginx/sites-enabled/mutating.tech
+    nginx_ui_cache_legacy_pattern: '^/(?:css|js)/.+'
+    nginx_ui_cache_current_pattern: '^/(?:css|js|ui/styles)/.+'
+    nginx_ui_cache_validate_command: [/usr/sbin/nginx, -t]
+    nginx_ui_cache_reload_command: [/usr/bin/systemctl, reload, nginx]
+    nginx_ui_cache_verify_public: true
+    nginx_ui_cache_origin: https://mutating.tech
+
+  tasks:
+    - name: Inspect the enabled site link
+      ansible.builtin.stat:
+        path: "{{ nginx_ui_cache_enabled }}"
+        follow: false
+      register: nginx_ui_cache_link
+
+    - name: Require the expected active site configuration
+      ansible.builtin.assert:
+        that:
+          - nginx_ui_cache_link.stat.islnk | default(false)
+          - nginx_ui_cache_link.stat.lnk_source | default('') == nginx_ui_cache_config
+        fail_msg: The enabled site must point to the expected TLS config before this migration.
+
+    - name: Inspect the site configuration file
+      ansible.builtin.stat:
+        path: "{{ nginx_ui_cache_config }}"
+        follow: false
+      register: nginx_ui_cache_file
+
+    - name: Require a regular configuration file
+      ansible.builtin.assert:
+        that: nginx_ui_cache_file.stat.isreg | default(false)
+
+    - name: Read the current site configuration
+      ansible.builtin.slurp:
+        src: "{{ nginx_ui_cache_config }}"
+      register: nginx_ui_cache_source
+      no_log: true
+
+    - name: Require exactly one recognized fingerprint location
+      ansible.builtin.assert:
+        that:
+          - >-
+            ((nginx_ui_cache_source.content | b64decode).count(nginx_ui_cache_legacy_pattern) == 1
+            and (nginx_ui_cache_source.content | b64decode).count(nginx_ui_cache_current_pattern) == 0)
+            or ((nginx_ui_cache_source.content | b64decode).count(nginx_ui_cache_legacy_pattern) == 0
+            and (nginx_ui_cache_source.content | b64decode).count(nginx_ui_cache_current_pattern) == 1)
+        fail_msg: Expected one legacy or current fingerprint location; inspect this config manually.
+
+    - name: Validate the existing nginx configuration before changing it
+      ansible.builtin.command:
+        argv: "{{ nginx_ui_cache_validate_command }}"
+      changed_when: false
+      check_mode: false
+      timeout: 30
+
+    - name: Update the cache rule with recovery on validation or reload failure
+      block:
+        - name: Back up the site config and include fingerprinted UI stylesheets
+          ansible.builtin.replace:
+            path: "{{ nginx_ui_cache_config }}"
+            regexp: "{{ nginx_ui_cache_legacy_pattern | regex_escape }}"
+            replace: "{{ nginx_ui_cache_current_pattern }}"
+            backup: true
+          register: nginx_ui_cache_update
+
+        - name: Validate the complete nginx configuration after the change
+          ansible.builtin.command:
+            argv: "{{ nginx_ui_cache_validate_command }}"
+          changed_when: false
+          when: nginx_ui_cache_update.changed and not ansible_check_mode
+          timeout: 30
+
+        - name: Reload nginx after successful validation
+          ansible.builtin.command:
+            argv: "{{ nginx_ui_cache_reload_command }}"
+          when: nginx_ui_cache_update.changed and not ansible_check_mode
+          timeout: 30
+
+      rescue:
+        - name: Restore the configuration from its backup
+          ansible.builtin.copy:
+            src: "{{ nginx_ui_cache_update.backup_file }}"
+            dest: "{{ nginx_ui_cache_config }}"
+            remote_src: true
+            mode: preserve
+          when: nginx_ui_cache_update.backup_file is defined
+
+        - name: Validate the restored nginx configuration
+          ansible.builtin.command:
+            argv: "{{ nginx_ui_cache_validate_command }}"
+          changed_when: false
+          timeout: 30
+
+        - name: Reload the restored configuration
+          ansible.builtin.command:
+            argv: "{{ nginx_ui_cache_reload_command }}"
+          register: nginx_ui_cache_recovery_reload
+          failed_when: false
+          timeout: 30
+
+        - name: Report the failed update after restoring the previous configuration
+          ansible.builtin.fail:
+            msg: >-
+              The UI cache update failed and the previous configuration was restored.
+              Recovery reload exit code: {{ nginx_ui_cache_recovery_reload.rc }}.
+              Original error: {{ ansible_failed_result.msg | default('nginx validation or reload failed') }}
+
+    - name: Verify the public UI stylesheet cache policy
+      when: nginx_ui_cache_verify_public | bool and not ansible_check_mode
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      block:
+        - name: Read the published homepage from the Ansible controller
+          ansible.builtin.uri:
+            url: "{{ nginx_ui_cache_origin }}/"
+            return_content: true
+            timeout: 15
+          register: nginx_ui_cache_homepage
+
+        - name: Discover published fingerprinted UI stylesheets
+          ansible.builtin.set_fact:
+            nginx_ui_cache_asset_paths: >-
+              {{ nginx_ui_cache_homepage.content
+                 | regex_findall('/ui/styles/[a-zA-Z0-9._/-]+\.[0-9a-f]{64}\.css')
+                 | unique | list }}
+
+        - name: Check the cache header on each published UI stylesheet
+          ansible.builtin.uri:
+            url: "{{ nginx_ui_cache_origin }}{{ item }}"
+            timeout: 15
+          loop: "{{ nginx_ui_cache_asset_paths }}"
+          register: nginx_ui_cache_asset
+          failed_when: >-
+            nginx_ui_cache_asset.status | default(0) != 200
+            or nginx_ui_cache_asset.cache_control | default('') != 'public, max-age=31536000, immutable'
+
+        - name: Explain why public asset checks were skipped before the first UI release
+          ansible.builtin.debug:
+            msg: No fingerprinted UI CSS is published yet; the nginx config was validated.
+          when: nginx_ui_cache_asset_paths | length == 0
