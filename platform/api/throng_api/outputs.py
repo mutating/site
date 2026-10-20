@@ -29,6 +29,7 @@ class Identity(BaseModel):
 class TaskReceipt(BaseModel):
     accepted: bool
     active: bool
+    task_status: str
 
 
 class BenchmarkResult(Identity):

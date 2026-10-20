@@ -456,6 +456,8 @@ async def reserve_once(route_id, data, request):
     claims = await routing_identity(request, route_id)
     async with request.app.state.db.read() as session:
         route = await session.get(CIRoute, str(route_id))
+        if route is None:
+            raise HTTPException(404, "CI route unavailable")
         previous = await session.scalar(
             select(CIReservation).where(
                 CIReservation.route_id == route.id,
@@ -481,6 +483,8 @@ async def reserve_once(route_id, data, request):
     async with request.app.state.db.write() as session:
         now = request.app.state.clock()
         route = await session.get(CIRoute, str(route_id))
+        if route is None:
+            raise HTTPException(404, "CI route unavailable")
         previous = await session.scalar(
             select(CIReservation).where(
                 CIReservation.route_id == route.id,
@@ -588,6 +592,8 @@ async def cancel_selection(route_id: UUID, data: Reserve, request: Request):
     async with request.app.state.db.write() as session:
         now = request.app.state.clock()
         route = await session.get(CIRoute, str(route_id))
+        if route is None:
+            raise HTTPException(404, "CI route unavailable")
         row = await session.scalar(
             select(CIReservation).where(
                 CIReservation.route_id == route.id,

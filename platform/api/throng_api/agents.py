@@ -334,7 +334,7 @@ async def receipt(
             and task.deadline > now
             and task.status not in TASK_TERMINAL
         )
-        return {"accepted": accepted, "active": active}
+        return {"accepted": accepted, "active": active, "task_status": task.status}
 
 
 async def upload_target(session, request, task_id, purpose):
