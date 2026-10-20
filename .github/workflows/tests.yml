@@ -272,7 +272,3 @@ jobs:
           path: |
             platform/web/playwright-report
             platform/web/test-results
-
-  network_recovery:
-    name: Native network recovery
-    uses: ./.github/workflows/network-recovery.yml
