@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+
 from throng_api.controller import run_once
 from throng_api.execution import clean_start
 from throng_api.models import AgentTask, Computer
@@ -29,6 +30,7 @@ pytestmark = pytest.mark.anyio
     ],
 )
 def test_powercell_image_references_are_explicit_and_allowlisted(image, accepted):
+    """Accept only explicit supported Power Cell image references."""
     computer = SimpleNamespace(
         runtime="powercell-ubuntu-arm64-v1",
         network_enabled=True,
@@ -41,6 +43,7 @@ def test_powercell_image_references_are_explicit_and_allowlisted(image, accepted
 
 @pytest.mark.parametrize("report", [None, {}, {"image_families": []}])
 def test_old_agents_only_accept_the_bundled_image(report):
+    """Restrict legacy agents without image capabilities to their bundled image."""
     computer = SimpleNamespace(
         runtime="powercell-ubuntu-arm64-v1", network_enabled=True, capacity_report=report
     )
@@ -48,9 +51,8 @@ def test_old_agents_only_accept_the_bundled_image(report):
     assert not supports_image(computer, RUNNER_IMAGE_FAMILY + ":latest")
 
 
-async def test_image_capabilities_preserve_old_capacity_replay(
-    api, agent_api, computer
-):
+async def test_image_capabilities_preserve_old_capacity_replay(api, agent_api, computer):
+    """Preserve capacity-report replay semantics when image capabilities are present."""
     report = {
         "revision": 0,
         "accepting_work": True,
@@ -101,6 +103,7 @@ async def test_image_capabilities_preserve_old_capacity_replay(
 async def test_powercell_image_selection_resolves_before_storage_replay_and_agent_task_creation(
     api, agent_api, app, computer, isolate_payload, image_fields, reference, alias_first
 ):
+    """Resolve the Power Cell image before storage replay and agent task creation."""
     runner = reference.startswith(RUNNER_IMAGE_FAMILY)
     async with app.state.db.write() as session:
         row = await session.get(Computer, computer["id"])
@@ -153,6 +156,7 @@ async def test_powercell_image_selection_resolves_before_storage_replay_and_agen
 async def test_other_runtimes_keep_literal_image_names(
     api, agent_api, isolate_payload, image_fields, image
 ):
+    """Preserve literal image names for runtimes outside Power Cells."""
     payload = {**isolate_payload}
     payload.pop("image")
     response = await api.post(
@@ -169,6 +173,7 @@ async def test_other_runtimes_keep_literal_image_names(
 
 @pytest.mark.parametrize("image", [None, "", " "])
 async def test_explicit_invalid_image_does_not_use_the_default(api, isolate_payload, image):
+    """Reject an explicit unsupported image instead of silently applying the default."""
     response = await api.post(
         "/v1/isolates",
         headers={"Idempotency-Key": str(uuid4())},
@@ -178,6 +183,7 @@ async def test_explicit_invalid_image_does_not_use_the_default(api, isolate_payl
 
 
 async def test_openapi_advertises_the_optional_image_and_ubuntu_default(client):
+    """Document the optional image field and Ubuntu default in OpenAPI."""
     schema = (await client.get("/openapi.json")).json()["components"]["schemas"]["IsolateCreate"]
     assert "image" not in schema["required"]
     assert schema["properties"]["image"]["default"] == "ubuntu"
@@ -190,6 +196,7 @@ async def test_scheduler_requires_image_support_and_network_then_forgets_it_on_r
 ):
     # Authentication/enrollment is tested separately. This models an already
     # enrolled physical worker while exercising the real database/controller.
+    """Require current image and network capabilities and discard them after restart."""
     async with app.state.db.write() as session:
         row = await session.get(Computer, computer["id"])
         row.runtime = "powercell-ubuntu-arm64-v1"
@@ -229,6 +236,7 @@ async def test_scheduler_requires_image_support_and_network_then_forgets_it_on_r
 
 
 async def test_discovery_advertises_the_optional_extension(client):
+    """Advertise the optional image-selection extension in capability discovery."""
     data = (await client.get("/v1/agent-capabilities")).json()
     assert "powercell.images.v1" in data["extensions"]
     assert data["images"] == ["ubuntu:24.04"]
@@ -240,10 +248,15 @@ async def test_discovery_advertises_the_optional_extension(client):
 
 
 async def test_unsupported_powercell_image_is_rejected_before_queueing(api, isolate_payload):
+    """Reject unsupported Power Cell images before placing work in the queue."""
     response = await api.post(
         "/v1/isolates",
         headers={"Idempotency-Key": str(uuid4())},
-        json={**isolate_payload, "runtime": "powercell-ubuntu-arm64-v1", "image": "untrusted:latest"},
+        json={
+            **isolate_payload,
+            "runtime": "powercell-ubuntu-arm64-v1",
+            "image": "untrusted:latest",
+        },
     )
     assert response.status_code == 422
     assert "official GitHub runner images" in response.text

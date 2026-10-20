@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import { test, expect, login } from "./fixtures";
 import { actionsPeer, binding, installation, repository } from "./actions-peer";
 
@@ -377,7 +378,7 @@ test("Actions remains usable in English at a narrow viewport", async ({ page, ac
   await login(page, account); await page.goto("/actions");
   // Wait for the cabinet header to replace the session-loading header before input.
   await expect(page.getByRole("heading", { name: "@github-user", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+  await selectLanguage(page);
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await page.locator(".actions-ci-create summary").click();
   await expect(page.getByRole("button", { name: "Create binding", exact: true })).toBeVisible();

@@ -16,6 +16,8 @@ export interface HeaderOptions {
 }
 
 export interface LanguageSwitcherOptions {
+  /** Original HTML behavior uses 1041; the React adapter follows its CSS at 1121. */
+  desktopMinWidth?: number;
   /** Defaults to true. Disable to preserve the originating list on new-tab selection. */
   closeOnSelection?: boolean;
   /** Defaults to true. Disable when the enclosing document also observes Escape. */
@@ -35,8 +37,9 @@ export function mountLanguageSwitcher(switcher: HTMLDetailsElement, storageKey =
   const scope = createScope(switcher);
   const { window, document, on } = scope;
   const summary = switcher.querySelector<HTMLElement>(":scope > summary");
-  const hover = window.matchMedia("(min-width: 1041px) and (hover: hover) and (pointer: fine)");
-  const desktop = window.matchMedia("(min-width: 1041px)");
+  const minWidth = options.desktopMinWidth ?? 1041;
+  const hover = window.matchMedia(`(min-width: ${minWidth}px) and (hover: hover) and (pointer: fine)`);
+  const desktop = window.matchMedia(`(min-width: ${minWidth}px)`);
   const isDesktop = switcher.classList.contains("tmc-language-switcher--desktop");
   const close = () => { switcher.open = false; };
   if (isDesktop) {

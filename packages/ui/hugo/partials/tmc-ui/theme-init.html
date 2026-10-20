@@ -1,0 +1,2 @@
+{{- /* Inline the shared bootstrap to apply the preference before the first paint. */ -}}
+<script data-tmc-theme-cookie-domain="{{ .cookieDomain }}">{{ (resources.Get "ui/theme-bootstrap.js").Content | safeJS }}</script>

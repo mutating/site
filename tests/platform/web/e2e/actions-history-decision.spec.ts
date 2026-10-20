@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import { test, expect, login } from "./fixtures";
 import { actionsPeer, binding } from "./actions-peer";
 
@@ -17,7 +18,7 @@ for (const [status, reason, ru, en] of [
     const run = page.locator(".actions-ci-runs p");
     await expect(run.locator(".actions-ci-status")).toHaveText(ru);
     await expect(run).not.toContainText("Выбран GitHub Actions");
-    await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+    await selectLanguage(page);
     await expect(run.locator(".actions-ci-status")).toHaveText(en);
     await expect(run).not.toContainText("GitHub Actions selected");
   });

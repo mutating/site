@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import { execFileSync } from "node:child_process";
 import { test, expect, login } from "./fixtures";
 import { actionsPeer, binding } from "./actions-peer";
@@ -32,7 +33,7 @@ test("Actions explains the queue guard and keeps all CI steps on the workload le
   await expect(yaml).toHaveValue(/if: matrix.role == 'queue_guard'/);
   await expect(yaml).toHaveValue(/if: matrix.role == 'workload'/);
   await expect(yaml).toHaveValue(/POWERCELL_MODE: watch/);
-  await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+  await selectLanguage(page);
   await expect(detail).toContainText(/Copy the matrix.*workload.*every CI step/);
   await expect(detail).toContainText(/queue_guard.*only observes/);
 });

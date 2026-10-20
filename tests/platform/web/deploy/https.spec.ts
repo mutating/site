@@ -93,7 +93,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
     );
   expect(assets.length).toBeGreaterThanOrEqual(2);
   for (const asset of assets) {
-    expect(asset).toMatch(/^\/(assets\/|preferences\.js$|config\.js$)/);
+    expect(asset).toMatch(/^\/(assets\/|theme-bootstrap\.js$|config\.js$)/);
     const response = await request.get(`${origin}${asset}`);
     expect(response.status()).toBe(200);
     expect(response.headers()["content-type"]).not.toContain("text/html");

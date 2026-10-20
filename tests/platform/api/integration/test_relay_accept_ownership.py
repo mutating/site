@@ -4,10 +4,11 @@ The loopback socket is real. Only TLS metadata is supplied at the boundary: thes
 cases exercise connection ownership, independently of TLS certificate validation,
 which remains covered by the relay's existing full TLS/HTTP2 E2E tests.
 """
+
 import asyncio
 import inspect
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from throng_api.relay import RelayServer
@@ -18,7 +19,9 @@ class RelayAcceptOwnershipTests(unittest.IsolatedAsyncioTestCase):
         server = RelayServer(None, None, None)
         peer_ready, listener_closed = asyncio.Event(), asyncio.Event()
         peers, tasks, held = [], [], []
-        tls = SimpleNamespace(selected_alpn_protocol=lambda: "h2", getpeercert=lambda **kw: b"test-only")
+        tls = SimpleNamespace(
+            selected_alpn_protocol=lambda: "h2", getpeercert=lambda **kw: b"test-only"
+        )
 
         def invoke(reader, writer):
             result = server.connected(reader, writer)
@@ -35,7 +38,9 @@ class RelayAcceptOwnershipTests(unittest.IsolatedAsyncioTestCase):
         def accepted(reader, writer):
             peers.append(writer)
             extra = writer.get_extra_info
-            writer.get_extra_info = lambda name, default=None: tls if name == "ssl_object" else extra(name, default)
+            writer.get_extra_info = lambda name, default=None: (
+                tls if name == "ssl_object" else extra(name, default)
+            )
             if mode == "late":
                 held.append((reader, writer))
             else:
@@ -44,10 +49,15 @@ class RelayAcceptOwnershipTests(unittest.IsolatedAsyncioTestCase):
 
         server.listener = await asyncio.start_server(accepted, "127.0.0.1", 0)
         close_listener = server.listener.close
+
         def close():
-            close_listener(); listener_closed.set()
+            close_listener()
+            listener_closed.set()
+
         server.listener.close = close
-        reader, writer = await asyncio.open_connection("127.0.0.1", server.listener.sockets[0].getsockname()[1])
+        reader, writer = await asyncio.open_connection(
+            "127.0.0.1", server.listener.sockets[0].getsockname()[1]
+        )
         await asyncio.wait_for(peer_ready.wait(), 1)
         result = {}
         closing = None
@@ -59,13 +69,13 @@ class RelayAcceptOwnershipTests(unittest.IsolatedAsyncioTestCase):
                 invoke(*held[0])
                 result["spawned"] = len(set(asyncio.all_tasks()) - before)
                 try:
-                    await asyncio.wait_for(asyncio.shield(closing), .3)
+                    await asyncio.wait_for(asyncio.shield(closing), 0.3)
                     result["closed"] = True
                 except TimeoutError:
                     result["closed"] = False
             else:
                 try:
-                    result["eof"] = await asyncio.wait_for(reader.read(1), .3) == b""
+                    result["eof"] = await asyncio.wait_for(reader.read(1), 0.3) == b""
                 except TimeoutError:
                     result["eof"] = False
             result["pending"] = [task for task in tasks if not task.done()]
@@ -79,8 +89,10 @@ class RelayAcceptOwnershipTests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             if closing:
-                closing.cancel(); await asyncio.gather(closing, return_exceptions=True)
-            server.listener.close(); await server.listener.wait_closed()
+                closing.cancel()
+                await asyncio.gather(closing, return_exceptions=True)
+            server.listener.close()
+            await server.listener.wait_closed()
         return result
 
     async def test_late_accepted_callback_creates_no_work_after_relay_close(self):
@@ -106,17 +118,23 @@ class RelayAcceptOwnershipTests(unittest.IsolatedAsyncioTestCase):
         Tracking must be removed even when cancellation interrupts its finally.
         """
         entered = asyncio.Event()
+
         async def wait_closed():
-            entered.set(); await asyncio.Event().wait()
+            entered.set()
+            await asyncio.Event().wait()
+
         writer = SimpleNamespace(
             get_extra_info=Mock(return_value=SimpleNamespace(selected_alpn_protocol=lambda: None)),
-            close=Mock(), wait_closed=wait_closed, transport=SimpleNamespace(abort=Mock()),
+            close=Mock(),
+            wait_closed=wait_closed,
+            transport=SimpleNamespace(abort=Mock()),
         )
         server = RelayServer(None, None, None)
         result = server.connected(None, writer)
         task = asyncio.create_task(result) if inspect.iscoroutine(result) else result
         await asyncio.wait_for(entered.wait(), 1)
-        task.cancel(); await asyncio.gather(task, return_exceptions=True)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
         retained = list(server.connections)
         server.connections.clear()
         self.assertFalse(retained, "Cancelled TLS closure retained the completed connection")

@@ -24,6 +24,7 @@ BODY = json.dumps(
 
 
 def headers_for(device):
+    """Build test authorization headers for an enrolled device."""
     return {
         "Authorization": "Bearer " + device.binding["credential"],
         "Content-Type": "application/json",

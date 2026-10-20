@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import { test, expect, login } from "./fixtures";
 import { actionsPeer, binding, repository } from "./actions-peer";
 
@@ -11,7 +12,7 @@ test("Actions keeps binding actions readable beside long repository names", asyn
   await login(page, account); await page.goto("/actions");
   await expect(page.getByRole("button", { name: "Workflow и запуски", exact: true })).toHaveCount(2);
   for (const language of ["ru", "en"]) {
-    if (language === "en") await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+    if (language === "en") await selectLanguage(page);
     for (const width of [320, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       const actions = page.locator(".actions-repository .form-actions button");
@@ -79,7 +80,7 @@ test("Actions distinguishes every GitHub job conclusion in history", async ({ pa
     await expect(row.locator(".actions-ci-status")).toHaveText(label);
     await expect(row).not.toContainText("future-private-outcome");
   }
-  await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+  await selectLanguage(page);
   await expect(page.locator(".actions-ci-status").first()).toHaveText("Succeeded");
   await expect(page.locator(".actions-ci-status").nth(1)).toHaveText("Failed");
 });

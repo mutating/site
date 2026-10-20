@@ -8,6 +8,7 @@ pytestmark = pytest.mark.anyio
 
 
 def measurement(computer, number=12):
+    """Build a valid single-core benchmark measurement for the test computer."""
     return {
         "computer_id": computer["id"],
         "benchmark_name": "single_core",
@@ -17,12 +18,14 @@ def measurement(computer, number=12):
 
 
 async def create_result(api, computer):
+    """Create a benchmark result through the API and return its persisted representation."""
     response = await api.post("/v1/benchmark-results", json=measurement(computer))
     assert response.status_code == 201, response.text
     return response.json()
 
 
 async def read_responses(client, computer, row, *, headers):
+    """Exercise all benchmark read routes with the supplied credentials."""
     return [
         await client.get(f"/v1/benchmark-results/{row['id']}", headers=headers),
         await client.get(
@@ -35,6 +38,7 @@ async def read_responses(client, computer, row, *, headers):
 
 
 async def write_responses(client, computer, row, *, headers):
+    """Exercise benchmark creation, update and deletion with the supplied credentials."""
     return [
         await client.post("/v1/benchmark-results", json=measurement(computer, 20), headers=headers),
         await client.patch(

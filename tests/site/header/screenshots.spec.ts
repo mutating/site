@@ -29,6 +29,15 @@ async function prepare(page: Page, reference: boolean, language: string, theme: 
   await page.goto(reference ? `/__header_reference/${language}.html` : language === "ru" ? "/ru/" : "/");
   await expect(page.locator("html")).toHaveAttribute("data-theme-ready", "true");
   await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(async () => {
+    const surface = document.querySelector(".tmc-eye__surface, .animated-eye-logo__surface")!;
+    const url = getComputedStyle(surface).maskImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
+    if (url) {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+    }
+  });
   await page.clock.runFor(1024);
   // The selector bridge only describes DOM names. Expected markup, CSS and JS
   // always come from the frozen pre-migration site, never from the library.

@@ -6,6 +6,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def add_computer(api, company_id=None):
+    """Register a computer in the requested ownership scope for directory totals."""
     payload = {
         "name": "Directory node",
         "os": "linux",
@@ -25,6 +26,7 @@ async def add_computer(api, company_id=None):
 async def test_new_organization_totals_are_consistent_across_create_list_read_and_update(
     api,
 ):
+    """Keep organization totals consistent across create, list, read and update responses."""
     created = await api.post("/v1/companies", json={"name": "Fresh space"})
     assert created.status_code == 201
     company = created.json()
@@ -44,11 +46,10 @@ async def test_new_organization_totals_are_consistent_across_create_list_read_an
 async def test_totals_include_offline_and_disabled_computers_without_join_multiplication(
     api, company, membership
 ):
+    """Count offline and disabled computers once despite multiple related rows."""
     first = await add_computer(api, company["id"])
     await add_computer(api, company["id"])
-    await add_computer(
-        api
-    )  # A personal computer must not enter the organization total.
+    await add_computer(api)  # A personal computer must not enter the organization total.
     response = await api.patch(f"/v1/computers/{first['id']}", json={"enabled": False})
     assert response.status_code == 200
     company = (await api.get(f"/v1/companies/{company['id']}")).json()
@@ -60,10 +61,9 @@ async def test_totals_include_offline_and_disabled_computers_without_join_multip
 async def test_counts_follow_membership_changes_and_preserve_permission_boundaries(
     api, other_api, company, membership
 ):
+    """Update directory totals after membership changes without exposing unauthorized data."""
     await add_computer(api, company["id"])
-    changed = await api.patch(
-        f"/v1/memberships/{membership['id']}", json={"permissions": []}
-    )
+    changed = await api.patch(f"/v1/memberships/{membership['id']}", json={"permissions": []})
     assert changed.status_code == 200
     preview = (await other_api.get("/v1/companies")).json()[0]
     assert preview["my_permissions"] == []
@@ -79,6 +79,7 @@ async def test_counts_follow_membership_changes_and_preserve_permission_boundari
 async def test_invitation_previews_return_current_totals_without_granting_membership(
     api, other_api, company, other_user
 ):
+    """Show current organization totals in invitations without granting membership."""
     created = await api.post(
         "/v1/invitations",
         json={"company_id": company["id"], "identifier": other_user["email"]},
@@ -107,9 +108,8 @@ async def test_invitation_previews_return_current_totals_without_granting_member
     assert (listing[0]["computer_count"], listing[0]["member_count"]) == (2, 2)
 
 
-async def test_paginated_totals_belong_to_the_correct_visible_organizations(
-    api, other_api
-):
+async def test_paginated_totals_belong_to_the_correct_visible_organizations(api, other_api):
+    """Associate paginated directory totals with the correct authorized organizations."""
     created = []
     for index in range(3):
         response = await api.post("/v1/companies", json={"name": f"Space {index}"})

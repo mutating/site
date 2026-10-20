@@ -7,13 +7,16 @@ from urllib.parse import urlsplit
 async def close_connection(writer):
     """Graceful close is bounded when a peer stops consuming buffered bytes."""
     writer.close()
+    closed = False
     try:
         async with asyncio.timeout(0.2):
             await writer.wait_closed()
+        closed = True
     except (OSError, TimeoutError):
         pass
     finally:
-        writer.transport.abort()
+        if not closed:
+            writer.transport.abort()
 
 
 class FaultProxy:
@@ -46,7 +49,8 @@ class FaultProxy:
         self.tasks.add(task)
 
         def finished(task):
-            writer.transport.abort()
+            if not writer.is_closing():
+                writer.transport.abort()
             self.tasks.discard(task)
 
         task.add_done_callback(finished)
@@ -102,4 +106,6 @@ class FaultProxy:
         except (OSError, asyncio.IncompleteReadError, TimeoutError):
             pass
         finally:
-            await asyncio.gather(*(close_connection(stream) for stream in [backend, writer] if stream))
+            await asyncio.gather(
+                *(close_connection(stream) for stream in [backend, writer] if stream)
+            )

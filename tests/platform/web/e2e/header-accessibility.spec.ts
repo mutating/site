@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import { firefox } from "@playwright/test";
 import { expect, login, test } from "./fixtures";
 
@@ -10,8 +11,8 @@ test("header controls fit before the delayed initial expansion measurement", asy
     await page.goto("login");
     await expect.poll(() => page.evaluate(() => !!document.querySelector(".auth-panel"))).toBe(true);
     await expect(page.locator(".tmc-brand__wordmark-stage")).not.toHaveAttribute("data-expansion-measured", "true");
-    for (const selector of [".tmc-language-toggle", ".tmc-theme-toggle"]) {
-      const bounds = (await page.locator(selector).boundingBox())!;
+    for (const selector of [".tmc-language-switcher > summary, .tmc-mobile-menu > summary", ".tmc-theme-toggle"]) {
+      const bounds = (await page.locator(selector).filter({ visible: true }).boundingBox())!;
       expect(bounds.x).toBeGreaterThanOrEqual(0);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
     }
@@ -39,13 +40,13 @@ test("a constrained wordmark releases room for controls before a collapse transi
       animation.currentTime = 0;
     }
   });
-  for (const selector of [".tmc-language-toggle", ".tmc-theme-toggle"]) {
-    const bounds = (await page.locator(selector).boundingBox())!;
+  for (const selector of [".tmc-language-switcher > summary, .tmc-mobile-menu > summary", ".tmc-theme-toggle"]) {
+    const bounds = (await page.locator(selector).filter({ visible: true }).boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(540);
   }
   expect(await page.getByRole("banner").evaluate((header) => header.scrollWidth - header.clientWidth)).toBeLessThanOrEqual(0);
-  await page.locator(".tmc-language-toggle").click();
+  await selectLanguage(page);
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 });
 
@@ -75,8 +76,8 @@ test("the animated wordmark settles inside a resized header with hover and keybo
         return target instanceof Element && element.contains(target) && animation.playState === "running";
       }))).toBe(false);
       await expect.poll(() => page.getByRole("banner").evaluate((header) => header.scrollWidth - header.clientWidth)).toBeLessThanOrEqual(0);
-      for (const selector of [".tmc-language-toggle", ".tmc-theme-toggle"]) {
-        const bounds = (await page.locator(selector).boundingBox())!;
+      for (const selector of [".tmc-language-switcher > summary, .tmc-mobile-menu > summary", ".tmc-theme-toggle"]) {
+        const bounds = (await page.locator(selector).filter({ visible: true }).boundingBox())!;
         expect(bounds.x).toBeGreaterThanOrEqual(0);
         expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
       }
@@ -109,7 +110,7 @@ for (const textSpacing of [false, true]) {
         }), { message: `${activation}, ${width}px: controls must fit after viewport change` }).toBeLessThanOrEqual(0);
       }
     }
-    await page.locator(".tmc-language-toggle").click();
+    await selectLanguage(page);
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     const theme = await page.locator("html").getAttribute("data-theme");
     await page.locator(".tmc-theme-toggle").click();
@@ -117,7 +118,7 @@ for (const textSpacing of [false, true]) {
   });
 }
 
-test("custom text spacing keeps the unfolding logo separate from the account caption and controls", async ({ page }) => {
+test("custom text spacing keeps the unfolding logo separate from the language menu and theme control", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("login");
   await expect(page.locator(".auth-panel")).toBeVisible();
@@ -127,7 +128,7 @@ test("custom text spacing keeps the unfolding logo separate from the account cap
     await page.setViewportSize({ width, height: 800 });
     for (const language of ["ru", "en"]) {
       if (await page.locator("html").getAttribute("lang") !== language) {
-        await page.locator(".tmc-language-toggle").click();
+        await selectLanguage(page);
       }
       for (const activation of ["focus", "hover"]) {
         await page.mouse.move(1, 500);
@@ -136,11 +137,11 @@ test("custom text spacing keeps the unfolding logo separate from the account cap
         else await page.locator(".tmc-brand__wordmark").hover();
         await expect.poll(() => page.evaluate(() => {
           const wordmark = document.querySelector(".tmc-brand__wordmark")!.getBoundingClientRect();
-          const caption = document.querySelector(".header-caption")!.getBoundingClientRect();
+          const caption = document.querySelector(".tmc-header-actions")!.getBoundingClientRect();
           return wordmark.right - caption.left;
-        }), { message: `${language}, ${width}px, ${activation}: visible logo must not overlap caption` }).toBeLessThanOrEqual(0);
-        for (const selector of [".tmc-language-toggle", ".tmc-theme-toggle"]) {
-          const box = (await page.locator(selector).boundingBox())!;
+        }), { message: `${language}, ${width}px, ${activation}: visible logo must not overlap controls` }).toBeLessThanOrEqual(0);
+        for (const selector of [".tmc-language-switcher > summary, .tmc-mobile-menu > summary", ".tmc-theme-toggle"]) {
+          const box = (await page.locator(selector).filter({ visible: true }).boundingBox())!;
           expect(box.x).toBeGreaterThanOrEqual(0);
           expect(box.x + box.width).toBeLessThanOrEqual(width);
         }
@@ -215,14 +216,14 @@ test("Firefox's minimum font size keeps all header controls inside the viewport"
       await page.setViewportSize({ width, height: 800 });
       for (const language of ["en", "ru"]) {
         await page.locator(".tmc-brand__wordmark").hover();
-        for (const control of [".tmc-language-toggle", ".tmc-theme-toggle"]) {
-          const box = (await page.locator(control).boundingBox())!;
+        for (const control of [".tmc-language-switcher > summary, .tmc-mobile-menu > summary", ".tmc-theme-toggle"]) {
+          const box = (await page.locator(control).filter({ visible: true }).boundingBox())!;
           expect(box.x).toBeGreaterThanOrEqual(0);
           expect(box.x + box.width).toBeLessThanOrEqual(width);
         }
         // Measure header overflow separately from the enlarged auth form below it.
         await expect.poll(() => page.getByRole("banner").evaluate((header) => header.scrollWidth - header.clientWidth)).toBeLessThanOrEqual(0);
-        await page.locator(".tmc-language-toggle").click();
+        await selectLanguage(page);
         await expect(page.locator("html")).toHaveAttribute("lang", language);
         await page.mouse.move(1, 500);
       }

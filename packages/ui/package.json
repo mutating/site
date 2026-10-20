@@ -19,10 +19,10 @@
   },
   "sideEffects": ["**/*.css"],
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "build": "vite build && node scripts/build-theme-bootstrap.mjs && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit",
     "dev": "vite --host 127.0.0.1 --port 18120 --strictPort",
-    "test": "npm run typecheck && npm run build && node --test ../../tests/ui/package.test.mjs && playwright test"
+    "test": "npm run typecheck && npm run build && node --test ../../tests/ui/*.test.mjs && playwright test"
   },
   "peerDependencies": { "react": "^19.0.0" },
   "peerDependenciesMeta": { "react": { "optional": true } },

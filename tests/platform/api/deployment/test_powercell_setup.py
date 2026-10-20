@@ -3,6 +3,7 @@
 import grp
 import json
 import os
+import shutil
 import socket
 import ssl
 import subprocess
@@ -252,6 +253,39 @@ def test_bad_tls_material_does_not_replace_a_working_pair(provisioner, damage):
     if damage == "wrong_key":
         (lineage / "fullchain.pem").write_bytes(old)
     run("renew", success=False)
+    assert before == [
+        (directory / "tls" / name).read_bytes() for name in ["fullchain.pem", "privkey.pem"]
+    ]
+    assert env.read_bytes() == environment
+
+
+@pytest.mark.parametrize("output", ["native", "empty"])
+def test_hostname_validation_checks_the_result_with_legacy_openssl(provisioner, tmp_path, output):
+    """Reject a mismatched or missing hostname verdict even when OpenSSL exits zero."""
+    directory, env, lineage, run = provisioner
+    run("configure", "--create-issuer")
+    before = [(directory / "tls" / name).read_bytes() for name in ["fullchain.pem", "privkey.pem"]]
+    environment = env.read_bytes()
+    tls_pair(lineage, host="wrong.example")
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    command = binary / "openssl"
+    command.write_text(
+        f"#!{sys.executable}\n"
+        "import subprocess, sys\n"
+        f"result = subprocess.run([{shutil.which('openssl')!r}, *sys.argv[1:]], capture_output=True)\n"
+        "checking_host = '-checkhost' in sys.argv\n"
+        f"hide_output = checking_host and {output == 'empty'!r}\n"
+        "sys.stdout.buffer.write(b'' if hide_output else result.stdout)\n"
+        "sys.stderr.buffer.write(result.stderr)\n"
+        "sys.exit(0 if checking_host else result.returncode)\n"
+    )
+    command.chmod(0o755)
+    run(
+        "renew",
+        success=False,
+        environment={**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"]},
+    )
     assert before == [
         (directory / "tls" / name).read_bytes() for name in ["fullchain.pem", "privkey.pem"]
     ]

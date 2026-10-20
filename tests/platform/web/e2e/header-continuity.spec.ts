@@ -1,3 +1,4 @@
+import { openLanguages, selectLanguage } from "./header-controls";
 import type { Page } from "@playwright/test";
 import { API, expect, login, password, test } from "./fixtures";
 
@@ -42,35 +43,39 @@ for (const transition of ["session to login", "session to cabinet", "sign in", "
             await expect(page.locator(".boot-state .loading")).toBeVisible();
           }
           await held.requested;
-          const button = page.getByRole("banner").getByRole("button", {
-            name: control === "language" ? /^(Выбрать язык|Choose language)$/ : /^(Переключить тему|Toggle color theme)$/,
-            exact: true,
-          });
+          const button = control === "language"
+            ? (await openLanguages(page)).locator('[data-language-option="en"]')
+            : page.locator(".tmc-theme-toggle");
           if (input === "mouse") {
+            await button.hover();
             const bounds = (await button.boundingBox())!;
             await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
             await page.mouse.down();
           } else {
             await button.focus();
-            await page.keyboard.down("Space");
+            await page.keyboard.down(control === "language" ? "Enter" : "Space");
           }
           held.release();
           if (transition === "session to login" || transition === "sign out") {
-            await expect(page.getByRole("heading", { name: "С возвращением." })).toBeVisible();
+            await expect(page.getByRole("heading", { name: /^(С возвращением\.|Welcome back\.)$/ })).toBeVisible();
           } else {
-            await expect(page.getByRole("navigation", { name: "Навигация кабинета" })).toBeVisible();
+            await expect(page.getByRole("navigation", { name: /^(Навигация кабинета|Account navigation)$/ })).toBeVisible();
           }
           if (input === "mouse") await page.mouse.up();
-          else await page.keyboard.up("Space");
+          else await page.keyboard.up(control === "language" ? "Enter" : "Space");
 
           await expect(page.locator("html")).toHaveAttribute(
             control === "language" ? "lang" : "data-theme",
             control === "language" ? "en" : "light",
           );
           await expect(page.getByRole("banner")).toHaveCount(1);
-          if (input === "keyboard") await expect(button).toBeFocused();
+          if (input === "keyboard") {
+            if (control === "theme") await expect(button).toBeFocused();
+            else await expect(page.locator(".tmc-language-switcher--desktop > summary:visible, .tmc-mobile-menu > summary:visible")).toBeFocused();
+          }
           // A second activation must still produce exactly one change.
-          await button.click();
+          if (control === "language") await selectLanguage(page, "ru");
+          else await button.click();
           await expect(page.locator("html")).toHaveAttribute(
             control === "language" ? "lang" : "data-theme",
             control === "language" ? "ru" : "dark",
@@ -93,22 +98,24 @@ test("a native touch held during session resolution activates each header contro
     try {
       await page.goto("login");
       await expect(page.locator(".boot-state .loading")).toBeVisible();
-      const button = page.getByRole("banner").getByRole("button", {
-        name: control === "language" ? /^(Выбрать язык|Choose language)$/ : /^(Переключить тему|Toggle color theme)$/,
-      });
+      const button = control === "language"
+        ? (await openLanguages(page, "touch")).locator('[data-language-option="en"]')
+        : page.locator(".tmc-theme-toggle");
+      if (control === "language") await expect.poll(() => page.locator(".tmc-language-switcher:visible").evaluate(element => element.getAnimations({ subtree: true }).some(animation => animation.playState === "running"))).toBe(false);
       const bounds = (await button.boundingBox())!;
       await touch.send("Input.dispatchTouchEvent", {
         type: "touchStart",
         touchPoints: [{ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }],
       });
       held.release();
-      await expect(page.getByRole("heading", { name: "С возвращением." })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /^(С возвращением\.|Welcome back\.)$/ })).toBeVisible();
       await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       await expect(page.locator("html")).toHaveAttribute(
         control === "language" ? "lang" : "data-theme",
         control === "language" ? "en" : "light",
       );
-      await button.tap();
+      if (control === "language") await selectLanguage(page, "ru", "touch");
+      else await button.tap();
       await expect(page.locator("html")).toHaveAttribute(
         control === "language" ? "lang" : "data-theme",
         control === "language" ? "ru" : "dark",

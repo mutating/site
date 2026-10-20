@@ -9,6 +9,27 @@ import {
 } from "./fixtures";
 import { GiB, historyNow, reserve, seedHistory } from "./resources";
 import { resolve } from "node:path";
+import { openLanguages } from "./header-controls";
+
+test("the shared language dropdown in both themes and layouts", async ({ page }, info) => {
+  const { language, theme } = info.project.metadata;
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language);
+    localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  await page.goto("login");
+  await expect(page.locator(".auth-panel")).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const dropdown = await openLanguages(page);
+  const summary = (await dropdown.locator("summary").boundingBox())!;
+  const list = (await dropdown.locator(".tmc-language-switcher__list").boundingBox())!;
+  await expect(page).toHaveScreenshot("header-language-open.png", { clip: {
+    x: Math.min(summary.x, list.x) - 4,
+    y: summary.y - 4,
+    width: Math.max(summary.width, list.width) + 8,
+    height: list.y + list.height - summary.y + 8,
+  } });
+});
 
 test("auth, every product page, populated and empty pools, and confirmation dialog", async ({
   page,

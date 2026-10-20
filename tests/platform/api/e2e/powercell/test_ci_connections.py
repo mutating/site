@@ -25,6 +25,7 @@ pytestmark = [
 async def test_controller_reuses_connections_without_skipping_authorization(
     client, route, ci_peer, powercell, app, clock
 ):
+    """Reuse controller HTTP connections while checking each operation's current authorization."""
     await provision_only(client, route, ci_peer, powercell, app, clock)
     service = app.state.github.client
     delegate, closed, calls = service._transport, [], []
@@ -85,6 +86,7 @@ async def test_controller_reuses_connections_without_skipping_authorization(
 async def test_timeout_on_a_reused_connection_fails_closed(
     client, route, ci_peer, powercell, app, clock
 ):
+    """Reject a reservation when a reused GitHub connection times out."""
     await provision_only(client, route, ci_peer, powercell, app, clock)
     service = app.state.github.client
     delegate, closed, calls = service._transport, [], []

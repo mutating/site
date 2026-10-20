@@ -17,6 +17,7 @@ from uuid import UUID
 import uvicorn
 from h2.config import H2Configuration
 from h2.connection import H2Connection
+from h2.errors import ErrorCodes
 from h2.events import (
     ConnectionTerminated,
     DataReceived,
@@ -303,6 +304,14 @@ class _Stream:
         for task in self.tasks:
             task.cancel()
 
+    def reset(self):
+        """Report abnormal backend closure without disturbing other tunnels."""
+        try:
+            self.connection.h2.reset_stream(self.id, ErrorCodes.CONNECT_ERROR)
+            self.connection.flush()
+        except (H2Error, OSError):
+            pass  # The peer may have reset this stream or closed the connection.
+
     async def upload(self):
         try:
             while item := await self.incoming.get():
@@ -314,6 +323,7 @@ class _Stream:
             self.writer.write_eof()
         except (H2Error, OSError):
             logger.info('{"event":"relay_close","reason":"backend_upload_error"}')
+            self.reset()
             self.writer.close()
 
     async def download(self):
@@ -324,6 +334,7 @@ class _Stream:
             self.connection.flush()
         except (H2Error, OSError):
             logger.info('{"event":"relay_close","reason":"backend_download_error"}')
+            self.reset()
         finally:
             self.writer.close()
             # The receive task may be awaiting another chunk when the backend

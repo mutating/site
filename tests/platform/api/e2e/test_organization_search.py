@@ -9,6 +9,7 @@ PATH = "/v1/organization-directory"
 
 
 async def space(api, name, computers=0):
+    """Create an organization with the requested number of registered computers."""
     response = await api.post("/v1/companies", json={"name": name})
     assert response.status_code == 201, response.text
     company = response.json()
@@ -31,6 +32,7 @@ async def space(api, name, computers=0):
 
 
 async def invite(owner, recipient, company, **values):
+    """Create a targeted organization invitation through its owner's API."""
     response = await owner.post(
         "/v1/invitations",
         json={"company_id": company["id"], "identifier": recipient["email"], **values},
@@ -40,6 +42,7 @@ async def invite(owner, recipient, company, **values):
 
 
 async def join(owner, recipient, company, **values):
+    """Add the recipient to an organization with the requested membership attributes."""
     response = await owner.post(
         "/v1/memberships",
         json={"company_id": company["id"], "user_id": recipient["id"], **values},
@@ -49,17 +52,15 @@ async def join(owner, recipient, company, **values):
 
 
 def names(data):
+    """Extract organization names from company and invitation directory entries."""
     return [
-        item["company"]["name"]
-        if item["kind"] == "company"
-        else item["invitation"]["company_name"]
+        item["company"]["name"] if item["kind"] == "company" else item["invitation"]["company_name"]
         for item in data["items"]
     ]
 
 
-async def test_global_order_is_applied_before_pagination_in_every_group(
-    api, other_api, user
-):
+async def test_global_order_is_applied_before_pagination_in_every_group(api, other_api, user):
+    """Apply directory group and resource ordering before slicing the requested page."""
     groups = [[], [], []]
     for count in [2, 0, 10, 1]:
         pending = await space(other_api, f"Lab pending {count}", count)
@@ -77,16 +78,12 @@ async def test_global_order_is_applied_before_pagination_in_every_group(
     expected = [
         row["name"]
         for group in groups
-        for row in sorted(
-            group, key=lambda row: int(row["name"].split()[-1]), reverse=True
-        )
+        for row in sorted(group, key=lambda row: int(row["name"].split()[-1]), reverse=True)
     ]
     # A zero-computer invitation precedes even a ten-computer authored company.
     actual, priorities, counts = [], [], []
     for offset in range(0, 15, 3):
-        response = await api.get(
-            PATH, params={"q": " lAB ", "offset": offset, "limit": 3}
-        )
+        response = await api.get(PATH, params={"q": " lAB ", "offset": offset, "limit": 3})
         assert response.status_code == 200, response.text
         assert response.headers["X-Total-Count"] == "12"
         data = response.json()
@@ -94,8 +91,7 @@ async def test_global_order_is_applied_before_pagination_in_every_group(
         actual += names(data)
         priorities += [row["group"] for row in data["items"]]
         counts += [
-            (row.get("company") or row.get("invitation"))["computer_count"]
-            for row in data["items"]
+            (row.get("company") or row.get("invitation"))["computer_count"] for row in data["items"]
         ]
     assert actual == expected
     assert priorities == [0] * 4 + [1] * 4 + [2] * 4
@@ -121,6 +117,7 @@ async def test_global_order_is_applied_before_pagination_in_every_group(
     ],
 )
 async def test_unicode_substrings_and_sql_wildcards_are_literal(api, query, expected):
+    """Match normalized Unicode substrings while treating SQL wildcard characters literally."""
     for name in [
         "КВАНТОВАЯ Лаборатория",
         "Research LAB",
@@ -143,9 +140,8 @@ async def test_unicode_substrings_and_sql_wildcards_are_literal(api, query, expe
 
 
 @pytest.mark.parametrize("group", ["owned", "invited", "member"])
-async def test_name_ties_use_natural_normalized_names_then_company_id(
-    api, other_api, user, group
-):
+async def test_name_ties_use_natural_normalized_names_then_company_id(api, other_api, user, group):
+    """Break equal directory ranks using normalized natural names and stable company IDs."""
     owner = api if group == "owned" else other_api
     created = [
         await space(owner, name)
@@ -163,9 +159,7 @@ async def test_name_ties_use_natural_normalized_names_then_company_id(
     for offset in range(6):
         response = await api.get(PATH, params={"offset": offset, "limit": 1})
         actual.extend(
-            row["company"]["id"]
-            if row["kind"] == "company"
-            else row["invitation"]["company_id"]
+            row["company"]["id"] if row["kind"] == "company" else row["invitation"]["company_id"]
             for row in response.json()["items"]
         )
     assert actual == [row["id"] for row in expected]
@@ -174,6 +168,7 @@ async def test_name_ties_use_natural_normalized_names_then_company_id(
 async def test_search_hides_private_organizations_open_links_other_recipients_and_inactive_invites(
     api, other_api, user, other_user, clock
 ):
+    """Exclude unauthorized companies and unrelated or inactive invitations from search."""
     mine = await space(api, "Lab mine")
     pending = await space(other_api, "Lab pending")
     await invite(other_api, user, pending)
@@ -187,14 +182,10 @@ async def test_search_hides_private_organizations_open_links_other_recipients_an
     clock.now += timedelta(seconds=3601)
     declined = await space(other_api, "Lab declined")
     invitation = await invite(other_api, user, declined)
-    assert (
-        await api.post(f"/v1/invitations/{invitation['id']}/decline")
-    ).status_code == 204
+    assert (await api.post(f"/v1/invitations/{invitation['id']}/decline")).status_code == 204
     revoked = await space(other_api, "Lab revoked")
     invitation = await invite(other_api, user, revoked)
-    assert (
-        await other_api.delete(f"/v1/invitations/{invitation['id']}")
-    ).status_code == 204
+    assert (await other_api.delete(f"/v1/invitations/{invitation['id']}")).status_code == 204
     response = await api.get(PATH, params={"q": "lab"})
     assert names(response.json()) == [pending["name"], mine["name"]]
     assert response.json()["total"] == response.json()["total_all"] == 2
@@ -208,6 +199,7 @@ async def test_search_hides_private_organizations_open_links_other_recipients_an
 async def test_membership_wins_over_pending_invitation_and_role_does_not_change_authorship_group(
     api, other_api, user
 ):
+    """Prefer membership over pending invitations and retain the original authorship group."""
     company = await space(other_api, "Shared", 2)
     await invite(other_api, user, company, role="creator")
     await join(other_api, user, company, role="creator")
@@ -221,12 +213,11 @@ async def test_membership_wins_over_pending_invitation_and_role_does_not_change_
 async def test_renaming_updates_search_and_pending_preview_without_stale_snapshot_names(
     api, other_api, user
 ):
+    """Reflect organization renames in search and pending invitation previews immediately."""
     company = await space(other_api, "Old name")
     await invite(other_api, user, company)
     assert (
-        await other_api.patch(
-            f"/v1/companies/{company['id']}", json={"name": "НОВАЯ Lab 2"}
-        )
+        await other_api.patch(f"/v1/companies/{company['id']}", json={"name": "НОВАЯ Lab 2"})
     ).status_code == 200
     assert (await api.get(PATH, params={"q": "old"})).json()["total"] == 0
     data = (await api.get(PATH, params={"q": "новая"})).json()
@@ -235,6 +226,7 @@ async def test_renaming_updates_search_and_pending_preview_without_stale_snapsho
 
 
 async def test_blank_queries_empty_directory_and_offsets_beyond_the_end(api):
+    """Return consistent empty and unfiltered directory pages at query boundaries."""
     empty = (await api.get(PATH)).json()
     assert empty == {"items": [], "total": 0, "total_all": 0}
     await space(api, "Only space")
@@ -248,30 +240,30 @@ async def test_blank_queries_empty_directory_and_offsets_beyond_the_end(api):
     [{"limit": 0}, {"limit": 201}, {"offset": -1}, {"offset": 2**63}, {"q": "x" * 201}],
 )
 async def test_search_parameters_are_bounded(api, params):
+    """Reject directory search parameters outside their documented bounds."""
     assert (await api.get(PATH, params=params)).status_code == 422
 
 
 async def test_directory_requires_personal_read_access(client, api, company_token):
+    """Require personal read permission before returning the organization directory."""
     assert (await client.get(PATH)).status_code == 401
     assert (
-        await client.get(
-            PATH, headers={"Authorization": "Bearer " + company_token["token"]}
-        )
+        await client.get(PATH, headers={"Authorization": "Bearer " + company_token["token"]})
     ).status_code == 403
 
 
 @pytest.mark.parametrize("access_token", [{"scopes": ["manage"]}], indirect=True)
 async def test_manage_without_read_cannot_search_the_directory(client, access_token):
+    """Keep manage permission from implicitly granting directory read access."""
     assert (
-        await client.get(
-            PATH, headers={"Authorization": "Bearer " + access_token["token"]}
-        )
+        await client.get(PATH, headers={"Authorization": "Bearer " + access_token["token"]})
     ).status_code == 403
 
 
 async def test_counts_and_group_remain_visible_without_resource_or_member_read_permission(
     api, other_api, user
 ):
+    """Expose authorized directory summaries without requiring detailed resource permissions."""
     company = await space(other_api, "Limited member", 2)
     await join(other_api, user, company, permissions=[])
     data = (await api.get(PATH, params={"q": "limited"})).json()
@@ -279,6 +271,4 @@ async def test_counts_and_group_remain_visible_without_resource_or_member_read_p
     row = data["items"][0]["company"]
     assert row["my_permissions"] == []
     assert (row["computer_count"], row["member_count"]) == (2, 2)
-    assert (
-        await api.get(f"/v1/companies/{company['id']}/resources/summary")
-    ).status_code == 403
+    assert (await api.get(f"/v1/companies/{company['id']}/resources/summary")).status_code == 403

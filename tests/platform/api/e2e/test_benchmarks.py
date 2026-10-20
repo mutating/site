@@ -9,6 +9,7 @@ pytestmark = pytest.mark.anyio
 
 
 def measurement(computer, *, version="0.0.2", name="single_core", number=1234.5):
+    """Build a valid single-core benchmark measurement for the test computer."""
     return {
         "computer_id": computer["id"],
         "benchmark_name": name,
@@ -18,6 +19,7 @@ def measurement(computer, *, version="0.0.2", name="single_core", number=1234.5)
 
 
 async def create(api, computer, **kwargs):
+    """Create a benchmark result and verify the API accepts it."""
     response = await api.post("/v1/benchmark-results", json=measurement(computer, **kwargs))
     assert response.status_code == 201, response.text
     return response.json()

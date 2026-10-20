@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import { test, expect, login } from "./fixtures";
 import { actionsPeer } from "./actions-peer";
 
@@ -18,7 +19,7 @@ test("Actions has one execution policy and no hosted fallback controls", async (
   expect(sent).toMatchObject({ cpu_millis: 3000, memory_bytes: 9 * 1024**3 });
   expect(sent).not.toHaveProperty("fallback");
   await expect(page.locator(".actions-ci-detail")).not.toContainText(/fallback/i);
-  await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+  await selectLanguage(page);
   await expect(page.getByRole("combobox", { name: "Fallback", exact: true })).toHaveCount(0);
   await expect(page.getByText(/No available Power Cell — the run fails immediately/)).toBeVisible();
 });

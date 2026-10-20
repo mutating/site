@@ -16,6 +16,7 @@ pytestmark = pytest.mark.anyio
 # Assertions: real sequential HTTP requests use one TCP connection within an
 # operation; leaving that operation closes it; subsequent operations start fresh.
 async def test_scoped_requests_reuse_a_real_connection(key, monkeypatch):
+    """Reuse one real HTTP connection within a GitHub operation scope."""
     connections, disconnected, requests = [], [], []
     all_closed = asyncio.Event()
 
@@ -80,6 +81,7 @@ async def test_scoped_requests_reuse_a_real_connection(key, monkeypatch):
 # success, provider errors and cancellation all release it and reset the scope.
 @pytest.mark.parametrize("outcome", ["success", "error", "cancel"])
 async def test_scoped_client_lifetime_and_nesting(key, outcome):
+    """Keep nested GitHub scopes within the correct shared client lifetime."""
     closed = []
 
     class Transport(httpx.MockTransport):
@@ -117,6 +119,7 @@ async def test_scoped_client_lifetime_and_nesting(key, outcome):
 # Assertions: concurrent operations and separate GitHub clients never share
 # ownership; completing one operation cannot close another operation's connection.
 async def test_parallel_operations_have_independent_clients(key):
+    """Keep concurrent GitHub operations on independent scoped clients."""
     service = client(key, lambda request: httpx.Response(200, json={}))
     other = client(key, lambda request: httpx.Response(200, json={}))
     entered, release = asyncio.Event(), asyncio.Event()
@@ -147,6 +150,7 @@ async def test_parallel_operations_have_independent_clients(key):
 # Assertions: an inherited task context cannot reuse a connection already closed
 # by its parent; the delayed request owns and releases a fresh client instead.
 async def test_delayed_child_does_not_reuse_a_closed_parent_connection(key):
+    """Prevent a delayed child task from reusing its closed parent client."""
     service = client(key, lambda request: httpx.Response(200, json={}))
     release = asyncio.Event()
 
@@ -170,6 +174,7 @@ async def test_delayed_child_does_not_reuse_a_closed_parent_connection(key):
 # Assertions: reuse never forwards cookies received by an earlier GitHub API or
 # OAuth response; bearer credentials remain specific to each individual request.
 async def test_connection_reuse_does_not_share_cookies_or_authentication(key):
+    """Reuse HTTP transport without sharing cookies or authorization between requests."""
     calls = []
 
     def handler(request):
@@ -198,6 +203,7 @@ async def test_connection_reuse_does_not_share_cookies_or_authentication(key):
 # Assertions: rate-limit buckets remain distinct, and scoped credentials are
 # revoked even if the repository request fails.
 async def test_reused_connection_preserves_rate_limits_and_token_revocation(key):
+    """Enforce rate limits and token revocation on reused GitHub connections."""
     calls = []
 
     def handler(request):
@@ -232,6 +238,7 @@ async def test_reused_connection_preserves_rate_limits_and_token_revocation(key)
 # Assertions: a rejected oversized response closes its stream without poisoning
 # the operation's pool; the next authenticated request can still complete.
 async def test_oversized_response_does_not_retain_a_pooled_connection(key):
+    """Release a pooled connection when its response exceeds the configured bound."""
     closed = []
 
     class Stream(httpx.AsyncByteStream):
@@ -261,6 +268,7 @@ async def test_oversized_response_does_not_retain_a_pooled_connection(key):
 # are disposed after each request, including malformed/oversized/error responses.
 @pytest.mark.parametrize("status,body", [(200, b"{}"), (200, b"bad-json"), (503, b"private")])
 async def test_unscoped_requests_keep_their_original_lifetime(key, status, body):
+    """Preserve one-request client ownership outside explicit GitHub operation scopes."""
     closed = []
 
     class Transport(httpx.MockTransport):

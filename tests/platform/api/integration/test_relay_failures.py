@@ -38,7 +38,8 @@ async def test_real_http_idle_timeout_closes_and_records_reason(caplog):
 async def test_broken_backend_upload_closes_the_socket(caplog):
     """An OS write failure must release the tunnel instead of retaining a blocked upload."""
     writer = SimpleNamespace(write=Mock(side_effect=BrokenPipeError), close=Mock())
-    stream = _Stream(None, 1, None, writer)
+    connection = SimpleNamespace(h2=Mock(), flush=Mock())
+    stream = _Stream(connection, 1, None, writer)
     stream.incoming.put_nowait((b"request", 7))
     await stream.upload()
     writer.close.assert_called_once()
@@ -47,7 +48,7 @@ async def test_broken_backend_upload_closes_the_socket(caplog):
 
 async def test_broken_backend_download_cancels_upload_and_removes_stream(caplog):
     """An OS read failure must remove the tunnel and cancel its otherwise waiting upload."""
-    connection = SimpleNamespace(streams={})
+    connection = SimpleNamespace(streams={}, h2=Mock(), flush=Mock())
     writer = SimpleNamespace(close=Mock())
     reader = SimpleNamespace(read=AsyncMock(side_effect=ConnectionResetError))
     stream = _Stream(connection, 1, reader, writer)

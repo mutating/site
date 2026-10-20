@@ -474,7 +474,8 @@ async def reserve_once(route_id, data, request):
             route.repository_id,
             route.created_by,
         )
-    github_available = True
+    # Local rights can change before locking; a skipped provider check grants no approval.
+    github_available = check_github
     if check_github:
         try:
             await verify_repository(request, creator_id, installation_id, repository_id)

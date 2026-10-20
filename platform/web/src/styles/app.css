@@ -6,7 +6,7 @@
   --on-hot: #160d13;
   --on-danger: #ffffff;
   --active-ink: #b20e59;
-  --font-geist-sans: "Geist", Arial, sans-serif;
+  --font-geist-sans: "Geist", "Geist Cyrillic", Arial, sans-serif;
   --font-geist-mono: "Geist Mono", "SFMono-Regular", Consolas, monospace;
 }
 :root[data-theme="dark"] {
@@ -188,16 +188,14 @@ h3 {
 .skip-link:focus {
   top: 10px;
 }
-.header-caption {
-  color: var(--ink-muted);
-  font-size: 12px;
-  border-left: 1px solid var(--line);
-  padding-left: 25px;
-  margin-left: 16px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.site-header {
+  --font-geist-sans: "Geist";
+  --font-geist-mono: "Geist Mono";
+}
+.site-header .tmc-language-switcher :where(summary:focus-visible, a:focus-visible),
+.site-header .tmc-mobile-menu > summary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--hot) 55%, transparent);
+  outline-offset: 3px;
 }
 .site-header .tmc-header-actions {
   min-width: 0;
@@ -206,6 +204,22 @@ h3 {
 .site-header .tmc-brand__wordmark-stage {
   /* Keep the real animated text inside its link, including custom text spacing. */
   min-width: max-content;
+}
+@media (max-width: 1120px) and (max-height: 300px) {
+  .site-header {
+    /* Let the page reveal menu options below a tall, wrapped header at high zoom. */
+    position: relative;
+    top: 0;
+  }
+  .site-header .tmc-mobile-menu > nav {
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .site-header .tmc-language-switcher__list {
+    /* Native focus scrolling must use the final position of the language link. */
+    animation: none;
+  }
 }
 @media (forced-colors: active) {
   .site-header .tmc-theme-toggle__track {
@@ -1613,10 +1627,6 @@ td small {
   }
 }
 @media (max-width: 800px) {
-  .header-caption {
-    padding-left: 17px;
-    font-size: 11px;
-  }
   .app-shell {
     display: block;
     margin-top: 24px;
@@ -1722,9 +1732,6 @@ td small {
 @media (max-width: 540px) {
   .app-shell {
     width: calc(100% - 28px);
-  }
-  .header-caption {
-    display: none;
   }
   .nav-link {
     min-width: calc(50% - 4px);

@@ -29,7 +29,15 @@ async function prepare(page: Page, adapter: string, language: string, width: num
 }
 
 async function freeze(page: Page, animationTime = 1000) {
-  await page.evaluate((animationTime) => {
+  await page.evaluate(async (animationTime) => {
+    const surface = document.querySelector(".tmc-eye__surface, .animated-eye-logo__surface")!;
+    const url = getComputedStyle(surface).maskImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
+    if (url) {
+      // CSS masks are not included in Playwright's font/image readiness checks.
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+    }
     // All CSS timelines use the same timestamp. Nothing is masked or hidden.
     document.body.getBoundingClientRect();
     for (const animation of document.getAnimations()) { animation.pause(); animation.currentTime = animationTime; }
