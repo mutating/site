@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { ThemeProvider } from "@mutating/ui/react";
 import {
   BrowserRouter,
   Link,
@@ -24,6 +25,9 @@ import { Invitation } from "./pages/Invitation";
 import { Profile } from "./pages/Profile";
 import { Cloud } from "./pages/Cloud";
 import { Actions } from "./pages/Actions";
+import "@mutating/ui/fonts.css";
+import "@mutating/ui/styles/brand.css";
+import "@mutating/ui/styles/header.css";
 import "./styles/brand.css";
 import "./styles/app.css";
 function Guard() {
@@ -51,7 +55,7 @@ function NotFound() {
   );
 }
 function App() {
-  const { loading, error, reload } = useSession();
+  const { user, loading, error, reload } = useSession();
   const { t } = useI18n();
   const location = useLocation();
   useEffect(() => {
@@ -60,43 +64,54 @@ function App() {
   useEffect(() => {
     document.title = `${t("account")} — The Mutating Company`;
   }, [t("account")]);
-  if (loading || error)
-    return (
-      <>
-        <Header />
+  return (
+    <>
+      {!loading && !error && user && (
+        <a className="skip-link" href="#main">
+          {t("skip")}
+        </a>
+      )}
+      {/* Keep active pointer presses and keyboard focus across session changes. */}
+      <Header />
+      {loading || error ? (
         <main className="boot-state">
           {loading ? <Loading /> : <ErrorBox error={error} retry={reload} />}
         </main>
-      </>
-    );
-  return (
-    <Routes>
-      <Route path="login" element={<Auth key="login" />} />
-      <Route path="register" element={<Auth key="register" register />} />
-      <Route element={<Guard />}>
-        <Route element={<Layout />}>
-          <Route index element={<Overview />} />
-          <Route path="power-cells" element={<PowerCells />} />
-          <Route path="power-cells/computers" element={<Computers />} />
-          <Route path="power-cells/computers/:computerId" element={<Computer />} />
-          <Route path="organizations" element={<Organizations />} />
-          <Route path="organizations/:companyId" element={<Organization />} />
-          <Route path="invitations/:token" element={<Invitation />} />
-          <Route path="profile" element={<Profile />} />
-          <Route path="cloud" element={<Cloud />} />
-          <Route path="actions" element={<Actions />} />
-          <Route path="*" element={<NotFound />} />
-        </Route>
-      </Route>
-    </Routes>
+      ) : (
+        <Routes>
+          <Route path="login" element={<Auth key="login" />} />
+          <Route path="register" element={<Auth key="register" register />} />
+          <Route element={<Guard />}>
+            <Route element={<Layout />}>
+              <Route index element={<Overview />} />
+              <Route path="power-cells" element={<PowerCells />} />
+              <Route path="power-cells/computers" element={<Computers />} />
+              <Route path="power-cells/computers/:computerId" element={<Computer />} />
+              <Route path="organizations" element={<Organizations />} />
+              <Route path="organizations/:companyId" element={<Organization />} />
+              <Route path="invitations/:token" element={<Invitation />} />
+              <Route path="profile" element={<Profile />} />
+              <Route path="cloud" element={<Cloud />} />
+              <Route path="actions" element={<Actions />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Route>
+        </Routes>
+      )}
+    </>
   );
 }
 createRoot(document.getElementById("root")!).render(
   <I18nProvider>
-    <SessionProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </SessionProvider>
+    <ThemeProvider
+      initialTheme={document.documentElement.dataset.theme === "light" ? "light" : "dark"}
+      syncAcrossTabs={false}
+    >
+      <SessionProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </SessionProvider>
+    </ThemeProvider>
   </I18nProvider>,
 );

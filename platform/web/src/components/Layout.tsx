@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { api, apiURL, json } from "../lib/api";
 import { ErrorBox, Icon } from "./UI";
-import { Brand } from "./Brand";
+import { Header as SharedHeader, LanguageToggle } from "@mutating/ui/react";
 import { useData } from "../lib/useData";
 import type { GitHubStatus } from "../lib/github";
 
@@ -12,36 +12,50 @@ const siteOrigin = import.meta.env.VITE_SITE_ORIGIN || "https://mutating.tech";
 
 export function Header() {
   const { t, language, setLanguage } = useI18n();
-  const [theme, setTheme] = useState(document.documentElement.dataset.theme);
+  const headerRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const header = headerRef.current!;
+    const root = document.documentElement;
+    const key = "--platform-header-clearance";
+    const previous = root.style.getPropertyValue(key);
+    const update = () => {
+      const top = Number.parseFloat(getComputedStyle(header).top) || 0;
+      root.style.setProperty(key, `${Math.max(110, Math.ceil(top + header.getBoundingClientRect().height + 16))}px`);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    update();
+    return () => {
+      observer.disconnect();
+      if (previous) root.style.setProperty(key, previous);
+      else root.style.removeProperty(key);
+    };
+  }, []);
   return (
-    <header className="site-header">
-      <Brand href={`${siteOrigin}${language === "ru" ? "/ru/" : "/"}`} />
-      <span className="header-caption">{t("account")}</span>
-      <div className="header-actions">
-        <button
-          className="language-button"
-          aria-label={t("language")}
-          onClick={() => setLanguage(language === "ru" ? "en" : "ru")}
-        >
-          {language.toUpperCase()}
-        </button>
-        <button
-          className="theme-toggle"
-          aria-label={t("theme")}
-          onClick={() => {
-            const next = theme === "dark" ? "light" : "dark";
-            setTheme(next);
-            document.documentElement.dataset.theme = next;
-            try {
-              localStorage.setItem("tmc-theme", next);
-            } catch {}
-          }}
-        >
-          <span className={theme === "dark" ? "selected" : ""}>☾</span>
-          <span className={theme === "light" ? "selected" : ""}>☀</span>
-        </button>
-      </div>
-    </header>
+    <SharedHeader
+      ref={headerRef}
+      className="site-header"
+      brand={{
+        href: `${siteOrigin}${language === "ru" ? "/ru/" : "/"}`,
+        animation: {
+          scrollTone: false,
+          expandOnFocus: true,
+          fitWordmarkToHeader: true,
+          reactiveGaze: true,
+        },
+      }}
+      themeLabel={t("theme")}
+      actions={
+        <>
+          <span className="header-caption">{t("account")}</span>
+          <LanguageToggle
+            current={language}
+            aria-label={t("language")}
+            onClick={() => setLanguage(language === "ru" ? "en" : "ru")}
+          />
+        </>
+      }
+    />
   );
 }
 export function Avatar({ large = false }: { large?: boolean }) {
@@ -106,10 +120,6 @@ export function Layout() {
   );
   return (
     <>
-      <a className="skip-link" href="#main">
-        {t("skip")}
-      </a>
-      <Header />
       <div className="app-shell">
         <aside className="sidebar">
           <p className="eyebrow sidebar-label">{t("account")}</p>
