@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
 jobs:
-  network:
+  native:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -37,9 +37,41 @@ jobs:
         env:
           POWER_CELL_NETWORK_SERVER_ROOT: ${{ github.workspace }}/server
           POWER_CELL_NETWORK_REPORT_DIR: ${{ github.workspace }}/network-results
-        run: bash scripts/network-ci.sh
+        run: bash scripts/network-ci.sh --without-swift-mutations
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: native-network-recovery
           path: network-results
+  swift-mutations:
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: pomponchik/mac_agent
+          ref: ${{ inputs.client_ref || 'main' }}
+          path: client
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: brew install libslirp
+      - name: Swift recovery mutation contracts
+        working-directory: client
+        run: python3 scripts/network-mutations.py swift --shard "${{ matrix.shard }}/4" --report "${{ github.workspace }}/swift-mutations-${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-network-recovery-swift-${{ matrix.shard }}
+          path: swift-mutations-${{ matrix.shard }}
+  network:
+    if: always()
+    needs: [native, swift-mutations]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every recovery gate
+        run: test "${{ needs.native.result }}" = success && test "${{ needs.swift-mutations.result }}" = success

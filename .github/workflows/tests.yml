@@ -227,6 +227,10 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: package-lock.json
+      - uses: peaceiris/actions-hugo@v3.2.0
+        with:
+          hugo-version: "0.164.0"
+          extended: true
       - run: pip install uv==0.10.12
       - run: uv sync --project platform/api --frozen
       - run: uv sync --project platform/web --frozen
@@ -238,6 +242,7 @@ jobs:
         run: uv run --project platform/api pytest -c platform/api/pyproject.toml -q tests/platform/api/deployment
       - run: uv run --project platform/web pytest -c platform/web/pyproject.toml -q tests/platform/web/server
       - run: npm run test:web:e2e
+      - run: npm run test:web:header-shared
       - run: npm run test:web:deploy
       - uses: actions/upload-artifact@v4
         if: failure()
