@@ -138,7 +138,8 @@
   width: var(--tmc-language-switcher-desktop-width, 48px);
 }
 
-.tmc-language-switcher > summary {
+.tmc-language-switcher > summary,
+.tmc-language-toggle {
   position: relative;
   z-index: 2;
   min-height: 42px;
@@ -164,8 +165,21 @@
   justify-content: center;
 }
 
-.tmc-language-switcher > summary:hover {
+.tmc-language-toggle {
+  width: 48px;
+  justify-content: center;
+  flex: 0 0 auto;
+  font: 700 11px var(--font-geist-mono), monospace;
+}
+
+.tmc-language-switcher > summary:hover,
+.tmc-language-toggle:hover {
   color: var(--ink);
+}
+
+.tmc-language-toggle:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--hot) 55%, transparent);
+  outline-offset: 3px;
 }
 
 .tmc-language-switcher[open] > summary {

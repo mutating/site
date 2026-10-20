@@ -8,6 +8,12 @@ const BRAND_HOME_RELOAD_DELAY_MS = 260;
 
 export interface BrandOptions {
   expandWordmark?: boolean;
+  /** Also unfold on keyboard focus; disabled by default to preserve the static site. */
+  expandOnFocus?: boolean;
+  /** Fit the real expanded text and overflowing header actions at every viewport. Defaults to false. */
+  fitWordmarkToHeader?: boolean;
+  /** Follow eye layout and motion preference changes, including reduced-motion resets. Defaults to false. */
+  reactiveGaze?: boolean;
   scrollTone?: boolean;
   blinkIntervalMs?: number;
   /** Reload the current home after its closing-eye animation, as on mutating.tech. */
@@ -69,8 +75,8 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     env.destroy();
     const stage = brand.querySelector<HTMLElement>(".tmc-brand__wordmark-stage");
     const wordmark = brand.querySelector<HTMLElement>(".tmc-brand__wordmark");
-    if (stage) { delete stage.dataset.canExpand; delete stage.dataset.expansionMeasured; delete stage.dataset.expansionRevision; }
-    if (wordmark) delete wordmark.dataset.hoverExpanded;
+    if (stage) { delete stage.dataset.canExpand; delete stage.dataset.expansionMeasured; delete stage.dataset.expansionRevision; delete stage.dataset.fitToHeader; }
+    if (wordmark) { delete wordmark.dataset.hoverExpanded; delete wordmark.dataset.focusExpanded; }
     for (const element of brand.querySelectorAll<HTMLElement>(".tmc-eye, .tmc-eye__clip, .tmc-eye__pupil")) {
       for (const name of ["--eye-scroll-color", "--eye-scroll-outline-opacity", "--gaze-x", "--gaze-y", "--gaze-tilt", "clip-path", "-webkit-clip-path"]) element.style.removeProperty(name);
     }
@@ -85,6 +91,15 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     const eye = brand?.querySelector<HTMLElement>(".tmc-brand__mark--eye");
     const wordmark = stage?.querySelector<HTMLElement>(".tmc-brand__wordmark");
     if (!stage || !eye || !wordmark) return;
+    if (options.fitWordmarkToHeader === true) stage.dataset.fitToHeader = "true";
+    if (options.expandOnFocus && options.expandWordmark !== false) {
+      const expandForFocus = () => {
+        if (brand.matches(":focus-visible")) wordmark.dataset.focusExpanded = "true";
+      };
+      on(brand, "focus", expandForFocus);
+      on(brand, "blur", () => { delete wordmark.dataset.focusExpanded; });
+      expandForFocus();
+    }
     if (!header || !actions) {
       stage.dataset.canExpand = options.expandWordmark === false ? "false" : "true";
       on(brand, "pointerenter", () => { if (stage.dataset.canExpand === "true") wordmark.dataset.hoverExpanded = "true"; });
@@ -164,12 +179,32 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
       setPointerExpansion(true);
     }
 
+    const measureExpandedWidth = () => {
+      // Measure the final CSS geometry without changing the visible wordmark or
+      // borrowing its intermediate animation frame. Keep inherited fonts and
+      // user text spacing by placing the hidden probe next to the real stage.
+      const probe = stage.cloneNode(true) as HTMLElement;
+      probe.dataset.canExpand = "true";
+      probe.querySelector<HTMLElement>(".tmc-brand__wordmark")!.dataset.hoverExpanded = "true";
+      probe.style.cssText += ";position:fixed!important;inset:0 auto auto 0!important;visibility:hidden!important;pointer-events:none!important;width:max-content!important;min-width:0!important;max-width:none!important";
+      for (const element of [probe, ...probe.querySelectorAll<HTMLElement>("*")]) {
+        element.style.setProperty("transition", "none", "important");
+        element.style.setProperty("animation", "none", "important");
+      }
+      brand.append(probe);
+      try {
+        return probe.getBoundingClientRect().width;
+      } finally {
+        probe.remove();
+      }
+    };
+
     const update = () => {
       if (env.disposed()) return;
       cancelAnimationFrame(frameRequest);
       frameRequest = requestAnimationFrame(() => {
         if (options.expandWordmark === false) { publishExpansionAvailability(false); return; }
-        if (matchMedia("(min-width: 921px)").matches) {
+        if (options.fitWordmarkToHeader !== true && matchMedia("(min-width: 921px)").matches) {
           publishExpansionAvailability(true);
           stage.dataset.expansionMeasured = "true";
           stage.dataset.expansionRevision = String(
@@ -188,15 +223,17 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
         const eyeMargins =
           (Number.parseFloat(eyeStyle.marginLeft) || 0) +
           (Number.parseFloat(eyeStyle.marginRight) || 0);
-        const expandedStageWidth =
-          (Number.parseFloat(stageStyle.fontSize) || 0) * 11.6;
+        const reservedStageWidth = (Number.parseFloat(stageStyle.fontSize) || 0) * 11.6;
+        const expandedStageWidth = options.fitWordmarkToHeader === true
+          ? Math.max(reservedStageWidth, measureExpandedWidth())
+          : reservedStageWidth;
         const requiredWidth =
           eyeRect.width + eyeMargins + brandGap + expandedStageWidth;
         const availableWidth =
           headerRect.width -
           (Number.parseFloat(headerStyle.paddingLeft) || 0) -
           (Number.parseFloat(headerStyle.paddingRight) || 0) -
-          actionsRect.width;
+          (options.fitWordmarkToHeader === true ? Math.max(actionsRect.width, actions.scrollWidth) : actionsRect.width);
         publishExpansionAvailability(
           availableWidth + 0.5 >= requiredWidth,
         );
@@ -210,6 +247,7 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     const resizeObserver = new ResizeObserver(update);
     resizeObserver.observe(header);
     resizeObserver.observe(actions);
+    if (options.fitWordmarkToHeader === true) resizeObserver.observe(stage);
     on(window, "resize", update);
     update();
     document.fonts?.ready.then(update);
@@ -257,7 +295,8 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     const pupil = eye?.querySelector<HTMLElement>(".tmc-eye__pupil");
     if (!eye || !eyeClip || !pupil) return;
 
-    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
+    let reduceMotion = motionPreference.matches;
     const blinkSlowdown = 2 / 3;
     const supportsPathClip = CSS.supports(
       "clip-path",
@@ -289,9 +328,11 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     let animationFrame = 0;
     let scrollFrame = 0;
     let previousGazeFrameAt = 0;
+    let lastPointer: { x: number; y: number } | null = null;
 
     const renderScrollTone = () => {
       scrollFrame = 0;
+      if (options.reactiveGaze === true && lastPointer) aimAt(lastPointer.x, lastPointer.y);
       if (options.scrollTone === false) return;
       const scrollRange = Math.max(1, window.innerHeight);
       const whiteness = Math.max(0, Math.min(1, window.scrollY / scrollRange));
@@ -343,6 +384,7 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
       lid.width = rect.width;
       lid.height = rect.height;
       renderLid();
+      if (options.reactiveGaze === true && lastPointer) aimAt(lastPointer.x, lastPointer.y);
     };
     const renderGaze = () => {
       const tilt = gaze.maxX ? (-gaze.x / gaze.maxX) * 2.8 : 0;
@@ -362,14 +404,26 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
         gaze.vy *= 0.35;
       }
     };
+    const centerGaze = () => {
+      gaze.targetX = 0;
+      gaze.targetY = 0;
+      if (reduceMotion && options.reactiveGaze === true) {
+        gaze.x = gaze.y = gaze.vx = gaze.vy = 0;
+        renderGaze();
+      }
+    };
+    const resetPointer = () => {
+      lastPointer = null;
+      centerGaze();
+    };
     const aimAt = (clientX: number, clientY: number) => {
+      if (options.reactiveGaze === true) lastPointer = { x: clientX, y: clientY };
       const rect = eye.getBoundingClientRect();
       const dx = clientX - (rect.left + rect.width / 2);
       const dy = clientY - (rect.top + rect.height / 2);
       const distance = Math.hypot(dx, dy);
       if (!distance) {
-        gaze.targetX = 0;
-        gaze.targetY = 0;
+        centerGaze();
         return;
       }
       const ux = dx / distance;
@@ -391,10 +445,6 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
         gaze.y = gaze.targetY;
         renderGaze();
       }
-    };
-    const centerGaze = () => {
-      gaze.targetX = 0;
-      gaze.targetY = 0;
     };
     const smoothStep = (value: number) => value * value * (3 - 2 * value);
     const transitionLid = (target: number, baseDuration: number, kind: "auto" | "manual") => {
@@ -485,7 +535,13 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     renderScrollTone();
     updateBounds();
     transitionLid(1, reduceMotion ? 150 : 280, "auto");
-    new ResizeObserver(updateBounds).observe(eye);
+    const boundsObserver = new ResizeObserver(updateBounds);
+    boundsObserver.observe(eye);
+    if (options.reactiveGaze === true) {
+      boundsObserver.observe(brand);
+      const header = brand.closest(".tmc-header");
+      if (header) boundsObserver.observe(header);
+    }
     on(window, 
       "scroll",
       () => {
@@ -507,6 +563,18 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     on(window, "pointerdown", (event: PointerEvent) => aimAt(event.clientX, event.clientY), {
       passive: true,
     });
+    if (options.reactiveGaze === true) {
+      on(motionPreference, "change", () => {
+        reduceMotion = motionPreference.matches;
+        gaze.vx = gaze.vy = 0;
+        previousGazeFrameAt = 0;
+        if (reduceMotion) {
+          gaze.x = gaze.targetX;
+          gaze.y = gaze.targetY;
+          renderGaze();
+        }
+      });
+    }
     on(window, BRAND_POINTER_EVENT, (event: CustomEvent<{ clientX?: number; clientY?: number }>) => {
       const clientX = Number(event.detail?.clientX);
       const clientY = Number(event.detail?.clientY);
@@ -514,11 +582,11 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
         aimAt(clientX, clientY);
       }
     });
-    on(window, "blur", centerGaze);
+    on(window, "blur", resetPointer);
     on(window, THEME_TOGGLE_BLINK_EVENT, blinkForTheme);
     on(window, BRAND_HOME_ACTIVATE_EVENT, holdClosed);
     on(document, "pointerout", (event: PointerEvent) => {
-      if (!event.relatedTarget) centerGaze();
+      if (!event.relatedTarget) resetPointer();
     });
     if (options.blinkIntervalMs !== 0) setInterval(blink, options.blinkIntervalMs ?? 30000);
     animationFrame = requestAnimationFrame(animate);

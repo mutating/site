@@ -25,15 +25,15 @@ export interface BrandProps extends Omit<ComponentPropsWithoutRef<"a">, keyof DO
 }
 export function Brand({ href, animation, className, "aria-label": label = "The Mutating Company", ...props }: BrandProps) {
   const ref = useRef<HTMLElement>(null);
-  const { expandWordmark, scrollTone, blinkIntervalMs, activation } = animation ?? {};
-  useEffect(() => mountBrand(ref.current!, { expandWordmark, scrollTone, blinkIntervalMs, activation }), [expandWordmark, scrollTone, blinkIntervalMs, activation]);
+  const { expandWordmark, expandOnFocus, fitWordmarkToHeader, reactiveGaze, scrollTone, blinkIntervalMs, activation } = animation ?? {};
+  useEffect(() => mountBrand(ref.current!, { expandWordmark, expandOnFocus, fitWordmarkToHeader, reactiveGaze, scrollTone, blinkIntervalMs, activation }), [expandWordmark, expandOnFocus, fitWordmarkToHeader, reactiveGaze, scrollTone, blinkIntervalMs, activation]);
   const content = <>
       <span className="tmc-brand__mark tmc-brand__mark--eye" aria-hidden="true">
         <span className="tmc-eye"><span className="tmc-eye__clip">
           <span className="tmc-eye__outline" /><span className="tmc-eye__surface" /><span className="tmc-eye__pupil" />
         </span></span>
       </span>
-      <span className="tmc-brand__wordmark-stage" data-can-expand="true" aria-hidden="true">
+      <span className="tmc-brand__wordmark-stage" data-can-expand={fitWordmarkToHeader ? "false" : "true"} data-fit-to-header={fitWordmarkToHeader ? "true" : undefined} aria-hidden="true">
         <span className="tmc-brand__wordmark">
           <span className="tmc-brand__word-part tmc-brand__word-part--t"><span className="tmc-brand__word-anchor">T</span><span className="tmc-brand__word-reveal" data-text="he">he</span></span>
           <span className="tmc-brand__word-part tmc-brand__word-part--m"><span className="tmc-brand__word-anchor">M</span><span className="tmc-brand__word-reveal" data-text="utating">utating</span></span>
@@ -43,7 +43,7 @@ export function Brand({ href, animation, className, "aria-label": label = "The M
   </>;
   return activation === "reload-home"
     ? <div {...props} ref={ref as Ref<HTMLDivElement>} role="link" tabIndex={0} data-home-url={href} aria-label={label} className={classes("tmc-brand", className)}>{content}</div>
-    : <a {...props} ref={ref as Ref<HTMLAnchorElement>} href={href} aria-label={label} className={classes("tmc-brand", className)}>{content}</a>;
+    : <a {...props} ref={ref as Ref<HTMLAnchorElement>} href={href} tabIndex={props.tabIndex ?? (expandOnFocus ? 0 : undefined)} aria-label={label} className={classes("tmc-brand", className)}>{content}</a>;
 }
 
 const ThemeContext = createContext<{ controller: ThemeController | null; initialTheme: Theme } | undefined>(undefined);
@@ -109,8 +109,19 @@ export function LanguageSwitcher({ current, options, label, groupLabel, variant 
   );
 }
 
+export interface LanguageToggleProps extends ComponentPropsWithoutRef<"button"> {
+  current: string;
+}
+/** A direct language action for applications that change language without navigating. */
+export function LanguageToggle({ current, className, type = "button", ...props }: LanguageToggleProps) {
+  return <button {...props} type={type} className={classes("tmc-language-toggle", className)}>{current.toUpperCase()}</button>;
+}
+
 export interface HeaderProps extends HeaderConfig {
   className?: string;
+  ref?: Ref<HTMLElement>;
+  /** Additional controls before language and theme; visible at every viewport width. */
+  actions?: ReactNode;
   /** Supply a router Link while keeping the library's link content and attributes. */
   renderLink?: (item: HeaderItem, attributes: ComponentPropsWithoutRef<"a">, children: ReactNode) => ReactNode;
 }
@@ -130,7 +141,7 @@ function MenuLink({ item, renderLink }: { item: HeaderItem; renderLink?: HeaderP
 export function Header({
   items = [], brand = { href: "/" }, language, themeLabel = "Toggle color theme", showThemeToggle = true,
   navigationLabel = "Navigation", mobileNavigationLabel = navigationLabel,
-  menuLabel = "Open navigation menu", menuText = "Menu", adjacentLink, className, renderLink,
+  menuLabel = "Open navigation menu", menuText = "Menu", adjacentLink, className, renderLink, actions, ref,
   inheritTypography = false,
 }: HeaderProps) {
   const menuRef = useRef<HTMLDetailsElement>(null);
@@ -142,11 +153,12 @@ export function Header({
   }, [hasMenu, itemsSignature, language?.current, languageSignature]);
   const links = items.map((item) => <MenuLink key={item.id} item={item} renderLink={renderLink} />);
   return (
-    <header className={classes("tmc-header-shell", className)} data-tmc-inherit-typography={inheritTypography ? "" : undefined}>
+    <header ref={ref} className={classes("tmc-header-shell", className)} data-tmc-inherit-typography={inheritTypography ? "" : undefined}>
       <div className="tmc-header">
         <Brand href={brand.href} aria-label={brand.label} animation={brand.animation} />
         {items.length > 0 && <nav className="tmc-nav" aria-label={navigationLabel}>{links}</nav>}
         <div className="tmc-header-actions">
+          {actions}
           {language && <LanguageSwitcher {...language} variant="desktop" />}
           {showThemeToggle && <ThemeToggle aria-label={themeLabel} />}
           {hasMenu && <details ref={menuRef} className="tmc-mobile-menu">
