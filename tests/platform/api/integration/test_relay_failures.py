@@ -68,6 +68,7 @@ async def test_tls_disconnect_error_does_not_retain_connection():
         get_extra_info=Mock(return_value=SimpleNamespace(selected_alpn_protocol=lambda: None)),
         close=Mock(),
         wait_closed=AsyncMock(side_effect=ConnectionResetError),
+        transport=SimpleNamespace(abort=Mock()),
     )
     await server.connected(None, writer)
     assert not server.connections

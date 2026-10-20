@@ -23,28 +23,37 @@ class FaultProxy:
         self.tasks = set()
 
     async def __aenter__(self):
+        self.closing = False
         self.server = await asyncio.start_server(self.connected, "127.0.0.1", 0)
         self.url = f"http://127.0.0.1:{self.server.sockets[0].getsockname()[1]}"
         return self
 
     async def __aexit__(self, *args):
+        self.closing = True
         self.server.close()
         for task in list(self.tasks):
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
         await self.server.wait_closed()
-        # wait_closed observes socket closure before a late handler's finally
-        # has necessarily finished removing its tracking entry.
-        await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    async def connected(self, reader, writer):
-        task = asyncio.current_task()
+    def connected(self, reader, writer):
+        # Own the task before its coroutine can run. A late callback creates no
+        # new task, while a cancelled-before-start task still releases its peer.
+        if self.closing:
+            writer.transport.abort()
+            return
+        task = asyncio.create_task(self.forward(reader, writer))
         self.tasks.add(task)
+
+        def finished(task):
+            writer.transport.abort()
+            self.tasks.discard(task)
+
+        task.add_done_callback(finished)
+
+    async def forward(self, reader, writer):
         backend = None
         try:
-            # Accepted callbacks can start after teardown snapshots self.tasks.
-            if not self.server.is_serving():
-                return
             async with asyncio.timeout(15):
                 header = await reader.readuntil(b"\r\n\r\n")
                 lines = header.split(b"\r\n")
@@ -93,7 +102,4 @@ class FaultProxy:
         except (OSError, asyncio.IncompleteReadError, TimeoutError):
             pass
         finally:
-            try:
-                await asyncio.gather(*(close_connection(stream) for stream in [backend, writer] if stream))
-            finally:
-                self.tasks.discard(task)
+            await asyncio.gather(*(close_connection(stream) for stream in [backend, writer] if stream))
