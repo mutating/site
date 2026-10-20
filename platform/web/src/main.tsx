@@ -106,6 +106,8 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider
       initialTheme={document.documentElement.dataset.theme === "light" ? "light" : "dark"}
       syncAcrossTabs={false}
+      preferenceSource="storage"
+      cookieDomain="mutating.tech"
     >
       <SessionProvider>
         <BrowserRouter>

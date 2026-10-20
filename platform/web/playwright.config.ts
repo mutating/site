@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 const runtime = resolve(".runtime", `playwright-${process.pid}`);
 export default defineConfig({
   testDir: "../../tests/platform/web/e2e",
-  testIgnore: ["**/visual.spec.ts"],
+  testIgnore: ["**/visual.spec.ts", "**/header-shared.spec.ts"],
   outputDir: "test-results/e2e",
   fullyParallel: true,
   workers: 2,

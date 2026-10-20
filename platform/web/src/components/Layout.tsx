@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { api, apiURL, json } from "../lib/api";
 import { ErrorBox, Icon } from "./UI";
-import { Header as SharedHeader, LanguageToggle } from "@mutating/ui/react";
+import { Header as SharedHeader } from "@mutating/ui/react";
 import { useData } from "../lib/useData";
 import type { GitHubStatus } from "../lib/github";
 
@@ -12,6 +12,12 @@ const siteOrigin = import.meta.env.VITE_SITE_ORIGIN || "https://mutating.tech";
 
 export function Header() {
   const { t, language, setLanguage } = useI18n();
+  const location = useLocation();
+  const languageURL = (code: string) => {
+    const query = new URLSearchParams(location.search);
+    query.set("tmc-language-choice", code);
+    return `${location.pathname}?${query}${location.hash}`;
+  };
   const headerRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const header = headerRef.current!;
@@ -45,16 +51,16 @@ export function Header() {
         },
       }}
       themeLabel={t("theme")}
-      actions={
-        <>
-          <span className="header-caption">{t("account")}</span>
-          <LanguageToggle
-            current={language}
-            aria-label={t("language")}
-            onClick={() => setLanguage(language === "ru" ? "en" : "ru")}
-          />
-        </>
-      }
+      language={{
+        current: language,
+        label: t("language"),
+        groupLabel: language === "ru" ? "Языки" : "Languages",
+        options: ["en", "ru"].map(code => ({ code, href: languageURL(code) })),
+      }}
+      onLanguageChange={code => { if (code === "ru" || code === "en") setLanguage(code); }}
+      menuLabel={language === "ru" ? "Открыть меню навигации" : "Open navigation menu"}
+      menuText={language === "ru" ? "Меню" : "Menu"}
+      mobileNavigationLabel={language === "ru" ? "Мобильная навигация" : "Mobile navigation"}
     />
   );
 }

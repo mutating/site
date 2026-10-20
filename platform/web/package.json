@@ -10,6 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:header-shared": "playwright test --config=playwright.header.config.ts",
     "test:deploy": "playwright test --config=playwright.deploy.config.ts",
     "test:visual": "playwright test --config=playwright.visual.config.ts",
     "test": "npm run test:unit && npm run test:e2e && npm run test:deploy"

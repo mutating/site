@@ -8,7 +8,8 @@
 }
 
 @font-face {
-  font-family: "Geist";
+  /* Keep this platform-only subset out of the shared header's font family. */
+  font-family: "Geist Cyrillic";
   src: url("/fonts/geist/geist-875ccdd4.woff2") format("woff2");
   font-style: normal;
   font-weight: 100 900;
