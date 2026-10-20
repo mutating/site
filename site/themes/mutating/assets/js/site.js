@@ -1133,6 +1133,7 @@ import { mountHeader, mountBrand, mountMobileMenu, BRAND_POINTER_EVENT } from ".
         initialTheme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
         syncAcrossTabs: false,
         preferenceSource: "storage",
+        cookieDomain: "mutating.tech",
       },
       language: { closeOnSelection: false, stopEscapePropagation: false },
       themeToggle: { exposePressedState: false },
