@@ -18,7 +18,7 @@ jobs:
   deploy:
     name: Build and deploy over SSH
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       DEPLOY_PATH: /var/www/mutating.tech
       SITE_BASE_URL: https://mutating.tech/
@@ -94,6 +94,7 @@ jobs:
           fi
 
       - name: Verify the production server before upload
+        timeout-minutes: 3
         run: |
           set -euo pipefail
           trap 'echo "::error title=Production server contract failed::Verify the mutating.tech virtual hosts, redirects, TLS, HTTP/2 and response headers before rerunning deployment."' ERR
@@ -134,15 +135,35 @@ jobs:
           VITE_SITE_ORIGIN: https://mutating.tech
         run: npm run build:web
 
-      - name: Upload and activate the shared release over SSH
+      - name: Upload the shared release over SSH
+        timeout-minutes: 10
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
-        run: bash deploy/upload.sh "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        run: bash deploy/upload.sh "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" upload
+
+      - name: Prepare the production Python environment
+        timeout-minutes: 11
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+        run: bash deploy/upload.sh "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" prepare
+
+      - name: Activate the release and verify startup
+        timeout-minutes: 8
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+        run: bash deploy/upload.sh "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" activate
 
       - name: Verify the deployed content contracts
+        timeout-minutes: 5
         run: |
           set -euo pipefail
 
@@ -215,6 +236,7 @@ jobs:
           fi
 
       - name: Verify API and platform through nginx
+        timeout-minutes: 3
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/health/ready
