@@ -115,7 +115,10 @@ def check_pair(certificate, key, *, ca=False, hostname=None):
         if b"CA:TRUE" not in description or b"id-ecPublicKey" not in description:
             raise ValueError("An EC certificate authority is required")
     if hostname:
-        openssl("x509", "-in", certificate, "-checkhost", hostname, "-noout")
+        verdict = openssl("x509", "-in", certificate, "-checkhost", hostname, "-noout")
+        # Older OpenSSL versions also exit zero when the hostname does not match.
+        if verdict.strip() != f"Hostname {hostname} does match certificate".encode():
+            raise ValueError("Certificate does not match the relay hostname")
 
 
 def issuer(directory, existing, gid, allow_create):
