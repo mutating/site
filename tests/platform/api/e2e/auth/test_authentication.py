@@ -101,7 +101,7 @@ async def test_every_client_operation_requires_its_scope(
 ):
     """Each client operation denies an otherwise valid owner token lacking exactly its required scope."""
     authorization = "Bearer " + access_token["token"]
-    cases = [case for case in api_requests if case["scope"] == missing_scope]
+    cases = [case for case in api_requests if missing_scope in case["scopes"]]
     assert cases
     for case in cases:
         kwargs = {

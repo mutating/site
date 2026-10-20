@@ -37,7 +37,7 @@ class BrowserSessionMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope)
-        cookie_auth = SESSION_COOKIE in request.cookies and not request.headers.get("authorization")
+        cookie_auth = SESSION_COOKIE in request.cookies and "authorization" not in request.headers
         session_endpoint = request.url.path == "/v1/auth/session"
         if (
             request.url.path.startswith("/v1/")

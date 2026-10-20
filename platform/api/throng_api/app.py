@@ -32,6 +32,7 @@ from throng_api import (
     powercell,
     relay,
     resources,
+    token_checks,
 )
 from throng_api.config import Settings
 from throng_api.database import Database
@@ -200,6 +201,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         avatars.router,
         accounts.public_router,
         accounts.router,
+        token_checks.router,
         invitations.router,
         organization_directory.router,
         computers.router,

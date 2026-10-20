@@ -134,6 +134,11 @@ class Login(BaseModel):
     token: AccessToken
 
 
+class TokenCheck(BaseModel):
+    valid: Literal[True]
+    scopes: list[Scope]
+
+
 class ComputerOwnership(Identity, Owner):
     computer_id: str
 

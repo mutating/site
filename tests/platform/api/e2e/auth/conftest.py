@@ -164,6 +164,7 @@ def api_requests(
         ("GET", "/v1/users", "read", {}),
         ("GET", "/v1/users/me", "read", {}),
         ("GET", "/v1/auth/session", "read", {}),
+        ("GET", "/v1/auth/check", ("read", "execute"), {}),
         ("GET", "/v1/organization-directory", "read", {}),
         ("GET", "/v1/github/status", "read", {}),
         ("POST", "/v1/github/authorize", "manage", {}),
@@ -427,7 +428,7 @@ def api_requests(
             "method": method,
             "template": template,
             "url": template.format(**identifiers.get(template, identifiers)),
-            "scope": scope,
+            "scopes": (scope,) if isinstance(scope, str) else scope,
             "kwargs": {"headers": {"Idempotency-Key": str(uuid4())}, **kwargs},
         }
         for method, template, scope, kwargs in requests

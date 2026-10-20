@@ -83,7 +83,7 @@ async def verify_password(encoded: str, value: str) -> bool:
 
 
 def bearer(request: Request) -> str:
-    if not request.headers.get("authorization") and request.url.path.startswith("/v1/"):
+    if "authorization" not in request.headers and request.url.path.startswith("/v1/"):
         cookie = request.cookies.get(SESSION_COOKIE)
         if cookie:
             return cookie
