@@ -1,6 +1,6 @@
 export type { Cleanup } from "./internal";
-export { createThemeController, mountThemeToggle, isTheme, DEFAULT_THEME_STORAGE_KEY, THEME_CHANGE_EVENT, THEME_TOGGLE_EVENT } from "./theme";
-export type { Theme, ThemeOptions, ThemeController, ThemeToggleOptions } from "./theme";
+export { createThemeController, mountThemeToggle, initializeTheme, isTheme, DEFAULT_THEME_STORAGE_KEY, THEME_CHANGE_EVENT, THEME_TOGGLE_EVENT } from "./theme";
+export type { Theme, ThemeOptions, ThemeController, ThemeToggleOptions, ThemePreferenceOptions } from "./theme";
 export { mountBrand, BRAND_HOME_ACTIVATE_EVENT, BRAND_POINTER_EVENT } from "./brand";
 export type { BrandOptions } from "./brand";
 export { mountHeader, mountLanguageSwitcher, mountMobileMenu } from "./header";

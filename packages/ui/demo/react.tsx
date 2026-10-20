@@ -20,7 +20,7 @@ function Showcase() {
   const { theme, controller } = useTheme();
   return <>
     {mounted && <Header
-      brand={{ href: brandQuery.get("brand-home") ?? "/react.html", animation: brandQuery.has("reload-brand") ? { activation: "reload-home" } : undefined }} items={otherMenu ? [{ id: "overview", href: "#overview", label: "Обзор", active: true }, { id: "organizations", href: "#organizations", label: "Организации" }] : items} navigationLabel="Навигация"
+      brand={{ href: brandQuery.get("brand-home") ?? "/react.html", animation: brandQuery.has("reload-brand") ? { activation: "reload-home" } : undefined }} items={brandQuery.has("language-only") ? [] : otherMenu ? [{ id: "overview", href: "#overview", label: "Обзор", active: true }, { id: "organizations", href: "#organizations", label: "Организации" }] : items} navigationLabel="Навигация"
       language={{ ...language, current: currentLanguage, options: extraLanguage ? [...language.options, { code: "de", href: "#de" }] : language.options }} themeLabel="Переключить тему"
       menuLabel="Открыть меню" menuText="Меню"
       renderLink={wrappedLinks ? (_item, attributes, children) => <DemoRouterLink {...attributes}>{children}</DemoRouterLink> : undefined}

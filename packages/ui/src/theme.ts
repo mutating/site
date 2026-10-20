@@ -1,14 +1,15 @@
 import { createScope, type Cleanup } from "./internal";
+import { DEFAULT_THEME_STORAGE_KEY, isTheme, readThemePreference, writeThemePreference, systemTheme, type ThemePreferenceOptions } from "./theme-preference";
+export { DEFAULT_THEME_STORAGE_KEY, isTheme, initializeTheme } from "./theme-preference";
+export type { ThemePreferenceOptions } from "./theme-preference";
 
 export type Theme = "light" | "dark";
 export const THEME_CHANGE_EVENT = "tmc-theme-change";
 export const THEME_TOGGLE_EVENT = "tmc-theme-toggle-blink";
-export const DEFAULT_THEME_STORAGE_KEY = "tmc-theme";
 
-export interface ThemeOptions {
+export interface ThemeOptions extends ThemePreferenceOptions {
   /** Defaults to document.documentElement. */
   root?: HTMLElement;
-  storageKey?: string;
   /** Without an explicit theme, prefer saved choice, then system preference. */
   initialTheme?: Theme;
   /** Defaults to true; false keeps each document's theme until reload/system change. */
@@ -32,10 +33,6 @@ export interface ThemeToggleOptions {
   exposePressedState?: boolean;
 }
 
-export function isTheme(value: unknown): value is Theme {
-  return value === "light" || value === "dark";
-}
-
 /** Call explicitly before rendering when avoiding a theme flash is important. */
 export function createThemeController(options: ThemeOptions = {}): ThemeController {
   const root = options.root ?? document.documentElement;
@@ -45,12 +42,10 @@ export function createThemeController(options: ThemeOptions = {}): ThemeControll
   const light = window.matchMedia("(prefers-color-scheme: light)");
   const key = options.storageKey ?? DEFAULT_THEME_STORAGE_KEY;
   const listeners = new Set<(theme: Theme) => void>();
-  let saved: string | null = null;
-  try { saved = window.localStorage.getItem(key); } catch { /* Storage can be disabled. */ }
+  const saved = readThemePreference(window, options);
   // Keep the preference in memory too: storage denial must not reset a choice.
   let preference: Theme | null = options.initialTheme ?? (isTheme(saved) ? saved : null);
-  const systemTheme = (): Theme => dark.matches ? "dark" : light.matches ? "light" : "dark";
-  let theme = preference ?? systemTheme();
+  let theme = preference ?? systemTheme(window);
   const publish = (next: Theme) => {
     if (scope.disposed) return;
     root.dataset.theme = next;
@@ -62,11 +57,9 @@ export function createThemeController(options: ThemeOptions = {}): ThemeControll
   root.dataset.theme = theme;
   const syncSystem = () => {
     if (options.preferenceSource === "storage") {
-      let stored: string | null = null;
-      try { stored = window.localStorage.getItem(key); } catch { /* Follow the system without persistence. */ }
-      preference = isTheme(stored) ? stored : null;
+      preference = readThemePreference(window, options);
     }
-    if (!preference) publish(systemTheme());
+    if (!preference) publish(systemTheme(window));
   };
   on(dark, "change", syncSystem);
   on(light, "change", syncSystem);
@@ -77,12 +70,12 @@ export function createThemeController(options: ThemeOptions = {}): ThemeControll
       try { if (event.storageArea !== window.localStorage) return; } catch { return; }
     }
     preference = isTheme(event.newValue) ? event.newValue : null;
-    publish(preference ?? systemTheme());
+    publish(preference ?? systemTheme(window));
   });
   const setTheme = (next: Theme) => {
     if (scope.disposed) return;
     preference = next;
-    try { window.localStorage.setItem(key, next); } catch { /* Keep in-memory choice. */ }
+    writeThemePreference(window, next, options);
     publish(next);
   };
   scope.add(() => listeners.clear());
@@ -98,8 +91,8 @@ export function createThemeController(options: ThemeOptions = {}): ThemeControll
     useSystemTheme() {
       if (scope.disposed) return;
       preference = null;
-      try { window.localStorage.removeItem(key); } catch { /* Storage can be disabled. */ }
-      publish(systemTheme());
+      writeThemePreference(window, null, options);
+      publish(systemTheme(window));
     },
     subscribe(listener) {
       if (scope.disposed) return () => {};
