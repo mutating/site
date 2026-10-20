@@ -27,7 +27,7 @@ if [[ "$phase" == all || "$phase" == upload ]]; then
   deploy_log 'SSH preflight: started (deadline 60s)'
   # Pin the basis to one release, even if /current changes during the transfer.
   if basis="$(timeout --kill-after=5s 60s sshpass -e ssh "${ssh_options[@]}" "$target" \
-    "set -eu; test -w /opt/mutating/releases; command -v rsync >/dev/null; command -v uv >/dev/null; command -v timeout >/dev/null; test -x /usr/local/sbin/mutating-activate; test ! -e '$release'; mkdir -p '$staging'; readlink -f /opt/mutating/current || true")"; then
+    "set -eu; test -w /opt/mutating/releases; command -v rsync >/dev/null; command -v uv >/dev/null; command -v timeout >/dev/null; test -x /usr/local/sbin/mutating-activate; test ! -e '$release'; mkdir -p '$staging'; if test -L /opt/mutating/current && test -d /opt/mutating/current; then readlink -f /opt/mutating/current; fi")"; then
     deploy_log 'SSH preflight: completed'
   else
     status=$?; echo "::error::SSH preflight failed (exit $status)." >&2; exit "$status"

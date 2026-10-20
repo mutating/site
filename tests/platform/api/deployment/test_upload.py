@@ -31,7 +31,7 @@ def deployment(tmp_path):
     stub = binary / "stub"
     stub.write_text(
         f"#!{sys.executable}\n"
-        + """import json, os, sys, time
+        + """import json, os, subprocess, sys, time
 from pathlib import Path
 command = Path(sys.argv[0]).name
 args = sys.argv[1:]
@@ -43,6 +43,9 @@ if command == 'sshpass':
     os.execvp(args[1], args[1:])
 if command == 'ssh':
     if 'readlink -f' in args[-1]:
+        if os.environ.get('EXECUTE_PREFLIGHT'):
+            remote = args[-1].replace('/usr/local/sbin/mutating-activate', os.environ['FAKE_ACTIVATOR'])
+            sys.exit(subprocess.call(['bash', '-c', remote]))
         print(os.environ.get('BASIS', ''))
     if os.environ.get('FAILURE') == 'ssh':
         sys.exit(255)
@@ -69,6 +72,7 @@ if command == 'sudo':
         "DEPLOY_USER": "tester",
         "SSHPASS": "never-print-this-password",
         "BASIS": str(server / "releases/old"),
+        "FAKE_ACTIVATOR": str(stub),
     }
     return checkout, server, binary, env, log
 
@@ -234,7 +238,10 @@ def test_rsync_copies_unchanged_bytes_locally_without_sharing_inodes(tmp_path):
         (source / name).write_bytes(content)
         (basis / name).write_bytes(b"old!" if name == "changed.txt" else content)
         os.utime(source / name, (2000000000, 2000000000))
-        os.utime(basis / name, (1000000000, 1000000000))
+        os.utime(
+            basis / name,
+            (2000000000, 2000000000) if name == "changed.txt" else (1000000000, 1000000000),
+        )
     result = subprocess.run(
         [
             rsync,
@@ -272,3 +279,16 @@ def test_long_stage_emits_heartbeat_and_preserves_command_failure(deployment):
     assert "Slow stage: still running" in result.stdout
     assert "Slow stage failed" in result.stderr
     assert "exit 7" in result.stderr
+
+
+@pytest.mark.parametrize("current", ["missing", "dangling"])
+def test_first_deployment_without_valid_current_release_uploads_in_full(deployment, current):
+    """An absent or dangling current symlink must not become an invalid rsync basis."""
+    _, server, _, _, _ = deployment
+    shutil.rmtree(server / "releases/new")
+    if current == "dangling":
+        (server / "current").symlink_to(server / "releases/removed")
+    result, actions = run_upload(deployment, "upload", EXECUTE_PREFLIGHT="1")
+    assert result.returncode == 0, result.stderr
+    transfer = next(action for action in actions if action[0] == "rsync")
+    assert not any(argument.startswith("--copy-dest=") for argument in transfer)
