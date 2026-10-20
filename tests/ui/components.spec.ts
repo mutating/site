@@ -1,5 +1,37 @@
 import { expect, test } from "@playwright/test";
 
+test("a language-only React header puts its switcher inside the mobile menu", async ({ page, isMobile }) => {
+  await page.goto("/react.html?language-only");
+  const menu = page.locator(".tmc-mobile-menu");
+  const summary = menu.locator(":scope > summary");
+  const language = menu.locator(".tmc-language-switcher--mobile");
+  const activate = async (control: typeof summary) => isMobile ? control.tap() : control.click();
+  await expect(page.locator(".tmc-nav")).toHaveCount(0);
+  for (const width of [320, 480, 481, 900, 1120, 1121, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.mouse.move(0, 799);
+    await expect(page.locator("header .tmc-theme-toggle")).toBeVisible();
+    if (width > 1120) {
+      await expect(menu).toBeHidden();
+      await expect(page.locator(".tmc-language-switcher--desktop > summary")).toBeVisible();
+      continue;
+    }
+    await expect(summary).toBeVisible();
+    await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(0);
+    await expect(page.locator(".tmc-language-switcher--desktop")).toBeHidden();
+    await activate(summary);
+    await expect(language.locator("summary")).toBeVisible();
+    await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(1);
+    await activate(language.locator("summary"));
+    await expect(language.getByRole("link", { name: "EN", exact: true })).toBeVisible();
+    await activate(language.getByRole("link", { name: "EN", exact: true }));
+    await expect(page).toHaveURL(/#en$/);
+    await expect(menu).not.toHaveAttribute("open");
+    await expect(language).not.toHaveAttribute("open");
+    await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(0);
+  }
+});
+
 for (const destination of ["empty", "other-origin"]) {
   test(`reload-home respects the complete explicit URL: ${destination}`, async ({ page, baseURL }) => {
     const home = destination === "empty" ? "" : new URL("/react.html", baseURL!.replace("127.0.0.1", "localhost")).href;

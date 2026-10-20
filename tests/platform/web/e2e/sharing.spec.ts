@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import {
   API,
   expect,
@@ -322,7 +323,7 @@ test("restricted manager sees current rights, cannot grant more, and sees capaci
   ).toHaveCount(0);
   await form.getByRole("button", { name: "Создать ссылку" }).click();
   await expect(form.getByRole("status")).toHaveText("Приглашение создано.");
-  await page.getByRole("button", { name: "Выбрать язык" }).click();
+  await selectLanguage(page);
   await expect(
     page.getByRole("heading", { name: "Members", exact: true }),
   ).toBeVisible();

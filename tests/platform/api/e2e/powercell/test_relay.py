@@ -18,7 +18,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import DataReceived, ResponseReceived, StreamEnded, WindowUpdated
+from h2.errors import ErrorCodes
+from h2.events import DataReceived, ResponseReceived, StreamEnded, StreamReset, WindowUpdated
 from h2.exceptions import H2Error
 from h2.settings import SettingCodes
 
@@ -794,3 +795,72 @@ async def test_old_profile_routes_cannot_select_a_new_enrollments_identity(api, 
         json=enrollment.payload,
     )
     assert response.json()["relay"] == first
+
+
+@pytest.mark.parametrize("boundary", ["read", "write", "drain"])
+async def test_live_backend_socket_error_resets_one_tunnel_and_preserves_its_peer(
+    relay_wire, monkeypatch, boundary, caplog
+):
+    """Real TLS/HTTP2 CONNECT must expose a failed backend without a timeout.
+
+    Only one in-process socket method fails. TLS, h2 frames, the sibling stream
+    and the live health endpoint retain the production path. RFC 9113 section
+    8.5 requires CONNECT_ERROR rather than clean EOF for abnormal socket closure.
+    """
+    caplog.set_level("INFO", logger="throng.transport")
+    original_open, injected = asyncio.open_connection, False
+
+    async def fail_one_backend(*args, **kwargs):
+        nonlocal injected
+        reader, writer = await original_open(*args, **kwargs)
+        if "sock" in kwargs and not injected:
+            injected = True
+
+            async def fail_async(*args, **kwargs):
+                raise ConnectionResetError("Disposable backend failure")
+
+            def fail_write(*args, **kwargs):
+                raise BrokenPipeError("Disposable backend failure")
+
+            if boundary == "read":
+                reader.read = fail_async
+            elif boundary == "write":
+                writer.write = fail_write
+            else:
+                writer.drain = fail_async
+        return reader, writer
+
+    with monkeypatch.context() as patch:
+        patch.setattr(asyncio, "open_connection", fail_one_backend)
+        async with relay_wire() as wire:
+            wire.h2.send_headers(
+                1,
+                [
+                    (":method", "CONNECT"),
+                    (":authority", urlsplit(wire.info["api_origin"]).hostname + ":80"),
+                ],
+            )
+            wire.flush()
+            events = await wire.events_until(
+                lambda rows: any(isinstance(e, ResponseReceived) and e.stream_id == 1 for e in rows)
+            )
+            if boundary != "read":
+                wire.h2.send_data(1, b"GET /health/ready HTTP/1.1\r\nHost: api.test\r\n\r\n")
+                wire.flush()
+            if not any(isinstance(e, StreamReset) and e.stream_id == 1 for e in events):
+                try:
+                    events += await wire.events_until(
+                        lambda rows: any(
+                            isinstance(e, StreamReset) and e.stream_id == 1 for e in rows
+                        )
+                    )
+                except TimeoutError:
+                    pass  # A missing reset is an assertion, not an infrastructure error.
+            assert injected
+            assert [(e.stream_id, e.error_code) for e in events if isinstance(e, StreamReset)] == [
+                (1, ErrorCodes.CONNECT_ERROR)
+            ]
+            assert not any(isinstance(e, StreamEnded) and e.stream_id == 1 for e in events)
+            assert (await wire.get(3, "/health/ready"))[0] == 200
+    reason = "backend_download_error" if boundary == "read" else "backend_upload_error"
+    assert any(f'"reason":"{reason}"' in row.message for row in caplog.records)

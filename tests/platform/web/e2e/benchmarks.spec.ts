@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import type { APIRequestContext, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import {
@@ -341,7 +342,7 @@ for (const pool of ["personal", "organization"] as const) {
     await expect(history(page).locator("tbody th")).toHaveText(
       expectedVersions,
     );
-    await page.getByRole("button", { name: "Выбрать язык" }).click();
+    await selectLanguage(page);
     await expect(
       page.getByRole("region", { name: "Latest benchmarks", exact: true }),
     ).toContainText("1,234.56789");
@@ -351,7 +352,7 @@ for (const pool of ["personal", "organization"] as const) {
         .locator("tbody td")
         .first(),
     ).toHaveText("1,234.56789");
-    await page.getByRole("button", { name: "Choose language" }).click();
+    await selectLanguage(page);
     await page.getByRole("link", { name: "К списку компьютеров" }).click();
     await expect(page).toHaveURL(new RegExp(`/computers\\?${ownerQuery}$`));
     await page

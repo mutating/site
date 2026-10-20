@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import {
   test,
   expect,
@@ -128,7 +129,7 @@ test("created account recovers from failed automatic login without repeating reg
   await expect(page.getByRole("status")).toContainText("Аккаунт создан.");
   await expect(page.getByLabel("Email или ник")).toHaveValue(email);
   await expect(page.getByLabel("Пароль", { exact: true })).toHaveValue("");
-  await page.getByRole("button", { name: "Выбрать язык" }).click();
+  await selectLanguage(page);
   await expect(page.getByRole("status")).toContainText(
     "Your account has been created.",
   );
@@ -583,7 +584,7 @@ test("theme and language persist; cloud stays an empty product; layout has no ho
   await expect(
     page.getByRole("heading", { name: "Облако — впереди" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Выбрать язык" }).click();
+  await selectLanguage(page);
   await expect(
     page.getByRole("heading", { name: "Cloud is on the horizon" }),
   ).toBeVisible();

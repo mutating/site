@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import type { Locator } from "@playwright/test";
 import {
   API,
@@ -99,7 +100,7 @@ test("allocated limits minus actual reservations are correct in both pools and c
       .filter({ hasText: "Малый узел" })
       .locator("td.numeric"),
   ).toHaveText(["0,5 / 0,5", "1,5 / 1,5 GiB"]);
-  await page.getByRole("button", { name: "Выбрать язык" }).click();
+  await selectLanguage(page);
   await expect(
     page
       .getByRole("row")

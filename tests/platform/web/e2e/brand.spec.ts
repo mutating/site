@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import { expect, login, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
@@ -72,7 +73,7 @@ test("TMC unfolds without moving the header controls and remains open across its
     .poll(async () => (await wordmark.boundingBox())!.width)
     .toBeGreaterThan(compactWidth * 3);
   const expanded = (await wordmark.boundingBox())!;
-  const caption = (await page.locator(".header-caption").boundingBox())!;
+  const caption = (await page.locator(".tmc-header-actions").boundingBox())!;
   expect(expanded.x + expanded.width).toBeLessThan(caption.x);
   expect((await page.locator(".tmc-header-actions").boundingBox())!.x).toBeCloseTo(
     actions.x,
@@ -138,7 +139,7 @@ test("keyboard expansion and pointer tracking work with reduced motion", async (
   );
   await page.mouse.move(1300, 700);
   await expect.poll(async () => (await gazeOffset(page)).x).toBeGreaterThan(2);
-  await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+  await selectLanguage(page);
   await expect(
     page.getByRole("link", { name: "The Mutating Company", exact: true }),
   ).toHaveAttribute("href", "https://mutating.tech/");

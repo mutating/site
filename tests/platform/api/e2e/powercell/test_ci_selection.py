@@ -5,9 +5,11 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import select
 
+from tests.platform.api.e2e.test_github import connect
 from throng_api import ci
-from throng_api.models import CIReservation, CIRoute, Command, Computer, Isolate
+from throng_api.models import CIReservation, CIRoute, Command, Computer, ComputerOwnership, Isolate
 
 from .test_ci import ci_peer as ci_peer
 from .test_ci import github as github
@@ -173,47 +175,142 @@ async def test_reserve_rechecks_changes_before_publishing_ready(
         assert (await session.get(Isolate, isolate_id)).expires_at == before[1]
 
 
-async def test_reserve_route_deleted_after_identity_is_unavailable(client, route, ci_peer, app, monkeypatch):
+async def test_reserve_route_deleted_after_identity_is_unavailable(
+    client, route, ci_peer, app, monkeypatch
+):
     """OIDC authorization cannot keep a route alive across the next DB read.
     Deletion is a normal unavailable route, never an attribute-error HTTP 500.
     """
     original, reads = app.state.db.read, 0
+
     @asynccontextmanager
     async def deleted_before_state_read():
         nonlocal reads
         reads += 1
         if reads == 2:
             async with app.state.db.write() as session:
-                await session.delete(await session.get(CIRoute, route['id']))
+                await session.delete(await session.get(CIRoute, route["id"]))
         async with original() as session:
             yield session
-    monkeypatch.setattr(app.state.db, 'read', deleted_before_state_read)
+
+    monkeypatch.setattr(app.state.db, "read", deleted_before_state_read)
     response = await reserve(client, route, ci_peer)
     assert reads == 2
     assert response.status_code == 404, response.text
 
-async def test_reserve_route_deleted_before_final_lock_is_unavailable(client, route, ci_peer, app, monkeypatch):
+
+async def test_reserve_route_deleted_before_final_lock_is_unavailable(
+    client, route, ci_peer, app, monkeypatch
+):
     """The provider call releases the DB snapshot; deletion before locking is normal."""
     from throng_api import ci
+
     original = ci.verify_repository
+
     async def verified_then_deleted(*args, **kwargs):
         result = await original(*args, **kwargs)
         async with app.state.db.write() as session:
-            await session.delete(await session.get(CIRoute, route['id']))
+            await session.delete(await session.get(CIRoute, route["id"]))
         return result
-    monkeypatch.setattr(ci, 'verify_repository', verified_then_deleted)
+
+    monkeypatch.setattr(ci, "verify_repository", verified_then_deleted)
     response = await reserve(client, route, ci_peer)
     assert response.status_code == 404, response.text
 
-async def test_cancel_route_deleted_after_identity_is_unavailable(client, route, ci_peer, app, monkeypatch):
+
+async def test_cancel_route_deleted_after_identity_is_unavailable(
+    client, route, ci_peer, app, monkeypatch
+):
     """Cancel must also handle route deletion between OIDC authorization and locking."""
     from throng_api import ci
+
     original = ci.routing_identity
+
     async def authenticated_then_deleted(*args, **kwargs):
         claims = await original(*args, **kwargs)
         async with app.state.db.write() as session:
-            await session.delete(await session.get(CIRoute, route['id']))
+            await session.delete(await session.get(CIRoute, route["id"]))
         return claims
-    monkeypatch.setattr(ci, 'routing_identity', authenticated_then_deleted)
-    response = await client.post(f"/v1/github/ci/routes/{route['id']}/cancel", headers={'Authorization':'Bearer '+ci_peer.token()}, json={})
+
+    monkeypatch.setattr(ci, "routing_identity", authenticated_then_deleted)
+    response = await client.post(
+        f"/v1/github/ci/routes/{route['id']}/cancel",
+        headers={"Authorization": "Bearer " + ci_peer.token()},
+        json={},
+    )
     assert response.status_code == 404, response.text
+
+
+async def test_initial_local_denial_cannot_allocate_without_github_verification(
+    client,
+    api,
+    other_api,
+    company,
+    membership,
+    ci_peer,
+    github,
+    powercell,
+    app,
+    monkeypatch,
+):
+    """A company admin can restore a route creator's permissions while reserve
+    moves from its read snapshot to the write lock. Initial denial skipped the
+    GitHub repository check, so this request must retain denial or verify anew.
+    When repository admin has also been lost, allocation is always forbidden
+    (the existing test_github_permission_revocation_prevents_any_isolate contract).
+    The permission changes use the real API; only their interleaving is hooked.
+    Every database, device key and GitHub response is private fixture data.
+    """
+    assert (
+        await api.patch(f"/v1/memberships/{membership['id']}", json={"role": "admin"})
+    ).status_code == 200
+    github.peer.user_id = 790
+    await connect(other_api)
+    response = await other_api.post(
+        "/v1/github/routes",
+        json={
+            "installation_id": 456,
+            "repository_id": 42,
+            "workflow_path": ".github/workflows/ci.yml",
+            "job_key": "test",
+            "company_id": company["id"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    route = response.json()
+    original_write = app.state.db.write
+    # Supply the same company-owned fake worker used by existing CI scope tests.
+    async with original_write() as session:
+        ownership = await session.scalar(
+            select(ComputerOwnership).where(ComputerOwnership.computer_id == powercell.computer_id)
+        )
+        ownership.user_id, ownership.company_id = None, company["id"]
+    assert (
+        await api.patch(f"/v1/memberships/{membership['id']}", json={"permissions": []})
+    ).status_code == 200
+    ci_peer.admin = False
+    changed = False
+
+    @asynccontextmanager
+    async def restore_before_lock():
+        nonlocal changed
+        if not changed:
+            changed = True
+            # No write lock is held here. The nested API request restores only
+            # local company rights, never the external GitHub admin permission.
+            restored = await api.patch(
+                f"/v1/memberships/{membership['id']}", json={"permissions": None}
+            )
+            assert restored.status_code == 200, restored.text
+        async with original_write() as session:
+            yield session
+
+    monkeypatch.setattr(app.state.db, "write", restore_before_lock)
+    response = await reserve(client, route, ci_peer)
+    assert response.status_code == 200, response.text
+    assert changed, "The fixture must restore rights only after the read snapshot"
+    async with app.state.db.read() as session:
+        row = await session.get(CIReservation, response.json()["id"])
+        assert row.isolate_id is None, "Missing repository approval allocated an isolate"
+    assert response.json()["status"] == "failed", response.text
+    assert response.json().get("reason") in {"route_disabled", "github_unavailable"}, response.text

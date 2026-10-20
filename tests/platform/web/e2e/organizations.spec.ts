@@ -1,3 +1,4 @@
+import { selectLanguage } from "./header-controls";
 import {
   test,
   expect,
@@ -234,7 +235,7 @@ test("creation and directory controls switch to English and Enter submits the di
 }) => {
   await login(page, account);
   await page.goto("organizations");
-  await page.getByRole("button", { name: "Выбрать язык" }).click();
+  await selectLanguage(page);
   await expect(
     page.getByRole("searchbox", { name: "Find an organization" }),
   ).toBeVisible();
