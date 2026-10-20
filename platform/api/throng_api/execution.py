@@ -24,6 +24,7 @@ from throng_api.models import (
     new_id,
 )
 from throng_api.resource_ledger import change_resource
+from throng_api.transport import ProtocolError
 from throng_api.workload_images import supports_image
 
 TERMINAL = frozenset({"completed", "cancelled", "timed_out", "isolate_failed", "failed"})
@@ -296,12 +297,12 @@ async def complete_task(session, task, report, now, settings):
     report_hash = fingerprint(report.model_dump())
     if task.completion_hash:
         if task.completion_hash != report_hash:
-            raise HTTPException(409, "Task already has a different completion")
+            raise ProtocolError("completion_conflict", "Task already has a different completion")
         return
     if task.status in TASK_TERMINAL:
-        raise HTTPException(409, "Task is no longer active")
+        raise ProtocolError("task_terminal", "Task is no longer active")
     if task.deadline <= now:
-        raise HTTPException(409, "Task deadline has expired")
+        raise ProtocolError("task_expired", "Task deadline has expired")
     if task.delivered_at is None:
         raise HTTPException(409, "Task has not been delivered")
     isolate = await session.get(Isolate, task.isolate_id)
@@ -407,6 +408,102 @@ async def complete_task(session, task, report, now, settings):
         await ensure_destroy(session, isolate, now, settings)
 
 
+async def allocate_isolate(session, isolate, now, settings, *, computer_ids=()):
+    """Select a worker and reserve capacity inside the caller's write transaction."""
+    cpu, memory = aliased(ComputerResource), aliased(ComputerResource)
+    owner_match = (
+        ComputerOwnership.user_id == isolate.user_id
+        if isolate.user_id
+        else ComputerOwnership.company_id == isolate.company_id
+    )
+    candidates = await session.scalars(
+        select(Computer)
+        .join(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
+        .join(
+            cpu,
+            (cpu.computer_id == Computer.id)
+            & (cpu.resource_type_id == CPU_RESOURCE_ID)
+            & cpu.deleted_at.is_(None),
+        )
+        .join(
+            memory,
+            (memory.computer_id == Computer.id)
+            & (memory.resource_type_id == MEMORY_RESOURCE_ID)
+            & memory.deleted_at.is_(None),
+        )
+        .where(
+            owner_match,
+            Computer.enabled.is_(True),
+            Computer.accepting_work.is_(True),
+            Computer.online.is_(True),
+            Computer.lease_expires_at > now,
+            Computer.os == isolate.os,
+            Computer.architecture == isolate.architecture,
+            Computer.runtime == isolate.runtime,
+            Computer.id.in_(computer_ids) if computer_ids else True,
+            func.coalesce(Computer.target_cpu, cpu.total) - cpu.occupied >= isolate.cpu_millis,
+            func.coalesce(Computer.target_memory, memory.total) - memory.occupied
+            >= isolate.memory_bytes,
+            func.coalesce(Computer.target_disk, Computer.disk_bytes) - Computer.reserved_disk
+            >= isolate.disk_bytes,
+            cpu.total - cpu.occupied >= isolate.cpu_millis,
+            memory.total - memory.occupied >= isolate.memory_bytes,
+            Computer.disk_bytes - Computer.reserved_disk >= isolate.disk_bytes,
+        )
+        .order_by(cpu.occupied, Computer.id)
+    )
+    computer = next(
+        (
+            candidate
+            for candidate in candidates
+            if supports_image(candidate, isolate.image)
+            and (
+                not candidate.isolation_modes
+                or (isolate.isolation_mode or candidate.default_isolation)
+                in candidate.isolation_modes
+            )
+        ),
+        None,
+    )
+    if not computer:
+        return False
+    for type_id, quantity in (
+        (CPU_RESOURCE_ID, isolate.cpu_millis),
+        (MEMORY_RESOURCE_ID, isolate.memory_bytes),
+    ):
+        row = computer.resource(type_id)
+        await change_resource(session, row, now, "reserved", occupied=row.occupied + quantity)
+    computer.reserved_disk += isolate.disk_bytes
+    isolate.computer_id = computer.id
+    isolate.session_id = computer.session_id
+    isolate.reserved = True
+    isolate.effective_isolation = isolate.isolation_mode or computer.default_isolation
+    isolate.network_enabled = computer.network_enabled
+    isolate.internet_only = computer.internet_only
+    await add_task(
+        session,
+        isolate,
+        "create",
+        now,
+        settings.provisioning_timeout_seconds,
+        payload={
+            "state_artifact_id": isolate.state_artifact_id,
+            "image": isolate.image,
+            "isolation_mode": isolate.effective_isolation,
+            "retry_allowed": isolate.retry_allowed,
+            "network_enabled": isolate.network_enabled,
+            "internet_only": isolate.internet_only,
+            "os": isolate.os,
+            "architecture": isolate.architecture,
+            "runtime": isolate.runtime,
+            "cpu_millis": isolate.cpu_millis,
+            "memory_bytes": isolate.memory_bytes,
+            "disk_bytes": isolate.disk_bytes,
+        },
+    )
+    return True
+
+
 async def tick(session, now, settings):
     expired_computers = (
         await session.scalars(
@@ -484,96 +581,7 @@ async def tick(session, now, settings):
         )
     ).all()
     for isolate in waiting:
-        cpu, memory = aliased(ComputerResource), aliased(ComputerResource)
-        owner_match = (
-            ComputerOwnership.user_id == isolate.user_id
-            if isolate.user_id
-            else ComputerOwnership.company_id == isolate.company_id
-        )
-        candidates = await session.scalars(
-            select(Computer)
-            .join(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
-            .join(
-                cpu,
-                (cpu.computer_id == Computer.id)
-                & (cpu.resource_type_id == CPU_RESOURCE_ID)
-                & cpu.deleted_at.is_(None),
-            )
-            .join(
-                memory,
-                (memory.computer_id == Computer.id)
-                & (memory.resource_type_id == MEMORY_RESOURCE_ID)
-                & memory.deleted_at.is_(None),
-            )
-            .where(
-                owner_match,
-                Computer.enabled.is_(True),
-                Computer.accepting_work.is_(True),
-                Computer.online.is_(True),
-                Computer.lease_expires_at > now,
-                Computer.os == isolate.os,
-                Computer.architecture == isolate.architecture,
-                Computer.runtime == isolate.runtime,
-                func.coalesce(Computer.target_cpu, cpu.total) - cpu.occupied >= isolate.cpu_millis,
-                func.coalesce(Computer.target_memory, memory.total) - memory.occupied
-                >= isolate.memory_bytes,
-                func.coalesce(Computer.target_disk, Computer.disk_bytes) - Computer.reserved_disk
-                >= isolate.disk_bytes,
-                cpu.total - cpu.occupied >= isolate.cpu_millis,
-                memory.total - memory.occupied >= isolate.memory_bytes,
-                Computer.disk_bytes - Computer.reserved_disk >= isolate.disk_bytes,
-            )
-            .order_by(cpu.occupied, Computer.id)
-        )
-        computer = next(
-            (
-                candidate
-                for candidate in candidates
-                if supports_image(candidate, isolate.image)
-                and (
-                    not candidate.isolation_modes
-                    or (isolate.isolation_mode or candidate.default_isolation)
-                    in candidate.isolation_modes
-                )
-            ),
-            None,
-        )
-        if not computer:
-            continue
-        for type_id, quantity in (
-            (CPU_RESOURCE_ID, isolate.cpu_millis),
-            (MEMORY_RESOURCE_ID, isolate.memory_bytes),
-        ):
-            row = computer.resource(type_id)
-            await change_resource(session, row, now, "reserved", occupied=row.occupied + quantity)
-        computer.reserved_disk += isolate.disk_bytes
-        isolate.computer_id = computer.id
-        isolate.session_id = computer.session_id
-        isolate.reserved = True
-        isolate.effective_isolation = isolate.isolation_mode or computer.default_isolation
-        isolate.network_enabled = computer.network_enabled
-        isolate.internet_only = computer.internet_only
-        await add_task(
-            session,
-            isolate,
-            "create",
-            now,
-            settings.provisioning_timeout_seconds,
-            payload={
-                "state_artifact_id": isolate.state_artifact_id,
-                "image": isolate.image,
-                "isolation_mode": isolate.effective_isolation,
-                "retry_allowed": isolate.retry_allowed,
-                "network_enabled": isolate.network_enabled,
-                "internet_only": isolate.internet_only,
-                "os": isolate.os,
-                "architecture": isolate.architecture,
-                "runtime": isolate.runtime,
-                "cpu_millis": isolate.cpu_millis,
-                "memory_bytes": isolate.memory_bytes,
-                "disk_bytes": isolate.disk_bytes,
-            },
-        )
+        await allocate_isolate(session, isolate, now, settings)
 
     ready = (await session.scalars(select(Isolate).where(Isolate.status == "ready"))).all()
     for isolate in ready:

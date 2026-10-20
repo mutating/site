@@ -55,9 +55,16 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   }
   await page.goto("login");
   await screenshot("login");
+  await expect(page.getByRole("banner")).toHaveScreenshot("header-compact.png");
   if (info.project.name.endsWith("desktop")) {
-    await page.locator(".wordmark").hover();
-    await expect(page.locator(".brand-word-reveal").last()).toHaveCSS(
+    for (const width of [900, 320]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await settleFonts();
+      await expect(page.getByRole("banner")).toHaveScreenshot(`header-${width}.png`);
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.locator(".tmc-brand__wordmark").hover();
+    await expect(page.locator(".tmc-brand__word-reveal").last()).toHaveCSS(
       "opacity",
       "1",
     );

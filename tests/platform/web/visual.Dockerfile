@@ -10,7 +10,9 @@ RUN uv sync --frozen --python 3.12
 WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY platform/web/package.json ./platform/web/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
 RUN npm ci
+COPY packages/ui ./packages/ui
 WORKDIR /workspace/platform/web
 COPY platform/web/pyproject.toml platform/web/uv.lock platform/web/README.md ./
 COPY platform/web/server ./server

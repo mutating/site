@@ -266,6 +266,15 @@
 <link rel="preload" href="{{ "/fonts/geist/geist-98bbbccb.woff2" | relURL }}" as="font" type="font/woff2" crossorigin>
 {{- $siteStyles := resources.Get "css/site.css" | minify | fingerprint -}}
 <link rel="stylesheet" href="{{ $siteStyles.RelPermalink }}" integrity="{{ $siteStyles.Data.Integrity }}" crossorigin="anonymous">
+{{- range slice "brand" "header" -}}
+  {{- $path := printf "ui/styles/%s.css" . -}}
+  {{- with resources.Get $path -}}
+    {{- $styles := . | minify | fingerprint -}}
+<link rel="stylesheet" href="{{ $styles.RelPermalink }}" integrity="{{ $styles.Data.Integrity }}" crossorigin="anonymous">
+  {{- else -}}
+    {{- errorf "Missing %s: build the shared header first with npm run build:ui" $path -}}
+  {{- end -}}
+{{- end -}}
 <script>
   (function () {
     var root = document.documentElement;

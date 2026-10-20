@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+	<meta name="generator" content="Hugo 0.164.0">
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  (function () {
+    var currentLanguage = "ru";
+    var defaultLanguage = "en";
+    var supportedLanguages = ["en","ru"];
+    var languageURLs = {"en":"/","ru":"/ru/"};
+    var preferredLanguage = null;
+    var hasStoredLanguage = false;
+    var forwardedSearch = window.location.search;
+    function resolveSupportedLanguage(candidate) {
+      if (typeof candidate !== "string") return null;
+      var normalizedCandidate = candidate.trim().toLowerCase().replace(/_/g, "-");
+      if (!normalizedCandidate) return null;
+      var candidateBase = normalizedCandidate.split("-")[0];
+      var baseMatch = null;
+      for (var index = 0; index < supportedLanguages.length; index += 1) {
+        var language = supportedLanguages[index];
+        var normalizedLanguage = language.toLowerCase().replace(/_/g, "-");
+        if (normalizedLanguage === normalizedCandidate) return language;
+        if (!baseMatch && normalizedLanguage.split("-")[0] === candidateBase) {
+          baseMatch = language;
+        }
+      }
+      return baseMatch;
+    }
+    var languageChoiceParameter = "tmc-language-choice";
+    var searchParameters = new URLSearchParams(window.location.search);
+    var manualLanguage = resolveSupportedLanguage(
+      searchParameters.get(languageChoiceParameter)
+    );
+    if (manualLanguage) {
+      preferredLanguage = manualLanguage;
+      hasStoredLanguage = true;
+      try {
+        localStorage.setItem("tmc-language", manualLanguage);
+      } catch (_) {}
+      searchParameters.delete(languageChoiceParameter);
+      var serializedSearch = searchParameters.toString();
+      forwardedSearch = serializedSearch ? "?" + serializedSearch : "";
+      if (window.history && typeof window.history.replaceState === "function") {
+        window.history.replaceState(
+          window.history.state,
+          "",
+          window.location.pathname + forwardedSearch + window.location.hash
+        );
+      }
+    }
+    if (!hasStoredLanguage) {
+      try {
+        preferredLanguage = resolveSupportedLanguage(
+          localStorage.getItem("tmc-language")
+        );
+        hasStoredLanguage = preferredLanguage !== null;
+      } catch (_) {}
+    }
+    if (!hasStoredLanguage) {
+      preferredLanguage = currentLanguage;
+      if (currentLanguage === defaultLanguage) {
+        var deviceLanguages = navigator.languages && navigator.languages.length
+          ? navigator.languages
+          : [navigator.language];
+        for (var index = 0; index < deviceLanguages.length; index += 1) {
+          var deviceLanguage = resolveSupportedLanguage(deviceLanguages[index]);
+          if (!deviceLanguage) continue;
+          preferredLanguage = deviceLanguage;
+          break;
+        }
+      }
+    }
+    document.documentElement.dataset.language = currentLanguage;
+    if (preferredLanguage !== currentLanguage && languageURLs[preferredLanguage]) {
+      var target = new URL(languageURLs[preferredLanguage], window.location.origin);
+      target.search = forwardedSearch;
+      target.hash = window.location.hash;
+      window.location.replace(target.href);
+    }
+  })();
+</script>
+<script>
+  if (
+    window.location.hash &&
+    "scrollRestoration" in window.history
+  ) {
+    window.history.scrollRestoration = "manual";
+  }
+</script>
+<title>The Mutating Company — ИИ, который сомневается</title>
+<meta name="description" content="Детерминированная верификация, интерпретируемость и инфраструктура тестирования для ИИ-агентов, создающих ПО будущего.">
+<meta name="theme-color" content="#ff3e9d">
+<meta property="og:title" content="The Mutating Company — ИИ, который сомневается">
+<meta property="og:description" content="Детерминированная верификация, интерпретируемость и инфраструктура тестирования для ИИ-агентов, создающих ПО будущего.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="http://127.0.0.1:18121/ru/">
+<meta property="og:site_name" content="The Mutating Company">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:image" content="http://127.0.0.1:18121/og.png">
+<meta property="og:image:alt" content="The Mutating Company — ИИ, который сомневается">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1672">
+<meta property="og:image:height" content="941">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Mutating Company — ИИ, который сомневается">
+<meta name="twitter:description" content="Детерминированная верификация, интерпретируемость и инфраструктура тестирования для ИИ-агентов, создающих ПО будущего.">
+<meta name="twitter:image" content="http://127.0.0.1:18121/og.png">
+<meta name="twitter:image:alt" content="The Mutating Company — ИИ, который сомневается">
+<link rel="canonical" href="http://127.0.0.1:18121/ru/">
+<link rel="alternate" hreflang="en-US" href="http://127.0.0.1:18121/">
+<link rel="alternate" hreflang="ru-RU" href="http://127.0.0.1:18121/ru/">
+<link rel="alternate" hreflang="x-default" href="http://127.0.0.1:18121/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><script type="application/ld+json">[{"@context":"https://schema.org","@id":"http://127.0.0.1:18121/#organization","@type":"Organization","email":"contact@mutating.tech","logo":{"@type":"ImageObject","url":"http://127.0.0.1:18121/apple-touch-icon.png"},"name":"The Mutating Company","sameAs":["https://github.com/mutating"],"url":"http://127.0.0.1:18121/"},{"@context":"https://schema.org","@id":"http://127.0.0.1:18121/#website","@type":"WebSite","description":"Детерминированная верификация, интерпретируемость и инфраструктура тестирования для ИИ-агентов, создающих ПО будущего.","inLanguage":"ru","name":"The Mutating Company","publisher":{"@id":"http://127.0.0.1:18121/#organization"},"url":"http://127.0.0.1:18121/"}]</script>
+<link rel="preload" href="/fonts/science-gothic-wordmark.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist/geist-98bbbccb.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="/__header_reference/site.css">
+<script>
+  (function () {
+    var root = document.documentElement;
+    root.dataset.wordmarkFontReady = "false";
+    if (!document.fonts || typeof document.fonts.load !== "function") {
+      root.dataset.wordmarkFontReady = "fallback";
+      return;
+    }
+    document.fonts
+      .load('780 35px "Science Gothic"', "TMC")
+      .then(function (faces) {
+        root.dataset.wordmarkFontReady = faces.length ? "true" : "fallback";
+      })
+      .catch(function () {
+        root.dataset.wordmarkFontReady = "fallback";
+      });
+  })();
+</script>
+<script>
+  (function () {
+    var theme = "dark";
+    if (typeof matchMedia === "function") {
+      if (matchMedia("(prefers-color-scheme: dark)").matches) theme = "dark";
+      else if (matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+    }
+    try {
+      var stored = localStorage.getItem("tmc-theme");
+      if (stored === "dark" || stored === "light") theme = stored;
+    } catch (_) {}
+    document.documentElement.dataset.theme = theme;
+  })();
+</script>
+
+  </head>
+  <body class="home-page">
+    <main>
+      <header class="site-header-shell">
+  <div class="site-header">
+    <div class="brand" role="link" tabindex="0" aria-label="Перезагрузить главную страницу The Mutating Company" data-home-url="/ru/">
+      <span class="brand__mark brand__mark--eye">
+        <span class="animated-eye-logo" aria-hidden="true">
+          <span class="animated-eye-logo__clip">
+            <span class="animated-eye-logo__outline" aria-hidden="true"></span>
+            <span class="animated-eye-logo__surface" aria-hidden="true"></span>
+            <span class="animated-eye-logo__pupil" aria-hidden="true"></span>
+          </span>
+        </span>
+      </span>
+      <span class="brand__wordmark-stage" data-can-expand="true" aria-hidden="true">
+        <span class="brand__wordmark">
+          <span class="brand__word-part brand__word-part--t"><span class="brand__word-anchor">T</span><span class="brand__word-reveal" data-text="he">he</span></span>
+          <span class="brand__word-part brand__word-part--m"><span class="brand__word-anchor">M</span><span class="brand__word-reveal" data-text="utating">utating</span></span>
+          <span class="brand__word-part"><span class="brand__word-anchor">C</span><span class="brand__word-reveal" data-text="ompany">ompany</span></span>
+        </span>
+      </span>
+    </div>
+    <nav class="main-nav" aria-label="Основная навигация">
+      <a class="source-link" href="https://github.com/mutating">
+  <span>Исходники</span>
+  <svg class="source-link__icon" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"></path>
+  </svg>
+</a>
+
+      <a href="/ru/news/">Новости</a>
+      <a href="/ru/blog/">Блог</a>
+      <a href="/ru/#contact">Контакты</a>
+    </nav>
+    <div class="header-actions">
+      <details class="language-switcher language-switcher--desktop" data-language-switcher style="--language-switcher-desktop-width: 48px">
+  <summary aria-label="Выбрать язык; текущий язык RU">
+    <span>RU</span>
+  </summary>
+  <div class="language-switcher__list" role="group" aria-label="Языки">
+          <a class="language-switcher__option" href="/?tmc-language-choice=en" lang="en" hreflang="en" data-language-option="en">EN</a>
+  </div>
+</details>
+
+      <button class="theme-toggle" type="button" aria-label="Переключить цветовую тему">
+        <span class="theme-toggle__track" aria-hidden="true">
+          <span class="theme-toggle__sun"><span class="theme-toggle__sun-core"></span><span class="theme-toggle__sun-rays"></span><span class="theme-toggle__sun-rays theme-toggle__sun-rays--diagonal"></span></span>
+          <span class="theme-toggle__moon"></span>
+          <span class="theme-toggle__thumb"></span>
+        </span>
+      </button>
+      <details class="mobile-menu">
+        <summary aria-label="Открыть меню навигации">
+          <span class="mobile-menu__label">Меню</span>
+          <svg class="mobile-menu__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </summary>
+        <nav aria-label="Мобильная навигация">
+          <div class="mobile-menu__language">
+            <details class="language-switcher language-switcher--mobile" data-language-switcher style="--language-switcher-desktop-width: 48px">
+  <summary aria-label="Выбрать язык; текущий язык RU">
+    <span>RU</span>
+  </summary>
+  <div class="language-switcher__list" role="group" aria-label="Языки">
+          <a class="language-switcher__option" href="/?tmc-language-choice=en" lang="en" hreflang="en" data-language-option="en">EN</a>
+  </div>
+</details>
+
+          </div>
+          <div class="mobile-menu__links">
+            <a class="source-link" href="https://github.com/mutating">
+  <span>Исходники</span>
+  <svg class="source-link__icon" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"></path>
+  </svg>
+</a>
+
+            <a href="/ru/news/">Новости</a>
+            <a href="/ru/blog/">Блог</a>
+            <a href="/ru/#contact">Контакты</a>
+          </div>
+        </nav>
+      </details>
+    </div>
+  </div>
+  <a class="platform-link" href="https://platform.mutating.tech/" aria-label="Открыть платформу">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+      <path d="m10 17 5-5-5-5"></path>
+      <path d="M15 12H3"></path>
+    </svg>
+  </a>
+</header>
+
+      
+  <section class="hero section-shell">
+  <div class="hero__copy">
+    <p class="eyebrow">Инфраструктура для агентов-разработчиков <span>— <span data-current-year></span></span></p>
+    <h1>ИИ, который<br><em>сомневается</em></h1>
+    <p class="hero__lede">Мы создаём инфраструктуру детерминированной верификации, интерпретируемости и тестирования для агентов, пишущих ПО будущего.</p>
+    <div class="hero__actions">
+      <a class="button button--primary" href="#sections">Читать наш тезис <span aria-hidden="true">↓</span></a>
+      <a class="text-link" href="#open-source">Заглянуть в open-source-лабораторию <span class="external-arrow" aria-hidden="true">↗&#xfe0e;</span></a>
+    </div>
+    <div class="hero__signal" aria-label="Состояние системы">
+      <span class="signal-dot"></span><span>Верификатор работает</span><span>Доверие заслуживают, а не выдают авансом</span>
+    </div>
+  </div>
+  <figure class="mascot-card">
+    <div class="mascot-card__halo"></div>
+    <picture class="mascot-card__picture">
+      <source type="image/avif" srcset="/muta-v2-transparent-v10-lossless.avif 1254w, /muta-v2-transparent-2x-v10-lossless.avif 2508w" sizes="(max-width: 755px) calc(100vw - 32px), (max-width: 1120px) min(calc(100vw - 64px), 560px), min(42vw, 650px)">
+      <img class="mascot-card__art" src="/muta-v2-transparent-v10.webp" srcset="/muta-v2-transparent-v10.webp 1254w, /muta-v2-transparent-2x-v10.webp 2508w" sizes="(max-width: 755px) calc(100vw - 32px), (max-width: 1120px) min(calc(100vw - 64px), 560px), min(42vw, 650px)" width="1254" height="1254" fetchpriority="high" decoding="async" alt="Весёлый розовый одноглазый мутант с подозрительной ухмылкой">
+    </picture>
+    <figcaption><a class="mascot-card__author" href="/ru/authors/muta/" rel="author">Познакомиться с Muta</a>Директор по сомнениям</figcaption>
+  </figure>
+</section>
+
+  <div class="ticker" aria-hidden="true"><div class="ticker__track">ПРОВЕРЯЙ ВСЁ <span>✦</span> ОБЪЯСНЯЙ РЕЗУЛЬТАТ <span>✦</span> ТЕСТИРУЙ В ТЕМПЕ АГЕНТОВ <span>✦</span> РАСПРЕДЕЛЯЙ РАБОТУ <span>✦</span> ПРОВЕРЯЙ ВСЁ <span>✦</span> ОБЪЯСНЯЙ РЕЗУЛЬТАТ <span>✦</span></div></div>
+<span class="section-list-anchor" id="sections" aria-hidden="true"></span>
+
+  <section class="complexity section-shell" id="complexity" aria-labelledby="complexity-heading">
+  <div class="complexity__copy">
+    <a class="section-index" href="#complexity">01 / СЛОЖНОСТЬ</a>
+    <h2 id="complexity-heading">Энтропия сначала шепчет. Потом выставляет счёт.</h2><p>Сложность ПО растёт нелинейно и поначалу незаметна. Без контроля каждое следующее изменение требует больше времени, становится рискованнее и обходится дороже.</p><p>Передовые методы тестирования и верификации сглаживают эту кривую. Чем крупнее система, тем выше отдача.</p>
+  </div>
+  <div class="chart-panel">
+    <div class="chart-panel__header"><span>СЛОЖНОСТЬ / СТОИМОСТЬ ИЗМЕНЕНИЙ</span><span>МОДЕЛЬ 04.35</span></div>
+    <div class="complexity-chart" role="img" aria-label="Без контроля сложность программного обеспечения экспоненциально растёт вместе с масштабом системы, а детерминированная верификация делает эту кривую значительно более пологой." data-curves-revealed="false">
+      <canvas class="complexity-chart__layer complexity-chart__static" aria-hidden="true"></canvas>
+      <canvas class="complexity-chart__layer complexity-chart__curves" aria-hidden="true"></canvas>
+      <div class="complexity-chart__annotations" aria-hidden="true">
+        <span class="complexity-chart__curve-label complexity-chart__curve-label--entropy">НЕКОНТРОЛИРУЕМАЯ ЭНТРОПИЯ</span>
+        <span class="complexity-chart__curve-label complexity-chart__curve-label--verification">С ВЕРИФИКАЦИЕЙ</span>
+      </div>
+      <span class="chart-panel__axis-label chart-panel__cost" aria-hidden="true">↑ СТОИМОСТЬ ИЗМЕНЕНИЙ</span>
+    </div>
+    <div class="chart-panel__footer">
+      <span class="chart-panel__axis-label chart-panel__scale">МАСШТАБ СИСТЕМЫ →</span>
+      <p class="chart-panel__caption">Условная модель, не маркетинговое обещание.</p>
+    </div>
+  </div>
+</section>
+
+  <section class="manifesto section-shell" id="thesis">
+  <a class="section-index" href="#thesis">02 / НАШ ТЕЗИС</a>
+  <div class="manifesto__headline"><h2>Большему интеллекту — больше сопротивления.</h2></div>
+  <div class="manifesto__body">
+    <p class="large-copy">Агенты выполняют больше работы, чем рассчитанные на человеческий темп системы успевают проверить. Старые циклы обратной связи становятся узкими местами. Незаметные ошибки врастают в архитектуру.</p><p>Наш ответ — не замедлять агентов, а дополнять их строгими системами, которые ставят под сомнение каждый результат, указывают на конкретные проблемы и требуют доработки, когда доказательств недостаточно.</p><p>Методы, прежде считавшиеся слишком дорогими, становятся обычными, когда узкое место — уже не человеческий труд. Это меняет экономику корректности и возможный масштаб ПО.</p>
+  </div>
+  <div class="manifesto__visual" aria-hidden="true"><img class="manifesto__art" data-deferred-src="/thesis-resistance-field-pink-v1-lossless.webp" width="1254" height="1254" loading="lazy" decoding="async" alt=""></div>
+</section>
+
+  <section class="containment section-shell" id="containment" aria-labelledby="containment-heading">
+  <div class="containment__copy">
+    <a class="section-index" href="#containment">03 / УДЕРЖАНИЕ</a>
+    <h2 id="containment-heading">Удержать плазму. Направить энергию.</h2>
+    <p class="large-copy">Агенты по своей природе недетерминированы. В этом часть их силы — и именно поэтому им необходимо удерживающее поле.</p>
+    <p>Детерминированная верификация работает как магнитное поле <a class="inline-text-link" href="https://en.wikipedia.org/wiki/Tokamak" target="_blank" rel="noreferrer">токамака</a>: удерживает и направляет энергию, превращая её в полезную работу — без иллюзий, что плазма стала предсказуемой.</p>
+    <div class="containment__formula containment__formula--desktop"><span>вариативность агента</span><b>×</b><span>детерминированные проверки</span><b>=</b><span>управляемый потенциал</span></div>
+  </div>
+  <div class="containment__visual">
+    <div class="tokamak-model"><iframe class="tokamak-model__frame" data-deferred-src="/tokamak-reactor.html?v=e9fad46b894e4a2180f78d535bf660c90543479c2906b2b21c69836a6b0deac1" title="Трёхмерная модель токамака, связанная с прокруткой" loading="lazy" tabindex="-1" aria-label="Трёхмерная модель токамака, которая поворачивается при прокрутке страницы"></iframe></div>
+  </div>
+  <div class="containment__formula containment__formula--mobile"><span>вариативность агента</span><b>×</b><span>детерминированные проверки</span><b>=</b><span>управляемый потенциал</span></div>
+</section>
+
+  <section class="pillars section-shell" id="what-we-build" aria-labelledby="pillars-heading">
+  <div class="pillars__intro"><a class="section-index" href="#what-we-build">04 / ЧТО МЫ СОЗДАЁМ</a><h2 id="pillars-heading">Скептический слой для стека агентных систем.</h2></div>
+  <div class="pillars__grid">
+    <article class="pillar-card"><span class="pillar-card__number">01</span><div class="pillar-card__visual" aria-hidden="true"><img data-deferred-src="/pillar-verifiability-v1-lossless.webp" width="1104" height="901" loading="lazy" decoding="async" alt=""></div><h3>Верифицируемость</h3><p>Инфраструктура строгой проверки: вместо «вроде всё хорошо» — доказательства, на которые может опереться агент.</p></article>
+    <article class="pillar-card"><span class="pillar-card__number">02</span><div class="pillar-card__visual" aria-hidden="true"><img data-deferred-src="/pillar-interpretability-v1-lossless.webp" width="942" height="1140" loading="lazy" decoding="async" alt=""></div><h3>Интерпретируемость</h3><p>Машинный масштаб — объяснения человеческим языком: что изменилось и почему.</p></article>
+    <article class="pillar-card"><span class="pillar-card__number">03</span><div class="pillar-card__visual" aria-hidden="true"><span class="pillar-card__rotor"><img class="pillar-card__rotor-image" data-theme-src-light="/pillar-testing-speed-rotor-v4-lossless.webp" data-theme-src-dark="/pillar-testing-speed-rotor-v2-lossless.webp" width="1060" height="1062" loading="lazy" decoding="async" alt=""></span></div><h3>Тестирование в темпе агентов</h3><p>Быстрые детерминированные проверки для исполнителей, которые не устают и редко ограничиваются одной попыткой.</p></article>
+  </div>
+</section>
+
+  <section class="distribution section-shell" id="scale" aria-labelledby="distribution-heading">
+  <div class="distribution__copy">
+    <a class="section-index" href="#scale">05 / МАСШТАБ</a>
+    <h2 id="distribution-heading">Локально, когда нужно. Распределённо, когда всерьёз.</h2>
+    <p>Пропускная способность верификации не должна ограничиваться одной машиной. Наши системы распределяют работу между множеством исполнителей, но могут работать где угодно — даже офлайн, на ноутбуке под вашим столом.</p>
+    <ul><li><span>01</span> Одни и те же проверки при любой топологии</li><li><span>02</span> Результаты не зависят от исполнителя</li><li><span>03</span> Масштабирование без смены подхода</li></ul>
+  </div>
+  <div class="pantograph-visual" role="img" aria-label="Анимированный пантограф, координирующий локальную и распределённую верификацию"><div class="pantograph-visual__object" aria-hidden="true"></div></div>
+</section>
+
+  <section class="feedback section-shell" id="feedback" aria-labelledby="feedback-heading">
+  <div class="feedback__visual">
+    <div class="feedback-loop" role="button" tabindex="0" aria-label="Цикл обратной связи между продуктом, тестами, сигналами и агентами. Раскрутите его."><div class="feedback-node feedback-node--top"><span>01</span><strong>Продукт лучше</strong></div><div class="feedback-node feedback-node--right"><span>02</span><strong>Тесты быстрее</strong></div><div class="feedback-node feedback-node--bottom"><span>03</span><strong>Сигналы точнее</strong></div><div class="feedback-node feedback-node--left"><span>04</span><strong>Агенты умнее</strong></div>
+      <svg class="feedback-arrows" viewBox="0 0 100 100" aria-hidden="true">
+        <g class="feedback-arrow" transform="rotate(0 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+        <g class="feedback-arrow" transform="rotate(90 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+        <g class="feedback-arrow" transform="rotate(180 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+        <g class="feedback-arrow" transform="rotate(270 50 50)"><path d="M 60.17 12.35 A 39 39 0 0 1 78.98 23.90"></path><path d="M 75.93 22.61 L 78.98 23.90 L 78.01 20.73"></path></g>
+      </svg>
+      <div class="feedback-core">ЦИКЛ<br>УСИЛЕНИЯ</div>
+    </div>
+  </div>
+  <div class="feedback__copy">
+    <a class="section-index" href="#feedback">06 / ОБРАТНАЯ СВЯЗЬ</a>
+    <h2 id="feedback-heading">Хорошие системы делают друг друга лучше.</h2>
+    <p class="large-copy">Отличные тесты не только находят ошибки. Они выявляют слабые места и направляют агентов к более надёжным решениям.</p>
+    <p>Чем лучше продукт, тем быстрее и точнее тесты. Чем лучше тесты, тем качественнее сигналы. Чем лучше сигналы, тем точнее решения. Цикл усиливается, когда все части работают сообща.</p>
+    <blockquote>«Верификация — не барьер. Это разговор с последствиями».</blockquote>
+  </div>
+</section>
+
+  <section class="coexistence section-shell" id="the-deal">
+  <a class="section-index" href="#the-deal">07 / УСЛОВИЕ</a>
+  <h2>Люди и роботы могут сосуществовать.</h2>
+  <p>Но только когда и те и другие могут полагаться на мощные, распределённые и детерминированные проверки, понятные людям, которые отвечают за результат.</p>
+  <button type="button" class="coexistence__pair" aria-label="ЧЕЛОВЕК и РОБОТ. Перевернуть, чтобы поставить РОБОТА первым." aria-pressed="false">
+    <span class="coexistence__pair-inner">
+      <span class="coexistence__pair-face coexistence__pair-face--front" aria-hidden="false"><span>ЧЕЛОВЕК</span><i>⇄</i><span>РОБОТ</span><small>ОБЩАЯ ОСНОВА: ДОКАЗАТЕЛЬСТВА</small></span>
+      <span class="coexistence__pair-face coexistence__pair-face--back" aria-hidden="true"><span>РОБОТ</span><i>⇄</i><span>ЧЕЛОВЕК</span><small>ОБЩАЯ ОСНОВА: ДОКАЗАТЕЛЬСТВА</small></span>
+    </span>
+  </button>
+</section>
+
+  <section class="dispatches section-shell" id="open-source" aria-labelledby="dispatches-heading">
+    <div class="dispatches__header">
+      <div>
+        <a class="section-index" href="#open-source">08 / ИЗ ЛАБОРАТОРИИ</a>
+        <h2 id="dispatches-heading">Свежие сигналы из лаборатории.</h2>
+      </div>
+      <span class="dispatches__status"><i></i> Последние публикации</span>
+    </div>
+    <div class="dispatch-grid"><a class="dispatch-card dispatch-card--featured" href="/ru/blog/the-mutation-testing-digest-for-august-2026/">
+          <p>the-mutation-testing-digest-for-august-2026</p>
+          <h3>Дайджест мутационного тестирования за август 2026 года</h3>
+          <span class="dispatch-card__description">Мутанты вырвались за пределы модульных тестов и начали проверять ИИ-бенчмарки, проверки безопасности, исследовательские процессы и сами инструменты оценки.</span>
+          <span class="dispatch-card__cta">Читать заметку <b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b></span>
+        </a><a class="dispatch-card" href="/ru/news/introducing-autofission/" id="field-notes">
+          <p>introducing-autofission</p>
+          <h3>Представляем <code>autofission</code>: автоматические пределы масштабирования Fission</h3>
+          <span class="dispatch-card__description">Подстраивает максимальное число копий функций Fission под свободные ресурсы Kubernetes-кластера.</span>
+          <span class="dispatch-card__cta">Читать новость <b class="external-arrow" aria-hidden="true">↗&#xfe0e;</b></span>
+        </a>
+    </div>
+  </section>
+  <section class="contact section-shell" id="contact">
+  <div class="contact__clip">
+    <iframe class="contact__tentacles" data-prewarm-src="/muta-tentacles.html?v=6a44c1dffb256f640343fb89890de5ca111cb6349a980c865d545711e213b04a&amp;embedded=1" title="Интерактивное поле щупалец Muta, реагирующих на курсор" tabindex="-1" data-scroll-active="false"></iframe>
+    <div class="contact__copy">
+      <a class="section-index" href="#contact">КОНТАКТ / БЕЗ ЛИШНИХ СЛОВ</a>
+      <h2>Создаёте серьёзную агентную инфраструктуру?</h2>
+      <p>Стоит сверить сомнения.</p>
+      <a class="button button--dark" href="mailto:contact@mutating.tech">Начать разговор <span class="external-arrow" aria-hidden="true">↗&#xfe0e;</span></a>
+    </div>
+  </div>
+</section>
+
+
+      <footer class="site-footer section-shell">
+  <p class="site-footer__legal">© <span data-current-year></span> THE MUTATING COMPANY.</p>
+  <p class="site-footer__tagline">ИИ, который сомневается. Для программ, которые не должны подвести.</p>
+  <div class="site-footer__links">
+    <a class="source-link" href="https://github.com/mutating">
+  <span>Исходники</span>
+  <svg class="source-link__icon" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"></path>
+  </svg>
+</a>
+
+    <a href="/ru/news/">Новости</a>
+    <a href="/ru/blog/">Блог</a>
+    <a href="/ru/#contact">Контакты</a>
+  </div>
+</footer>
+
+    </main>
+      
+<script type="text/javascript">
+  (function () {
+    function loadMetrika() {
+      (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+      })(window, document, 'script', 'https://mc.yandex.ru/metrika/tag.js?id=111506392', 'ym');
+
+      ym( 111506392 , 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+    }
+
+    function scheduleMetrika() {
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(loadMetrika, {timeout: 2000});
+      } else {
+        window.setTimeout(loadMetrika, 0);
+      }
+    }
+
+    if (document.readyState === 'complete') {
+      scheduleMetrika();
+    } else {
+      window.addEventListener('load', scheduleMetrika, {once: true});
+    }
+  })();
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/111506392" style="position:absolute; left:-9999px;" alt=""></div></noscript>
+
+
+  <script defer src="/__header_reference/site.js"></script></body>
+</html>

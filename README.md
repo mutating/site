@@ -4,9 +4,11 @@
 
 ```text
 site/                   Hugo: контент, темы, конфигурация и инструменты сайта
+packages/ui/            @mutating/ui: общие стили, поведение, React и Hugo адаптеры
 platform/api/           Python API, контроллер, миграции и документация протокола
 platform/web/           React/Vite и Python-сервис кабинета
 tests/site/             Все тесты сайта и их фикстуры
+tests/ui/               Проверки UI-библиотеки и сравнение хэдера с оригиналом
 tests/platform/api/     Все тесты API, включая миграции и общий запуск
 tests/platform/web/     Серверные, unit, браузерные, HTTPS и визуальные тесты
 infra/                  Общая настройка сервера, nginx, TLS и systemd
@@ -18,11 +20,33 @@ deploy/                 Общий запуск и активация одног
 
 ## Разработка
 
+Статический сайт и платформа используют хэдер из общей UI-библиотеки.
+Навигацию и дополнительные элементы задаёт потребитель:
+
+```sh
+npm ci
+npm run dev:ui      # HTML-демо: http://127.0.0.1:18120; React: /react.html
+npm run build:ui
+npm run test:ui     # Нужны Hugo, Chromium и Firefox для Playwright
+```
+
+Состав, API и примеры подключения описаны в
+[packages/ui/README.md](packages/ui/README.md).
+
 Из корня:
 
 ```sh
+npm ci
+npm run build:ui
 hugo server --source site
 ```
+
+После изменений в `packages/ui` повторите `npm run build:ui`.
+Production-сборка сайта: `npm run build:site` — библиотека собирается первой.
+
+Скриншотные регрессии хэдера: `npm run test:site:header`. Эталон старого
+хэдера, матрица состояний и аудит e2e находятся в
+[tests/site/header](tests/site/header/README.md).
 
 API и кабинет после установки зависимостей и сборки запускаются одной командой:
 

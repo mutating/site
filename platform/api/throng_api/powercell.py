@@ -48,6 +48,7 @@ from throng_api.security import (
     owner_access,
 )
 from throng_api.serialization import public
+from throng_api.transport import ProtocolError
 
 router = APIRouter(
     prefix="/agent/v1",
@@ -83,7 +84,9 @@ async def mutation_replay(session, request, operation, key, payload, *, credenti
     if row.request_hash != fingerprint(payload) or row.session_id != request.headers.get(
         "x-agent-session"
     ):
-        raise HTTPException(409, "Idempotency key belongs to a different request or session")
+        raise ProtocolError(
+            "idempotency_conflict", "Idempotency key belongs to a different request or session"
+        )
     return row.response
 
 
@@ -120,7 +123,9 @@ async def capacity(data: Capacity, request: Request, idempotency_key: str = Head
         if data.revision < computer.capacity_revision or (
             data.revision == computer.capacity_revision and payload != computer.capacity_report
         ):
-            raise HTTPException(409, "Capacity revision is stale or has conflicting contents")
+            raise ProtocolError(
+                "capacity_conflict", "Capacity revision is stale or has conflicting contents"
+            )
         if computer.isolation_modes and data.default_isolation not in computer.isolation_modes:
             raise HTTPException(422, "Isolation mode was not advertised during enrollment")
         now = request.app.state.clock()
@@ -167,7 +172,7 @@ async def evict(
         if not isolate or isolate.computer_id != computer.id:
             raise HTTPException(404, "Isolate not assigned to this agent")
         if isolate.session_id != computer.session_id:
-            raise HTTPException(409, "Isolate belongs to an obsolete session")
+            raise ProtocolError("isolate_session_expired", "Isolate belongs to an obsolete session")
         if isolate.destroyed_at is None:
             now = request.app.state.clock()
             # Agent can further restrict retries, never override a plugin prohibition.

@@ -1,0 +1,8 @@
+baseURL = "https://ui.example.test/"
+disableKinds = ["taxonomy", "term", "RSS", "sitemap", "robotsTXT"]
+[[module.mounts]]
+source = "../../../packages/ui/hugo"
+target = "layouts"
+[[module.mounts]]
+source = "layouts"
+target = "layouts"

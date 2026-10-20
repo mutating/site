@@ -190,7 +190,8 @@ async def test_completion_after_deadline_is_rejected_even_before_controller_tick
         f"/agent/v1/tasks/{run_task['id']}/complete", json={"returncode": 0}
     )
     assert response.status_code == 409 and response.json() == {
-        "detail": "Task deadline has expired"
+        "detail": "Task deadline has expired",
+        "code": "task_expired",
     }
     assert (await api.get(f"/v1/commands/{command['id']}/result")).json()["result"] is None
 

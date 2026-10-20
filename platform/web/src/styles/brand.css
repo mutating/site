@@ -1,13 +1,4 @@
-/* Brand typography and colors from site/themes/mutating/assets/css/site.css. */
-@font-face {
-  font-family: "Science Gothic";
-  src: url("/fonts/science-gothic-wordmark.woff2") format("woff2-variations");
-  font-style: normal;
-  font-weight: 100 900;
-  font-stretch: 50% 200%;
-  font-display: swap;
-}
-
+/* Platform fonts and palette; header visuals come from @mutating/ui. */
 @font-face {
   font-family: "Geist";
   src: url("/fonts/geist/geist-98bbbccb.woff2") format("woff2");

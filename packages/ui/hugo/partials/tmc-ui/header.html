@@ -1,0 +1,28 @@
+{{- $navigationLabel := partial "tmc-ui/internal/option.html" (slice . "navigationLabel" "Navigation") -}}
+<header class="tmc-header-shell"{{ if .inheritTypography }} data-tmc-inherit-typography{{ end }}>
+  <div class="tmc-header">
+    {{ partial "tmc-ui/brand.html" (.brand | default (dict "href" "/")) }}
+    {{ with .items }}<nav class="tmc-nav" aria-label="{{ $navigationLabel }}">
+      {{ range . }}{{ partial "tmc-ui/menu-link.html" . }}{{ end }}
+    </nav>{{ end }}
+    <div class="tmc-header-actions">
+      {{ with .language }}{{ partial "tmc-ui/language-switcher.html" (merge . (dict "variant" "desktop")) }}{{ end }}
+      {{ if ne .showThemeToggle false }}{{ partial "tmc-ui/theme-toggle.html" (dict "label" (partial "tmc-ui/internal/option.html" (slice . "themeLabel" "Toggle color theme"))) }}{{ end }}
+      {{ if or .items .language }}
+      <details class="tmc-mobile-menu">
+        <summary aria-label="{{ partial "tmc-ui/internal/option.html" (slice . "menuLabel" "Open navigation menu") }}">
+          <span class="tmc-mobile-menu__label">{{ partial "tmc-ui/internal/option.html" (slice . "menuText" "Menu") }}</span>
+          <svg class="tmc-mobile-menu__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </summary>
+        <nav aria-label="{{ partial "tmc-ui/internal/option.html" (slice . "mobileNavigationLabel" $navigationLabel) }}">
+          {{ with .language }}<div class="tmc-mobile-menu__language">{{ partial "tmc-ui/language-switcher.html" (merge . (dict "variant" "mobile")) }}</div>{{ end }}
+          {{ with .items }}<div class="tmc-mobile-menu__links">{{ range . }}{{ partial "tmc-ui/menu-link.html" . }}{{ end }}</div>{{ end }}
+        </nav>
+      </details>
+      {{ end }}
+    </div>
+  </div>
+  {{ with .adjacentLink }}<a class="tmc-platform-link" href="{{ .href }}" aria-label="{{ .label }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><path d="m10 17 5-5-5-5"></path><path d="M15 12H3"></path></svg>
+  </a>{{ end }}
+</header>

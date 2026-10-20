@@ -7,6 +7,17 @@ defaultContentLanguage = "en"
 defaultContentLanguageInSubdir = false
 disableDefaultLanguageRedirect = true
 
+# Build @mutating/ui before Hugo: npm run build:ui (from the repository root).
+[[module.mounts]]
+  source = "../packages/ui/hugo"
+  target = "layouts"
+[[module.mounts]]
+  source = "../packages/ui/dist"
+  target = "assets/ui"
+[[module.mounts]]
+  source = "../packages/ui/dist"
+  target = "static/ui"
+
 [languages]
   [languages.en]
     label = "English"

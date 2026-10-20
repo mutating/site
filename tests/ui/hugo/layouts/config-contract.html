@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Explicit configuration contract</title><link rel="stylesheet" href="/dist/styles/index.css"></head><body>
+{{ partial "tmc-ui/header.html" (dict
+  "brand" (dict "href" "" "label" "")
+  "items" (slice (dict "id" "page" "href" "#page" "label" "Page"))
+  "navigationLabel" "" "mobileNavigationLabel" "" "themeLabel" "" "menuLabel" "" "menuText" ""
+  "language" (dict "current" "en" "label" "" "groupLabel" "" "storageKey" ""
+    "options" (slice (dict "code" "en" "href" "#en" "label" "") (dict "code" "ru" "href" "#ru" "label" "")))
+) }}
+<script type="module">
+import { mountHeader } from "/dist/index.js";
+mountHeader(document.querySelector(".tmc-header-shell"));
+document.documentElement.dataset.fixtureReady = "true";
+</script>
+</body></html>

@@ -307,7 +307,7 @@ def test_narrow_post_author_tooltip_matches_header_and_stays_in_viewport(
         presentation = page.evaluate(
             """
             () => {
-              const header = document.querySelector(".site-header");
+              const header = document.querySelector(".tmc-header");
               const metadata = document.querySelector(".post__meta");
               const tooltip = document.querySelector(
                 ".post__meta .author-status__tooltip",
@@ -1189,7 +1189,7 @@ def test_author_pages_match_the_blog_content_shell_and_top_spacing(
             .querySelector(".blog-index__header > .section-index")
             .getBoundingClientRect();
           const header = document
-            .querySelector(".site-header")
+            .querySelector(".tmc-header")
             .getBoundingClientRect();
           return {
             left: shell.left,
@@ -1214,7 +1214,7 @@ def test_author_pages_match_the_blog_content_shell_and_top_spacing(
             .querySelector(".authors-index__header > .section-index")
             .getBoundingClientRect();
           const header = document
-            .querySelector(".site-header")
+            .querySelector(".tmc-header")
             .getBoundingClientRect();
           return {
             left: shell.left,
@@ -1247,7 +1247,7 @@ def test_author_pages_match_the_blog_content_shell_and_top_spacing(
             .querySelector(".author-profile__breadcrumb")
             .getBoundingClientRect();
           const header = document
-            .querySelector(".site-header")
+            .querySelector(".tmc-header")
             .getBoundingClientRect();
           return {
             left: shell.left,

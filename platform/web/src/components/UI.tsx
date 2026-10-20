@@ -4,6 +4,12 @@ import { useI18n, type MessageKey } from "../lib/i18n";
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const shapes: Record<string, ReactNode> = {
+    play: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="m10 8 6 4-6 4Z" />
+      </>
+    ),
     grid: (
       <>
         <rect x="3" y="3" width="7" height="7" rx="1.5" />

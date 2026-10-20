@@ -1,0 +1,15 @@
+{{- $current := .current -}}
+{{- $maxLength := len $current -}}
+{{- range .options -}}{{- $maxLength = math.Max $maxLength (len .code) -}}{{- end -}}
+{{- range .supportedCodes -}}{{- $maxLength = math.Max $maxLength (len .) -}}{{- end -}}
+{{- $width := math.Max 48 (add 24 (mul $maxLength 7)) -}}
+<details class="tmc-language-switcher tmc-language-switcher--{{ .variant | default "standalone" }}" style="--tmc-language-switcher-desktop-width: {{ $width }}px"{{ if isset . "storageKey" }} data-tmc-language-storage-key="{{ .storageKey }}"{{ end }}>
+  <summary aria-label="{{ partial "tmc-ui/internal/option.html" (slice . "label" "Choose language") }}"><span>{{ upper $current }}</span></summary>
+  <div class="tmc-language-switcher__list" role="group" aria-label="{{ partial "tmc-ui/internal/option.html" (slice . "groupLabel" "Languages") }}">
+    {{- range .options -}}
+      {{- if ne .code $current -}}
+        <a class="tmc-language-switcher__option" href="{{ .href }}" lang="{{ .code }}" hreflang="{{ .code }}" data-language-option="{{ .code }}">{{ partial "tmc-ui/internal/option.html" (slice . "label" (upper .code)) }}</a>
+      {{- end -}}
+    {{- end -}}
+  </div>
+</details>

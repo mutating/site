@@ -1,0 +1,79 @@
+/* Extracted from the mutating Hugo theme; the site remains independent. */
+:root {
+  --font-geist-sans: "Geist";
+  --font-geist-mono: "Geist Mono";
+  color-scheme: light;
+  --bg: #fffafb;
+  --surface: #ffffff;
+  --surface-raised: #fff3f8;
+  --ink: #160d13;
+  --ink-muted: #6c5f67;
+  --hot: #ff2c92;
+  --hot-bright: #ff66ae;
+  --hot-soft: #bb5d8c;
+  --hot-pale: #ffd8e9;
+  --line: #e5d9df;
+  --inverse: #0a0609;
+  --inverse-ink: #fff7fb;
+  --shadow: 0 28px 90px rgba(113, 15, 65, 0.13);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #090608;
+    --surface: #100c0f;
+    --surface-raised: #171015;
+    --ink: #fff7fb;
+    --ink-muted: #b9a9b2;
+    --hot: #ff3e9d;
+    --hot-bright: #ff75b8;
+    --hot-soft: #b65b8a;
+    --hot-pale: #4a1830;
+    --line: #30242b;
+    --inverse: #ffedf5;
+    --inverse-ink: #11080d;
+    --shadow: 0 32px 120px rgba(255, 36, 144, 0.12);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #090608;
+  --surface: #100c0f;
+  --surface-raised: #171015;
+  --ink: #fff7fb;
+  --ink-muted: #b9a9b2;
+  --hot: #ff3e9d;
+  --hot-bright: #ff75b8;
+  --hot-soft: #b65b8a;
+  --hot-pale: #4a1830;
+  --line: #30242b;
+  --inverse: #ffedf5;
+  --inverse-ink: #11080d;
+  --shadow: 0 32px 120px rgba(255, 36, 144, 0.12);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fffafb;
+  --surface: #ffffff;
+  --surface-raised: #fff3f8;
+  --ink: #160d13;
+  --ink-muted: #6c5f67;
+  --hot: #ff2c92;
+  --hot-bright: #ff66ae;
+  --hot-soft: #bb5d8c;
+  --hot-pale: #ffd8e9;
+  --line: #e5d9df;
+  --inverse: #0a0609;
+  --inverse-ink: #fff7fb;
+  --shadow: 0 28px 90px rgba(113, 15, 65, 0.13);
+}
+
+:root {
+  --tmc-radius-control: 14px;
+  --tmc-radius-panel: 18px;
+  --tmc-shell-width: 1440px;
+  --tmc-motion-fast: 180ms;
+}

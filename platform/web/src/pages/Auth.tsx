@@ -4,7 +4,6 @@ import { api, json } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import type { User } from "../lib/types";
-import { Header } from "../components/Layout";
 import { ErrorBox, Icon } from "../components/UI";
 export function Auth({ register = false }: { register?: boolean }) {
   const { t } = useI18n();
@@ -61,7 +60,6 @@ export function Auth({ register = false }: { register?: boolean }) {
   }
   return (
     <>
-      <Header />
       <main id="main" className="auth-shell">
         <section className="auth-story">
           <p className="eyebrow">

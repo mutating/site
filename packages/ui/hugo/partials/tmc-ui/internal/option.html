@@ -1,0 +1,6 @@
+{{- /* Defaults apply to absent keys; an explicit empty string is a value. */ -}}
+{{- $options := index . 0 -}}
+{{- $key := index . 1 -}}
+{{- $value := index . 2 -}}
+{{- if isset $options $key -}}{{- $value = index $options $key -}}{{- end -}}
+{{- return $value -}}

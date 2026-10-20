@@ -91,6 +91,22 @@ class Eviction(Disconnect):
     retry_allowed: bool = True
 
 
+class NetworkAttempt(Input):
+    created: AwareDatetime | None = None
+    operation_id: UUID
+    request_id: UUID
+    method: str = Field(max_length=16)
+    path: str = Field(max_length=2048)
+    transport: Literal["direct", "relay"]
+    session_id: UUID | None = None
+    attempt: int = Field(ge=1, le=3)
+    duration_ms: float = Field(ge=0, allow_inf_nan=False)
+    status: int | None = Field(default=None, ge=100, le=599)
+    error_domain: str | None = Field(default=None, max_length=128)
+    error_code: int | None = None
+    server_code: str | None = Field(default=None, max_length=128)
+
+
 class DiagnosticRecord(Input):
     id: UUID
     created: AwareDatetime
@@ -98,6 +114,7 @@ class DiagnosticRecord(Input):
     session_id: UUID | None = None
     task_id: UUID | None = None
     uploaded: bool = False
+    network: NetworkAttempt | None = None
 
 
 class DiagnosticAccepted(Input):

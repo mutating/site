@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@mutating/ui · HTML</title>
+    <link rel="stylesheet" href="/src/styles/index.css"><link rel="stylesheet" href="/demo/demo.css">
+    <script type="module" src="/demo/native.js"></script>
+  </head>
+  <body class="tmc-page">
+    <header class="tmc-header-shell"><div class="tmc-header">
+<a class="tmc-brand" href="/" aria-label="The Mutating Company">
+  <span class="tmc-brand__mark tmc-brand__mark--eye" aria-hidden="true">
+    <span class="tmc-eye"><span class="tmc-eye__clip">
+      <span class="tmc-eye__outline"></span><span class="tmc-eye__surface"></span><span class="tmc-eye__pupil"></span>
+    </span></span>
+  </span>
+  <span class="tmc-brand__wordmark-stage" data-can-expand="true" aria-hidden="true">
+    <span class="tmc-brand__wordmark">
+      <span class="tmc-brand__word-part tmc-brand__word-part--t"><span class="tmc-brand__word-anchor">T</span><span class="tmc-brand__word-reveal" data-text="he">he</span></span>
+      <span class="tmc-brand__word-part tmc-brand__word-part--m"><span class="tmc-brand__word-anchor">M</span><span class="tmc-brand__word-reveal" data-text="utating">utating</span></span>
+      <span class="tmc-brand__word-part"><span class="tmc-brand__word-anchor">C</span><span class="tmc-brand__word-reveal" data-text="ompany">ompany</span></span>
+    </span>
+  </span>
+</a>
+<nav class="tmc-nav" aria-label="Навигация"><a href="#components">Компоненты</a><a href="/react.html">React-версия</a></nav><div class="tmc-header-actions"><details class="tmc-language-switcher tmc-language-switcher--desktop">
+  <summary aria-label="Выбрать язык">RU</summary>
+  <div class="tmc-language-switcher__list" role="group" aria-label="Языки"><a class="tmc-language-switcher__option" href="#en" lang="en" hreflang="en" data-language-option="en">EN</a></div>
+</details><button class="tmc-theme-toggle" type="button" aria-label="Переключить тему">
+  <span class="tmc-theme-toggle__track" aria-hidden="true">
+    <span class="tmc-theme-toggle__sun"><span class="tmc-theme-toggle__sun-core"></span><span class="tmc-theme-toggle__sun-rays"></span><span class="tmc-theme-toggle__sun-rays tmc-theme-toggle__sun-rays--diagonal"></span></span>
+    <span class="tmc-theme-toggle__moon"></span><span class="tmc-theme-toggle__thumb"></span>
+  </span>
+</button>
+<details class="tmc-mobile-menu">
+  <summary aria-label="Открыть меню"><span class="tmc-mobile-menu__label">Меню</span><svg class="tmc-mobile-menu__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></summary>
+  <nav aria-label="Навигация"><div class="tmc-mobile-menu__language"><details class="tmc-language-switcher tmc-language-switcher--mobile">
+  <summary aria-label="Выбрать язык">RU</summary>
+  <div class="tmc-language-switcher__list" role="group" aria-label="Языки"><a class="tmc-language-switcher__option" href="#en" lang="en" hreflang="en" data-language-option="en">EN</a></div>
+</details></div><div class="tmc-mobile-menu__links"><a href="#components">Компоненты</a><a href="/react.html">React-версия</a></div></nav>
+</details></div></div></header>
+    <main class="tmc-shell demo-content" id="components">
+      <p class="tmc-eyebrow">@mutating/ui · HTML</p>
+      <h1>Общий визуальный язык<span>.</span></h1>
+      <p>Темы, локальные шрифты, поверхности, кнопки и анимированный логотип из статического сайта. Текущая тема: <strong data-testid="theme"></strong>.</p>
+      <div class="demo-grid">
+        <section class="tmc-surface demo-panel"><h2>Кнопки</h2><div class="demo-row">
+          <button type="button" class="tmc-button tmc-button--primary" id="action">Действие →</button>
+          <button type="button" class="tmc-button tmc-button--secondary">Вторичная</button>
+          <button type="button" class="tmc-button tmc-button--dark tmc-button--compact">Компактная</button>
+          <button type="button" class="tmc-button tmc-button--primary" disabled>Недоступна</button>
+        </div><p>Выполнено действий: <span data-testid="count">0</span></p></section>
+        <section class="tmc-surface tmc-surface--raised demo-panel"><h2>Общая палитра</h2><div class="demo-row">
+<span class="demo-swatch"><i style="background:var(--bg)"></i>bg</span><span class="demo-swatch"><i style="background:var(--surface)"></i>surface</span><span class="demo-swatch"><i style="background:var(--hot)"></i>hot</span><span class="demo-swatch"><i style="background:var(--ink)"></i>ink</span></div></section>
+      </div>
+      <div class="demo-row"><button type="button" class="tmc-button tmc-button--secondary tmc-button--compact" id="system-theme">Системная тема</button><button type="button" class="tmc-button tmc-button--secondary tmc-button--compact" id="remount">Пересоздать хэдер</button></div>
+      <p class="demo-footer"><a class="tmc-text-link" href="/react.html">Открыть React-версию →</a></p>
+    </main>
+  </body>
+</html>

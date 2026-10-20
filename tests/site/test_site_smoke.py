@@ -233,19 +233,20 @@ def test_all_github_navigation_links_use_sources_label_and_icon(
 
     page = driver(color_scheme="light", viewport=viewport)
     links = page.locator(
-        'a.source-link[href="https://github.com/mutating"]',
+        'a:is(.source-link, .tmc-source-link)[href="https://github.com/mutating"]',
     )
 
     expect(links).to_have_count(3)
     for index in range(3):
         link = links.nth(index)
+        icon = link.locator(":is(.source-link__icon, .tmc-source-link__icon)")
         expect(link).to_have_text("Sources")
-        expect(link.locator(".source-link__icon")).to_have_count(1)
-        expect(link.locator(".source-link__icon")).to_have_attribute(
+        expect(icon).to_have_count(1)
+        expect(icon).to_have_attribute(
             "aria-hidden",
             "true",
         )
-        expect(link.locator(".source-link__icon")).to_have_css(
+        expect(icon).to_have_css(
             "overflow",
             "visible",
         )
@@ -254,7 +255,9 @@ def test_all_github_navigation_links_use_sources_label_and_icon(
             (element) => {
               const style = getComputedStyle(element);
               const iconStyle = getComputedStyle(
-                element.querySelector(".source-link__icon"),
+                element.querySelector(
+                  ":is(.source-link__icon, .tmc-source-link__icon)",
+                ),
               );
               return {
                 gap: Number.parseFloat(style.columnGap),
@@ -280,7 +283,7 @@ def test_all_github_navigation_links_use_sources_label_and_icon(
             )
 
     expect(
-        page.locator(".main-nav, .mobile-menu, .site-footer__links").get_by_text(
+        page.locator(".tmc-nav, .tmc-mobile-menu, .site-footer__links").get_by_text(
             "Open source",
             exact=True,
         ),
@@ -824,9 +827,9 @@ def test_pantograph_ignores_intentional_abort_but_reports_network_rejection(
             """
             (() => {
               const nativeFetch = window.fetch.bind(window);
-              window.AbortController = class {
-                constructor() { this.signal = {aborted: true}; }
-                abort() { this.signal.aborted = true; }
+              const NativeAbortController = window.AbortController;
+              window.AbortController = class extends NativeAbortController {
+                constructor() { super(); this.abort(); }
               };
               window.fetch = (resource, options) => {
                 if (String(resource).includes("pantograph-variant")) {
@@ -2717,7 +2720,7 @@ def test_feedback_geometry_uses_two_dashed_rings_and_one_shared_middle_orbit(
           };
           const arrowLayer = loop.querySelector(".feedback-arrows");
           const headerStyle = getComputedStyle(
-            document.querySelector(".site-header"),
+            document.querySelector(".tmc-header"),
           );
           const cards = [...loop.querySelectorAll(".feedback-node")]
             .map((card) => {
@@ -3358,14 +3361,14 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
         viewport=(1280, 720),
         load_interactive_visuals=False,
     )
-    header = page.locator(".site-header")
-    eye = page.locator(".animated-eye-logo")
-    stage = page.locator(".brand__wordmark-stage")
-    wordmark = page.locator(".brand__wordmark")
-    navigation = page.locator(".main-nav")
-    reveals = page.locator(".brand__word-reveal")
+    header = page.locator(".tmc-header")
+    eye = page.locator(".tmc-eye")
+    stage = page.locator(".tmc-brand__wordmark-stage")
+    wordmark = page.locator(".tmc-brand__wordmark")
+    navigation = page.locator(".tmc-nav")
+    reveals = page.locator(".tmc-brand__word-reveal")
 
-    expect(page.locator(".brand")).to_have_attribute(
+    expect(page.locator(".tmc-brand")).to_have_attribute(
         "aria-label",
         "Reload The Mutating Company home page",
     )
@@ -3382,23 +3385,23 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
             return [rect.x, rect.y, rect.width, rect.height];
           };
           const revealElements = [
-            ...document.querySelectorAll(".brand__word-reveal"),
+            ...document.querySelectorAll(".tmc-brand__word-reveal"),
           ];
-          const wordmark = document.querySelector(".brand__wordmark");
+          const wordmark = document.querySelector(".tmc-brand__wordmark");
           return {
-            header: readRect(".site-header"),
-            eye: readRect(".animated-eye-logo"),
-            stage: readRect(".brand__wordmark-stage"),
-            navigation: readRect(".main-nav"),
+            header: readRect(".tmc-header"),
+            eye: readRect(".tmc-eye"),
+            stage: readRect(".tmc-brand__wordmark-stage"),
+            navigation: readRect(".tmc-nav"),
             revealWidths: revealElements.map(
               (element) => element.getBoundingClientRect().width,
             ),
             anchorColor: getComputedStyle(
-              document.querySelector(".brand__word-anchor"),
+              document.querySelector(".tmc-brand__word-anchor"),
             ).color,
             wordmarkColor: getComputedStyle(wordmark).color,
             stageFontSize: getComputedStyle(
-              document.querySelector(".brand__wordmark-stage"),
+              document.querySelector(".tmc-brand__wordmark-stage"),
             ).fontSize,
             revealFontSizes: revealElements.map(
               (element) => getComputedStyle(element).fontSize,
@@ -3415,7 +3418,7 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     wordmark.hover()
     page.wait_for_function(
         """
-        () => [...document.querySelectorAll(".brand__word-reveal")].every(
+        () => [...document.querySelectorAll(".tmc-brand__word-reveal")].every(
           (element) =>
             element.getBoundingClientRect().width > 1 &&
             getComputedStyle(element).opacity === "1",
@@ -3429,12 +3432,12 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
             const rect = document.querySelector(selector).getBoundingClientRect();
             return [rect.x, rect.y, rect.width, rect.height];
           };
-          const firstReveal = document.querySelector(".brand__word-reveal");
+          const firstReveal = document.querySelector(".tmc-brand__word-reveal");
           return {
-            header: readRect(".site-header"),
-            eye: readRect(".animated-eye-logo"),
-            stage: readRect(".brand__wordmark-stage"),
-            navigation: readRect(".main-nav"),
+            header: readRect(".tmc-header"),
+            eye: readRect(".tmc-eye"),
+            stage: readRect(".tmc-brand__wordmark-stage"),
+            navigation: readRect(".tmc-nav"),
             animationName: getComputedStyle(
               firstReveal,
               "::after",
@@ -3443,7 +3446,7 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
         }
         """
     )
-    assert expanded["animationName"] == "brand-spectrum-unfold"
+    assert expanded["animationName"] == "tmc-brand-spectrum-unfold"
     for selector in ("header", "eye", "stage", "navigation"):
         for before, after in zip(initial[selector], expanded[selector]):
             assert abs(before - after) <= 0.5
@@ -3454,7 +3457,7 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     )
     page.wait_for_function(
         """
-        () => [...document.querySelectorAll(".brand__word-reveal")].every(
+        () => [...document.querySelectorAll(".tmc-brand__word-reveal")].every(
           (element) => element.getBoundingClientRect().width <= 0.01,
         )
         """
@@ -3498,11 +3501,11 @@ def test_unfolding_wordmark_keeps_hover_when_pointer_outpaces_the_text(
         viewport=(viewport_width, 720),
         load_interactive_visuals=False,
     )
-    wordmark = page.locator(".brand__wordmark")
-    reveals = page.locator(".brand__word-reveal")
-    mutating = page.locator('.brand__word-reveal[data-text="utating"]')
+    wordmark = page.locator(".tmc-brand__wordmark")
+    reveals = page.locator(".tmc-brand__word-reveal")
+    mutating = page.locator('.tmc-brand__word-reveal[data-text="utating"]')
     anchor_t = page.locator(
-        ".brand__word-part--t .brand__word-anchor"
+        ".tmc-brand__word-part--t .tmc-brand__word-anchor"
     )
 
     wordmark.hover()
@@ -3535,7 +3538,7 @@ def test_unfolding_wordmark_keeps_hover_when_pointer_outpaces_the_text(
     ))
 
     compact_wordmark = wordmark.bounding_box()
-    stable_stage = page.locator(".brand__wordmark-stage").bounding_box()
+    stable_stage = page.locator(".tmc-brand__wordmark-stage").bounding_box()
     assert compact_wordmark is not None
     assert stable_stage is not None
     unused_stage_x = (
@@ -3636,12 +3639,12 @@ def test_wordmark_boundary_point_settles_without_synthetic_pointer_reentry(
         viewport=(1280, 720),
         load_interactive_visuals=False,
     )
-    wordmark = page.locator(".brand__wordmark")
-    stage = page.locator(".brand__wordmark-stage")
+    wordmark = page.locator(".tmc-brand__wordmark")
+    stage = page.locator(".tmc-brand__wordmark-stage")
     anchor_t = page.locator(
-        ".brand__word-part--t .brand__word-anchor"
+        ".tmc-brand__word-part--t .tmc-brand__word-anchor"
     )
-    reveals = page.locator(".brand__word-reveal")
+    reveals = page.locator(".tmc-brand__word-reveal")
 
     stage_box = stage.bounding_box()
     anchor_box = anchor_t.bounding_box()
@@ -3650,7 +3653,7 @@ def test_wordmark_boundary_point_settles_without_synthetic_pointer_reentry(
     page.evaluate(
         """
         () => {
-          const wordmark = document.querySelector(".brand__wordmark");
+          const wordmark = document.querySelector(".tmc-brand__wordmark");
           window.__tmcHoverStateChanges = 0;
           new MutationObserver((records) => {
             window.__tmcHoverStateChanges += records.length;
@@ -3699,10 +3702,10 @@ def test_desktop_language_list_opens_on_hover(
         viewport=(1280, 720),
         load_interactive_visuals=False,
     )
-    header = page.locator(".site-header")
-    switcher = header.locator(".language-switcher--desktop")
+    header = page.locator(".tmc-header")
+    switcher = header.locator(".tmc-language-switcher--desktop")
     summary = switcher.locator(":scope > summary")
-    language_list = switcher.locator(":scope > .language-switcher__list")
+    language_list = switcher.locator(":scope > .tmc-language-switcher__list")
 
     expect(page.locator("html")).to_have_attribute("lang", "en")
     expect(switcher).to_be_visible()
@@ -3723,7 +3726,7 @@ def test_desktop_language_list_opens_on_hover(
             backgroundColor: style.backgroundColor,
             color: style.color,
             navigationColor: getComputedStyle(
-              document.querySelector(".main-nav a:last-child"),
+              document.querySelector(".tmc-nav a:last-child"),
             ).color,
             fontFamily: style.fontFamily,
             fontSize: style.fontSize,
@@ -3747,7 +3750,7 @@ def test_desktop_language_list_opens_on_hover(
     switcher.hover()
     assert switcher.evaluate("(element) => element.open") is True
     expect(language_list).to_be_visible()
-    options = language_list.locator(".language-switcher__option")
+    options = language_list.locator(".tmc-language-switcher__option")
     assert options.all_inner_texts() == ["RU"]
     expect(options.nth(0)).to_have_attribute(
         "href", "/ru/?tmc-language-choice=ru"
@@ -3764,7 +3767,7 @@ def test_desktop_language_list_opens_on_hover(
           }
           const summary = element.querySelector(":scope > summary");
           const list = element.querySelector(
-            ":scope > .language-switcher__list",
+            ":scope > .tmc-language-switcher__list",
           );
           const summaryRect = summary.getBoundingClientRect();
           const listRect = list.getBoundingClientRect();
@@ -3779,11 +3782,11 @@ def test_desktop_language_list_opens_on_hover(
             listBackground: listStyle.backgroundColor,
             summaryBackground: getComputedStyle(summary).backgroundColor,
             headerBackground: getComputedStyle(
-              element.closest(".site-header"),
+              element.closest(".tmc-header"),
             ).backgroundColor,
             listBackdrop: listStyle.backdropFilter,
             headerBackdrop: getComputedStyle(
-              element.closest(".site-header"),
+              element.closest(".tmc-header"),
             ).backdropFilter,
           };
         }
@@ -3806,14 +3809,14 @@ def test_desktop_language_list_opens_on_hover(
         """
         (element) => {
           const lastNavigationLink = element.querySelector(
-            ".main-nav a:last-child",
+            ".tmc-nav a:last-child",
           );
           const navigationText = document.createRange();
           navigationText.selectNodeContents(lastNavigationLink);
           const language = element.querySelector(
-            ".language-switcher--desktop",
+            ".tmc-language-switcher--desktop",
           ).getBoundingClientRect();
-          const theme = element.querySelector(".theme-toggle")
+          const theme = element.querySelector(".tmc-theme-toggle")
             .getBoundingClientRect();
           return {
             navigationToLanguage:
@@ -3840,7 +3843,7 @@ def test_desktop_language_list_opens_on_hover(
         ).count()
         == 1
     )
-    assert header.locator(".mobile-menu").count() == 1
+    assert header.locator(".tmc-mobile-menu").count() == 1
 
 
 @pytest.mark.parametrize(
@@ -3860,19 +3863,19 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
         viewport=viewport,
         load_interactive_visuals=False,
     )
-    header = page.locator(".site-header")
-    menu = header.locator(".mobile-menu")
-    desktop_switcher = header.locator(".language-switcher--desktop")
+    header = page.locator(".tmc-header")
+    menu = header.locator(".tmc-mobile-menu")
+    desktop_switcher = header.locator(".tmc-language-switcher--desktop")
 
     expect(desktop_switcher).to_be_hidden()
     menu.locator(":scope > summary").click()
     expect(menu.get_by_role("navigation", name="Mobile navigation")).to_be_visible()
 
-    language_section = menu.locator(".mobile-menu__language")
-    links_section = menu.locator(".mobile-menu__links")
-    switcher = language_section.locator(".language-switcher--mobile")
+    language_section = menu.locator(".tmc-mobile-menu__language")
+    links_section = menu.locator(".tmc-mobile-menu__links")
+    switcher = language_section.locator(".tmc-language-switcher--mobile")
     summary = switcher.locator(":scope > summary")
-    language_list = switcher.locator(":scope > .language-switcher__list")
+    language_list = switcher.locator(":scope > .tmc-language-switcher__list")
 
     expect(switcher).to_be_visible()
     expect(summary.locator("span").nth(0)).to_have_text("EN")
@@ -3885,7 +3888,7 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
     summary.click()
     assert switcher.evaluate("(element) => element.open") is True
     expect(language_list).to_be_visible()
-    options = language_list.locator(".language-switcher__option")
+    options = language_list.locator(".tmc-language-switcher__option")
     assert options.all_inner_texts() == ["RU"]
     expect(options.nth(0)).to_have_attribute(
         "href", "/ru/?tmc-language-choice=ru"
@@ -3900,10 +3903,10 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
             ":scope > summary",
           ).getBoundingClientRect();
           const listRect = element.querySelector(
-            ":scope > .language-switcher__list",
+            ":scope > .tmc-language-switcher__list",
           ).getBoundingClientRect();
           const list = element.querySelector(
-            ":scope > .language-switcher__list",
+            ":scope > .tmc-language-switcher__list",
           );
           return {
             summaryBottom: summaryRect.bottom,
@@ -3912,7 +3915,7 @@ def test_mobile_language_list_is_the_first_separated_menu_section(
             listWidth: listRect.width,
             listBackground: getComputedStyle(list).backgroundColor,
             menuBackground: getComputedStyle(
-              element.closest(".mobile-menu").querySelector(
+              element.closest(".tmc-mobile-menu").querySelector(
                 ":scope > nav",
               ),
             ).backgroundColor,
@@ -3946,7 +3949,7 @@ def test_russian_device_language_and_manual_choice_control_routing(
 
     expect(page).to_have_url(re.compile(r"/ru/$"))
     expect(page.locator("html")).to_have_attribute("lang", "ru")
-    desktop_switcher = page.locator(".language-switcher--desktop")
+    desktop_switcher = page.locator(".tmc-language-switcher--desktop")
     desktop_switcher.hover()
     desktop_switcher.locator('[data-language-option="en"]').click()
     expect(page).to_have_url(re.compile(r"/$"))
@@ -3954,7 +3957,7 @@ def test_russian_device_language_and_manual_choice_control_routing(
     expect(page).to_have_url(re.compile(r"/$"))
     expect(page.locator("html")).to_have_attribute("lang", "en")
 
-    desktop_switcher = page.locator(".language-switcher--desktop")
+    desktop_switcher = page.locator(".tmc-language-switcher--desktop")
     desktop_switcher.hover()
     desktop_switcher.locator('[data-language-option="ru"]').click()
     expect(page).to_have_url(re.compile(r"/ru/$"))
@@ -3986,18 +3989,18 @@ def test_theme_toggle_stays_inside_header_at_navigation_breakpoint(
     for width in widths:
         page.set_viewport_size({"width": width, "height": 844})
         page.wait_for_function("width => innerWidth === width", arg=width)
-        geometry = page.locator(".site-header").evaluate(
+        geometry = page.locator(".tmc-header").evaluate(
             """
             (header) => {
               const headerRect = header.getBoundingClientRect();
               const headerStyle = getComputedStyle(header);
               const toggleRect = header.querySelector(
-                ".theme-toggle",
+                ".tmc-theme-toggle",
               ).getBoundingClientRect();
               return {
                 viewportWidth: innerWidth,
                 navigationDisplay: getComputedStyle(
-                  header.querySelector(".main-nav"),
+                  header.querySelector(".tmc-nav"),
                 ).display,
                 contentRight:
                   headerRect.right -
@@ -4039,7 +4042,7 @@ def test_mobile_menu_closes_after_clicking_outside_it(
         viewport=(390, 844),
         load_interactive_visuals=False,
     )
-    menu = page.locator(".mobile-menu")
+    menu = page.locator(".tmc-mobile-menu")
     navigation = menu.get_by_role("navigation", name="Mobile navigation")
 
     menu.locator(":scope > summary").click()
@@ -4104,8 +4107,8 @@ def test_tmc_wordmark_waits_for_science_gothic_before_becoming_visible(
         ),
     )
     root = page.locator("html")
-    wordmark = page.locator(".brand__wordmark")
-    stage = page.locator(".brand__wordmark-stage")
+    wordmark = page.locator(".tmc-brand__wordmark")
+    stage = page.locator(".tmc-brand__wordmark-stage")
     preload = page.locator(
         'link[rel="preload"][as="font"]'
         '[href="/fonts/science-gothic-wordmark.woff2"]'
@@ -4123,7 +4126,7 @@ def test_tmc_wordmark_waits_for_science_gothic_before_becoming_visible(
           transitionProperty: getComputedStyle(element).transitionProperty,
           transitionDuration: getComputedStyle(element).transitionDuration,
           stageWidth: element.closest(
-            ".brand__wordmark-stage",
+            ".tmc-brand__wordmark-stage",
           ).getBoundingClientRect().width,
         })
         """
@@ -4339,8 +4342,8 @@ def test_language_switcher_escape_closes_menu_and_restores_summary_focus(
 
     page = driver(viewport=viewport, load_interactive_visuals=False)
     if variant == "mobile":
-        page.locator(".mobile-menu > summary").click()
-    switcher = page.locator(f".language-switcher--{variant}")
+        page.locator(".tmc-mobile-menu > summary").click()
+    switcher = page.locator(f".tmc-language-switcher--{variant}")
     summary = switcher.locator(":scope > summary")
     summary.focus()
     summary.press("Enter")
@@ -4359,11 +4362,11 @@ def test_language_switchers_close_only_when_pointer_moves_outside_them(
     """Keep the clicked language menu open, close peers, then close all outside."""
 
     page = driver(viewport=(1280, 720), load_interactive_visuals=False)
-    desktop = page.locator(".language-switcher--desktop")
-    mobile = page.locator(".language-switcher--mobile")
+    desktop = page.locator(".tmc-language-switcher--desktop")
+    mobile = page.locator(".tmc-language-switcher--mobile")
     page.evaluate(
         """
-        () => document.querySelectorAll("[data-language-switcher]")
+        () => document.querySelectorAll(".tmc-language-switcher")
           .forEach((element) => element.open = true)
         """
     )
@@ -4382,8 +4385,8 @@ def test_language_switcher_closes_the_hidden_variant_after_breakpoint_change(
     """Close the language control hidden by each live 1041 px layout transition."""
 
     page = driver(viewport=(1280, 720), load_interactive_visuals=False)
-    desktop = page.locator(".language-switcher--desktop")
-    mobile = page.locator(".language-switcher--mobile")
+    desktop = page.locator(".tmc-language-switcher--desktop")
+    mobile = page.locator(".tmc-language-switcher--mobile")
     desktop.evaluate("element => element.open = true")
 
     page.set_viewport_size({"width": 1040, "height": 720})
@@ -4436,7 +4439,7 @@ def test_language_selection_survives_blocked_storage(
             """,
         ),
     )
-    switcher = page.locator(".language-switcher--desktop")
+    switcher = page.locator(".tmc-language-switcher--desktop")
     switcher.hover()
     with page.expect_request(re.compile(request_pattern)):
         switcher.locator(
@@ -4479,8 +4482,8 @@ def test_wordmark_font_gate_uses_visible_fallback_when_font_loading_fails(
     expect(page.locator("html")).to_have_attribute(
         "data-wordmark-font-ready", "fallback"
     )
-    expect(page.locator(".brand__wordmark")).to_have_css("opacity", "1")
-    expect(page.locator(".brand__wordmark-stage")).to_be_visible()
+    expect(page.locator(".tmc-brand__wordmark")).to_have_css("opacity", "1")
+    expect(page.locator(".tmc-brand__wordmark-stage")).to_be_visible()
     assert page.evaluate("window.__capturedWindowErrors") == []
 
 
@@ -4503,11 +4506,11 @@ def test_mobile_menu_closes_after_same_page_navigation(
     """Close mobile navigation after its Contact link reaches the home anchor."""
 
     page = driver(viewport=(390, 844), load_interactive_visuals=False)
-    menu = page.locator(".mobile-menu")
+    menu = page.locator(".tmc-mobile-menu")
     menu.locator(":scope > summary").click()
     expect(menu).to_have_attribute("open", "")
 
-    menu.locator('.mobile-menu__links a[href="/#contact"]').click()
+    menu.locator('.tmc-mobile-menu__links a[href="/#contact"]').click()
     expect(page).to_have_url(re.compile(r"/#contact$"))
     expect(menu).not_to_have_attribute("open", "")
     expect(menu.get_by_role("navigation", name="Mobile navigation")).to_be_hidden()
@@ -4534,7 +4537,7 @@ def test_brand_keyboard_activation_matches_primary_click(
         })
         """
     )
-    page.locator(".brand").press(key)
+    page.locator(".tmc-brand").press(key)
 
     expect(page).to_have_url(re.compile(r"/$"))
     assert page.evaluate(
@@ -4551,7 +4554,7 @@ def test_brand_keyboard_control_ignores_repeats_and_unrelated_keys(
         initial_path="/#feedback",
         load_interactive_visuals=False,
     )
-    result = page.locator(".brand").evaluate(
+    result = page.locator(".tmc-brand").evaluate(
         """
         (element) => {
           let activations = 0;
@@ -4611,13 +4614,13 @@ def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
               /"([^"]+)"\\s+(-?\\d+(?:\\.\\d+)?)/g,
             )].map((match) => [match[1], Number(match[2])]),
           );
-          const stage = document.querySelector(".brand__wordmark-stage");
-          const wordmark = document.querySelector(".brand__wordmark");
+          const stage = document.querySelector(".tmc-brand__wordmark-stage");
+          const wordmark = document.querySelector(".tmc-brand__wordmark");
           const anchors = [
-            ...document.querySelectorAll(".brand__word-anchor"),
+            ...document.querySelectorAll(".tmc-brand__word-anchor"),
           ];
           const reveals = [
-            ...document.querySelectorAll(".brand__word-reveal"),
+            ...document.querySelectorAll(".tmc-brand__word-reveal"),
           ];
           const stageRect = stage.getBoundingClientRect();
           const wordmarkRect = wordmark.getBoundingClientRect();
@@ -4671,7 +4674,7 @@ def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
     assert initial["transitionDuration"] == "0.35s"
     assert initial["wordmarkWidth"] <= initial["stageWidth"] + 0.5
 
-    wordmark = page.locator(".brand__wordmark")
+    wordmark = page.locator(".tmc-brand__wordmark")
     wordmark.hover()
     expanded = wordmark.evaluate(
         """
@@ -4685,12 +4688,12 @@ def test_tmc_wordmark_uses_the_approved_science_gothic_variant(
               /"([^"]+)"\\s+(-?\\d+(?:\\.\\d+)?)/g,
             )].map((match) => [match[1], Number(match[2])]),
           );
-          const stage = element.closest(".brand__wordmark-stage");
+          const stage = element.closest(".tmc-brand__wordmark-stage");
           const stageRect = stage.getBoundingClientRect();
           const wordmarkRect = element.getBoundingClientRect();
           return {
             anchorAxes: [
-              ...element.querySelectorAll(".brand__word-anchor"),
+              ...element.querySelectorAll(".tmc-brand__word-anchor"),
             ].map((anchor) => readAxes(getComputedStyle(anchor))),
             stageWidth: stageRect.width,
             wordmarkWidth: wordmarkRect.width,
@@ -4735,7 +4738,7 @@ def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
         viewport=(1280, 720),
         load_interactive_visuals=False,
     )
-    wordmark = page.locator(".brand__wordmark")
+    wordmark = page.locator(".tmc-brand__wordmark")
 
     initial = wordmark.evaluate(
         """
@@ -4744,8 +4747,8 @@ def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
             animation.finish();
           }
 
-          const reveals = [...element.querySelectorAll(".brand__word-reveal")];
-          const parts = [...element.querySelectorAll(".brand__word-part")];
+          const reveals = [...element.querySelectorAll(".tmc-brand__word-reveal")];
+          const parts = [...element.querySelectorAll(".tmc-brand__word-part")];
           return {
             widths: reveals.map(
               (reveal) => reveal.getBoundingClientRect().width,
@@ -4772,7 +4775,7 @@ def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
     assert initial["opacities"] == [0, 0, 0]
     assert initial["margins"] == [0, 0, 0]
     assert initial["spectrumOpacities"] == [0, 0, 0]
-    assert initial["animationNames"] == ["brand-spectrum-fold"] * 3
+    assert initial["animationNames"] == ["tmc-brand-spectrum-fold"] * 3
 
     wordmark.hover()
     expanded = wordmark.evaluate(
@@ -4787,8 +4790,8 @@ def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
             animation.finish();
           }
 
-          const reveals = [...element.querySelectorAll(".brand__word-reveal")];
-          const parts = [...element.querySelectorAll(".brand__word-part")];
+          const reveals = [...element.querySelectorAll(".tmc-brand__word-reveal")];
+          const parts = [...element.querySelectorAll(".tmc-brand__word-part")];
           return {
             widths: reveals.map(
               (reveal) => reveal.getBoundingClientRect().width,
@@ -4810,7 +4813,7 @@ def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
         }
         """
     )
-    assert expanded["spectrumNames"] == ["brand-spectrum-unfold"] * 3
+    assert expanded["spectrumNames"] == ["tmc-brand-spectrum-unfold"] * 3
     for width, natural_width in zip(
         expanded["widths"],
         expanded["naturalWidths"],
@@ -4838,8 +4841,8 @@ def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
             animation.finish();
           }
 
-          const reveals = [...element.querySelectorAll(".brand__word-reveal")];
-          const parts = [...element.querySelectorAll(".brand__word-part")];
+          const reveals = [...element.querySelectorAll(".tmc-brand__word-reveal")];
+          const parts = [...element.querySelectorAll(".tmc-brand__word-part")];
           return {
             widths: reveals.map(
               (reveal) => reveal.getBoundingClientRect().width,
@@ -4860,7 +4863,7 @@ def test_tmc_hover_animation_reaches_and_reverses_its_rest_states(
         }
         """
     )
-    assert collapsed["spectrumNames"] == ["brand-spectrum-fold"] * 3
+    assert collapsed["spectrumNames"] == ["tmc-brand-spectrum-fold"] * 3
     assert all(width <= 0.01 for width in collapsed["widths"])
     assert collapsed["opacities"] == [0, 0, 0]
     assert collapsed["margins"] == [0, 0, 0]
@@ -4897,7 +4900,7 @@ def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
         viewport=(1280, 720),
         load_interactive_visuals=False,
     )
-    wordmark = page.locator(".brand__wordmark")
+    wordmark = page.locator(".tmc-brand__wordmark")
     wordmark.evaluate(
         """
         (element) => {
@@ -4912,7 +4915,7 @@ def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
         (element) => {
           window.__tmcWordmarkAnimationsCaptured = false;
           element.addEventListener("pointermove", () => {
-            const reveal = element.querySelector(".brand__word-reveal");
+            const reveal = element.querySelector(".tmc-brand__word-reveal");
             getComputedStyle(reveal).opacity;
             const animations = element.getAnimations({subtree: true});
             const timedAnimations = animations.filter((animation) => {
@@ -4943,9 +4946,9 @@ def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
           });
           const spectrumAnimations = timedAnimations.filter(
             (animation) =>
-              animation.animationName === "brand-spectrum-unfold",
+              animation.animationName === "tmc-brand-spectrum-unfold",
           );
-          const reveal = element.querySelector(".brand__word-reveal");
+          const reveal = element.querySelector(".tmc-brand__word-reveal");
           const samples = [];
 
           for (const progress of [0.25, 0.5, 0.75]) {
@@ -4995,7 +4998,7 @@ def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
     )
 
     assert spectrum["spectrumAnimationCount"] == 3
-    assert spectrum["animationName"] == "brand-spectrum-unfold"
+    assert spectrum["animationName"] == "tmc-brand-spectrum-unfold"
     assert spectrum["animationDuration"] == "0.35s"
     assert spectrum["animationTimingFunction"] == "linear"
     assert spectrum["backgroundImage"].startswith("linear-gradient(98deg")
@@ -5025,16 +5028,16 @@ def test_tmc_hover_animation_carries_a_moving_pink_spectrum_midflight(
 @pytest.mark.parametrize(
     ("selector", "requires_expansion"),
     [
-        (".brand", False),
-        (".animated-eye-logo", False),
-        (".brand__word-part--t .brand__word-anchor", False),
-        (".brand__word-part--m .brand__word-anchor", False),
+        (".tmc-brand", False),
+        (".tmc-eye", False),
+        (".tmc-brand__word-part--t .tmc-brand__word-anchor", False),
+        (".tmc-brand__word-part--m .tmc-brand__word-anchor", False),
         (
-            ".brand__word-part:not(.brand__word-part--t)"
-            ":not(.brand__word-part--m) .brand__word-anchor",
+            ".tmc-brand__word-part:not(.tmc-brand__word-part--t)"
+            ":not(.tmc-brand__word-part--m) .tmc-brand__word-anchor",
             False,
         ),
-        ('.brand__word-reveal[data-text="ompany"]', True),
+        ('.tmc-brand__word-reveal[data-text="ompany"]', True),
     ],
     ids=[
         "unified-container",
@@ -5075,10 +5078,10 @@ def test_every_visible_brand_area_uses_the_link_pointer_cursor(
     )
 
     if requires_expansion:
-        page.locator(".brand__wordmark").hover()
+        page.locator(".tmc-brand__wordmark").hover()
         page.wait_for_function(
             """
-            () => [...document.querySelectorAll(".brand__word-reveal")].every(
+            () => [...document.querySelectorAll(".tmc-brand__word-reveal")].every(
               (element) =>
                 element.getBoundingClientRect().width > 1 &&
                 getComputedStyle(element).opacity === "1",
@@ -5124,10 +5127,10 @@ def test_tmc_wordmark_is_always_visible_in_the_narrow_header(
         viewport=(viewport_width, 844),
         load_interactive_visuals=False,
     )
-    stage = page.locator(".brand__wordmark-stage")
-    eye = page.locator(".animated-eye-logo")
-    brand = page.locator(".brand")
-    anchors = page.locator(".brand__word-anchor")
+    stage = page.locator(".tmc-brand__wordmark-stage")
+    eye = page.locator(".tmc-eye")
+    brand = page.locator(".tmc-brand")
+    anchors = page.locator(".tmc-brand__word-anchor")
 
     expect(stage).to_be_visible()
     expect(eye).to_be_visible()
@@ -5138,7 +5141,7 @@ def test_tmc_wordmark_is_always_visible_in_the_narrow_header(
     assert anchors.count() == 3
     assert anchors.all_text_contents() == ["T", "M", "C"]
 
-    geometry = page.locator(".site-header").evaluate(
+    geometry = page.locator(".tmc-header").evaluate(
         """
         (header) => {
           const rect = (element) => {
@@ -5152,13 +5155,13 @@ def test_tmc_wordmark_is_always_visible_in_the_narrow_header(
               height: box.height,
             };
           };
-          const stage = header.querySelector(".brand__wordmark-stage");
-          const anchors = [...header.querySelectorAll(".brand__word-anchor")];
+          const stage = header.querySelector(".tmc-brand__wordmark-stage");
+          const anchors = [...header.querySelectorAll(".tmc-brand__word-anchor")];
           return {
             header: rect(header),
-            eye: rect(header.querySelector(".animated-eye-logo")),
+            eye: rect(header.querySelector(".tmc-eye")),
             stage: rect(stage),
-            actions: rect(header.querySelector(".header-actions")),
+            actions: rect(header.querySelector(".tmc-header-actions")),
             stageDisplay: getComputedStyle(stage).display,
             anchors: anchors.map((anchor) => ({
               ...rect(anchor),
@@ -5221,11 +5224,11 @@ def test_tmc_wordmark_letter_size_is_fixed_across_header_widths(
         viewport=(viewport_width, 844),
         load_interactive_visuals=False,
     )
-    geometry = page.locator(".site-header").evaluate(
+    geometry = page.locator(".tmc-header").evaluate(
         """
         (header) => {
-          const stage = header.querySelector(".brand__wordmark-stage");
-          const anchors = [...header.querySelectorAll(".brand__word-anchor")];
+          const stage = header.querySelector(".tmc-brand__wordmark-stage");
+          const anchors = [...header.querySelectorAll(".tmc-brand__word-anchor")];
           return {
             headerHeight: header.getBoundingClientRect().height,
             stageFontSize: getComputedStyle(stage).fontSize,
@@ -5294,8 +5297,8 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
         viewport=(1280, 844),
         load_interactive_visuals=False,
     )
-    stage = page.locator(".brand__wordmark-stage")
-    wordmark = page.locator(".brand__wordmark")
+    stage = page.locator(".tmc-brand__wordmark-stage")
+    wordmark = page.locator(".tmc-brand__wordmark")
 
     expect(stage).to_have_attribute("data-expansion-measured", "true")
     initial_revision = int(stage.get_attribute("data-expansion-revision"))
@@ -5304,7 +5307,7 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
         """
         ([revision]) =>
           Number(
-            document.querySelector(".brand__wordmark-stage")
+            document.querySelector(".tmc-brand__wordmark-stage")
               .dataset.expansionRevision,
           ) > revision
         """,
@@ -5313,10 +5316,10 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
     initial = stage.evaluate(
         """
         (stage) => {
-          const brand = stage.closest(".brand");
-          const header = stage.closest(".site-header");
-          const actions = header.querySelector(".header-actions");
-          const eye = brand.querySelector(".brand__mark--eye");
+          const brand = stage.closest(".tmc-brand");
+          const header = stage.closest(".tmc-header");
+          const actions = header.querySelector(".tmc-header-actions");
+          const eye = brand.querySelector(".tmc-brand__mark--eye");
           const brandStyle = getComputedStyle(brand);
           const headerStyle = getComputedStyle(header);
           const eyeStyle = getComputedStyle(eye);
@@ -5359,14 +5362,14 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
             animation.finish();
           }
 
-          const brand = wordmark.closest(".brand");
-          const actions = wordmark.closest(".site-header")
-            .querySelector(".header-actions");
+          const brand = wordmark.closest(".tmc-brand");
+          const actions = wordmark.closest(".tmc-header")
+            .querySelector(".tmc-header-actions");
           const reveals = [
-            ...wordmark.querySelectorAll(".brand__word-reveal"),
+            ...wordmark.querySelectorAll(".tmc-brand__word-reveal"),
           ];
           const anchors = [
-            ...wordmark.querySelectorAll(".brand__word-anchor"),
+            ...wordmark.querySelectorAll(".tmc-brand__word-anchor"),
           ];
           return {
             revealWidths: reveals.map(
@@ -5432,16 +5435,16 @@ def test_header_eye_remains_circular_at_every_responsive_width(
         viewport=(viewport_width, 844),
         load_interactive_visuals=False,
     )
-    geometry = page.locator(".brand__mark--eye").evaluate(
+    geometry = page.locator(".tmc-brand__mark--eye").evaluate(
         """
         (mark) => {
           const rectangle = (element) => {
             const rect = element.getBoundingClientRect();
             return {width: rect.width, height: rect.height};
           };
-          const eye = mark.querySelector(".animated-eye-logo");
-          const surface = eye.querySelector(".animated-eye-logo__surface");
-          const outline = eye.querySelector(".animated-eye-logo__outline");
+          const eye = mark.querySelector(".tmc-eye");
+          const surface = eye.querySelector(".tmc-eye__surface");
+          const outline = eye.querySelector(".tmc-eye__outline");
           const surfaceStyle = getComputedStyle(surface);
           const outlineStyle = getComputedStyle(outline);
           return {
@@ -5518,7 +5521,7 @@ def test_very_narrow_header_preserves_eye_and_theme_toggle_geometry(
     )
 
     def read_geometry() -> dict[str, object]:
-        return page.locator(".site-header").evaluate(
+        return page.locator(".tmc-header").evaluate(
             """
             (header) => {
               const rectangle = (selector) => {
@@ -5535,8 +5538,8 @@ def test_very_narrow_header_preserves_eye_and_theme_toggle_geometry(
                 };
               };
               const theme = document.documentElement.dataset.theme;
-              const track = header.querySelector(".theme-toggle__track");
-              const thumb = header.querySelector(".theme-toggle__thumb");
+              const track = header.querySelector(".tmc-theme-toggle__track");
+              const thumb = header.querySelector(".tmc-theme-toggle__thumb");
               const headerRect = header.getBoundingClientRect();
               return {
                 viewportWidth: innerWidth,
@@ -5550,23 +5553,23 @@ def test_very_narrow_header_preserves_eye_and_theme_toggle_geometry(
                   centerX: headerRect.left + headerRect.width / 2,
                   centerY: headerRect.top + headerRect.height / 2,
                 },
-                brand: rectangle(".brand"),
-                actions: rectangle(".header-actions"),
-                eye: rectangle(".animated-eye-logo"),
-                track: rectangle(".theme-toggle__track"),
-                thumb: rectangle(".theme-toggle__thumb"),
+                brand: rectangle(".tmc-brand"),
+                actions: rectangle(".tmc-header-actions"),
+                eye: rectangle(".tmc-eye"),
+                track: rectangle(".tmc-theme-toggle__track"),
+                thumb: rectangle(".tmc-theme-toggle__thumb"),
                 activeIcon: rectangle(
                   theme === "dark"
-                    ? ".theme-toggle__moon"
-                    : ".theme-toggle__sun",
+                    ? ".tmc-theme-toggle__moon"
+                    : ".tmc-theme-toggle__sun",
                 ),
                 trackRadius: getComputedStyle(track).borderRadius,
                 thumbRadius: getComputedStyle(thumb).borderRadius,
                 toggleFlexShrink: getComputedStyle(
-                  header.querySelector(".theme-toggle"),
+                  header.querySelector(".tmc-theme-toggle"),
                 ).flexShrink,
                 eyeFlexShrink: getComputedStyle(
-                  header.querySelector(".brand__mark--eye"),
+                  header.querySelector(".tmc-brand__mark--eye"),
                 ).flexShrink,
               };
             }
@@ -5640,16 +5643,16 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
     """
 
     page = driver(stored_theme="light")
-    eye = page.locator(".animated-eye-logo")
-    surface = page.locator(".animated-eye-logo__surface")
-    outline = page.locator(".animated-eye-logo__outline")
-    pupil = page.locator(".animated-eye-logo__pupil")
+    eye = page.locator(".tmc-eye")
+    surface = page.locator(".tmc-eye__surface")
+    outline = page.locator(".tmc-eye__outline")
+    pupil = page.locator(".tmc-eye__pupil")
 
     initial_geometry = eye.evaluate(
         """
         (element) => {
-          const surface = element.querySelector(".animated-eye-logo__surface");
-          const pupil = element.querySelector(".animated-eye-logo__pupil");
+          const surface = element.querySelector(".tmc-eye__surface");
+          const pupil = element.querySelector(".tmc-eye__pupil");
           const eyeRect = element.getBoundingClientRect();
           const surfaceRect = surface.getBoundingClientRect();
           const pupilRect = pupil.getBoundingClientRect();
@@ -5674,8 +5677,8 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
     page.wait_for_function(
         """
         () => {
-          const surface = document.querySelector(".animated-eye-logo__surface");
-          const outline = document.querySelector(".animated-eye-logo__outline");
+          const surface = document.querySelector(".tmc-eye__surface");
+          const outline = document.querySelector(".tmc-eye__outline");
           return (
             getComputedStyle(surface).backgroundColor === "rgb(255, 255, 255)" &&
             getComputedStyle(outline).opacity === "1"
@@ -5718,8 +5721,8 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
     scrolled_geometry = eye.evaluate(
         """
         (element) => {
-          const surface = element.querySelector(".animated-eye-logo__surface");
-          const pupil = element.querySelector(".animated-eye-logo__pupil");
+          const surface = element.querySelector(".tmc-eye__surface");
+          const pupil = element.querySelector(".tmc-eye__pupil");
           const eyeRect = element.getBoundingClientRect();
           const surfaceRect = surface.getBoundingClientRect();
           const pupilRect = pupil.getBoundingClientRect();
@@ -5737,8 +5740,8 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
     page.wait_for_function(
         """
         () => {
-          const surface = document.querySelector(".animated-eye-logo__surface");
-          const outline = document.querySelector(".animated-eye-logo__outline");
+          const surface = document.querySelector(".tmc-eye__surface");
+          const outline = document.querySelector(".tmc-eye__outline");
           return (
             getComputedStyle(surface).backgroundColor === "rgb(255, 210, 10)" &&
             getComputedStyle(outline).opacity === "0"
@@ -5752,7 +5755,7 @@ def test_header_eye_whitens_with_a_black_outline_without_changing_geometry(
         """
         () =>
           getComputedStyle(
-            document.querySelector(".animated-eye-logo__surface"),
+            document.querySelector(".tmc-eye__surface"),
           ).backgroundColor === "rgb(255, 255, 255)"
         """
     )
@@ -5791,8 +5794,8 @@ def test_header_eye_gaze_speed_is_stable_when_animation_frames_are_delayed(
         sampled_position = page.evaluate(
             """
             async ({ frameCount }) => {
-              const eye = document.querySelector(".animated-eye-logo");
-              const pupil = document.querySelector(".animated-eye-logo__pupil");
+              const eye = document.querySelector(".tmc-eye");
+              const pupil = document.querySelector(".tmc-eye__pupil");
               const eyeRect = eye.getBoundingClientRect();
 
               window.dispatchEvent(
@@ -6127,7 +6130,7 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
         () => {
           const position = Number.parseFloat(
             getComputedStyle(
-              document.querySelector(".animated-eye-logo__pupil"),
+              document.querySelector(".tmc-eye__pupil"),
             ).getPropertyValue("--gaze-x"),
           );
           return position > 0.5 ? position : false;
@@ -6142,7 +6145,7 @@ def test_header_eye_tracks_pointer_inside_tentacle_iframe(
         (previousPosition) =>
           Number.parseFloat(
             getComputedStyle(
-              document.querySelector(".animated-eye-logo__pupil"),
+              document.querySelector(".tmc-eye__pupil"),
             ).getPropertyValue("--gaze-x"),
           ) > previousPosition + 0.5
         """,

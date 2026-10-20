@@ -1,6 +1,7 @@
 """Fault injection for OS socket failures that cannot reliably be triggered over TLS."""
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -9,21 +10,42 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from throng_api.relay import RelayServer, _Stream
+from throng_api.relay import RelayHTTPProtocol, RelayServer, _Stream
 
 pytestmark = pytest.mark.anyio
 
 
-async def test_broken_backend_upload_closes_the_socket():
+async def test_real_http_idle_timeout_closes_and_records_reason(caplog):
+    """The embedded HTTP parser records the actual idle close, including its reason."""
+    import uvicorn
+    from uvicorn.server import ServerState
+
+    config = uvicorn.Config(lambda scope, receive, send: None, lifespan="off", log_config=None)
+    config.load()
+    protocol = RelayHTTPProtocol(config, ServerState(), {})
+    transport = Mock()
+    transport.is_closing.return_value = False
+    protocol.transport = transport
+    caplog.set_level("INFO", logger="throng.transport")
+    protocol.timeout_keep_alive_handler()
+    transport.close.assert_called_once()
+    assert json.loads(caplog.records[-1].message) == {
+        "event": "relay_close",
+        "reason": "idle_timeout",
+    }
+
+
+async def test_broken_backend_upload_closes_the_socket(caplog):
     """An OS write failure must release the tunnel instead of retaining a blocked upload."""
     writer = SimpleNamespace(write=Mock(side_effect=BrokenPipeError), close=Mock())
     stream = _Stream(None, 1, None, writer)
     stream.incoming.put_nowait((b"request", 7))
     await stream.upload()
     writer.close.assert_called_once()
+    assert any('"reason":"backend_upload_error"' in row.message for row in caplog.records)
 
 
-async def test_broken_backend_download_cancels_upload_and_removes_stream():
+async def test_broken_backend_download_cancels_upload_and_removes_stream(caplog):
     """An OS read failure must remove the tunnel and cancel its otherwise waiting upload."""
     connection = SimpleNamespace(streams={})
     writer = SimpleNamespace(close=Mock())
@@ -36,6 +58,7 @@ async def test_broken_backend_download_cancels_upload_and_removes_stream():
     await asyncio.gather(upload, return_exceptions=True)
     assert upload.cancelled() and not connection.streams
     writer.close.assert_called_once()
+    assert any('"reason":"backend_download_error"' in row.message for row in caplog.records)
 
 
 async def test_tls_disconnect_error_does_not_retain_connection():

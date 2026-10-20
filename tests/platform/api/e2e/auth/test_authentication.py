@@ -16,6 +16,13 @@ async def test_authentication_matrix_covers_all_protected_operations(
     public = {
         ("GET", "/health/live"),
         ("GET", "/v1/agent-capabilities"),
+        ("GET", "/v1/github/oauth/callback"),
+        ("GET", "/v1/github/installations/callback"),
+        ("POST", "/v1/github/webhook"),
+        # Uses GitHub OIDC rather than platform tokens; adversarial claims are tested separately.
+        ("POST", "/v1/github/ci/routes/{route_id}/reserve"),
+        ("POST", "/v1/github/ci/routes/{route_id}/cancel"),
+        ("POST", "/v1/github/ci/routes/{route_id}/watch"),
         ("GET", "/health/ready"),
         ("POST", "/v1/users"),
         ("POST", "/v1/auth/login"),
@@ -177,6 +184,7 @@ async def test_every_session_bound_agent_operation_requires_a_live_session(
             "/agent/v1/unbind",
             "/agent/v1/diagnostics/{diagnostic_id}",
             "/agent/v1/benchmark-results",
+            "/agent/v1/tasks/{task_id}/receipt",
         }:
             continue
         kwargs = {
@@ -190,4 +198,7 @@ async def test_every_session_bound_agent_operation_requires_a_live_session(
             kwargs["headers"]["X-Agent-Session"] = session_id
         response = await client.request(case["method"], case["url"], **kwargs)
         assert response.status_code == 409, (mode, case["method"], case["template"], response.text)
-        assert response.json() == {"detail": "Agent session expired; a clean start is required"}
+        assert response.json() == {
+            "detail": "Agent session expired; a clean start is required",
+            "code": "session_expired",
+        }

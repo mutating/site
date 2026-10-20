@@ -93,6 +93,12 @@ def tentacle_fingerprint_builds(
     source = tmp_path_factory.mktemp("tentacle-fingerprint") / "site"
     content = source / "content"
     theme = source / "themes" / "mutating"
+    # Preserve the monorepo mounts in this otherwise isolated Hugo fixture.
+    shared_ui = source.parent / "packages" / "ui"
+    for directory in ("dist", "hugo"):
+        shutil.copytree(
+            REPOSITORY_ROOT / "packages" / "ui" / directory, shared_ui / directory,
+        )
     content.mkdir(parents=True)
     shutil.copy2(PROJECT_ROOT / "hugo.toml", source / "hugo.toml")
     shutil.copy2(PROJECT_ROOT / "content" / "_index.md", content / "_index.md")

@@ -23,14 +23,16 @@ from throng_api.execution import (
     check_new_work,
     clean_start,
     complete_task,
+    fingerprint,
     remember,
     replay,
     task_for_agent,
 )
-from throng_api.models import AgentTask, Artifact, Command, Isolate, TaskArtifact
+from throng_api.models import AgentTask, Artifact, CIReservation, Command, Isolate, TaskArtifact
 from throng_api.schemas import Claim, SessionStart, TaskComplete
 from throng_api.security import agent_auth, agent_credential_scheme, renew_agent
 from throng_api.serialization import public
+from throng_api.transport import ProtocolError
 
 router = APIRouter(
     prefix="/agent/v1",
@@ -51,6 +53,39 @@ AGENT_SESSION_DOCS = {
         }
     ]
 }
+
+
+async def delivery_payload(session, task, request):
+    """Decrypt runner configuration only for its authenticated assigned agent."""
+    result = public(task)
+    if task.kind != "run":
+        return result
+    reservation = await session.scalar(
+        select(CIReservation).where(CIReservation.command_id == task.command_id)
+    )
+    if reservation is None:
+        return result
+    if task.status in TASK_TERMINAL:
+        return result
+    now = request.app.state.clock()
+    from throng_api.ci import creator_authorized
+    from throng_api.models import CIRoute
+
+    if (
+        request.app.state.github is None
+        or not await creator_authorized(session, await session.get(CIRoute, reservation.route_id))
+        or not reservation.credentials
+        or reservation.status not in {"preparing", "ready", "selected", "running"}
+        or reservation.expires_at <= now
+        or (reservation.status in {"preparing", "ready"} and reservation.deadline <= now)
+    ):
+        return None
+    credentials = request.app.state.github.unseal(reservation.credentials)
+    result["payload"] = {
+        **task.payload,
+        "env": {**task.payload.get("env", {}), "POWERCELL_GITHUB_JIT_CONFIG": credentials["jit"]},
+    }
+    return result
 
 
 def session_info(computer, now):
@@ -120,6 +155,27 @@ async def claim(data: Claim, request: Request):
     settings = request.app.state.settings
     until = time.monotonic() + min(data.wait_seconds, settings.long_poll_max_seconds)
     while True:
+        # An empty poll doesn't need the global mutation lock. Recheck under the
+        # write lock before dispatching; the read never grants execution rights.
+        async with request.app.state.db.read() as session:
+            computer = await agent_auth(session, request)
+            now = request.app.state.clock()
+            pending = await session.scalar(
+                select(AgentTask.id)
+                .where(
+                    AgentTask.computer_id == computer.id,
+                    AgentTask.session_id == computer.session_id,
+                    AgentTask.status.in_(["pending", "dispatched"]),
+                    AgentTask.deadline > now,
+                )
+                .limit(1)
+            )
+            response = {**session_info(computer, now), "tasks": []}
+        if pending is None:
+            if time.monotonic() >= until or await request.is_disconnected():
+                return response
+            await asyncio.sleep(min(settings.long_poll_interval, max(0, until - time.monotonic())))
+            continue
         # Release the transaction before waiting; works across processes/restarts.
         async with request.app.state.db.write() as session:
             computer = await agent_auth(session, request)
@@ -164,10 +220,16 @@ async def claim(data: Claim, request: Request):
                     .limit(data.limit)
                 )
             ).all()
+            delivered = []
             for task in tasks:
+                payload = await delivery_payload(session, task, request)
+                if payload is None:
+                    continue
                 task.status = "dispatched"
                 task.delivered_at = task.delivered_at or now
-            response = {**session_info(computer, now), "tasks": [public(task) for task in tasks]}
+                payload.update(status=task.status, delivered_at=task.delivered_at)
+                delivered.append(payload)
+            response = {**session_info(computer, now), "tasks": delivered}
         if tasks or time.monotonic() >= until:
             return response
         if await request.is_disconnected():
@@ -179,7 +241,11 @@ async def claim(data: Claim, request: Request):
 async def get_task(task_id: UUID, request: Request):
     async with request.app.state.db.read() as session:
         computer = await agent_auth(session, request)
-        return public(await task_for_agent(session, task_id, computer))
+        task = await task_for_agent(session, task_id, computer)
+        result = await delivery_payload(session, task, request)
+        if result is None:
+            raise HTTPException(409, "CI task no longer accepts delivery")
+        return result
 
 
 @router.post("/tasks/{task_id}/ack", response_model=out.AgentTask, openapi_extra=AGENT_SESSION_DOCS)
@@ -189,11 +255,11 @@ async def acknowledge(task_id: UUID, request: Request):
         task = await task_for_agent(session, task_id, computer)
         now = request.app.state.clock()
         if task.status in TASK_TERMINAL or task.delivered_at is None or task.deadline <= now:
-            raise HTTPException(409, "Task is not awaiting acknowledgement")
+            raise ProtocolError("task_not_awaiting_ack", "Task is not awaiting acknowledgement")
         task.status = "accepted"
         if task.accepted_at is None:
             if task.kind in {"create", "run", "snapshot"} and not computer.can_start_work:
-                raise HTTPException(409, "Agent is not accepting work")
+                raise ProtocolError("agent_not_accepting", "Agent is not accepting work")
             check_new_work(await session.get(Isolate, task.isolate_id), task.kind, now)
         task.accepted_at = task.accepted_at or now
         return public(task)
@@ -213,11 +279,11 @@ async def started(task_id: UUID, request: Request):
             or task.delivered_at is None
             or task.deadline <= now
         ):
-            raise HTTPException(409, "Task cannot be started")
+            raise ProtocolError("task_not_startable", "Task cannot be started")
         command = await session.get(Command, task.command_id)
         if command.started_at is None:
             if not computer.can_start_work:
-                raise HTTPException(409, "Agent is not accepting work")
+                raise ProtocolError("agent_not_accepting", "Agent is not accepting work")
             check_new_work(await session.get(Isolate, task.isolate_id), task.kind, now)
             command.started_at = now
             if command.status != "cancel_requested":
@@ -244,6 +310,33 @@ async def complete(task_id: UUID, data: TaskComplete, request: Request):
         return public(task)
 
 
+@router.post("/tasks/{task_id}/receipt", response_model=out.TaskReceipt)
+async def receipt(
+    task_id: UUID,
+    data: TaskComplete,
+    request: Request,
+    original_session: UUID = Header(alias="X-Agent-Session"),
+):
+    """Reconcile an exact result without renewing or reviving its original session."""
+    async with request.app.state.db.read() as session:
+        computer = await agent_auth(session, request, require_session=False)
+        task = await session.get(AgentTask, str(task_id))
+        if not task or task.computer_id != computer.id or task.session_id != str(original_session):
+            raise HTTPException(404, "Task not assigned to this computer and session")
+        accepted = task.completion_hash is not None
+        if accepted and task.completion_hash != fingerprint(data.model_dump()):
+            raise ProtocolError("completion_conflict", "Task already has a different completion")
+        now = request.app.state.clock()
+        active = bool(
+            computer.online
+            and computer.session_id == task.session_id
+            and computer.lease_expires_at > now
+            and task.deadline > now
+            and task.status not in TASK_TERMINAL
+        )
+        return {"accepted": accepted, "active": active, "task_status": task.status}
+
+
 async def upload_target(session, request, task_id, purpose):
     computer = await agent_auth(session, request)
     task = await task_for_agent(session, task_id, computer)
@@ -253,7 +346,7 @@ async def upload_target(session, request, task_id, purpose):
     if not permitted or task.status in TASK_TERMINAL or task.delivered_at is None:
         raise HTTPException(409, "Artifact is not allowed for this task")
     if task.deadline <= request.app.state.clock():
-        raise HTTPException(409, "Task deadline has expired")
+        raise ProtocolError("task_expired", "Task deadline has expired")
     return task
 
 

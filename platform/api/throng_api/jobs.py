@@ -14,12 +14,27 @@ from throng_api.execution import (
     replay,
     request_cancel,
 )
-from throng_api.models import AgentTask, Artifact, Command, CommandResult, Computer, Isolate
+from throng_api.models import (
+    AgentTask,
+    Artifact,
+    CIReservation,
+    Command,
+    CommandResult,
+    Computer,
+    Isolate,
+)
 from throng_api.schemas import CommandCreate, IDs, IsolateCreate, PaginationOffset
 from throng_api.security import access_token_scheme, authenticate, owned, owned_filter, owner_values
 from throng_api.serialization import public
 
 router = APIRouter(prefix="/v1", tags=["execution"], dependencies=[Depends(access_token_scheme)])
+
+
+async def writable_isolate(session, isolate_id, principal):
+    isolate = await owned(session, Isolate, isolate_id, principal)
+    if await session.scalar(select(CIReservation.id).where(CIReservation.isolate_id == isolate.id)):
+        raise HTTPException(409, "CI isolates are managed by Actions")
+    return isolate
 
 
 @router.post("/isolates", status_code=202, response_model=out.Isolate)
@@ -97,7 +112,7 @@ async def get_isolate(isolate_id: UUID, request: Request):
 async def renew_isolate(isolate_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "execute")
-        isolate = await owned(session, Isolate, isolate_id, principal)
+        isolate = await writable_isolate(session, isolate_id, principal)
         now = request.app.state.clock()
         if isolate.status not in {"provisioning", "ready"} or isolate.expires_at <= now:
             raise HTTPException(409, "Isolate is no longer renewable")
@@ -109,7 +124,7 @@ async def renew_isolate(isolate_id: UUID, request: Request):
 async def delete_isolate(isolate_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "execute")
-        isolate = await owned(session, Isolate, isolate_id, principal)
+        isolate = await writable_isolate(session, isolate_id, principal)
         await destroy_isolate(
             session, isolate, request.app.state.clock(), request.app.state.settings
         )
@@ -122,7 +137,7 @@ async def create_command(
 ):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "execute")
-        isolate = await owned(session, Isolate, isolate_id, principal)
+        isolate = await writable_isolate(session, isolate_id, principal)
         operation = f"command:{isolate.id}"
         payload = data.model_dump(mode="json")
         previous = await replay(session, principal.key, operation, idempotency_key, payload)
@@ -153,11 +168,14 @@ async def create_command(
         return public(command)
 
 
-async def command_for_user(session, principal, command_id):
+async def command_for_user(session, principal, command_id, *, mutate=False):
     command = await session.get(Command, str(command_id))
     if not command:
         raise HTTPException(404, "Command not found")
-    await owned(session, Isolate, command.isolate_id, principal)
+    if mutate:
+        await writable_isolate(session, command.isolate_id, principal)
+    else:
+        await owned(session, Isolate, command.isolate_id, principal)
     return command
 
 
@@ -270,7 +288,8 @@ async def cancel_commands(data: IDs, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "execute")
         commands = [
-            await command_for_user(session, principal, key) for key in dict.fromkeys(data.ids)
+            await command_for_user(session, principal, key, mutate=True)
+            for key in dict.fromkeys(data.ids)
         ]
         for command in commands:
             await request_cancel(
@@ -301,7 +320,7 @@ async def command_result(command_id: UUID, request: Request):
 async def snapshot(isolate_id: UUID, request: Request, idempotency_key: str = Header()):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "execute")
-        isolate = await owned(session, Isolate, isolate_id, principal)
+        isolate = await writable_isolate(session, isolate_id, principal)
         operation = f"snapshot:{isolate.id}"
         previous = await replay(session, principal.key, operation, idempotency_key, {})
         if previous:

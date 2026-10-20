@@ -1,0 +1,39 @@
+{
+  "name": "@mutating/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared visual foundation for The Mutating Company",
+  "type": "module",
+  "files": ["dist", "hugo", "README.md"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react.js" },
+    "./styles.css": "./dist/styles/index.css",
+    "./tokens.css": "./dist/styles/tokens.css",
+    "./fonts.css": "./dist/styles/fonts.css",
+    "./styles/*": "./dist/styles/*",
+    "./assets/*": "./dist/assets/*",
+    "./presets/*": "./dist/presets/*"
+  },
+  "sideEffects": ["**/*.css"],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite --host 127.0.0.1 --port 18120 --strictPort",
+    "test": "npm run typecheck && npm run build && node --test ../../tests/ui/package.test.mjs && playwright test"
+  },
+  "peerDependencies": { "react": "^19.0.0" },
+  "peerDependenciesMeta": { "react": { "optional": true } },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  }
+}

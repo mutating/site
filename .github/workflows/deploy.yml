@@ -63,6 +63,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes ripgrep rsync sshpass
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Build the shared header before Hugo
+        run: npm ci && npm run build:ui
+
       - name: Build the production site
         run: |
           set -euo pipefail
@@ -120,16 +129,10 @@ jobs:
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$'
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^cache-control: no-cache\r?$'
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: package-lock.json
-
       - name: Build the production platform web UI
         env:
           VITE_SITE_ORIGIN: https://mutating.tech
-        run: npm ci && npm run build:web
+        run: npm run build:web
 
       - name: Upload and activate the shared release over SSH
         env:
@@ -195,12 +198,15 @@ jobs:
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$'
           printf '%s' "$root_headers" | rg --quiet --ignore-case '^cache-control: no-cache\r?$'
 
-          css_path="$(find site/public/css -type f -name '*.css' -print -quit)"
-          css_url="https://mutating.tech/${css_path#site/public/}"
-          css_headers="$(curl --silent --show-error --dump-header - --output /dev/null --header 'Accept-Encoding: gzip' --max-time 30 "$css_url")"
-          printf '%s' "$css_headers" | rg --quiet --ignore-case '^content-encoding: gzip\r?$'
-          printf '%s' "$css_headers" | rg --quiet --ignore-case '^vary: Accept-Encoding\r?$'
-          printf '%s' "$css_headers" | rg --quiet --ignore-case '^cache-control: public, max-age=31536000, immutable\r?$'
+          mapfile -t css_paths < <(rg --files site/public/css site/public/ui/styles | rg '\.[0-9a-f]{64}\.css$')
+          [[ "${#css_paths[@]}" -ge 3 ]]
+          for css_path in "${css_paths[@]}"; do
+            css_url="https://mutating.tech/${css_path#site/public/}"
+            css_headers="$(curl --fail --silent --show-error --dump-header - --output /dev/null --header 'Accept-Encoding: gzip' --max-time 30 "$css_url")"
+            printf '%s' "$css_headers" | rg --quiet --ignore-case '^content-encoding: gzip\r?$'
+            printf '%s' "$css_headers" | rg --quiet --ignore-case '^vary: Accept-Encoding\r?$'
+            printf '%s' "$css_headers" | rg --quiet --ignore-case '^cache-control: public, max-age=31536000, immutable\r?$'
+          done
 
           image_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/og.png)"
           if printf '%s' "$image_headers" | rg --quiet --ignore-case 'immutable'; then

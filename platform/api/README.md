@@ -465,6 +465,16 @@ THRONG_DATABASE_URL='postgresql+asyncpg://user:password@localhost/throng' uv run
 Это создаёт схему в целевой БД. Перенос существующих данных SQLite требует отдельной
 процедуры; смена URL сама по себе данные не переносит.
 
+## GitHub Actions
+
+API поддерживает подключение GitHub App, привязки workflow к личным и
+организационным Power Cells и одноразовые JIT runners. Нет свободного Mac —
+немедленная ошибка routing, без резервного запуска на GitHub.
+Конфигурация, endpoints, модель доступа, генерация workflow и ограничения
+описаны в [GitHub Actions](docs/github.md). Перед публичным использованием
+требуются серверные credentials и проверка настоящего job: локальные HTTP-тесты
+не подтверждают исполнение GitHub workflow внутри VM.
+
 ## Проверки
 
 ```sh

@@ -19,9 +19,13 @@ from throng_api import (
     avatars,
     benchmarks,
     browser,
+    ci,
+    ci_controller,
     computers,
     controller,
     enrollment,
+    github,
+    github_webhook,
     invitations,
     jobs,
     organization_directory,
@@ -32,6 +36,7 @@ from throng_api import (
 from throng_api.config import Settings
 from throng_api.database import Database
 from throng_api.models import utcnow
+from throng_api.transport import ProtocolError, RequestLog
 
 
 def create_app(settings: Settings | None = None, *, clock=utcnow):
@@ -42,6 +47,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         settings.storage_path.mkdir(parents=True, exist_ok=True)
         app.state.db = Database(settings.database_url)
         task = None
+        ci_task = None
         relay_server = None
         stop = asyncio.Event()
         try:
@@ -51,6 +57,9 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
                 await relay_server.start()
             if settings.controller_enabled:
                 task = asyncio.create_task(controller.run(app, stop), name="throng-controller")
+                ci_task = asyncio.create_task(
+                    ci_controller.run(app, stop), name="github-ci-controller"
+                )
             yield
         finally:
             if relay_server:
@@ -60,6 +69,9 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
                 # Cancelling an in-flight SQLite statement can retain its write lock.
                 stop.set()
                 await task
+            if ci_task:
+                stop.set()
+                await ci_task
             await app.state.db.close()
 
     app = FastAPI(
@@ -98,8 +110,17 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
     app.state.powercell_authority = enrollment.configure_authority(settings)
     app.state.powercell_relay = relay.configuration(settings)
     app.state.settings = settings
+    app.state.github = github.configure(settings)
     app.state.clock = clock
     app.state.last_controller_tick = None
+    app.add_middleware(RequestLog)
+
+    @app.exception_handler(ProtocolError)
+    async def protocol_error(request, exception):
+        return JSONResponse(
+            status_code=exception.status_code,
+            content={"detail": exception.detail, "code": exception.code},
+        )
 
     app.add_middleware(browser.BrowserSessionMiddleware, settings=settings)
     app.add_middleware(
@@ -187,6 +208,11 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         powercell.user_router,
         enrollment.router,
         enrollment.public_router,
+        github.router,
+        github.public_router,
+        ci.router,
+        ci.public_router,
+        github_webhook.router,
         acme.router,
         resources.router,
     ):

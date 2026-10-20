@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     powercell_relay_certificate: Path | None = None
     powercell_relay_key: Path | None = None
     powercell_relay_host: str = "127.0.0.1"
+    powercell_relay_keep_alive_seconds: int = Field(default=30, ge=5, le=300)
     enrollment_seconds: int = Field(default=3600, ge=60, le=86400)
     device_certificate_days: int = Field(default=365, ge=1, le=3650)
     device_proof_seconds: int = Field(default=300, ge=30, le=600)
@@ -49,3 +50,13 @@ class Settings(BaseSettings):
     max_diagnostic_bytes: int = Field(default=8 * 1024 * 1024, ge=1, le=8 * 1024 * 1024)
     max_computer_diagnostics_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
     diagnostic_retention_days: int = Field(default=30, ge=1, le=365)
+
+    github_app_id: int | None = Field(default=None, gt=0)
+    github_app_slug: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,100}$")
+    github_client_id: str | None = None
+    github_client_secret: str | None = Field(default=None, repr=False)
+    github_private_key_path: Path | None = None
+    github_webhook_secret: str | None = Field(default=None, min_length=32, repr=False)
+    github_token_key: str | None = Field(default=None, repr=False)
+    github_public_api_url: str = "https://api.mutating.tech"
+    github_dashboard_url: str = "https://platform.mutating.tech"

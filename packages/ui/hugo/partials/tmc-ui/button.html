@@ -1,0 +1,11 @@
+{{- $variant := .variant | default "primary" -}}
+{{- if not (in (slice "primary" "secondary" "dark") $variant) -}}
+  {{- errorf "tmc-ui/button: unsupported variant %q" $variant -}}
+{{- end -}}
+{{- $class := printf "tmc-button tmc-button--%s" $variant -}}
+{{- if eq .size "compact" -}}{{- $class = printf "%s tmc-button--compact" $class -}}{{- end -}}
+{{- with .href -}}
+  <a class="{{ $class }}" href="{{ . }}">{{ $.text }}</a>
+{{- else -}}
+  <button class="{{ $class }}" type="{{ .type | default "button" }}"{{ if .disabled }} disabled{{ end }}>{{ .text }}</button>
+{{- end -}}

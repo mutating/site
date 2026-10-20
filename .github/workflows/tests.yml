@@ -15,6 +15,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ui:
+    name: Shared UI and site header
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: peaceiris/actions-hugo@v3.2.0
+        with:
+          hugo-version: "0.164.0"
+          extended: true
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npm run test:ui
+      - run: npm run test:site:header
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: shared-ui-playwright
+          path: |
+            packages/ui/test-results
+            tests/site/header/test-results
+
   seo_contracts:
     name: SEO contracts
     runs-on: ubuntu-latest
@@ -36,6 +62,12 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements_dev.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci && npm run build:ui
 
       - name: Install Python test dependencies
         run: python -m pip install -r requirements_dev.txt
@@ -84,6 +116,12 @@ jobs:
       - name: Create the test virtual environment
         run: python -m venv venv
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci && npm run build:ui
+
       - name: Install Python test dependencies
         run: |
           venv/bin/python -m pip install --upgrade pip
@@ -108,6 +146,7 @@ jobs:
     needs:
       - pytest
       - seo_contracts
+      - ui
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -116,9 +155,11 @@ jobs:
         env:
           TEST_SHARDS_RESULT: ${{ needs.pytest.result }}
           SEO_CONTRACTS_RESULT: ${{ needs.seo_contracts.result }}
+          HEADER_RESULT: ${{ needs.ui.result }}
         run: |
           test "$TEST_SHARDS_RESULT" = "success"
           test "$SEO_CONTRACTS_RESULT" = "success"
+          test "$HEADER_RESULT" = "success"
 
   api_sqlite:
     name: API SQLite (Python ${{ matrix.python }})
@@ -226,3 +267,7 @@ jobs:
           path: |
             platform/web/playwright-report
             platform/web/test-results
+
+  network_recovery:
+    name: Native network recovery
+    uses: ./.github/workflows/network-recovery.yml

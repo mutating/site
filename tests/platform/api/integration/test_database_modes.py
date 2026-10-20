@@ -8,6 +8,7 @@ from uuid import uuid4
 import anyio
 import pytest
 from alembic import command as alembic
+from alembic.script import ScriptDirectory
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.schema import CreateTable
@@ -109,13 +110,17 @@ async def test_alembic_cli_reads_environment_database_url(
     stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
     assert process.returncode == 0, (stdout.decode(), stderr.decode())
     async with migration_database.engine.connect() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+            ScriptDirectory.from_config(alembic_config).get_current_head()
+        )
 
 
 async def test_offline_migration_fails_before_emitting_partial_sql(
     cli_environment, migration_database
 ):
     """Unsupported offline generation fails before any DDL is printed, rather than emitting a misleading partial migration script."""
+    async with migration_database.engine.connect() as connection:
+        before = await connection.scalar(text("SELECT version_num FROM alembic_version"))
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
@@ -137,4 +142,4 @@ async def test_offline_migration_fails_before_emitting_partial_sql(
         "CREATE TABLE" not in output and "ALTER TABLE" not in output and "Traceback" not in output
     )
     async with migration_database.engine.connect() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == before

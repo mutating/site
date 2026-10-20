@@ -306,3 +306,51 @@ bash -n deploy/upload.sh deploy/deploy.sh deploy/activate.sh
 обоих компонентов при завершении одного. Системный nginx и рабочая база не
 затрагиваются. Для сетевой проверки нужен собранный `platform/web/dist/`, nginx и
 OpenSSL; она запускается в группе web общего CI после сборки.
+
+## GitHub App через Ansible
+
+Секреты GitHub устанавливаются playbook, исходный JSON хранится вне checkout:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i 'SERVER_IP,' infra/playbooks/setup-github-actions.yml -u root \
+  -e github_credentials_file=/private/path/github-app.json
+```
+
+Схема JSON: `app_id`, `slug`, `client_id`, `client_secret`, `webhook_secret`,
+`token_key`, `private_key_path` (локальный PEM), `public_api_url`, `dashboard_url`.
+Для текущего стенда файл находится в защищённом локальном каталоге
+`~/.config/mutating/server-dev/github-app.json`, права `0600`.
+Пароль подключения можно передать через `--ask-pass` либо отдельный приватный
+vars-файл; он не входит в репозиторий.
+
+Playbook сначала требует релиз с GitHub API, затем копирует App key в
+`/etc/throng/github/app.pem` (`root:throng`, `0640`), добавляет управляемый блок в
+существующий `/etc/throng/throng.env` с резервной копией и перезапускает сервис
+только при изменении конфигурации. Параметры БД и Power Cells сохраняются.
+Несовпадение уже установленного App ID или постоянного Fernet key останавливает
+playbook: их замена требует отдельной миграции OAuth credentials. Все операции
+с секретами выполняются с `no_log` и без diff. Повторный запуск должен быть
+идемпотентным.
+
+Для подготовленного локально архива релиза предусмотрен
+`infra/playbooks/deploy-platform.yml`. В архив входят код и собранный
+`platform/web/dist`, исключаются `.git`, `.env*`, виртуальные окружения,
+node_modules, данные и тестовые результаты. Передайте `release_archive` и новый
+`release_id`; он должен соответствовать `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`.
+При обновлении только API/кабинета можно передать `release_reuse_static_site=true`:
+в архиве тогда не должно быть `site/public`, и playbook сохранит статическую
+сборку действующего релиза. В архиве должен присутствовать каталог `site`.
+
+Playbook распаковывает код в новый каталог, готовит окружение от deployment user
+и вызывает существующий root-owned activation wrapper. Wrapper сохраняет SQLite
+backup, применяет миграции, проверяет готовность и не активирует релиз, если за
+время подготовки изменился `/opt/mutating/current`. Установку credentials App
+выполняйте после успешного обновления кода.
+
+16 октября 2026 года этими playbook развёрнут релиз
+`github-ci-20261016-163116` и установлен тестовый App `mutating-power-cells-dev`.
+Повторное применение `setup-github-actions.yml` завершилось с `changed=0`, без
+перезапуска сервиса. GitHub подтвердил HTTP 202 при повторной доставке `ping`
+и `workflow_run`. Подробности живой проверки и оставшееся ограничение GitHub
+billing — в [инструкции стенда](github-actions-dev-setup.md).

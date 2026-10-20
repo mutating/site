@@ -1,0 +1,21 @@
+{{- $reload := eq .animation.activation "reload-home" -}}
+{{- $href := partial "tmc-ui/internal/option.html" (slice . "href" "/") -}}
+{{- $label := partial "tmc-ui/internal/option.html" (slice . "label" "The Mutating Company") -}}
+{{- if $reload -}}
+<div class="tmc-brand" role="link" tabindex="0" data-home-url="{{ $href }}" aria-label="{{ $label }}" data-tmc-brand-options="{{ .animation | jsonify }}">
+{{- else -}}
+<a class="tmc-brand" href="{{ $href }}"{{ if .animation.expandOnFocus }} tabindex="0"{{ end }} aria-label="{{ $label }}"{{ with .animation }} data-tmc-brand-options="{{ . | jsonify }}"{{ end }}>
+{{- end }}
+  <span class="tmc-brand__mark tmc-brand__mark--eye" aria-hidden="true">
+    <span class="tmc-eye"><span class="tmc-eye__clip">
+      <span class="tmc-eye__outline"></span><span class="tmc-eye__surface"></span><span class="tmc-eye__pupil"></span>
+    </span></span>
+  </span>
+  <span class="tmc-brand__wordmark-stage" data-can-expand="true" aria-hidden="true">
+    <span class="tmc-brand__wordmark">
+      <span class="tmc-brand__word-part tmc-brand__word-part--t"><span class="tmc-brand__word-anchor">T</span><span class="tmc-brand__word-reveal" data-text="he">he</span></span>
+      <span class="tmc-brand__word-part tmc-brand__word-part--m"><span class="tmc-brand__word-anchor">M</span><span class="tmc-brand__word-reveal" data-text="utating">utating</span></span>
+      <span class="tmc-brand__word-part"><span class="tmc-brand__word-anchor">C</span><span class="tmc-brand__word-reveal" data-text="ompany">ompany</span></span>
+    </span>
+  </span>
+{{ if $reload }}</div>{{ else }}</a>{{ end }}

@@ -1,3 +1,4 @@
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from throng_api.models import Coordination
+from throng_api.transport import db_wait
 
 
 class Database:
@@ -35,11 +37,15 @@ class Database:
         async with self.sessions() as session, session.begin():
             # This MUST precede reads: avoids SQLite read-to-write upgrade races and
             # also takes a PostgreSQL row lock. No network IO while this lock is held.
+            started = time.monotonic()
             result = await session.execute(
                 update(Coordination)
                 .where(Coordination.id == 1)
                 .values(revision=Coordination.revision + 1)
             )
+            if (timing := db_wait.get()) is not None:
+                timing[0] += time.monotonic() - started
+                timing[1] += 1
             if result.rowcount != 1:
                 raise RuntimeError("Database is not initialized; run throng-api migrate")
             yield session
