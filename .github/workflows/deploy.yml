@@ -105,7 +105,7 @@ jobs:
             local headers
             local location
             headers="$(curl --silent --show-error --head --max-time 30 "$source_url")"
-            printf '%s' "$headers" | rg --quiet '^HTTP/[^ ]+ 308'
+            rg --quiet '^HTTP/[^ ]+ 308' <<< "$headers"
             location="$(printf '%s' "$headers" | rg --ignore-case '^location: ' | cut -d' ' -f2- | tr -d '\r')"
             [[ "$location" == "$expected_location" ]]
           }
@@ -114,12 +114,12 @@ jobs:
           assert_redirect "http://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
           assert_redirect "https://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
 
-          printf '' | openssl s_client \
+          printf '' | timeout --kill-after=5s 30s openssl s_client \
             -connect www.mutating.tech:443 \
             -servername www.mutating.tech \
             2>/dev/null | openssl x509 -noout -checkhost www.mutating.tech
 
-          alpn="$(printf '' | openssl s_client \
+          alpn="$(printf '' | timeout --kill-after=5s 30s openssl s_client \
             -connect mutating.tech:443 \
             -servername mutating.tech \
             -alpn h2 \
@@ -127,8 +127,8 @@ jobs:
           [[ "$alpn" == "h2" ]]
 
           root_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/)"
-          printf '%s' "$root_headers" | rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$'
-          printf '%s' "$root_headers" | rg --quiet --ignore-case '^cache-control: no-cache\r?$'
+          rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$' <<< "$root_headers"
+          rg --quiet --ignore-case '^cache-control: no-cache\r?$' <<< "$root_headers"
 
       - name: Build the production platform web UI
         env:
@@ -166,6 +166,8 @@ jobs:
         timeout-minutes: 5
         run: |
           set -euo pipefail
+          trap 'echo "::error title=Deployed content contract failed::line $LINENO: $BASH_COMMAND"' ERR
+          echo 'Checking public HTTP statuses, redirects and TLS.'
 
           assert_status() {
             local expected="$1"
@@ -189,7 +191,7 @@ jobs:
             local headers
             local location
             headers="$(curl --silent --show-error --head --max-time 30 "$source_url")"
-            printf '%s' "$headers" | rg --quiet '^HTTP/[^ ]+ 308'
+            rg --quiet '^HTTP/[^ ]+ 308' <<< "$headers"
             location="$(printf '%s' "$headers" | rg --ignore-case '^location: ' | cut -d' ' -f2- | tr -d '\r')"
             [[ "$location" == "$expected_location" ]]
           }
@@ -198,39 +200,43 @@ jobs:
           assert_redirect "http://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
           assert_redirect "https://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
 
-          printf '' | openssl s_client \
+          printf '' | timeout --kill-after=5s 30s openssl s_client \
             -connect www.mutating.tech:443 \
             -servername www.mutating.tech \
             2>/dev/null | openssl x509 -noout -checkhost www.mutating.tech
 
-          alpn="$(printf '' | openssl s_client \
+          alpn="$(printf '' | timeout --kill-after=5s 30s openssl s_client \
             -connect mutating.tech:443 \
             -servername mutating.tech \
             -alpn h2 \
             2>/dev/null | sed -n 's/^ALPN protocol: //p')"
           [[ "$alpn" == "h2" ]]
 
+          echo 'Checking canonical URL and robots.txt.'
           root_html="$(curl --fail --silent --show-error --max-time 30 https://mutating.tech/)"
           robots="$(curl --fail --silent --show-error --max-time 30 https://mutating.tech/robots.txt)"
-          printf '%s' "$root_html" | rg --quiet '<link rel=?"?canonical"? href=?"?https://mutating\.tech/"?>'
+          rg --quiet '<link rel=?"?canonical"? href=?"?https://mutating\.tech/"?>' <<< "$root_html"
           [[ "$robots" == *'Sitemap: https://mutating.tech/sitemap.xml'* ]]
 
           root_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/)"
-          printf '%s' "$root_headers" | rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$'
-          printf '%s' "$root_headers" | rg --quiet --ignore-case '^cache-control: no-cache\r?$'
+          rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$' <<< "$root_headers"
+          rg --quiet --ignore-case '^cache-control: no-cache\r?$' <<< "$root_headers"
 
+          echo 'Checking fingerprinted CSS availability, compression and caching.'
           mapfile -t css_paths < <(rg --files site/public/css site/public/ui/styles | rg '\.[0-9a-f]{64}\.css$')
           [[ "${#css_paths[@]}" -ge 3 ]]
           for css_path in "${css_paths[@]}"; do
             css_url="https://mutating.tech/${css_path#site/public/}"
+            echo "Checking $css_url"
             css_headers="$(curl --fail --silent --show-error --dump-header - --output /dev/null --header 'Accept-Encoding: gzip' --max-time 30 "$css_url")"
-            printf '%s' "$css_headers" | rg --quiet --ignore-case '^content-encoding: gzip\r?$'
-            printf '%s' "$css_headers" | rg --quiet --ignore-case '^vary: Accept-Encoding\r?$'
-            printf '%s' "$css_headers" | rg --quiet --ignore-case '^cache-control: public, max-age=31536000, immutable\r?$'
+            rg --quiet --ignore-case '^content-encoding: gzip\r?$' <<< "$css_headers"
+            rg --quiet --ignore-case '^vary: Accept-Encoding\r?$' <<< "$css_headers"
+            rg --quiet --ignore-case '^cache-control: public, max-age=31536000, immutable\r?$' <<< "$css_headers"
           done
 
+          echo 'Checking stable image cache policy.'
           image_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/og.png)"
-          if printf '%s' "$image_headers" | rg --quiet --ignore-case 'immutable'; then
+          if rg --quiet --ignore-case 'immutable' <<< "$image_headers"; then
             echo "Stable image URLs must not use immutable caching." >&2
             exit 1
           fi
@@ -239,6 +245,8 @@ jobs:
         timeout-minutes: 3
         run: |
           set -euo pipefail
+          trap 'echo "::error title=API and platform verification failed::line $LINENO: $BASH_COMMAND"' ERR
+          echo 'Checking API readiness, platform routes, runtime configuration and CORS.'
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/health/ready
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/v1/agent-capabilities --output /dev/null
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 30 https://api.mutating.tech/openapi.json --output /dev/null
@@ -262,12 +270,12 @@ jobs:
             --write-out '%{http_code}' https://api.mutating.tech/v1/auth/session)"
           [[ "$api_session_status" == "401" ]]
           dashboard_config="$(curl --fail --silent --show-error --max-time 30 https://platform.mutating.tech/config.js)"
-          printf '%s' "$dashboard_config" | rg --quiet '^window\.__TMC_API_URL__ = "https://api\.mutating\.tech/v1";$'
+          rg --quiet '^window\.__TMC_API_URL__ = "https://api\.mutating\.tech/v1";$' <<< "$dashboard_config"
           cors_headers="$(curl --silent --show-error --max-time 30 --request OPTIONS \
             --header 'Origin: https://platform.mutating.tech' \
             --header 'Access-Control-Request-Method: POST' \
             --header 'Access-Control-Request-Headers: content-type,x-requested-with' \
             --dump-header - --output /dev/null https://api.mutating.tech/v1/auth/session)"
-          printf '%s' "$cors_headers" | rg --quiet '^HTTP/[^ ]+ 200'
-          printf '%s' "$cors_headers" | rg --quiet --ignore-case '^access-control-allow-origin: https://platform\.mutating\.tech\r?$'
-          printf '%s' "$cors_headers" | rg --quiet --ignore-case '^access-control-allow-credentials: true\r?$'
+          rg --quiet '^HTTP/[^ ]+ 200' <<< "$cors_headers"
+          rg --quiet --ignore-case '^access-control-allow-origin: https://platform\.mutating\.tech\r?$' <<< "$cors_headers"
+          rg --quiet --ignore-case '^access-control-allow-credentials: true\r?$' <<< "$cors_headers"

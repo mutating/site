@@ -449,3 +449,45 @@ def test_python_permissions_skip_bytecode_created_by_other_runtime_users(deploym
     assert not any("__pycache__" in arg for arg in changed)
     assert not any(action[0] == "sudo" for action in actions)
     assert "Release permissions (deadline 60s): completed" in result.stdout
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_content_contract_handles_large_html_without_sigpipe(tmp_path, valid):
+    """A large valid homepage must pass, while a missing canonical link still fails."""
+    if not shutil.which("rg"):
+        pytest.skip("ripgrep is required")
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+    assertion = next(
+        line.strip()
+        for line in workflow.splitlines()
+        if "root_html" in line and "rg --quiet" in line
+    )
+    html = tmp_path / "homepage.html"
+    canonical = "<link rel=canonical href=https://mutating.tech/>" if valid else ""
+    html.write_text(canonical + "x" * (1024 * 1024))
+    result = subprocess.run(
+        ["bash", "-c", 'set -euo pipefail; root_html="$(cat "$1")"; ' + assertion, "_", str(html)],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == (0 if valid else 1), result.stderr
+
+
+@pytest.mark.parametrize("immutable", [True, False])
+def test_stable_image_contract_still_rejects_immutable_caching(immutable):
+    """Keep the image cache assertion effective after removing early-closing pipe readers."""
+    if not shutil.which("rg"):
+        pytest.skip("ripgrep is required")
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+    start = workflow.index("          if rg --quiet --ignore-case 'immutable'")
+    end = workflow.index("          fi", start) + len("          fi")
+    assertion = workflow[start:end]
+    headers = "Cache-Control: " + ("public, immutable" if immutable else "public, max-age=600")
+    result = subprocess.run(
+        ["bash", "-c", 'set -euo pipefail; image_headers="$1"; ' + assertion, "_", headers],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == (1 if immutable else 0), result.stderr
