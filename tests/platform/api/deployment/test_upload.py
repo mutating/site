@@ -343,3 +343,79 @@ def test_actual_upload_filters_keep_built_site_and_runtime_but_not_hugo_sources(
     for name in fixtures:
         assert (target / name).exists() == (name in runtime), name
     assert (target / "deploy/deploy.sh").exists()
+
+
+def test_new_static_site_release_replaces_content_adds_assets_and_removes_old_output(deployment):
+    """Deploy a changed built site through the real filters, basis reuse and publication."""
+    rsync = shutil.which("rsync")
+    if not rsync:
+        pytest.skip("rsync is required")
+    checkout, server, _, _, _ = deployment
+    old = server / "releases/old"
+    published = server / "www"
+    new = server / "transferred"
+    old_public = old / "site/public"
+    old_public.mkdir(parents=True)
+    old_files = {
+        "index.html": "old page",
+        "removed/index.html": "removed page",
+        "app.oldhash.css": "old stylesheet",
+        "image.webp": "unchanged image",
+    }
+    for name, content in old_files.items():
+        file = old_public / name
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(content)
+    shutil.copytree(old_public, published)
+    built_public = checkout / "site/public"
+    built_public.mkdir(parents=True)
+    updated_files = {
+        "index.html": "new page",  # Same byte count and mtime as the previous version.
+        "added/index.html": "new page URL",
+        "app.newhash.css": "new stylesheet",
+        "image.webp": "unchanged image",
+    }
+    for name, content in updated_files.items():
+        file = built_public / name
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(content)
+        os.utime(file, (2000000000, 2000000000))
+    os.utime(old_public / "index.html", (2000000000, 2000000000))
+    result, actions = run_upload(deployment, "upload")
+    assert result.returncode == 0, result.stderr
+    transfer = next(action for action in actions if action[0] == "rsync")
+    options = [
+        arg
+        for arg in transfer
+        if arg.startswith(("--include=", "--exclude=", "--copy-dest=")) or arg == "--checksum"
+    ]
+    subprocess.run(
+        [rsync, "--archive", *options, str(checkout) + "/", str(new) + "/"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    subprocess.run(
+        [
+            rsync,
+            "--archive",
+            "--checksum",
+            "--delete-delay",
+            "--delay-updates",
+            "--no-links",
+            "--chmod=D755,F644",
+            str(new / "site/public") + "/",
+            str(published) + "/",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    for name, content in updated_files.items():
+        assert (published / name).read_text() == content
+    assert not (published / "removed").exists()
+    assert not (published / "app.oldhash.css").exists()
+    for name, content in old_files.items():
+        assert (old_public / name).read_text() == content
