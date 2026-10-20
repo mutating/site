@@ -4,6 +4,18 @@ import asyncio
 from urllib.parse import urlsplit
 
 
+async def close_connection(writer):
+    """Graceful close is bounded when a peer stops consuming buffered bytes."""
+    writer.close()
+    try:
+        async with asyncio.timeout(0.2):
+            await writer.wait_closed()
+    except (OSError, TimeoutError):
+        pass
+    finally:
+        writer.transport.abort()
+
+
 class FaultProxy:
     def __init__(self, upstream, mode):
         self.upstream, self.mode = urlsplit(upstream), mode
@@ -17,9 +29,12 @@ class FaultProxy:
 
     async def __aexit__(self, *args):
         self.server.close()
-        await self.server.wait_closed()
         for task in list(self.tasks):
             task.cancel()
+        await asyncio.gather(*self.tasks, return_exceptions=True)
+        await self.server.wait_closed()
+        # wait_closed observes socket closure before a late handler's finally
+        # has necessarily finished removing its tracking entry.
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
     async def connected(self, reader, writer):
@@ -27,6 +42,9 @@ class FaultProxy:
         self.tasks.add(task)
         backend = None
         try:
+            # Accepted callbacks can start after teardown snapshots self.tasks.
+            if not self.server.is_serving():
+                return
             async with asyncio.timeout(15):
                 header = await reader.readuntil(b"\r\n\r\n")
                 lines = header.split(b"\r\n")
@@ -75,12 +93,7 @@ class FaultProxy:
         except (OSError, asyncio.IncompleteReadError, TimeoutError):
             pass
         finally:
-            if backend:
-                backend.close()
-                await backend.wait_closed()
-            writer.close()
             try:
-                await writer.wait_closed()
-            except OSError:
-                pass
-            self.tasks.discard(task)
+                await asyncio.gather(*(close_connection(stream) for stream in [backend, writer] if stream))
+            finally:
+                self.tasks.discard(task)
