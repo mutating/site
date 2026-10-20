@@ -9,6 +9,28 @@ import pytest
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("status", ["obsolete", "failed", "delivered"])
+async def test_receipt_exposes_original_task_state_without_reviving_session(
+    app, agent_api, run_task, clock, status
+):
+    """Recovery must distinguish terminal controls from merely inactive ones.
+    The ordinary task GET remains fenced after lease expiry; receipt provides
+    the assigned task state without renewing execution rights or its lease.
+    """
+    from throng_api.models import AgentTask
+
+    async with app.state.db.write() as session:
+        task = await session.get(AgentTask, run_task["id"])
+        task.kind, task.status = "cancel", status
+    clock.now += timedelta(seconds=120)
+    path = f"/agent/v1/tasks/{run_task['id']}"
+    assert (await agent_api.get(path)).status_code == 409
+    response = await agent_api.post(path + "/receipt", json={})
+    assert response.status_code == 200, response.text
+    assert response.json() == {"accepted": False, "active": False, "task_status": status}
+    assert (await agent_api.post("/agent/v1/heartbeat")).status_code == 409
+
+
 async def test_completion_receipt_survives_expiry_and_rejects_changed_or_foreign_result(
     agent_api, run_task, clock, other_agent, client
 ):
@@ -17,12 +39,12 @@ async def test_completion_receipt_survives_expiry_and_rejects_changed_or_foreign
     report = {"returncode": 0, "stdout": "done"}
     pending = await agent_api.post(path + "/receipt", json=report)
     assert pending.status_code == 200, pending.text
-    assert pending.json() == {"accepted": False, "active": True}
+    assert pending.json() == {"accepted": False, "active": True, "task_status": run_task["status"]}
     assert (await agent_api.post(path + "/complete", json=report)).status_code == 200
     clock.now += timedelta(seconds=120)
     receipt = await agent_api.post(path + "/receipt", json=report)
     assert receipt.status_code == 200
-    assert receipt.json() == {"accepted": True, "active": False}
+    assert receipt.json() == {"accepted": True, "active": False, "task_status": "completed"}
     conflict = await agent_api.post(path + "/receipt", json={"returncode": 7})
     assert conflict.status_code == 409
     assert conflict.json()["code"] == "completion_conflict"

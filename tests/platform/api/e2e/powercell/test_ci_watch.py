@@ -297,3 +297,28 @@ async def test_watch_checks_expiration_at_start_of_state_read(
     assert response.status_code == 200
     assert response.json() == {"status": "failed", "reason": "runner_timeout"}
     assert await platform_state(app) == before
+
+
+async def test_watch_route_deleted_after_identity_check_is_unavailable(
+    client, route, ci_peer, watched, app, monkeypatch
+):
+    """A concurrent deletion after valid OIDC must return 404 without exposing a runner."""
+    original, reads = app.state.db.read, 0
+
+    @asynccontextmanager
+    async def deleted_before_state_read():
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            async with app.state.db.write() as session:
+                await session.delete(await session.get(CIReservation, watched))
+                await session.flush()
+                await session.delete(await session.get(CIRoute, route["id"]))
+        async with original() as session:
+            yield session
+
+    monkeypatch.setattr(app.state.db, "read", deleted_before_state_read)
+    response = await watch(client, route, ci_peer)
+    assert reads == 2
+    assert response.status_code == 404 and response.json() == {"detail": "Resource not found"}
+    assert "runs_on" not in response.text

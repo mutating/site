@@ -13,7 +13,7 @@ test("the core and React entries can be imported and server rendered without a b
   const core = await import("@mutating/ui");
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const { Header, Brand, LanguageSwitcher, ThemeProvider, ThemeToggle, Button } = await import("@mutating/ui/react");
+  const { Header, Brand, LanguageSwitcher, LanguageToggle, ThemeProvider, ThemeToggle, Button } = await import("@mutating/ui/react");
   assert.equal(typeof core.mountHeader, "function");
   const html = renderToStaticMarkup(createElement(ThemeProvider, null,
     createElement(Header, { brand: { href: "/" } }),
@@ -26,11 +26,19 @@ test("the core and React entries can be imported and server rendered without a b
   assert.match(lightToggle, /aria-pressed="false"/);
   const emptyHeader = renderToStaticMarkup(createElement(Header, { items: [], showThemeToggle: false }));
   assert.doesNotMatch(emptyHeader, /<nav|tmc-mobile-menu|tmc-theme-toggle/);
+  const applicationHeader = renderToStaticMarkup(createElement(Header, {
+    showThemeToggle: false,
+    actions: createElement(LanguageToggle, { current: "ru", "aria-label": "Choose language" }),
+  }));
+  assert.match(applicationHeader, /<button[^>]*aria-label="Choose language"[^>]*type="button"[^>]*class="tmc-language-toggle">RU<\/button>/);
+  assert.doesNotMatch(applicationHeader, /<nav|tmc-mobile-menu/);
   const reloadBrand = renderToStaticMarkup(createElement(Brand, { href: "/ru/", animation: { activation: "reload-home" } }));
   assert.match(reloadBrand, /^<div[^>]*role="link"[^>]*tabindex="0"[^>]*data-home-url="\/ru\/"/);
   assert.doesNotMatch(reloadBrand, /href=|draggable=/);
   const linkBrand = renderToStaticMarkup(createElement(Brand, { href: "/dashboard/" }));
   assert.match(linkBrand, /^<a[^>]*href="\/dashboard\/"/);
+  const focusBrand = renderToStaticMarkup(createElement(Brand, { href: "/dashboard/", animation: { expandOnFocus: true } }));
+  assert.match(focusBrand, /tabindex="0"/);
   const language = renderToStaticMarkup(createElement(LanguageSwitcher, {
     current: "en", options: [{ code: "ru", href: "/ru/" }],
     supportedCodes: ["en", "ru", "zh-hant-tw"], label: "Choose language", groupLabel: "Languages",

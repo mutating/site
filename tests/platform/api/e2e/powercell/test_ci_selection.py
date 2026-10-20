@@ -78,7 +78,17 @@ async def test_reserve_finalizes_selection_without_another_request(
 @pytest.mark.parametrize("held", [False, True])
 @pytest.mark.parametrize(
     "change",
-    ["authorization", "deadline", "expiry", "cancelled", "isolate", "command", "session", "lease"],
+    [
+        "authorization",
+        "deadline",
+        "expiry",
+        "cancelled",
+        "isolate",
+        "command",
+        "session",
+        "lease",
+        "deleted",
+    ],
 )
 async def test_reserve_rechecks_changes_before_publishing_ready(
     client, route, ci_peer, powercell, app, clock, monkeypatch, held, change
@@ -93,6 +103,7 @@ async def test_reserve_rechecks_changes_before_publishing_ready(
     async with original_write() as session:
         row = await session.get(CIReservation, prepared["id"])
         row.status = "preparing" if held else "ready"
+        isolate_id = row.isolate_id
         before = row.expires_at, (await session.get(Isolate, row.isolate_id)).expires_at
 
     def decision(row):
@@ -115,7 +126,9 @@ async def test_reserve_rechecks_changes_before_publishing_ready(
                 row = await session.get(CIReservation, prepared["id"])
                 isolate = await session.get(Isolate, row.isolate_id)
                 computer = await session.get(Computer, isolate.computer_id)
-                if change == "authorization":
+                if change == "deleted":
+                    await session.delete(row)
+                elif change == "authorization":
                     (await session.get(CIRoute, row.route_id)).enabled = False
                 elif change == "deadline":
                     clock.now += timedelta(seconds=6)
@@ -148,9 +161,59 @@ async def test_reserve_rechecks_changes_before_publishing_ready(
         async with original_write() as session:
             (await session.get(CIReservation, prepared["id"])).status = "ready"
     response = await pending
-    assert response.status_code == 409 and "runs_on" not in response.text
+    assert response.status_code == (404 if change == "deleted" else 409)
+    assert "runs_on" not in response.text
     assert injected
     async with app.state.db.read() as session:
         row = await session.get(CIReservation, prepared["id"])
-        assert row.status != "selected"
-        assert (await session.get(Isolate, row.isolate_id)).expires_at == before[1]
+        if change == "deleted":
+            assert row is None
+        else:
+            assert row.status != "selected"
+        assert (await session.get(Isolate, isolate_id)).expires_at == before[1]
+
+
+async def test_reserve_route_deleted_after_identity_is_unavailable(client, route, ci_peer, app, monkeypatch):
+    """OIDC authorization cannot keep a route alive across the next DB read.
+    Deletion is a normal unavailable route, never an attribute-error HTTP 500.
+    """
+    original, reads = app.state.db.read, 0
+    @asynccontextmanager
+    async def deleted_before_state_read():
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            async with app.state.db.write() as session:
+                await session.delete(await session.get(CIRoute, route['id']))
+        async with original() as session:
+            yield session
+    monkeypatch.setattr(app.state.db, 'read', deleted_before_state_read)
+    response = await reserve(client, route, ci_peer)
+    assert reads == 2
+    assert response.status_code == 404, response.text
+
+async def test_reserve_route_deleted_before_final_lock_is_unavailable(client, route, ci_peer, app, monkeypatch):
+    """The provider call releases the DB snapshot; deletion before locking is normal."""
+    from throng_api import ci
+    original = ci.verify_repository
+    async def verified_then_deleted(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        async with app.state.db.write() as session:
+            await session.delete(await session.get(CIRoute, route['id']))
+        return result
+    monkeypatch.setattr(ci, 'verify_repository', verified_then_deleted)
+    response = await reserve(client, route, ci_peer)
+    assert response.status_code == 404, response.text
+
+async def test_cancel_route_deleted_after_identity_is_unavailable(client, route, ci_peer, app, monkeypatch):
+    """Cancel must also handle route deletion between OIDC authorization and locking."""
+    from throng_api import ci
+    original = ci.routing_identity
+    async def authenticated_then_deleted(*args, **kwargs):
+        claims = await original(*args, **kwargs)
+        async with app.state.db.write() as session:
+            await session.delete(await session.get(CIRoute, route['id']))
+        return claims
+    monkeypatch.setattr(ci, 'routing_identity', authenticated_then_deleted)
+    response = await client.post(f"/v1/github/ci/routes/{route['id']}/cancel", headers={'Authorization':'Bearer '+ci_peer.token()}, json={})
+    assert response.status_code == 404, response.text

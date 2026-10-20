@@ -50,6 +50,16 @@ async def test_generated_guard_fails_after_selection_expires_without_job_start(c
     await chain.bind()
     chain.agent = powercell
     await chain.bootstrap()
+    # Exercise expiry at its boundary rather than spending the harness watchdog
+    # replaying hundreds of otherwise identical healthy heartbeat/poll cycles.
+    from datetime import timedelta
+
+    from throng_api.models import CIReservation
+
+    selected = await chain.state()
+    async with chain.app.state.db.write() as session:
+        row = await session.get(CIReservation, selected.id)
+        row.expires_at = chain.clock.now + timedelta(seconds=2)
     offset = len(chain.trace)
     with pytest.raises(RuntimeError, match="runner_timeout"):
         await chain.bootstrap(watch=True)

@@ -62,7 +62,7 @@ async def test_runner_result_receipt_recovers_after_upload_conflict_and_api_outa
             assert unavailable.status_code == 503
             receipt = await recovering.post(path + "/receipt", json=report)
             assert receipt.status_code == 200, receipt.text
-            assert receipt.json() == {"accepted": True, "active": False}
+            assert receipt.json() == {"accepted": True, "active": False, "task_status": "completed"}
         assert proxy.attempts == 2
     changed = await powercell.client.post(path + "/receipt", json={**report, "returncode": 23})
     assert changed.status_code == 409

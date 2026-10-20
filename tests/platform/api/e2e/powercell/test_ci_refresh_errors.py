@@ -20,7 +20,7 @@ from throng_api.models import CIRoute
 pytestmark = [
     pytest.mark.anyio,
     pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True),
-    pytest.mark.parametrize("fault", ["unavailable", "limited", "timeout"]),
+    pytest.mark.parametrize("fault", ["unavailable", "limited", "limited_delayed", "timeout"]),
 ]
 
 
@@ -29,7 +29,10 @@ async def failing_refresh(api, github, clock, monkeypatch, fault):
     """Expire real encrypted credentials, then fail only GitHub's actual HTTP endpoint."""
     await connect(api)
     clock.now += timedelta(hours=8)
-    bounded_time(monkeypatch, github_client, 10)
+    # Only the timeout scenario compresses the real request budget. A valid
+    # provider status must survive ordinary scheduling/TCP delays above 50 ms.
+    if fault == "timeout":
+        bounded_time(monkeypatch, github_client, 10)
 
     async def handler(request, writer):
         assert request.path == "/login/oauth/access_token"
@@ -40,19 +43,21 @@ async def failing_refresh(api, github, clock, monkeypatch, fault):
                 await writer.drain()
                 await asyncio.sleep(0.005)
         else:
+            if fault == "limited_delayed":
+                await asyncio.sleep(0.08)
             response(
                 writer,
                 {"private": "provider-secret"},
-                status=429 if fault == "limited" else 503,
-                headers={"Retry-After": "120"} if fault == "limited" else {},
+                status=429 if fault.startswith("limited") else 503,
+                headers={"Retry-After": "120"} if fault.startswith("limited") else {},
             )
 
     github.service.client._transport = None
     async with http_peer(handler) as peer:
         monkeypatch.setattr(github_client, "TOKEN_URL", peer.url + "/login/oauth/access_token")
         yield SimpleNamespace(
-            status=503 if fault == "limited" else 502,
-            retry_after="120" if fault == "limited" else None,
+            status=503 if fault.startswith("limited") else 502,
+            retry_after="120" if fault.startswith("limited") else None,
         )
 
 

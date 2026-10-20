@@ -375,7 +375,10 @@ test("Actions remains usable in English at a narrow viewport", async ({ page, ac
   peer.runs = [{ id: "r", run_id: 42, run_attempt: 1, status: "failed", reason: "no_capacity", url: "https://github.com/mutating/ci-sandbox/actions/runs/42" }];
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, account); await page.goto("/actions");
+  // Wait for the cabinet header to replace the session-loading header before input.
+  await expect(page.getByRole("heading", { name: "@github-user", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Выбрать язык", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await page.locator(".actions-ci-create summary").click();
   await expect(page.getByRole("button", { name: "Create binding", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workflow and runs", exact: true }).click();

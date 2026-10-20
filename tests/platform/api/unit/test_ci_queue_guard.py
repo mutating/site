@@ -391,7 +391,9 @@ def test_delivered_guard_arms_a_process_deadline_without_changing_routing(
             return io.BytesIO(json.dumps(body).encode())
 
     monkeypatch.setattr(ci_bootstrap.urllib.request, "build_opener", lambda *args: Peer())
-    exec(compile(ci_workflow.SOURCE, "generated-workflow.py", "exec"), {"__name__": "__main__"})
+    # The embedded program is the packaged file verbatim. Preserve its source
+    # attribution so coverage includes the delivered entrypoint and signal handler.
+    exec(compile(ci_workflow.SOURCE, ci_bootstrap.__file__, "exec"), {"__name__": "__main__"})
     assert len(requests) == 2 and armed == ([310] if observer else [])
     if observer:
         assert len(handlers) == 1 and handlers[0][0] == signal.SIGALRM

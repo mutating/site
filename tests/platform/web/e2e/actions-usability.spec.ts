@@ -41,17 +41,21 @@ test("Actions opens and focuses the selected binding details", async ({ page, ac
   const choices = page.getByRole("button", { name: "Workflow и запуски", exact: true });
   await expect(choices.first()).not.toHaveAttribute("aria-controls");
   const heading = page.locator(".actions-ci-detail").getByRole("heading", { name: "Workflow и запуски", exact: true });
-  for (const index of [0, 1, 1]) {
-    await choices.nth(index).click();
-    await expect(heading).toBeFocused();
-    await expect(choices.nth(index)).toHaveAttribute("aria-pressed", "true");
-    await expect(choices.nth(index)).toHaveAttribute("aria-controls", "ci-route-details");
-    await expect(choices.nth(1 - index)).toHaveAttribute("aria-pressed", "false");
-    await expect(page.locator(".actions-ci-context")).toContainText(index ? second.repository : binding.repository);
-    await expect(page.locator(".actions-ci-context")).toContainText(index ? second.job_key : binding.job_key);
-    await expect(page.locator(".actions-ci-context")).toContainText(binding.ref);
-    expect((await heading.boundingBox())!.y).toBeGreaterThan((await page.locator(".site-header").boundingBox())!.y + (await page.locator(".site-header").boundingBox())!.height);
-    await expect(page.getByRole("textbox", { name: "Workflow YAML", exact: true })).toHaveValue(new RegExp(index ? second.id : binding.id));
+  const viewport = page.viewportSize()!;
+  for (const width of [viewport.width, 320]) {
+    await page.setViewportSize({ ...viewport, width });
+    for (const index of [0, 1, 1]) {
+      await choices.nth(index).click();
+      await expect(heading).toBeFocused();
+      await expect(choices.nth(index)).toHaveAttribute("aria-pressed", "true");
+      await expect(choices.nth(index)).toHaveAttribute("aria-controls", "ci-route-details");
+      await expect(choices.nth(1 - index)).toHaveAttribute("aria-pressed", "false");
+      await expect(page.locator(".actions-ci-context")).toContainText(index ? second.repository : binding.repository);
+      await expect(page.locator(".actions-ci-context")).toContainText(index ? second.job_key : binding.job_key);
+      await expect(page.locator(".actions-ci-context")).toContainText(binding.ref);
+      expect((await heading.boundingBox())!.y).toBeGreaterThan((await page.locator(".site-header").boundingBox())!.y + (await page.locator(".site-header").boundingBox())!.height);
+      await expect(page.getByRole("textbox", { name: "Workflow YAML", exact: true })).toHaveValue(new RegExp(index ? second.id : binding.id));
+    }
   }
 });
 
