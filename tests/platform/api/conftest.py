@@ -1,6 +1,7 @@
 """Isolated infrastructure and HTTP-created resources shared by the test suite."""
 
 import asyncio
+import gc
 import os
 import socket
 import sys
@@ -73,6 +74,9 @@ def clock():
 @pytest.fixture
 def app(settings, clock):
     """Create the unmocked API with its embedded controller and a controllable clock."""
+    # Reclaim discarded app/router cycles before the next HTTP server starts.
+    # A late full-suite collection can otherwise exhaust a live request's timeout.
+    gc.collect()
     return create_app(settings, clock=lambda: clock.now)
 
 
