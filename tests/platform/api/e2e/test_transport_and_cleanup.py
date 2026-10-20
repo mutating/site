@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
@@ -14,12 +15,23 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
 async def test_disconnected_long_poll_releases_handler_before_its_timeout(
-    agent, upload_connection, http_server, app
+    agent, upload_connection, http_server, app, monkeypatch
 ):
     """Closing the real TCP connection interrupts an empty 25-second poll promptly and leaves no request task running."""
     _, writer = upload_connection
     async with app.state.db.read() as session:
         revision = await session.scalar(select(Coordination.revision))
+    entered = asyncio.Event()
+    original_read = app.state.db.read
+
+    @asynccontextmanager
+    async def observed_read():
+        """Observe real request progress without changing queries or transaction behavior."""
+        async with original_read() as session:
+            yield session
+            entered.set()
+
+    monkeypatch.setattr(app.state.db, "read", observed_read)
     body = json.dumps({"wait_seconds": 25}).encode()
     headers = "\r\n".join(f"{key}: {value}" for key, value in agent["headers"].items())
     writer.write(
@@ -30,13 +42,9 @@ async def test_disconnected_long_poll_releases_handler_before_its_timeout(
         + body
     )
     await writer.drain()
-    async with asyncio.timeout(3):
-        while True:
-            async with app.state.db.read() as session:
-                current = await session.scalar(select(Coordination.revision))
-            if current > revision:
-                break
-            await asyncio.sleep(0.01)
+    # An empty poll no longer writes the database. Observe actual request
+    # progress instead of requiring a mutation as a side effect.
+    await asyncio.wait_for(entered.wait(), timeout=3)
     handlers = list(http_server.server.server_state.tasks)
     assert handlers
     writer.close()
@@ -45,6 +53,8 @@ async def test_disconnected_long_poll_releases_handler_before_its_timeout(
     assert all(
         task.done() and not task.cancelled() and task.exception() is None for task in handlers
     )
+    async with app.state.db.read() as session:
+        assert await session.scalar(select(Coordination.revision)) == revision
 
 
 @pytest.mark.parametrize("settings", [{"isolate_ttl_seconds": 10}], indirect=True)

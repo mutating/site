@@ -75,7 +75,7 @@ test("Actions creates a personal CI binding with resource minimums and shows wor
       await route.fulfill({ status: 201, json: binding, headers });
     } else if (path.endsWith("/routes")) await route.fulfill({ json: binding ? [binding] : [], headers });
     else if (path.endsWith("/workflow")) await route.fulfill({ json: { yaml: "jobs:\n  test:\n    needs: powercell_route\n" }, headers });
-    else if (path.endsWith("/runs")) await route.fulfill({ json: [{ id: "run-one", run_id: 42, run_attempt: 1, status: "fallback", reason: "no_capacity", url: "https://github.com/mutating/powercell-ci-sandbox/actions/runs/42" }], headers });
+    else if (path.endsWith("/runs")) await route.fulfill({ json: [{ id: "run-one", run_id: 42, run_attempt: 1, status: "failed", reason: "no_capacity", url: "https://github.com/mutating/powercell-ci-sandbox/actions/runs/42" }], headers });
     else throw new Error(`Unexpected GitHub UI request ${path}`);
   });
   await login(page, account);
@@ -86,5 +86,5 @@ test("Actions creates a personal CI binding with resource minimums and shows wor
   await page.getByRole("button", { name: "Создать привязку", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Workflow YAML", exact: true })).toHaveValue(/needs: powercell_route/);
   await expect(page.getByText("Нет подходящих свободных компьютеров", { exact: false })).toBeVisible();
-  expect(requestBody).toMatchObject({ repository_id: 789, installation_id: 456, job_key: "checks", cpu_millis: 1000, memory_bytes: 2 * 1024 ** 3, company_id: null, computer_ids: [], fallback: "ubuntu-24.04-arm" });
+  expect(requestBody).toMatchObject({ repository_id: 789, installation_id: 456, job_key: "checks", cpu_millis: 1000, memory_bytes: 2 * 1024 ** 3, company_id: null, computer_ids: [] });
 });

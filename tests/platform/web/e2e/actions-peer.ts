@@ -8,7 +8,7 @@ export const binding = {
   installation_id: 456, repository_id: 789, workflow_path: ".github/workflows/ci.yml", job_key: "test", ref: "refs/heads/main",
   company_id: null, computer_ids: [], cpu_millis: 2000, memory_bytes: 4 * 1024 ** 3,
   disk_bytes: 10 * 1024 ** 3, max_parallel: 1, preparation_seconds: 90, timeout_seconds: 3600,
-  fallback: "ubuntu-24.04-arm", enabled: true,
+  enabled: true,
 };
 
 /** Stateful HTTP peer. Only the browser's external responses are replaced. */
@@ -38,7 +38,7 @@ export async function actionsPeer(page: Page) {
     let json: unknown;
     if (path === "github/status") json = { enabled: true, account: peer.connected ? { id: 123, login: "github-user" } : null };
     else if (path === "github/authorize" || path === "github/installations/authorize") json = { url: "https://github.com/login/oauth/authorize?state=test-state" };
-    else if (path === "github/connection") { peer.connected = false; await route.fulfill({ status: 204, headers }); return; }
+    else if (path === "github/connection") { peer.connected = false; peer.bindings.forEach((row) => { row.enabled = false; }); await route.fulfill({ status: 204, headers }); return; }
     else if (path === "github/installations") json = { total_count: peer.installations.length, installations: peer.installations };
     else if (/github\/installations\/\d+\/repositories/.test(path)) json = { total_count: peer.repositories.length, repositories: peer.repositories };
     else if (path === "github/routes" && method === "POST") {

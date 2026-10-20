@@ -8,8 +8,8 @@ const time = new Date("2026-10-16T09:00:00Z");
 async function prepare(page: Page, adapter: string, language: string, width: number, theme: "light" | "dark", reducedMotion = false) {
   await page.setViewportSize({ width, height: 1000 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: reducedMotion ? "reduce" : "no-preference" });
-  await page.clock.install({ time });
-  await page.clock.pauseAt(new Date(time.getTime() + 1000));
+  await page.clock.install({ time: new Date(time.getTime() - 86_400_000) });
+  await page.clock.pauseAt(time);
   await page.addInitScript(({ language, theme }) => {
     localStorage.setItem("tmc-language", language);
     localStorage.setItem("tmc-theme", theme);
@@ -123,7 +123,15 @@ async function captureStates(page: Page): Promise<StateImage[]> {
   await page.locator(`${language} > summary`).evaluate((node: HTMLElement) => { node.focus(); node.click(); });
   await page.clock.runFor(320);
   await take("language-open", mobile ? 560 : 280);
-  await page.evaluate(() => document.querySelectorAll("details[open]").forEach(node => node.removeAttribute("open")));
+  await page.evaluate(() => {
+    document.querySelectorAll("details[open]").forEach(node => node.removeAttribute("open"));
+    // Commit the menu's closing styles before changing the global theme.
+    // Otherwise these two independent transitions can start in different
+    // rendering turns when replacing the header in the same document.
+    const header = document.querySelector("header")!;
+    header.getBoundingClientRect();
+    header.getAnimations({ subtree: true }).forEach(animation => animation.finish());
+  });
 
   await page.locator(cls("theme-toggle")).evaluate((node: HTMLElement) => { node.focus(); node.click(); });
   for (const [advance, time] of [[80, 80], [96, 176], [240, 416]]) {

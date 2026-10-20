@@ -15,6 +15,15 @@ from .conftest import attestation, b64, jws, proof_headers
 pytestmark = pytest.mark.anyio
 
 
+async def test_expired_unfinished_enrollment_reports_expired(api, enrollment, clock):
+    """A client recovering after a long outage sees expiry instead of a resumable enrollment."""
+    from datetime import timedelta
+
+    clock.now += timedelta(seconds=3601)
+    response = await api.get(f"/v1/agent-enrollments/{enrollment.row['id']}")
+    assert response.status_code == 200 and response.json()["status"] == "expired"
+
+
 async def test_profile_capabilities_and_enrollment_ownership(
     client, api, other_api, enrollment, clock
 ):
@@ -27,6 +36,7 @@ async def test_profile_capabilities_and_enrollment_ownership(
         "powercell.diagnostics.v1",
         "powercell.isolation.v1",
         "powercell.images.v1",
+        "powercell.recovery.v1",
     }
     assert response.json()["attestation_required"]
     profile = enrollment.profile

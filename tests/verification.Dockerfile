@@ -17,6 +17,8 @@ RUN uv venv tests/site/.venv --python 3.11 \
     && uv pip install --python tests/site/.venv/bin/python -r requirements_dev.txt \
     && PLAYWRIGHT_SKIP_BROWSER_GC=1 tests/site/.venv/bin/python -m playwright install chromium
 COPY site ./site
+COPY packages/ui ./packages/ui
+RUN npm run build:ui
 COPY tests ./tests
 COPY deploy ./deploy
 COPY infra ./infra

@@ -325,6 +325,41 @@ async def test_profile_scopes_relay_to_virtual_api_and_exact_attested_identity(
     assert "powercell.relay.v1" in reply.json()["extensions"]
 
 
+async def test_reused_connect_survives_six_second_delivery_gap(relay_wire):
+    """The measured retransmission gap must not close an otherwise reusable tunnel."""
+    async with relay_wire() as wire:
+        assert await wire.connect(1) == 200
+
+        async def exchange():
+            wire.h2.send_data(1, b"GET /health/live HTTP/1.1\r\nHost: api.test\r\n\r\n")
+            wire.flush()
+
+            def complete(events):
+                data = b"".join(
+                    e.data for e in events if isinstance(e, DataReceived) and e.stream_id == 1
+                )
+                if b"\r\n\r\n" not in data:
+                    return False
+                header, body = data.split(b"\r\n\r\n", 1)
+                size = next(
+                    int(line.split(b":", 1)[1])
+                    for line in header.split(b"\r\n")
+                    if line.lower().startswith(b"content-length:")
+                )
+                return len(body) >= size
+
+            events = await wire.events_until(complete)
+            assert not any(isinstance(e, StreamEnded) for e in events)
+            data = b"".join(
+                e.data for e in events if isinstance(e, DataReceived) and e.stream_id == 1
+            )
+            assert data.startswith(b"HTTP/1.1 200")
+
+        await exchange()
+        await asyncio.sleep(6)
+        await exchange()
+
+
 async def test_relay_registers_real_attested_mac_and_authenticates_agent_requests(
     relay_client, verified_enrollment, user, app, client
 ):

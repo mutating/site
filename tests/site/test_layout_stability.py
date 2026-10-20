@@ -16,7 +16,7 @@ FooterSnapshot = dict[str, Any]
 FooterAssertion = Callable[[FooterSnapshot], None]
 
 LAYOUT_SELECTORS = (
-    ".site-header",
+    ".tmc-header",
     ".hero",
     ".mascot-card",
     ".ticker",

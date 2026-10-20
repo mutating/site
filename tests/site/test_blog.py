@@ -63,7 +63,7 @@ def test_blog_index_uses_shared_chrome(driver: DriverFactory) -> None:
 
     page = driver(initial_path="/blog/")
 
-    expect(page.locator(".site-header")).to_be_visible()
+    expect(page.locator(".tmc-header")).to_be_visible()
     expect(page.locator(".site-footer")).to_be_visible()
     expect(page.get_by_role("button", name="Toggle color theme")).to_be_visible()
     expect(page.locator(".blog-index__header > .section-index")).to_have_text(
@@ -83,7 +83,7 @@ def test_browser_assets_use_content_fingerprinted_urls(
     """Force browsers to fetch changed copy-button CSS and JavaScript bundles."""
 
     page = driver(load_interactive_visuals=False)
-    stylesheet = page.locator('link[rel="stylesheet"]')
+    stylesheet = page.locator('link[rel="stylesheet"][href^="/css/site."]')
     script = page.locator('script[src*="/js/site."]')
 
     expect(stylesheet).to_have_attribute(
@@ -96,15 +96,23 @@ def test_browser_assets_use_content_fingerprinted_urls(
     )
     expect(stylesheet).to_have_attribute("integrity", re.compile(r"^sha256-"))
     expect(script).to_have_attribute("integrity", re.compile(r"^sha256-"))
+    for component in ("brand", "header"):
+        shared_styles = page.locator(
+            f'link[rel="stylesheet"][href^="/ui/styles/{component}."]'
+        )
+        expect(shared_styles).to_have_attribute(
+            "href", re.compile(rf"/ui/styles/{component}(?:\.min)?\.[0-9a-f]{{64}}\.css$")
+        )
+        expect(shared_styles).to_have_attribute("integrity", re.compile(r"^sha256-"))
 
 
 def test_shared_blog_links_open_the_hugo_index(driver: DriverFactory) -> None:
     """Route both shared Blog links to the Hugo index instead of a home anchor."""
 
     page = driver(viewport=(1440, 900), load_interactive_visuals=False)
-    expect(page.locator('.main-nav a[href="/blog/"]')).to_have_count(1)
+    expect(page.locator('.tmc-nav a[href="/blog/"]')).to_have_count(1)
     expect(page.locator('.site-footer a[href="/blog/"]')).to_have_count(1)
-    page.locator('.main-nav a[href="/blog/"]').click()
+    page.locator('.tmc-nav a[href="/blog/"]').click()
 
     expect(page).to_have_url(re.compile(r"/blog/$"))
     expect(page.locator(".blog-index h1")).to_be_visible()
@@ -114,9 +122,9 @@ def test_shared_news_links_open_the_news_index(driver: DriverFactory) -> None:
     """Expose News in shared navigation and keep its cards in that section."""
 
     page = driver(viewport=(1440, 900), load_interactive_visuals=False)
-    expect(page.locator('.main-nav a[href="/news/"]')).to_have_count(1)
+    expect(page.locator('.tmc-nav a[href="/news/"]')).to_have_count(1)
     expect(page.locator('.site-footer a[href="/news/"]')).to_have_count(1)
-    page.locator('.main-nav a[href="/news/"]').click()
+    page.locator('.tmc-nav a[href="/news/"]').click()
 
     expect(page).to_have_url(re.compile(r"/news/$"))
     expect(page.locator(".blog-index__header > .section-index")).to_have_text(

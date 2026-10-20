@@ -101,7 +101,7 @@ def _read_anchor_geometry(page: Page, target_id: str) -> AnchorGeometry:
         (target) => {
           const targetRect = target.getBoundingClientRect();
           const headerRect = document
-            .querySelector(".site-header")
+            .querySelector(".tmc-header")
             .getBoundingClientRect();
 
           return {
@@ -281,13 +281,16 @@ def test_fragment_inventory_is_complete_and_top_fragment_is_absent(
           )
         """
     )
-    brand = page.locator(".brand")
+    brand = page.locator(".tmc-brand")
 
     assert violations == []
     assert brand.count() == 1
     assert brand.evaluate("(element) => element.tagName") == "DIV"
-    expect(brand).to_have_attribute("role", "link")
+    expect(brand).to_have_attribute("data-home-url", "/")
     assert brand.get_attribute("href") is None
+    expect(page.get_by_role(
+        "link", name="Reload The Mutating Company home page", exact=True,
+    )).to_have_count(1)
     assert page.url.endswith("/")
 
 
@@ -295,31 +298,31 @@ def _click_brand_variant(page: Page, variant: str) -> None:
     """Activate one precise visible sub-area of the unified logo control."""
 
     if variant == "eye":
-        page.locator(".animated-eye-logo").click()
+        page.locator(".tmc-eye").click()
         return
 
     if variant == "tmc":
         page.locator(
-            ".brand__word-part--t .brand__word-anchor"
+            ".tmc-brand__word-part--t .tmc-brand__word-anchor"
         ).click()
         return
 
     if variant == "intermediate":
         page.add_style_tag(
             content="""
-            .brand__word-reveal {
+            .tmc-brand__word-reveal {
               transition-duration: 60s !important;
             }
             """
         )
 
-    wordmark = page.locator(".brand__wordmark")
+    wordmark = page.locator(".tmc-brand__wordmark")
     wordmark.hover()
 
     if variant == "expanded":
         page.wait_for_function(
             """
-            () => [...document.querySelectorAll(".brand__word-reveal")].every(
+            () => [...document.querySelectorAll(".tmc-brand__word-reveal")].every(
               (element) =>
                 element.getBoundingClientRect().width > 1 &&
                 getComputedStyle(element).opacity === "1",
@@ -327,14 +330,14 @@ def _click_brand_variant(page: Page, variant: str) -> None:
             """
         )
         page.locator(
-            '.brand__word-reveal[data-text="ompany"]'
+            '.tmc-brand__word-reveal[data-text="ompany"]'
         ).click()
         return
 
     if variant != "intermediate":
         raise AssertionError(f"Unknown brand click variant: {variant}")
 
-    reveal = page.locator('.brand__word-reveal[data-text="utating"]')
+    reveal = page.locator('.tmc-brand__word-reveal[data-text="utating"]')
     intermediate_state = reveal.evaluate(
         """
         async (reveal) => {
@@ -998,7 +1001,7 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
     click_cases = [
         ('.hero__actions a[href="#sections"]', "sections"),
         ('#complexity a[href="#complexity"]', "complexity"),
-        ('.main-nav a[href="/#contact"]', "contact"),
+        ('.tmc-nav a[href="/#contact"]', "contact"),
         ('.hero__actions a[href="#open-source"]', "open-source"),
     ]
 
@@ -1014,8 +1017,8 @@ def test_representative_anchor_clicks_update_the_url_and_scroll(
 @pytest.mark.parametrize(
     ("viewport", "selector", "open_mobile_menu"),
     [
-        ((1440, 900), '.main-nav a[href="/#contact"]', False),
-        ((800, 900), '.mobile-menu nav a[href="/#contact"]', True),
+        ((1440, 900), '.tmc-nav a[href="/#contact"]', False),
+        ((800, 900), '.tmc-mobile-menu nav a[href="/#contact"]', True),
     ],
     ids=["desktop-header", "mobile-header"],
 )
@@ -1060,7 +1063,7 @@ def test_header_contact_returns_to_home_before_resolving_the_fragment(
     expect(page).to_have_url(future_url)
 
     if open_mobile_menu:
-        page.locator(".mobile-menu > summary").click()
+        page.locator(".tmc-mobile-menu > summary").click()
 
     contact_link = page.locator(selector)
     assert contact_link.count() == 1
@@ -1113,7 +1116,7 @@ def test_back_and_forward_history_realign_each_fragment(
     page.locator('html[data-theme-ready="true"]').wait_for(state="attached")
     _assert_anchor_is_aligned(page, "complexity")
 
-    contact_link = page.locator('.main-nav a[href="/#contact"]')
+    contact_link = page.locator('.tmc-nav a[href="/#contact"]')
     assert contact_link.count() == 1
     contact_link.click()
     expect(page).to_have_url(f"{base_url}/#contact")

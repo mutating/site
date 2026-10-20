@@ -112,21 +112,21 @@ def test_russian_home_localizes_without_editorial_copy_expectations(
         load_interactive_visuals=False,
     )
 
-    expect(english.locator(".main-nav .source-link")).to_have_text("Sources")
-    expect(russian.locator(".main-nav .source-link")).to_have_text("Исходники")
-    expect(russian.locator(".main-nav")).to_have_attribute(
+    expect(english.locator(".tmc-nav .tmc-source-link")).to_have_text("Sources")
+    expect(russian.locator(".tmc-nav .tmc-source-link")).to_have_text("Исходники")
+    expect(russian.locator(".tmc-nav")).to_have_attribute(
         "aria-label", "Основная навигация"
     )
     expect(
-        russian.locator(".main-nav").get_by_role("link", name="Блог")
+        russian.locator(".tmc-nav").get_by_role("link", name="Блог")
     ).to_be_visible()
     expect(
-        russian.locator(".main-nav").get_by_role("link", name="Контакты")
+        russian.locator(".tmc-nav").get_by_role("link", name="Контакты")
     ).to_be_visible()
     expect(
         russian.get_by_role("button", name="Переключить цветовую тему")
     ).to_be_visible()
-    expect(russian.locator(".mobile-menu > summary")).to_have_text("Меню")
+    expect(russian.locator(".tmc-mobile-menu > summary")).to_have_text("Меню")
     assert english.title().strip()
     assert russian.title().strip()
     assert english.title() != russian.title()
@@ -532,7 +532,7 @@ weight = 3
     assert set(re.findall(option_pattern, english_html)) == {"ru", "pt-br"}
     assert set(re.findall(option_pattern, portuguese_html)) == {"en", "ru"}
     assert 'var supportedLanguages = ["en","ru","pt-br"]' in english_html
-    assert "--language-switcher-desktop-width: 59px" in english_html
+    assert "--tmc-language-switcher-desktop-width: 59px" in english_html
 
     bootstrap_match = re.search(
         r"<script>\s*(\(function \(\) \{.*?\}\)\(\);)\s*</script>",

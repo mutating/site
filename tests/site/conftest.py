@@ -381,6 +381,7 @@ def driver(
         system_theme_available: bool = True,
         viewport: tuple[int, int] | None = None,
         device_scale_factor: float | None = None,
+        has_touch: bool = False,
         reduced_motion: ReducedMotion = "no-preference",
         load_interactive_visuals: bool | None = None,
         bounded_tentacle_rendering: bool = False,
@@ -429,6 +430,7 @@ def driver(
                 else None
             ),
             device_scale_factor=device_scale_factor,
+            has_touch=has_touch,
             reduced_motion=reduced_motion,
         )
 

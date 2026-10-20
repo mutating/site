@@ -20,7 +20,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-def github(app, settings, tmp_path):
+def github(app, settings, tmp_path, clock):
     """Keep platform/database/session behavior real and substitute only GitHub's HTTP peer."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     path = tmp_path / "test-app.pem"
@@ -43,6 +43,7 @@ def github(app, settings, tmp_path):
         }
     )
     integration = configure(configured)
+    integration.client._clock = lambda: clock.now.timestamp()
     peer = SimpleNamespace(
         calls=[],
         failures={},

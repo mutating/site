@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><title>Link relation contract</title></head><body>
+  <ul>
+    <li data-case="absent">{{ partial "tmc-ui/menu-link.html" (dict "href" "https://header-destination.example.test/landing" "label" "Default relation" "target" "_blank") }}</li>
+    <li data-case="empty">{{ partial "tmc-ui/menu-link.html" (dict "href" "https://header-destination.example.test/landing" "label" "Explicit empty relation" "target" "_blank" "rel" "") }}</li>
+    <li data-case="noopener">{{ partial "tmc-ui/menu-link.html" (dict "href" "https://header-destination.example.test/landing" "label" "Explicit noopener" "target" "_blank" "rel" "noopener") }}</li>
+    <li data-case="noreferrer">{{ partial "tmc-ui/menu-link.html" (dict "href" "https://header-destination.example.test/landing" "label" "Explicit noreferrer" "target" "_blank" "rel" "noreferrer") }}</li>
+  </ul>
+</body></html>

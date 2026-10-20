@@ -1,0 +1,14 @@
+{
+  "description": "Original static site before the header migrated to @mutating/ui. SHA-256 guards the frozen renderer and its assets.",
+  "commit": "69708a0cacf047f8fc9c01ce3bc67b9b47b1d0b1",
+  "files": {
+    "en.html": "f2af0554a48acd0dc6a6c4806197e3ca0dc6a45f2c1554bba4258922e42fbf15",
+    "site.css": "332a899e696c2eb2e2fc18a5ea6569d5ebdf8e70472f9431e880ea063a8c6c2b",
+    "assets/fonts/science-gothic-wordmark.woff2": "d58012a9fbfac1ea5f3d1fea005883c3b3753bb6e65abf9ece512982a26483d3",
+    "assets/fonts/geist/geist-98bbbccb.woff2": "9b6f5ff45b278c744b5f379a2c4ecbaf858a842b8eaf82ac8d21b699ca16c608",
+    "assets/fonts/geist-mono/geist-mono-013b2f2f.woff2": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b",
+    "assets/muta-eye-surface-alpha-v1.webp": "a1f5cc4e1eacbba7c745ceeb8ef1184c824c57ee25c200a79d7362f8fc56cefb",
+    "ru.html": "3a8aef1e7796586a91572c0e05b94b812d72d4cdeb0af5eb2d4de85d3f2f12f3",
+    "site.js": "30bd1acd023efa1c0569b2bf005ce09683ba50d46e438dd9c6bde9b5e1cc6e9e"
+  }
+}

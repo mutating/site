@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
@@ -9,11 +9,13 @@ import { Header, ThemeProvider } from "@mutating/ui/react";
 
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const runtime = resolve(repository, "packages/ui/.runtime");
+const frozen = resolve(repository, "tests/site/header/reference");
 
-/** The expected renderer is the actual, unmodified Hugo site, never library markup. */
+/** The expected renderer is the frozen site from before its header migration. */
 export async function prepareHeaderReference() {
   await mkdir(runtime, { recursive: true });
   execFileSync("hugo", ["--source", resolve(repository, "site"), "--destination", resolve(runtime, "site"), "--noBuildLock", "--panicOnWarning", "--baseURL", "http://127.0.0.1:18120/"], { encoding: "utf8" });
+  await cp(resolve(frozen, "assets"), resolve(runtime, "site"), { recursive: true });
   const configs = { en: createMutatingHomeHeader("en"), ru: createMutatingHomeHeader("ru") };
   const fixture = resolve(runtime, "home-hugo");
   await mkdir(resolve(fixture, "layouts"), { recursive: true });
@@ -22,7 +24,7 @@ export async function prepareHeaderReference() {
   execFileSync("hugo", ["--source", fixture, "--destination", resolve(fixture, "public"), "--noBuildLock", "--panicOnWarning"], { encoding: "utf8" });
   const hugoHeaders = JSON.parse(await readFile(resolve(fixture, "public/index.html"), "utf8"));
 
-  const source = await readFile(resolve(repository, "site/themes/mutating/assets/js/site.js"), "utf8");
+  const source = await readFile(resolve(frozen, "site.js"), "utf8");
   const names = ["initTheme", "initLanguageSwitcher", "initAnimatedWordmark", "initBrandControl", "initAnimatedEye", "initMobileMenus"];
   let referenceScript = source.slice(0, source.indexOf("  function initCurrentYear"));
   for (const name of names) {
@@ -34,7 +36,9 @@ export async function prepareHeaderReference() {
   await writeFile(resolve(runtime, "header-reference.js"), referenceScript);
 
   for (const language of ["en", "ru"]) {
-    const original = await readFile(resolve(runtime, `site/${language === "ru" ? "ru/" : ""}index.html`), "utf8");
+    const original = await readFile(resolve(frozen, `${language}.html`), "utf8");
+    await mkdir(resolve(runtime, "site/__header_reference"), { recursive: true });
+    await writeFile(resolve(runtime, "site/__header_reference/site.css"), await readFile(resolve(frozen, "site.css")));
     const header = original.match(/<header class="site-header-shell">[\s\S]*?<\/header>/)?.[0];
     if (!header) throw new Error("The current site's header was not found; update the reference fixture explicitly.");
     for (const adapter of ["reference", "hugo", "react"]) {
