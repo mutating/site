@@ -9,7 +9,7 @@
       {{ block "main" . }}{{ end }}
       {{ partial "footer.html" . }}
     </main>
-    {{- $siteScript := resources.Get "js/site.js" | minify | fingerprint -}}
+    {{- $siteScript := resources.Get "js/site.js" | js.Build (dict "target" "es2020" "format" "iife") | minify | fingerprint -}}
     <script src="{{ $siteScript.RelPermalink }}" integrity="{{ $siteScript.Data.Integrity }}" crossorigin="anonymous" defer></script>
     {{- if hugo.IsProduction }}
       {{ partialCached "yandex-metrika.html" . }}

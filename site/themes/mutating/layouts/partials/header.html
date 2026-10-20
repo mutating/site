@@ -1,64 +1,34 @@
-<header class="site-header-shell">
-  <div class="site-header">
-    <div class="brand" role="link" tabindex="0" aria-label="{{ T "brand_home_aria" }}" data-home-url="{{ "/" | relLangURL }}">
-      <span class="brand__mark brand__mark--eye">
-        <span class="animated-eye-logo" aria-hidden="true">
-          <span class="animated-eye-logo__clip">
-            <span class="animated-eye-logo__outline" aria-hidden="true"></span>
-            <span class="animated-eye-logo__surface" aria-hidden="true"></span>
-            <span class="animated-eye-logo__pupil" aria-hidden="true"></span>
-          </span>
-        </span>
-      </span>
-      <span class="brand__wordmark-stage" data-can-expand="true" aria-hidden="true">
-        <span class="brand__wordmark">
-          <span class="brand__word-part brand__word-part--t"><span class="brand__word-anchor">T</span><span class="brand__word-reveal" data-text="he">he</span></span>
-          <span class="brand__word-part brand__word-part--m"><span class="brand__word-anchor">M</span><span class="brand__word-reveal" data-text="utating">utating</span></span>
-          <span class="brand__word-part"><span class="brand__word-anchor">C</span><span class="brand__word-reveal" data-text="ompany">ompany</span></span>
-        </span>
-      </span>
-    </div>
-    <nav class="main-nav" aria-label="{{ T "main_navigation" }}">
-      {{ partial "source-link.html" . }}
-      <a href="{{ "/news/" | relLangURL }}">{{ T "nav_news" }}</a>
-      <a href="{{ "/blog/" | relLangURL }}">{{ T "nav_blog" }}</a>
-      <a href="{{ "/#contact" | relLangURL }}">{{ T "nav_contact" }}</a>
-    </nav>
-    <div class="header-actions">
-      {{ partial "language-switcher.html" (dict "context" . "variant" "desktop") }}
-      <button class="theme-toggle" type="button" aria-label="{{ T "theme_toggle" }}">
-        <span class="theme-toggle__track" aria-hidden="true">
-          <span class="theme-toggle__sun"><span class="theme-toggle__sun-core"></span><span class="theme-toggle__sun-rays"></span><span class="theme-toggle__sun-rays theme-toggle__sun-rays--diagonal"></span></span>
-          <span class="theme-toggle__moon"></span>
-          <span class="theme-toggle__thumb"></span>
-        </span>
-      </button>
-      <details class="mobile-menu">
-        <summary aria-label="{{ T "open_navigation_menu" }}">
-          <span class="mobile-menu__label">{{ T "menu" }}</span>
-          <svg class="mobile-menu__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
-            <path d="M4 6h16M4 12h16M4 18h16"></path>
-          </svg>
-        </summary>
-        <nav aria-label="{{ T "mobile_navigation" }}">
-          <div class="mobile-menu__language">
-            {{ partial "language-switcher.html" (dict "context" . "variant" "mobile") }}
-          </div>
-          <div class="mobile-menu__links">
-            {{ partial "source-link.html" . }}
-            <a href="{{ "/news/" | relLangURL }}">{{ T "nav_news" }}</a>
-            <a href="{{ "/blog/" | relLangURL }}">{{ T "nav_blog" }}</a>
-            <a href="{{ "/#contact" | relLangURL }}">{{ T "nav_contact" }}</a>
-          </div>
-        </nav>
-      </details>
-    </div>
-  </div>
-  <a class="platform-link" href="https://platform.mutating.tech/" aria-label="{{ T "open_platform" }}">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
-      <path d="m10 17 5-5-5-5"></path>
-      <path d="M15 12H3"></path>
-    </svg>
-  </a>
-</header>
+{{- /* Site-owned content; markup and behavior belong to @mutating/ui. */ -}}
+{{- $context := . -}}
+{{- $currentLanguage := .Site.Language.Lang -}}
+{{- $languages := slice -}}
+{{- $supportedCodes := slice -}}
+{{- range hugo.Sites -}}
+  {{- $language := .Language.Lang -}}
+  {{- $supportedCodes = $supportedCodes | append $language -}}
+  {{- with partial "language-url.html" (dict "context" $context "language" $language) -}}
+    {{- $languages = $languages | append (dict "code" $language "href" (printf "%s?tmc-language-choice=%s" . $language)) -}}
+  {{- end -}}
+{{- end -}}
+{{- $items := slice
+  (dict "id" "sources" "label" (T "source_code") "href" "https://github.com/mutating" "icon" "github")
+  (dict "id" "news" "label" (T "nav_news") "href" ("/news/" | relLangURL))
+  (dict "id" "blog" "label" (T "nav_blog") "href" ("/blog/" | relLangURL))
+  (dict "id" "contact" "label" (T "nav_contact") "href" ("/#contact" | relLangURL))
+-}}
+{{- partial "tmc-ui/header.html" (dict
+  "inheritTypography" true
+  "brand" (dict "href" ("/" | relLangURL) "label" (T "brand_home_aria") "animation" (dict "activation" "reload-home"))
+  "items" $items
+  "navigationLabel" (T "main_navigation")
+  "mobileNavigationLabel" (T "mobile_navigation")
+  "themeLabel" (T "theme_toggle")
+  "menuLabel" (T "open_navigation_menu")
+  "menuText" (T "menu")
+  "language" (dict
+    "current" $currentLanguage "options" $languages "supportedCodes" $supportedCodes
+    "label" (T "choose_language_current" (dict "code" (upper $currentLanguage)))
+    "groupLabel" (T "languages")
+  )
+  "adjacentLink" (dict "href" "https://platform.mutating.tech/" "label" (T "open_platform"))
+) -}}

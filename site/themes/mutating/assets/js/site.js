@@ -1,10 +1,9 @@
+import { mountHeader, mountBrand, mountMobileMenu, BRAND_POINTER_EVENT } from "../ui/index.js";
+
 (() => {
   "use strict";
 
-  const THEME_TOGGLE_BLINK_EVENT = "tmc-theme-toggle-blink";
-  const BRAND_HOME_ACTIVATE_EVENT = "tmc-brand-home-activate";
-  const BRAND_HOME_RELOAD_DELAY_MS = 260;
-  const TENTACLE_POINTER_RELAY_EVENT = "tmc-tentacle-pointer-move";
+  const TENTACLE_POINTER_RELAY_EVENT = BRAND_POINTER_EVENT;
 
   function initCurrentYear() {
     const year = String(new Date().getFullYear());
@@ -91,113 +90,6 @@
         }
       });
       });
-  }
-
-  function initTheme() {
-    const darkMedia = window.matchMedia("(prefers-color-scheme: dark)");
-    const lightMedia = window.matchMedia("(prefers-color-scheme: light)");
-
-    const syncSystemTheme = () => {
-      let storedTheme = null;
-      try {
-        storedTheme = window.localStorage.getItem("tmc-theme");
-      } catch (_) {}
-      if (storedTheme === "dark" || storedTheme === "light") return;
-      document.documentElement.dataset.theme = darkMedia.matches
-        ? "dark"
-        : lightMedia.matches
-          ? "light"
-          : "dark";
-    };
-
-    darkMedia.addEventListener("change", syncSystemTheme);
-    lightMedia.addEventListener("change", syncSystemTheme);
-    document.querySelectorAll(".theme-toggle").forEach((toggle) => {
-      toggle.addEventListener("click", () => {
-        const current =
-          document.documentElement.dataset.theme === "light"
-            ? "light"
-            : "dark";
-        const next = current === "dark" ? "light" : "dark";
-        document.documentElement.dataset.theme = next;
-        try {
-          window.localStorage.setItem("tmc-theme", next);
-        } catch (_) {}
-        window.dispatchEvent(new Event(THEME_TOGGLE_BLINK_EVENT));
-      });
-    });
-  }
-
-  function initLanguageSwitcher() {
-    const switchers = [
-      ...document.querySelectorAll("[data-language-switcher]"),
-    ];
-    if (!switchers.length) return;
-
-    const desktopLayout = matchMedia("(min-width: 1041px)");
-    const desktopHover = matchMedia(
-      "(min-width: 1041px) and (hover: hover) and (pointer: fine)",
-    );
-    const close = (switcher) => switcher.removeAttribute("open");
-
-    switchers.forEach((switcher) => {
-      const summary = switcher.querySelector(":scope > summary");
-      const isDesktop = switcher.classList.contains(
-        "language-switcher--desktop",
-      );
-
-      if (isDesktop) {
-        switcher.addEventListener("pointerenter", () => {
-          if (desktopHover.matches) switcher.setAttribute("open", "");
-        });
-        switcher.addEventListener("pointerleave", () => {
-          if (desktopHover.matches) close(switcher);
-        });
-        summary?.addEventListener("click", (event) => {
-          if (!desktopHover.matches || event.detail === 0) return;
-          event.preventDefault();
-          switcher.setAttribute("open", "");
-        });
-      }
-
-      switcher.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape" || !switcher.open) return;
-        close(switcher);
-        summary?.focus();
-      });
-
-      switcher.querySelectorAll("[data-language-option]").forEach((link) => {
-        link.addEventListener("click", () => {
-          const language = link.dataset.languageOption;
-          if (!language) return;
-          try {
-            window.localStorage.setItem("tmc-language", language);
-          } catch (_) {}
-        });
-      });
-    });
-
-    const synchronizeLayout = () => {
-      switchers.forEach((switcher) => {
-        const hiddenByLayout = desktopLayout.matches
-          ? switcher.classList.contains("language-switcher--mobile")
-          : switcher.classList.contains("language-switcher--desktop");
-        if (hiddenByLayout) close(switcher);
-      });
-    };
-
-    document.addEventListener("pointerdown", (event) => {
-      const clickedSwitcher =
-        event.target instanceof Element
-          ? event.target.closest("[data-language-switcher]")
-          : null;
-
-      switchers.forEach((switcher) => {
-        if (switcher.open && switcher !== clickedSwitcher) close(switcher);
-      });
-    });
-    desktopLayout.addEventListener("change", synchronizeLayout);
-    synchronizeLayout();
   }
 
   function initThemeImages() {
@@ -479,440 +371,6 @@
     });
     if (document.fonts) document.fonts.ready.then(start);
     else start();
-  }
-
-  function initAnimatedWordmark() {
-    const stage = document.querySelector(".brand__wordmark-stage");
-    const brand = stage?.closest(".brand");
-    const header = stage?.closest(".site-header");
-    const actions = header?.querySelector(".header-actions");
-    const eye = brand?.querySelector(".brand__mark--eye");
-    const wordmark = stage?.querySelector(".brand__wordmark");
-    if (!stage || !brand || !header || !actions || !eye || !wordmark) return;
-    let frameRequest = 0;
-    let lastPointer = null;
-
-    const containsPoint = (element, x, y) => {
-      const rect = element.getBoundingClientRect();
-      return (
-        x >= rect.left &&
-        x < rect.right &&
-        y >= rect.top &&
-        y < rect.bottom
-      );
-    };
-
-    const setPointerExpansion = (expanded) => {
-      if (expanded) {
-        if (wordmark.dataset.hoverExpanded !== "true") {
-          wordmark.dataset.hoverExpanded = "true";
-        }
-      } else if (wordmark.hasAttribute("data-hover-expanded")) {
-        delete wordmark.dataset.hoverExpanded;
-      }
-    };
-
-    const synchronizePointerExpansion = (x, y) => {
-      lastPointer = { x, y };
-      if (stage.dataset.canExpand !== "true") {
-        setPointerExpansion(false);
-        return;
-      }
-      const hitTarget =
-        wordmark.dataset.hoverExpanded === "true" ? stage : wordmark;
-      setPointerExpansion(containsPoint(hitTarget, x, y));
-    };
-
-    const publishExpansionAvailability = (canExpand) => {
-      const becameExpandable =
-        canExpand && stage.dataset.canExpand !== "true";
-      stage.dataset.canExpand = canExpand ? "true" : "false";
-      if (!canExpand) {
-        setPointerExpansion(false);
-      } else if (lastPointer) {
-        synchronizePointerExpansion(lastPointer.x, lastPointer.y);
-      } else if (becameExpandable && wordmark.matches(":hover")) {
-        setPointerExpansion(true);
-      }
-    };
-
-    // Pointer boundary events can be synthesized when an animated hit box
-    // moves under a stationary cursor. Only physical pointer motion may change
-    // this state: compact TMC starts it, then the fixed stage retains it.
-    document.addEventListener(
-      "pointermove",
-      (event) => {
-        synchronizePointerExpansion(event.clientX, event.clientY);
-      },
-      { passive: true, capture: true },
-    );
-    document.addEventListener("pointerout", (event) => {
-      if (event.relatedTarget !== null) return;
-      lastPointer = null;
-      setPointerExpansion(false);
-    });
-    window.addEventListener("blur", () => {
-      lastPointer = null;
-      setPointerExpansion(false);
-    });
-    if (
-      stage.dataset.canExpand === "true" &&
-      wordmark.matches(":hover")
-    ) {
-      setPointerExpansion(true);
-    }
-
-    const update = () => {
-      cancelAnimationFrame(frameRequest);
-      frameRequest = requestAnimationFrame(() => {
-        if (matchMedia("(min-width: 921px)").matches) {
-          publishExpansionAvailability(true);
-          stage.dataset.expansionMeasured = "true";
-          stage.dataset.expansionRevision = String(
-            Number(stage.dataset.expansionRevision || 0) + 1,
-          );
-          return;
-        }
-        const brandStyle = getComputedStyle(brand);
-        const headerStyle = getComputedStyle(header);
-        const eyeStyle = getComputedStyle(eye);
-        const stageStyle = getComputedStyle(stage);
-        const headerRect = header.getBoundingClientRect();
-        const actionsRect = actions.getBoundingClientRect();
-        const eyeRect = eye.getBoundingClientRect();
-        const brandGap = Number.parseFloat(brandStyle.columnGap) || 0;
-        const eyeMargins =
-          (Number.parseFloat(eyeStyle.marginLeft) || 0) +
-          (Number.parseFloat(eyeStyle.marginRight) || 0);
-        const expandedStageWidth =
-          (Number.parseFloat(stageStyle.fontSize) || 0) * 11.6;
-        const requiredWidth =
-          eyeRect.width + eyeMargins + brandGap + expandedStageWidth;
-        const availableWidth =
-          headerRect.width -
-          (Number.parseFloat(headerStyle.paddingLeft) || 0) -
-          (Number.parseFloat(headerStyle.paddingRight) || 0) -
-          actionsRect.width;
-        publishExpansionAvailability(
-          availableWidth + 0.5 >= requiredWidth,
-        );
-        stage.dataset.expansionMeasured = "true";
-        stage.dataset.expansionRevision = String(
-          Number(stage.dataset.expansionRevision || 0) + 1,
-        );
-      });
-    };
-
-    const resizeObserver = new ResizeObserver(update);
-    resizeObserver.observe(header);
-    resizeObserver.observe(actions);
-    window.addEventListener("resize", update);
-    update();
-    document.fonts?.ready.then(update);
-  }
-
-  function initBrandControl() {
-    const brand = document.querySelector(".brand");
-    if (!brand) return;
-    let scheduled = false;
-    const activate = () => {
-      if (scheduled) return;
-      scheduled = true;
-      const homeUrl = brand.dataset.homeUrl || "/";
-      const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
-      const normalizedHome = new URL(homeUrl, location.href).pathname
-        .replace(/\/+$/, "") || "/";
-      if (currentPath !== normalizedHome) {
-        window.location.assign(homeUrl);
-        return;
-      }
-      const hashlessUrl = `${window.location.pathname}${window.location.search}`;
-      history.replaceState(history.state, "", hashlessUrl);
-      dispatchEvent(new Event(BRAND_HOME_ACTIVATE_EVENT));
-      setTimeout(() => location.reload(), BRAND_HOME_RELOAD_DELAY_MS);
-    };
-    brand.addEventListener("click", (event) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      activate();
-    });
-    brand.addEventListener("keydown", (event) => {
-      if (event.repeat || (event.key !== "Enter" && event.key !== " ")) return;
-      event.preventDefault();
-      activate();
-    });
-  }
-
-  function initAnimatedEye() {
-    const eye = document.querySelector(".animated-eye-logo");
-    const eyeClip = eye?.querySelector(".animated-eye-logo__clip");
-    const pupil = eye?.querySelector(".animated-eye-logo__pupil");
-    if (!eye || !eyeClip || !pupil) return;
-
-    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const blinkSlowdown = 2 / 3;
-    const supportsPathClip = CSS.supports(
-      "clip-path",
-      'path("M 0 0 L 1 0 L 0 1 Z")',
-    );
-    let isHeldClosed = false;
-    const gaze = {
-      x: 0,
-      y: 0,
-      vx: 0,
-      vy: 0,
-      targetX: 0,
-      targetY: 0,
-      maxX: 1,
-      maxY: 1,
-    };
-    const lid = {
-      openness: 0,
-      from: 0,
-      to: 1,
-      startedAt: 0,
-      duration: 0,
-      phase: "idle",
-      kind: "auto",
-      reopenAt: 0,
-      width: 1,
-      height: 1,
-    };
-    let animationFrame = 0;
-    let scrollFrame = 0;
-    let previousGazeFrameAt = 0;
-
-    const renderScrollTone = () => {
-      scrollFrame = 0;
-      const scrollRange = Math.max(1, innerHeight);
-      const whiteness = Math.max(0, Math.min(1, scrollY / scrollRange));
-      const green = Math.round(210 + 45 * whiteness);
-      const blue = Math.round(10 + 245 * whiteness);
-      eye.style.setProperty("--eye-scroll-color", `rgb(255 ${green} ${blue})`);
-      eye.style.setProperty(
-        "--eye-scroll-outline-opacity",
-        whiteness.toFixed(4),
-      );
-    };
-
-    const renderLid = () => {
-      const openness = Math.max(0, Math.min(1, lid.openness));
-      if (openness > 0.9999) {
-        eyeClip.style.clipPath = "none";
-        eyeClip.style.webkitClipPath = "none";
-        return;
-      }
-      if (!supportsPathClip) {
-        const inset = ((1 - openness) * 50).toFixed(3);
-        const fallback = `inset(${inset}% 0 ${inset}% 0 round 50%)`;
-        eyeClip.style.clipPath = fallback;
-        eyeClip.style.webkitClipPath = fallback;
-        return;
-      }
-      const width = lid.width;
-      const height = lid.height;
-      const middle = height / 2;
-      if (openness < 0.0001) {
-        const closed = `path("M 0 ${middle.toFixed(3)} L ${width.toFixed(3)} ${middle.toFixed(3)} Z")`;
-        eyeClip.style.clipPath = closed;
-        eyeClip.style.webkitClipPath = closed;
-        return;
-      }
-      const halfChord = width / 2;
-      const sagitta = middle * openness;
-      const radius =
-        (halfChord * halfChord + sagitta * sagitta) / (2 * sagitta);
-      const path = `path("M 0 ${middle.toFixed(3)} A ${radius.toFixed(3)} ${radius.toFixed(3)} 0 0 1 ${width.toFixed(3)} ${middle.toFixed(3)} A ${radius.toFixed(3)} ${radius.toFixed(3)} 0 0 1 0 ${middle.toFixed(3)} Z")`;
-      eyeClip.style.clipPath = path;
-      eyeClip.style.webkitClipPath = path;
-    };
-
-    const updateBounds = () => {
-      const rect = eye.getBoundingClientRect();
-      gaze.maxX = Math.max(1, rect.width * 0.255);
-      gaze.maxY = Math.max(1, rect.height * 0.142);
-      lid.width = rect.width;
-      lid.height = rect.height;
-      renderLid();
-    };
-    const renderGaze = () => {
-      const tilt = gaze.maxX ? (-gaze.x / gaze.maxX) * 2.8 : 0;
-      pupil.style.setProperty("--gaze-x", `${gaze.x.toFixed(2)}px`);
-      pupil.style.setProperty("--gaze-y", `${gaze.y.toFixed(2)}px`);
-      pupil.style.setProperty("--gaze-tilt", `${tilt.toFixed(2)}deg`);
-    };
-    const constrain = () => {
-      const ellipse =
-        (gaze.x * gaze.x) / (gaze.maxX * gaze.maxX) +
-        (gaze.y * gaze.y) / (gaze.maxY * gaze.maxY);
-      if (ellipse > 1) {
-        const scale = 1 / Math.sqrt(ellipse);
-        gaze.x *= scale;
-        gaze.y *= scale;
-        gaze.vx *= 0.35;
-        gaze.vy *= 0.35;
-      }
-    };
-    const aimAt = (clientX, clientY) => {
-      const rect = eye.getBoundingClientRect();
-      const dx = clientX - (rect.left + rect.width / 2);
-      const dy = clientY - (rect.top + rect.height / 2);
-      const distance = Math.hypot(dx, dy);
-      if (!distance) {
-        gaze.targetX = 0;
-        gaze.targetY = 0;
-        return;
-      }
-      const ux = dx / distance;
-      const uy = dy / distance;
-      const boundary =
-        1 /
-        Math.sqrt(
-          (ux * ux) / (gaze.maxX * gaze.maxX) +
-            (uy * uy) / (gaze.maxY * gaze.maxY),
-        );
-      const reach = Math.min(
-        1,
-        distance / (Math.min(innerWidth, innerHeight) * 0.34 + 40),
-      );
-      gaze.targetX = ux * boundary * reach;
-      gaze.targetY = uy * boundary * reach;
-      if (reduceMotion) {
-        gaze.x = gaze.targetX;
-        gaze.y = gaze.targetY;
-        renderGaze();
-      }
-    };
-    const centerGaze = () => {
-      gaze.targetX = 0;
-      gaze.targetY = 0;
-    };
-    const smoothStep = (value) => value * value * (3 - 2 * value);
-    const transitionLid = (target, baseDuration, kind) => {
-      const distance = Math.abs(target - lid.openness);
-      lid.from = lid.openness;
-      lid.to = target;
-      lid.startedAt = performance.now();
-      lid.duration = Math.max(
-        (reduceMotion ? 70 : 90) * blinkSlowdown,
-        baseDuration * blinkSlowdown * distance,
-      );
-      lid.phase = target === 0 ? "closing" : "opening";
-      lid.kind = kind;
-      lid.reopenAt = 0;
-    };
-    const blink = () => {
-      if (isHeldClosed || document.hidden || lid.phase !== "idle") return;
-      transitionLid(0, reduceMotion ? 120 : 220, "auto");
-    };
-    const blinkForTheme = () => {
-      if (isHeldClosed || document.hidden) return;
-      transitionLid(0, reduceMotion ? 120 : 220, "auto");
-    };
-    const holdClosed = () => {
-      isHeldClosed = true;
-      transitionLid(0, reduceMotion ? 120 : 240, "manual");
-    };
-
-    const updateLid = (now) => {
-      if (lid.phase === "closed-pause") {
-        if (isHeldClosed) lid.phase = "held";
-        else if (now >= lid.reopenAt) {
-          transitionLid(1, reduceMotion ? 150 : 280, lid.kind);
-        }
-        renderLid();
-        return;
-      }
-      if (lid.phase === "held" || lid.phase === "idle") {
-        renderLid();
-        return;
-      }
-      const progress = Math.min(1, (now - lid.startedAt) / lid.duration);
-      const eased = smoothStep(progress);
-      lid.openness = lid.from + (lid.to - lid.from) * eased;
-      renderLid();
-      if (progress < 1) return;
-      lid.openness = lid.to;
-      if (lid.to === 0) {
-        if (isHeldClosed) lid.phase = "held";
-        else {
-          lid.phase = "closed-pause";
-          lid.reopenAt = now + (lid.kind === "auto" ? 55 : 35);
-        }
-      } else {
-        lid.phase = "idle";
-      }
-    };
-    const advanceGaze = (elapsedFrames) => {
-      let remainingFrames = Math.min(4, Math.max(0, elapsedFrames));
-      while (remainingFrames > 0.0001) {
-        const frameStep = Math.min(1, remainingFrames);
-        const damping = 0.79 ** frameStep;
-        gaze.vx =
-          (gaze.vx + (gaze.targetX - gaze.x) * 0.068 * frameStep) *
-          damping;
-        gaze.vy =
-          (gaze.vy + (gaze.targetY - gaze.y) * 0.068 * frameStep) *
-          damping;
-        gaze.x += gaze.vx * frameStep;
-        gaze.y += gaze.vy * frameStep;
-        constrain();
-        remainingFrames -= frameStep;
-      }
-    };
-    const animate = (now) => {
-      if (!reduceMotion) {
-        const elapsedFrames = previousGazeFrameAt
-          ? (now - previousGazeFrameAt) / (1000 / 60)
-          : 1;
-        previousGazeFrameAt = now;
-        advanceGaze(elapsedFrames);
-        renderGaze();
-      }
-      updateLid(now);
-      animationFrame = requestAnimationFrame(animate);
-    };
-
-    renderScrollTone();
-    updateBounds();
-    transitionLid(1, reduceMotion ? 150 : 280, "auto");
-    new ResizeObserver(updateBounds).observe(eye);
-    addEventListener(
-      "scroll",
-      () => {
-        if (!scrollFrame) scrollFrame = requestAnimationFrame(renderScrollTone);
-      },
-      { passive: true },
-    );
-    addEventListener(
-      "resize",
-      () => {
-        updateBounds();
-        renderScrollTone();
-      },
-      { passive: true },
-    );
-    addEventListener("pointermove", (event) => aimAt(event.clientX, event.clientY), {
-      passive: true,
-    });
-    addEventListener("pointerdown", (event) => aimAt(event.clientX, event.clientY), {
-      passive: true,
-    });
-    addEventListener(TENTACLE_POINTER_RELAY_EVENT, (event) => {
-      const clientX = Number(event.detail?.clientX);
-      const clientY = Number(event.detail?.clientY);
-      if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
-        aimAt(clientX, clientY);
-      }
-    });
-    addEventListener("blur", centerGaze);
-    addEventListener(THEME_TOGGLE_BLINK_EVENT, blinkForTheme);
-    addEventListener(BRAND_HOME_ACTIVATE_EVENT, holdClosed);
-    document.addEventListener("pointerout", (event) => {
-      if (!event.relatedTarget) centerGaze();
-    });
-    setInterval(blink, 30000);
-    animationFrame = requestAnimationFrame(animate);
   }
 
   function initComplexityChart() {
@@ -1620,31 +1078,6 @@
     schedulePrewarm();
   }
 
-  function initMobileMenus() {
-    const menus = [...document.querySelectorAll(".mobile-menu")];
-
-    menus.forEach((menu) => {
-      menu.querySelectorAll("nav a").forEach((link) => {
-        link.addEventListener("click", () => {
-          menu.removeAttribute("open");
-        });
-      });
-    });
-
-    document.addEventListener("pointerdown", (event) => {
-      const clickedMenu =
-        event.target instanceof Element
-          ? event.target.closest(".mobile-menu")
-          : null;
-
-      menus.forEach((menu) => {
-        if (menu.open && menu !== clickedMenu) {
-          menu.removeAttribute("open");
-        }
-      });
-    });
-  }
-
   function initPostToc() {
     const toc = document.querySelector(".post__toc");
     if (!toc) return;
@@ -1693,21 +1126,32 @@
   function init() {
     initCurrentYear();
     initCodeCopyButtons();
-    initTheme();
-    initLanguageSwitcher();
+    const header = document.querySelector(".tmc-header-shell");
+    if (header) mountHeader(header, {
+      themeOptions: {
+        // Keep the theme already painted by the head while this bundle loaded.
+        initialTheme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+        syncAcrossTabs: false,
+        preferenceSource: "storage",
+      },
+      language: { closeOnSelection: false, stopEscapePropagation: false },
+      themeToggle: { exposePressedState: false },
+      brand: false,
+      mobileMenu: false,
+    });
     initThemeImages();
     initDeferredMedia();
     initTicker();
-    initAnimatedWordmark();
-    initBrandControl();
-    initAnimatedEye();
+    header?.querySelectorAll(".tmc-brand").forEach((brand) => mountBrand(brand));
     initComplexityChart();
     initFeedbackLoopImpulse();
     initCoexistencePair();
     initPantograph();
     initTokamak();
     initTentacles();
-    initMobileMenus();
+    header?.querySelectorAll(".tmc-mobile-menu").forEach((menu) => mountMobileMenu(menu, {
+      closeOnEscape: false, closeOnDesktop: false, closeNestedMenus: false,
+    }));
     initPostToc();
     initUnpaginatedBlogTail();
     document.documentElement.dataset.themeReady = "true";
