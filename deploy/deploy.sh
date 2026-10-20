@@ -17,11 +17,11 @@ if [[ "$phase" == all || "$phase" == prepare ]]; then
   # Root-run maintenance may have left bytecode caches in this shared Python.
   # They are disposable, and the deployment user must not chmod another user's files.
   deploy_stage 'Python permissions (deadline 60s)' timeout --kill-after=5s 60s \
-    find /opt/mutating/python -name __pycache__ -prune -o -user "$(id -un)" -exec chmod a+rX '{}' +
+    find /opt/mutating/python -name __pycache__ -prune -o ! -type l -user "$(id -un)" -exec chmod a+rX '{}' +
   deploy_stage 'Install API dependencies (deadline 300s)' timeout --kill-after=10s 300s \
     uv sync --project "$release/platform/api" --frozen --no-dev --python 3.12
   deploy_stage 'Release permissions (deadline 60s)' timeout --kill-after=5s 60s \
-    find "$release" -name __pycache__ -prune -o -user "$(id -un)" -exec chmod a+rX '{}' +
+    find "$release" -name __pycache__ -prune -o ! -type l -user "$(id -un)" -exec chmod a+rX '{}' +
 fi
 if [[ "$phase" == activation-worker ]]; then
   # Publish completion atomically even on failure; the observer never guesses

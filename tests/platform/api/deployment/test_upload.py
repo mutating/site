@@ -55,7 +55,7 @@ if command == 'rsync':
 if command == 'uv' and os.environ.get('FAILURE') == 'uv':
     sys.exit(42)
 if command == 'chmod' and os.environ.get('FAILURE') == 'cache-permissions':
-    if any('__pycache__' in arg for arg in args):
+    if any('__pycache__' in arg or Path(arg).is_symlink() for arg in args):
         sys.exit(77)
     if '-R' in args and any(Path(arg).is_dir() and list(Path(arg).rglob('__pycache__')) for arg in args):
         sys.exit(77)
@@ -434,6 +434,7 @@ def test_python_permissions_skip_bytecode_created_by_other_runtime_users(deploym
     cache.mkdir(parents=True)
     (cache / "runtime.pyc").write_bytes(b"foreign bytecode")
     (python / "runtime.py").write_text("source")
+    (python / "python-link").symlink_to(cache / "runtime.pyc")
     result = subprocess.run(
         ["bash", str(checkout / "deploy/deploy.sh"), "new", "prepare"],
         env={**env, "FAILURE": "cache-permissions"},
