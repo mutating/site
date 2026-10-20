@@ -292,3 +292,54 @@ def test_first_deployment_without_valid_current_release_uploads_in_full(deployme
     assert result.returncode == 0, result.stderr
     transfer = next(action for action in actions if action[0] == "rsync")
     assert not any(argument.startswith("--copy-dest=") for argument in transfer)
+
+
+def test_actual_upload_filters_keep_built_site_and_runtime_but_not_hugo_sources(deployment):
+    """Ship the published site once and keep secrets/data out even under include rules."""
+    rsync = shutil.which("rsync")
+    if not rsync:
+        pytest.skip("rsync is required")
+    checkout, server, _, _, _ = deployment
+    fixtures = {
+        "site/public/index.html": "site",
+        "site/public/image.webp": "published image",
+        "site/public/.env.production": "private",
+        "site/public/unsafe.db": "private database",
+        "site/themes/mutating/static/image.webp": "duplicate original image",
+        "site/content/post.md": "Hugo source",
+        "site/resources/cache.bin": "Hugo cache",
+        "platform/api/throng_api/app.py": "runtime",
+        "platform/web/server/app.py": "web server",
+        "platform/web/dist/index.html": "web UI",
+        "platform/api/.env": "credentials",
+        "platform/api/.venv/lib.py": "local environment",
+        "node_modules/package.js": "dependency",
+        ".git/config": "checkout credentials",
+        "tests/screenshot.png": "fixture",
+    }
+    for name, content in fixtures.items():
+        file = checkout / name
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(content)
+    result, actions = run_upload(deployment, "upload")
+    assert result.returncode == 0, result.stderr
+    transfer = next(action for action in actions if action[0] == "rsync")
+    filters = [arg for arg in transfer if arg.startswith(("--include=", "--exclude="))]
+    target = server / "filtered"
+    result = subprocess.run(
+        [rsync, "--archive", *filters, str(checkout) + "/", str(target) + "/"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    runtime = {
+        "site/public/index.html",
+        "site/public/image.webp",
+        "platform/api/throng_api/app.py",
+        "platform/web/server/app.py",
+        "platform/web/dist/index.html",
+    }
+    for name in fixtures:
+        assert (target / name).exists() == (name in runtime), name
+    assert (target / "deploy/deploy.sh").exists()

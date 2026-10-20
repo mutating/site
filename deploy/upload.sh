@@ -41,7 +41,8 @@ if [[ "$phase" == all || "$phase" == upload ]]; then
     deploy_log "Upload: reusing unchanged files from $basis"
   fi
   printf -v rsync_shell '%q ' ssh "${ssh_options[@]}"
-  # Upload code only; production credentials and data live outside the release tree.
+  # Upload runtime code and built Hugo output. Hugo sources duplicate large images
+  # and are never used on the server. Credentials and data stay outside releases.
   # The I/O timeout detects a stall; the outer deadline also catches a slow trickle.
   deploy_stage 'Upload (deadline 480s, idle timeout 60s)' \
     timeout --kill-after=10s 480s sshpass -e rsync \
@@ -52,6 +53,7 @@ if [[ "$phase" == all || "$phase" == upload ]]; then
     --exclude='__pycache__/' --exclude='.pytest_cache/' --exclude='.ruff_cache/' \
     --exclude='tests/' --exclude='test-results/' --exclude='playwright-report/' \
     --exclude='.coverage*' --exclude='htmlcov/' --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
+    --include='/site/' --include='/site/public/***' --exclude='/site/***' \
     -e "$rsync_shell" ./ "$target:$staging/"
   deploy_stage 'Finalize uploaded release (deadline 60s)' \
     timeout --kill-after=5s 60s sshpass -e ssh "${ssh_options[@]}" "$target" \
