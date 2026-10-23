@@ -1,0 +1,56 @@
+/* Geometry and surface of the original static site's adjacent platform link. */
+.tmc-square-button:is(a, button) {
+  box-sizing: border-box;
+  width: 74px;
+  height: 74px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--ink) 5%, transparent);
+  display: grid;
+  place-items: center;
+  color: light-dark(#000, #fff);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tmc-square-button svg {
+  width: 36px;
+  height: 36px;
+}
+
+.tmc-square-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--hot) 55%, transparent);
+  outline-offset: 3px;
+}
+
+.tmc-square-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+@media (max-width: 1120px) {
+  .tmc-square-button:is(a, button) {
+    background: color-mix(in srgb, var(--bg) 93%, transparent);
+  }
+}
+
+@media (max-width: 580px) {
+  .tmc-square-button:is(a, button) {
+    width: 68px;
+    height: 68px;
+  }
+
+  .tmc-square-button svg {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .tmc-square-button:is(a, button) { width: 56px; }
+}

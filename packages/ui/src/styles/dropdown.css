@@ -1,0 +1,64 @@
+/* The static site mobile menu and standalone dropdowns share these surfaces. */
+.tmc-mobile-menu nav,
+.tmc-dropdown-panel {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  width: 190px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: grid;
+}
+
+.tmc-mobile-menu nav a,
+.tmc-dropdown-panel :is(a, button) {
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tmc-dropdown {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.tmc-dropdown, .tmc-dropdown * { box-sizing: border-box; }
+
+.tmc-dropdown-panel {
+  top: calc(100% + 8px);
+  z-index: 1;
+  max-width: calc(100vw - 24px);
+  max-height: max(44px, calc(100dvh - 110px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  translate: var(--tmc-dropdown-shift, none);
+}
+
+.tmc-dropdown-panel[hidden] { display: none; }
+
+.tmc-dropdown-panel :is(a, button) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tmc-dropdown-panel :is(a, button):is(:hover, :focus-visible) {
+  background: var(--surface-raised);
+}
+
+.tmc-dropdown-panel button:disabled { cursor: wait; opacity: 0.5; }
+.tmc-dropdown-panel svg { flex: 0 0 auto; }
