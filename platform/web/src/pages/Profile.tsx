@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError, json } from "../lib/api";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
@@ -203,6 +204,7 @@ export function Profile() {
           </div>
         </form>
       </div>
+      <section className="token-profile-link panel"><div><h2>{t("apiTokens")}</h2><p>{t("tokenProfileLead")}</p></div><Link className="button secondary" to="/api-tokens">{t("apiTokens")} ↗</Link></section>
       <details className="profile-account-management">
         <summary>
           {t("accountManagement")}

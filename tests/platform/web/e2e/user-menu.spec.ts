@@ -179,7 +179,7 @@ test("the avatar menu is absent before login and opens the real profile without 
   await expect(trigger(page)).toHaveClass(/tmc-square-button/);
   await page.evaluate(() => { document.body.dataset.userMenuDocument = "preserved"; });
   await trigger(page).click();
-  await expect(menu(page).getByRole("menuitem")).toHaveText(["Профиль", "Выйти"]);
+  await expect(menu(page).getByRole("menuitem")).toHaveText(["Профиль", "API-токены", "Выйти"]);
   await expect(menu(page)).toHaveAttribute("id", (await trigger(page).getAttribute("aria-controls"))!);
   await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
   await expect(page).toHaveURL(/\/profile$/);
@@ -200,6 +200,7 @@ test("keyboard navigation, Escape, Tab, repeated click and outside presses dismi
   await button.focus();
   await page.keyboard.press("Enter");
   const profile = menu(page).getByRole("menuitem", { name: "Профиль", exact: true });
+  const tokens = menu(page).getByRole("menuitem", { name: "API-токены", exact: true });
   const logout = menu(page).getByRole("menuitem", { name: "Выйти", exact: true });
   await expect(profile).toBeFocused();
   await page.keyboard.press("ArrowUp");
@@ -215,6 +216,8 @@ test("keyboard navigation, Escape, Tab, repeated click and outside presses dismi
   await expect(menu(page)).toHaveCount(0);
   await page.keyboard.press("Space");
   await expect(profile).toBeFocused();
+  await page.keyboard.press(next);
+  await expect(tokens).toBeFocused();
   await page.keyboard.press(next);
   await expect(logout).toBeFocused();
   await page.keyboard.press(next);
@@ -254,7 +257,7 @@ for (const language of ["ru", "en"]) for (const theme of ["dark", "light"]) {
       expect(circleBox.x + circleBox.width / 2).toBeCloseTo(box.x + box.width / 2, 1);
       expect(circleBox.y + circleBox.height / 2).toBeCloseTo(box.y + box.height / 2, 1);
       if (isMobile) await button.tap(); else await button.click();
-      await expect(menu(page).getByRole("menuitem")).toHaveText(language === "ru" ? ["Профиль", "Выйти"] : ["Profile", "Sign out"]);
+      await expect(menu(page).getByRole("menuitem")).toHaveText(language === "ru" ? ["Профиль", "API-токены", "Выйти"] : ["Profile", "API tokens", "Sign out"]);
       await expect(menu(page)).toBeInViewport({ ratio: 1 });
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       // Resizing through the desktop breakpoint must not disable or dismiss this menu.

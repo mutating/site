@@ -33,7 +33,7 @@
   top: calc(100% + 8px);
   z-index: 1;
   max-width: calc(100vw - 24px);
-  max-height: max(44px, calc(100dvh - 110px));
+  max-height: max(44px, var(--tmc-dropdown-available-height, calc(100dvh - 110px)));
   overflow-y: auto;
   overscroll-behavior: contain;
   translate: var(--tmc-dropdown-shift, none);

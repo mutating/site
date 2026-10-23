@@ -70,6 +70,8 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
       </>
     ),
     close: <path d="m6 6 12 12M6 18 18 6" />,
+    check: <path d="m5 12 4 4L19 6" />,
+    building: <><rect x="7" y="3" width="14" height="19" rx="2" /><path d="M7 9H3v13h6M11 7h2m4 0h0m-6 4h2m4 0h0m-6 4h2m4 0h0m-4 7v-3h3v3" /></>,
     exit: (
       <>
         <path d="M10 3H4v18h6m-1-9h13m-5-5 5 5-5 5" />
@@ -99,6 +101,8 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
       </>
     ),
     "chevron-down": <path d="m6 9 6 6 6-6" />,
+    key: <><circle cx="15" cy="8" r="5" /><path d="m11.5 11.5-8 8V22H7v-3h3v-3l2-2" /></>,
+    copy: <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V3H3v13h5" /></>,
   };
   return (
     <svg

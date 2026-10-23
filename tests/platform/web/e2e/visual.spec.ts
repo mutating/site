@@ -3,6 +3,7 @@ import {
   addComputer,
   expect,
   headers,
+  makeAccount,
   password,
   test,
   type Account,
@@ -10,6 +11,67 @@ import {
 import { GiB, historyNow, reserve, seedHistory } from "./resources";
 import { resolve } from "node:path";
 import { openLanguages } from "./header-controls";
+
+test("owner-aware API token registry and issuance dialog", async ({ page, request, account }, info) => {
+  const { language, theme } = info.project.metadata;
+  const exactPixels = { threshold: 0.01, maxDiffPixels: 0 };
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language);
+    localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  await page.clock.setFixedTime(historyNow);
+  const issuer = await makeAccount(request, "Дмитрий");
+  const studioOwner = await makeAccount(request, "Ирина");
+  for (const [actor, last_name] of [[account, "Волкова"], [issuer, "Орлов"], [studioOwner, "Миронова"]] as const) {
+    expect((await request.patch(`${API}/users/${actor.id}`, { headers: headers(actor), data: { last_name } })).status()).toBe(200);
+  }
+  const response = await request.post(`${API}/companies`, { headers: headers(account), data: { name: "Лаборатория" } });
+  expect(response.status()).toBe(201);
+  const lab = await response.json();
+  const studioResponse = await request.post(`${API}/companies`, { headers: headers(studioOwner), data: { name: "Студия" } });
+  expect(studioResponse.status()).toBe(201);
+  const studio = await studioResponse.json();
+  expect((await request.post(`${API}/memberships`, { headers: headers(studioOwner), data: { company_id: studio.id, user_id: account.id, role: "user", permissions: ["tokens.read"] } })).status()).toBe(201);
+  expect((await request.post(`${API}/memberships`, { headers: headers(account), data: { company_id: lab.id, user_id: issuer.id, role: "admin" } })).status()).toBe(201);
+  const records = [
+    [account, { user_id: account.id }, "Рабочий Mac", ["read", "execute"]],
+    [account, { company_id: lab.id }, "CI лаборатории", ["read", "execute"]],
+    [issuer, { company_id: lab.id }, "Отчёты команды", ["read"]],
+    [studioOwner, { company_id: studio.id }, "Аналитика Студии", ["read"]],
+  ] as const;
+  for (const [actor, owner, name, scopes] of records) expect((await request.post(`${API}/api-tokens`, { headers: headers(actor), data: { ...owner, name, scopes } })).status()).toBe(201);
+  await page.route(`${API}/api-tokens**`, async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const fixedDates = { created_at: "2026-10-07T12:00:00Z", expires_at: "2026-11-06T12:00:00Z" };
+    if (Array.isArray(body)) {
+      const recordNames = records.map(value => value[2]) as readonly string[];
+      body.sort((a, b) => recordNames.indexOf(a.name) - recordNames.indexOf(b.name));
+      return route.fulfill({ response, json: body.map(value => ({ ...value, ...fixedDates })) });
+    }
+    expect(body.issuer.last_name).toBe("Волкова");
+    return route.fulfill({ response, json: { ...body, ...fixedDates, token: "thr_visual_example_only_8A3k7Q" } });
+  });
+  expect((await page.request.post(`${API}/auth/session`, {
+    headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },
+    data: { login: account.email, password },
+  })).status()).toBe(200);
+  await page.goto("api-tokens");
+  await expect(page.locator(".token-registry-row")).toHaveCount(4);
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page).toHaveScreenshot("api-tokens.png", { fullPage: true, ...exactPixels });
+  await page.getByRole("button", { name: language === "ru" ? "Создать токен" : "Create token", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveScreenshot("api-token-personal-create.png", exactPixels);
+  await dialog.getByRole("radio", { name: language === "ru" ? /Организация/ : /Organization/ }).check();
+  await dialog.getByLabel(language === "ru" ? "Название токена" : "Token name", { exact: true }).fill("Ночные сборки");
+  await expect(dialog).toHaveScreenshot("api-token-create.png", exactPixels);
+  await expect(page).toHaveScreenshot("api-token-overlay.png", exactPixels);
+  await dialog.getByRole("button", { name: language === "ru" ? "Создать токен организации" : "Create organization token", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: language === "ru" ? "Токен создан" : "Token created", exact: true })).toBeVisible();
+  await expect(dialog.locator(".token-owner-summary")).toContainText("Алиса Волкова");
+  await expect(dialog).toHaveScreenshot("api-token-issued.png", exactPixels);
+});
 
 test("user menu with the placeholder and a real uploaded avatar", async ({ page, account }, info) => {
   const { language, theme } = info.project.metadata;

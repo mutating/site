@@ -83,6 +83,7 @@ export function Layout() {
     ["/power-cells", "Power Cells", "cells"],
     ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
+    ["/api-tokens", "apiTokens", "key"],
   ];
   if (github.data?.enabled) links.splice(2, 0, ["/actions", "actions", "play"]);
   return (

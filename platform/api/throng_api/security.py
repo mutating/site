@@ -245,12 +245,13 @@ async def owned(session, model, resource_id, principal, admin=False):
     return row
 
 
-async def issue_token(session, owner, actor_id, name, scopes, expires_at):
+async def issue_token(session, owner, actor_id, name, scopes, expires_at, *, purpose="api"):
     raw = secret("thr_")
     token = AccessToken(
         ownership_id=owner.id,
         created_by_user_id=actor_id,
         name=name,
+        purpose=purpose,
         scopes=sorted(scopes),
         token_hash=digest(raw),
         expires_at=expires_at,

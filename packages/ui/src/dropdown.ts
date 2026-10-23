@@ -24,6 +24,7 @@ export function mountDropdown(root: HTMLElement, options: DropdownOptions = {}):
   const positionPanel = () => {
     if (scope.disposed || native || !panel || !isOpen()) return;
     panel.style.removeProperty("--tmc-dropdown-shift");
+    panel.style.setProperty("--tmc-dropdown-available-height", `${Math.max(44, window.innerHeight - panel.getBoundingClientRect().top - 12)}px`);
     const bounds = panel.getBoundingClientRect();
     const shift = Math.max(12 - bounds.left, Math.min(0, document.documentElement.clientWidth - 12 - bounds.right));
     if (shift) panel.style.setProperty("--tmc-dropdown-shift", `${shift}px`);
@@ -66,6 +67,7 @@ export function mountDropdown(root: HTMLElement, options: DropdownOptions = {}):
       observer.disconnect();
       window.cancelAnimationFrame(positionFrame);
       panel.style.removeProperty("--tmc-dropdown-shift");
+      panel.style.removeProperty("--tmc-dropdown-available-height");
     });
   }
   if (options.closeOnDesktop) {
@@ -134,6 +136,8 @@ export function mountDropdown(root: HTMLElement, options: DropdownOptions = {}):
     const index = last ? choices.length - 1 : event.key === "Home" || entering ? 0
       : (current + (event.key === "ArrowUp" ? -1 : 1) + choices.length) % choices.length;
     choices[index]?.focus();
+    // Firefox can focus a clipped grid item without scrolling the overflow panel.
+    choices[index]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
   on(root, "keydown", keyDown);
   if (!native) on<KeyboardEvent>(document, "keydown", event => {

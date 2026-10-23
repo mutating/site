@@ -165,6 +165,8 @@ def api_requests(
         ("GET", "/v1/users/me", "read", {}),
         ("GET", "/v1/auth/session", "read", {}),
         ("GET", "/v1/auth/check", ("read", "execute"), {}),
+        ("GET", "/v1/api-tokens", "read", {}),
+        ("POST", "/v1/api-tokens", "manage", {"json": {"user_id": user["id"], "name": "API client", "scopes": ["read"]}}),
         ("GET", "/v1/organization-directory", "read", {}),
         ("GET", "/v1/github/status", "read", {}),
         ("POST", "/v1/github/authorize", "manage", {}),

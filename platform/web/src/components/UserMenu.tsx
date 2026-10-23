@@ -17,6 +17,7 @@ export function UserMenu() {
       <span aria-hidden="true"><Avatar round /></span>
     </SquareButton>}>
     <Link role="menuitem" to="/profile" aria-current={location.pathname === "/profile" ? "page" : undefined}>{t("profile")}</Link>
+    <Link role="menuitem" to="/api-tokens" aria-current={location.pathname === "/api-tokens" ? "page" : undefined}>{t("apiTokens")}</Link>
     <button role="menuitem" type="button" disabled={signingOut} aria-busy={signingOut} onClick={async () => {
       setError(null);
       try { await signOut(); } catch (error) { setError(error); }

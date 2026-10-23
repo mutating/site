@@ -25,6 +25,7 @@ import { Invitation } from "./pages/Invitation";
 import { Profile } from "./pages/Profile";
 import { Cloud } from "./pages/Cloud";
 import { Actions } from "./pages/Actions";
+import { ApiTokens } from "./pages/ApiTokens";
 import "@mutating/ui/fonts.css";
 import "@mutating/ui/styles/brand.css";
 import "@mutating/ui/styles/header.css";
@@ -91,6 +92,7 @@ function App() {
               <Route path="organizations/:companyId" element={<Organization />} />
               <Route path="invitations/:token" element={<Invitation />} />
               <Route path="profile" element={<Profile />} />
+              <Route path="api-tokens" element={<ApiTokens />} />
               <Route path="cloud" element={<Cloud />} />
               <Route path="actions" element={<Actions />} />
               <Route path="*" element={<NotFound />} />

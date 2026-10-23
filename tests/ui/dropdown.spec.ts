@@ -1,5 +1,31 @@
 import { expect, test } from "@playwright/test";
 
+test("dropdown height follows available space and keeps the last item reachable", async ({ page }) => {
+  await page.goto("/react.html");
+  const trigger = page.getByRole("button", { name: "Меню примера", exact: true });
+  await trigger.evaluate(node => {
+    const root = node.closest<HTMLElement>(".tmc-dropdown")!;
+    document.body.append(root);
+    document.getElementById("root")!.style.display = "none";
+    root.style.cssText = "position:fixed;top:80px;right:12px";
+    const item = document.createElement("button");
+    item.type = "button";
+    item.setAttribute("role", "menuitem");
+    item.textContent = "Последний пункт";
+    root.querySelector("[data-tmc-dropdown-panel]")!.append(item);
+  });
+  const menu = page.getByRole("menu", { name: "Меню примера", exact: true });
+  for (const height of [240, 320, 800]) {
+    await page.setViewportSize({ width: 320, height });
+    await trigger.focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("End");
+    await expect(menu.getByRole("menuitem", { name: "Последний пункт", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press("Escape");
+  }
+});
+
 test("Space activates menu links and invokes native buttons only once", async ({ page }) => {
   await page.goto("/react.html");
   const trigger = page.getByRole("button", { name: "Меню примера", exact: true });
