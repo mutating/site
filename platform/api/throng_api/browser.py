@@ -56,7 +56,9 @@ class BrowserSessionMiddleware:
             if message["type"] == "http.response.start" and (cookie_auth or session_endpoint):
                 headers = MutableHeaders(scope=message)
                 headers["Cache-Control"] = "no-store"
-                if message["status"] == 401 or (
+                # An old unauthorized response may arrive after a new login.
+                # Only explicit cookie-changing actions can clear the cookie.
+                if (
                     message["status"] == 204
                     and request.method == "DELETE"
                     and re.fullmatch(r"/v1/users/[0-9a-fA-F-]{36}", request.url.path)

@@ -148,7 +148,7 @@ for (const [name, path] of [["HTML", "/"], ["React", "/react.html"], ["Hugo", "/
       await expect(page.getByTestId("theme")).toHaveText("light");
       await page.reload();
       await expect(page.getByTestId("theme")).toHaveText("light");
-      await expect(page.getByRole("button", { name: "Недоступна" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Недоступна", exact: true })).toBeDisabled();
       await page.getByRole("button", { name: "Действие →", exact: true }).click();
       await expect(page.getByTestId("count")).toHaveText("1");
       await expect(page.getByRole("link", { name: "The Mutating Company", exact: true })).toBeVisible();

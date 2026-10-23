@@ -1,6 +1,18 @@
 export const API_BASE = window.__TMC_API_URL__;
 export const apiURL = (path: string) => `${API_BASE}/${path}`;
 
+let sessionRevision = 0;
+let sessionQueue: Promise<unknown> = Promise.resolve();
+
+function withSessionLock<T>(run: () => Promise<T>): Promise<T> {
+  // Cookie writes are shared by tabs. Finish an old logout before a new login
+  // can issue its cookie, including when the requests return out of order.
+  if (navigator.locks) return navigator.locks.request(`tmc-session:${API_BASE}`, run);
+  const pending = sessionQueue.then(run, run);
+  sessionQueue = pending.catch(() => {});
+  return pending;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -12,6 +24,18 @@ export class ApiError extends Error {
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+): Promise<{ data: T; total: number | null }> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const changesCookie = path === "auth/session" && (method === "POST" || method === "DELETE")
+    || method === "DELETE" && /^users\/[\da-f-]{36}$/i.test(path);
+  if (changesCookie) return withSessionLock(() => sendRequest<T>(path, options, ++sessionRevision));
+  return sendRequest<T>(path, options, sessionRevision);
+}
+
+async function sendRequest<T>(
+  path: string,
+  options: RequestInit,
+  revision: number,
 ): Promise<{ data: T; total: number | null }> {
   let response: Response;
   try {
@@ -33,7 +57,7 @@ export async function request<T>(
     throw new ApiError(0, "Network error");
   }
   if (!response.ok) {
-    if (response.status === 401 && path !== "auth/session")
+    if (response.status === 401 && path !== "auth/session" && revision === sessionRevision)
       window.dispatchEvent(new Event("session-expired"));
     let detail = "";
     try {

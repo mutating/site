@@ -1,4 +1,4 @@
-import { languageControl, selectLanguage } from "./header-controls";
+import { languageControl, openUserMenu, selectLanguage } from "./header-controls";
 import { expect, login, test } from "./fixtures";
 import { actionsPeer } from "./actions-peer";
 
@@ -117,11 +117,11 @@ test("header controls work through every cabinet section and logout", async ({ p
     await expect(page.locator("html")).toHaveAttribute("lang", "ru");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   }
-  await page.getByRole("link", { name: "Профиль", exact: true }).filter({ visible: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await selectLanguage(page);
   await theme.click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).filter({ visible: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Sign out", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(header).toHaveCount(1);

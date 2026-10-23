@@ -37,17 +37,23 @@ async def test_real_http_idle_timeout_closes_and_records_reason(caplog):
 
 async def test_broken_backend_upload_closes_the_socket(caplog):
     """An OS write failure must release the tunnel instead of retaining a blocked upload."""
+    caplog.set_level("INFO", logger="throng.transport")
     writer = SimpleNamespace(write=Mock(side_effect=BrokenPipeError), close=Mock())
     connection = SimpleNamespace(h2=Mock(), flush=Mock())
     stream = _Stream(connection, 1, None, writer)
     stream.incoming.put_nowait((b"request", 7))
     await stream.upload()
     writer.close.assert_called_once()
-    assert any('"reason":"backend_upload_error"' in row.message for row in caplog.records)
+    rows = [json.loads(row.message) for row in caplog.records if row.name == "throng.transport"]
+    assert any(
+        row.get("event") == "relay_close" and row.get("reason") == "backend_upload_error"
+        for row in rows
+    )
 
 
 async def test_broken_backend_download_cancels_upload_and_removes_stream(caplog):
     """An OS read failure must remove the tunnel and cancel its otherwise waiting upload."""
+    caplog.set_level("INFO", logger="throng.transport")
     connection = SimpleNamespace(streams={}, h2=Mock(), flush=Mock())
     writer = SimpleNamespace(close=Mock())
     reader = SimpleNamespace(read=AsyncMock(side_effect=ConnectionResetError))
@@ -59,7 +65,11 @@ async def test_broken_backend_download_cancels_upload_and_removes_stream(caplog)
     await asyncio.gather(upload, return_exceptions=True)
     assert upload.cancelled() and not connection.streams
     writer.close.assert_called_once()
-    assert any('"reason":"backend_download_error"' in row.message for row in caplog.records)
+    rows = [json.loads(row.message) for row in caplog.records if row.name == "throng.transport"]
+    assert any(
+        row.get("event") == "relay_close" and row.get("reason") == "backend_download_error"
+        for row in rows
+    )
 
 
 async def test_tls_disconnect_error_does_not_retain_connection():

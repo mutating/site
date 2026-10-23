@@ -13,6 +13,7 @@
       "themeLabel" "Переключить тему"
       "menuLabel" "Открыть меню"
       "menuText" "Меню"
+      "adjacentLink" (dict "href" "#components" "label" "Свободное содержимое" "content" (`<span aria-hidden="true">UI</span>` | safeHTML))
       "language" (dict "current" "ru" "label" "Выбрать язык" "groupLabel" "Языки" "options" (slice (dict "code" "ru" "href" "#ru") (dict "code" "en" "href" "#en")))
     ) }}
     <main class="tmc-shell demo-content" id="components">
@@ -24,6 +25,14 @@
         {{ partial "tmc-ui/button.html" (dict "text" "Вторичная" "variant" "secondary" "size" "compact" "href" "#components") }}
       </div>
       <p>Выполнено действий: <span data-testid="count">0</span></p>
+      <div class="demo-row">
+        {{ partial "tmc-ui/square-button.html" (dict "href" "#components" "label" "Квадратная ссылка" "content" "UI") }}
+        {{ partial "tmc-ui/square-button.html" (dict "id" "square-action" "label" "Квадратное действие" "content" (`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 22 12 12 22 2 12Z" /></svg>` | safeHTML)) }}
+        {{ partial "tmc-ui/square-button.html" (dict "disabled" true "label" "Квадратная недоступная" "content" "×") }}
+        {{ partial "tmc-ui/square-button.html" (dict "label" "Экранированный текст" "content" "<em>Текст</em>") }}
+        {{ partial "tmc-ui/square-button.html" (dict "href" "" "target" "_blank" "label" "Пустой адрес" "content" "UI") }}
+      </div>
+      <p>Квадратных действий: <span data-testid="square-count">0</span></p>
     </main>
     <script type="module">
       import { createThemeController, mountHeader } from "/dist/index.js";
@@ -35,6 +44,10 @@
       let count = 0;
       document.querySelector(".tmc-button").addEventListener("click", () => {
         document.querySelector('[data-testid="count"]').textContent = String(++count);
+      });
+      let squareCount = 0;
+      document.querySelector("#square-action").addEventListener("click", () => {
+        document.querySelector('[data-testid="square-count"]').textContent = String(++squareCount);
       });
     </script>
   </body>

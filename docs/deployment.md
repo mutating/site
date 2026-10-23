@@ -350,6 +350,137 @@ sudo journalctl -u throng -f
 или перенаправления корня. На сервере со старой конфигурацией сначала примените
 `setup-platform.yml`, затем обновите приложение.
 
+## Диагностика публичного доступа
+
+Проверки с контроллера и из разных стран выполняются через read-only playbook.
+На контроллере нужны Ansible, `curl` и `dig`; административный доступ к серверу
+для этих внешних проверок не требуется. Check-Host и Globalping получают только
+публичные имена сайтов, без паролей, cookie и ключей. Результаты доступны через
+их публичные отчёты; у Globalping срок хранения ограничен.
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i localhost, infra/playbooks/diagnose-public-access.yml \
+  --tags dns,transport,global,globalping
+```
+
+Теги: `dns` — A/AAAA/NS/CAA через Cloudflare DNS и Google DNS;
+`transport` — HTTP по имени и IP, TLS с SNI и без него, SSH banner и контрольный
+`example.com`; `local` — подробные времена `curl` для четырёх доменов по
+HTTP/HTTPS с `-4` и `-6`; `global` — DNS/HTTP/HTTPS/TCP через Check-Host;
+`globalping` — независимые HTTPS-проверки Globalping с ASN источника, временем
+TCP/TLS и проверкой сертификата. При отсутствии AAAA результат `curl -6` может
+отражать IPv4-mapped адрес VPN; он не доказывает доступность настоящего IPv6.
+
+Можно передать `access_domain`, `access_address` (IP для обхода DNS в транспортной
+проверке), `access_hosts`, `access_checks`, `access_probe_nodes` и
+`access_check_host_nodes`. Для проверки Финляндии и США:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i localhost, infra/playbooks/diagnose-public-access.yml --tags globalping \
+  -e '{"access_hosts":["mutating.tech"],"access_globalping_locations":[{"country":"FI","limit":6},{"country":"US","limit":8}]}'
+```
+
+Чтобы повторить проверку с тех же узлов, передайте ID предыдущего измерения
+строкой: `-e '{"access_globalping_locations":"MEASUREMENT_ID"}'`.
+Узлы, выбранные только по стране/ASN, могут меняться между запросами.
+`access_globalping_type` и `access_globalping_options` позволяют менять тип
+измерения и параметры согласно API Globalping. По умолчанию используется HEAD:
+`405` кабинета и `404` корня API означают полученный HTTP-ответ, а не сетевой
+тайм-аут. Для проверки страниц используйте
+`-e '{"access_globalping_options":{"protocol":"HTTPS","request":{"method":"GET"}}}'`.
+
+Отказ отдельного публичного узла перепроверьте на `example.com` с того же узла:
+неисправность пробника нельзя приписывать сайту. Доступный TCP-порт сам по себе
+не доказывает успешный TLS/HTTP. При тайм-ауте после TCP сравните SNI и прямой IP,
+другие домены сервера и контрольный сайт. Проверки firewall, nginx и захват
+пакетов на production также выполняются только через Ansible. Разбор инцидента
+23 октября 2026 года сохранён в `docs/public-access-2026-10-23.md`.
+
+Дополнительные транспортные проверки запускаются явно, поскольку включают
+несколько повторных соединений:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i localhost, infra/playbooks/diagnose-public-access.yml --tags profiles
+```
+
+Они сравнивают TLS 1.2/1.3, минимальный HTTP-запрос, SSH с разным порядком
+отправки banner и счётчики повторной передачи TCP в macOS. `access_profile_filter`
+оставляет только имена проверок, содержащие заданную подстроку. Поле `mss`
+показывает фактический размер сегмента: запрошенный TCP_MAXSEG может не примениться
+после connect в macOS. Для этих проверок VPN отключать не требуется. Пробы
+`physical_interface` по умолчанию выключены; они добавляются только при явном
+задании `access_physical_interface` и создают отдельный сокет с привязкой к
+этому интерфейсу.
+
+Действующий nginx, listeners, firewall и локальный HTTPS проверяет отдельный
+read-only playbook с административным доступом. Пароль вводится в приглашении:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i 'SERVER_IP,' infra/playbooks/diagnose-server-access.yml -u root --ask-pass \
+  -e access_server_first_ssh=true
+```
+
+`access_server_first_ssh=true` включает ProxyCommand внутри транспорта Ansible:
+он сначала получает SSH banner сервера, затем передаёт поток клиента. SSH
+по-прежнему проверяет закреплённый host key из `deploy/known_hosts` и выполняет
+аутентификацию и шифрование. Обход нужен для воспроизведённого случая, когда
+соединение с немедленной отправкой client banner зависает. Настройки VPN и
+production он не меняет.
+
+Для сопоставления запроса контроллера с пакетами на интерфейсе сервера:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i 'SERVER_IP,' infra/playbooks/diagnose-server-access.yml -u root --ask-pass \
+  -e access_server_first_ssh=true -e access_capture=true \
+  -e access_probe_source=PROBLEM_PUBLIC_IPV4 --tags capture
+```
+
+Захват использует Python AF_PACKET, поэтому устанавливать tcpdump не нужно.
+Он печатает только метаданные TCP портов 80/443: время, направление, адреса,
+порты, seq/ack, флаги и длину данных; содержимое пакетов не печатается и не
+записывается в pcap. По умолчанию окно — 45 секунд, задаётся
+`access_capture_seconds`. Включать `access_capture_all_sources=true` следует
+только при необходимости сравнить проблемный поток с независимым контрольным
+источником. Временные метки запроса и захвата позволяют проверить их пересечение.
+
+Чтобы локализовать потери после установления TCP, запустите TTL-пробы вместе
+с серверным захватом. Один TCP-поток последовательно отправляет данные с разным
+TTL; ICMP Time Exceeded сопоставляется по портам и seq. Для HTTPS используется
+настоящий TLS ClientHello, для HTTP — короткие части запроса:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i 'SERVER_IP,' infra/playbooks/diagnose-server-access.yml -u root --ask-pass \
+  -e access_server_first_ssh=true -e access_capture=true \
+  -e access_probe_source=PROBLEM_PUBLIC_IPV4 -e access_capture_edge=true \
+  -e access_edge_port=443 -e access_capture_seconds=15 \
+  -e access_capture_max_packets=400 --tags capture
+```
+
+`access_edge_port=80` выбирает HTTP. Пробы меняют TTL только своих сокетов,
+не маршруты и не VPN. Отсутствие ICMP-ответа само по себе не доказывает потерю
+на конкретном узле; наличие ответа доказывает достижение этого узла пакетом.
+Серверный захват позволяет проверить, пришли ли эти данные на VM.
+
+Без административного доступа доступны отдельные локальные TTL-пробы и
+ICMP/UDP traceroute через текущий VPN:
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i localhost, infra/playbooks/diagnose-public-access.yml --tags edge \
+  -e access_edge_fixed_flow=true -e access_edge_port=443
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i localhost, infra/playbooks/diagnose-public-access.yml --tags trace
+```
+
+TCP traceroute в macOS может потребовать прав для BPF; TTL-пробы `edge`
+используют ICMP datagram socket и этого доступа не требуют.
+
 ## Проверки
 
 ```sh

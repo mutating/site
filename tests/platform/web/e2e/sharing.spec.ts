@@ -1,4 +1,4 @@
-import { selectLanguage } from "./header-controls";
+import { openUserMenu, selectLanguage } from "./header-controls";
 import {
   API,
   expect,
@@ -48,10 +48,7 @@ async function openSharing(page: Page, mode: "add" | "invite" | "link") {
 }
 async function signOut(page: Page) {
   await page.goto("profile");
-  await page
-    .locator(".sidebar-account")
-    .getByRole("button", { name: "Выйти", exact: true })
-    .click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Выйти", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "С возвращением." }),
   ).toBeVisible();

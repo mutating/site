@@ -6,6 +6,7 @@ RFC 9113 section 8.5 requires CONNECT_ERROR for an abnormal backend TCP close.
 """
 
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -81,7 +82,10 @@ async def test_backend_socket_failure_resets_only_the_failed_connect(boundary, c
     assert not any(isinstance(event, StreamEnded) for event in received)
     stream.writer.close.assert_called_once()
     reason = "backend_download_error" if boundary == "read" else "backend_upload_error"
-    assert any(f'"reason":"{reason}"' in row.message for row in caplog.records)
+    # Operational queries require this event/reason pair; additional useful
+    # metadata may be added without changing the close event's meaning.
+    rows = [json.loads(row.message) for row in caplog.records if row.name == "throng.transport"]
+    assert any(row.get("event") == "relay_close" and row.get("reason") == reason for row in rows)
     client.send_data(3, b"unrelated heartbeat")
     assert any(
         getattr(event, "data", None) == b"unrelated heartbeat"

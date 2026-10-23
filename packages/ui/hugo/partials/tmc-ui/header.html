@@ -22,7 +22,9 @@
       {{ end }}
     </div>
   </div>
-  {{ with .adjacentLink }}<a class="tmc-platform-link" href="{{ .href }}" aria-label="{{ .label }}">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><path d="m10 17 5-5-5-5"></path><path d="M15 12H3"></path></svg>
-  </a>{{ end }}
+  {{ with .adjacentLink }}
+    {{- $content := `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><path d="m10 17 5-5-5-5"></path><path d="M15 12H3"></path></svg>` | safeHTML -}}
+    {{- if isset . "content" -}}{{- $content = .content -}}{{- end -}}
+    {{- partial "tmc-ui/square-button.html" (dict "href" .href "label" .label "class" "tmc-platform-link" "content" $content) -}}
+  {{ end }}
 </header>

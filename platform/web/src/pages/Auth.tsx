@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { api, json } from "../lib/api";
 import { useI18n } from "../lib/i18n";
@@ -13,6 +13,10 @@ export function Auth({ register = false }: { register?: boolean }) {
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const pendingRequest = useRef<AbortController | null>(null);
+  // A form left through /login ↔ /register must not later change the cookie or
+  // publish/navigate over the newer form's successful login.
+  useEffect(() => () => pendingRequest.current?.abort(), []);
   const from =
     typeof location.state?.from === "string" &&
     location.state.from.startsWith("/") &&
@@ -26,23 +30,27 @@ export function Auth({ register = false }: { register?: boolean }) {
     if (busy) return;
     setBusy(true);
     setError(null);
+    const controller = new AbortController();
+    pendingRequest.current = controller;
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
     if (register && !payload.nickname) delete payload.nickname;
     try {
       if (register) {
-        await api<User>("users", json("POST", payload));
+        await api<User>("users", { ...json("POST", payload), signal: controller.signal });
+        if (controller.signal.aborted) return;
       }
       let profile: User;
       try {
         profile = await api<User>(
           "auth/session",
-          json("POST", {
+          { ...json("POST", {
             login: register ? payload.email : payload.login,
             password: payload.password,
-          }),
+          }), signal: controller.signal },
         );
       } catch (error) {
+        if (controller.signal.aborted) return;
         if (!register) throw error;
         navigate("/login", {
           replace: true,
@@ -50,12 +58,15 @@ export function Auth({ register = false }: { register?: boolean }) {
         });
         return;
       }
+      if (controller.signal.aborted) return;
       setUser(profile);
       navigate(from, { replace: true });
     } catch (e) {
+      if (controller.signal.aborted) return;
       setError(e);
     } finally {
-      setBusy(false);
+      if (pendingRequest.current === controller) pendingRequest.current = null;
+      if (!controller.signal.aborted) setBusy(false);
     }
   }
   return (

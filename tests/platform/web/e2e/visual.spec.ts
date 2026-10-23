@@ -11,6 +11,48 @@ import { GiB, historyNow, reserve, seedHistory } from "./resources";
 import { resolve } from "node:path";
 import { openLanguages } from "./header-controls";
 
+test("user menu with the placeholder and a real uploaded avatar", async ({ page, account }, info) => {
+  const { language, theme } = info.project.metadata;
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language);
+    localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  expect((await page.request.post(`${API}/auth/session`, {
+    headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },
+    data: { login: account.email, password },
+  })).status()).toBe(200);
+  await page.goto("/");
+  const trigger = page.locator(".user-menu .tmc-square-button");
+  const exactPixels = { threshold: 0, maxDiffPixels: 0 };
+  // Chromium's clipped raster edges vary by up to 2/255 per color channel
+  // between processes. Keep a zero pixel budget with only that color tolerance.
+  const imagePixels = { threshold: 0.01, maxDiffPixels: 0 };
+  await expect(trigger).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await expect(trigger).toHaveScreenshot("header-avatar-placeholder.png", exactPixels);
+  await trigger.click();
+  const panel = page.getByRole("menu");
+  await expect(panel).toBeVisible();
+  const buttonBox = (await trigger.boundingBox())!;
+  const panelBox = (await panel.boundingBox())!;
+  const x = Math.max(0, Math.min(buttonBox.x, panelBox.x) - 20);
+  const y = Math.max(0, buttonBox.y - 8);
+  const clip = { x, y, width: Math.min(page.viewportSize()!.width, buttonBox.x + buttonBox.width + 20) - x, height: panelBox.y + panelBox.height + 20 - y };
+  await expect(page).toHaveScreenshot("header-user-menu-placeholder.png", { clip, ...exactPixels });
+  expect((await page.request.put(`${API}/users/me/avatar`, {
+    headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard", "Content-Type": "image/png" },
+    data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=", "base64"),
+  })).status()).toBe(200);
+  await page.reload();
+  await expect(trigger.locator("img")).toBeVisible();
+  await expect.poll(() => trigger.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await page.evaluate(() => document.fonts.ready);
+  await expect(trigger).toHaveScreenshot("header-avatar-image.png", imagePixels);
+  await trigger.click();
+  await expect(panel).toBeVisible();
+  await expect(page).toHaveScreenshot("header-user-menu-image.png", { clip, ...imagePixels });
+});
+
 test("the shared language dropdown in both themes and layouts", async ({ page }, info) => {
   const { language, theme } = info.project.metadata;
   await page.addInitScript(({ language, theme }) => {

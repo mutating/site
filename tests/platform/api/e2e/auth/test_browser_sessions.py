@@ -128,20 +128,31 @@ async def test_logout_revokes_the_actual_api_token_and_is_idempotent(client, use
     assert (await client.delete("/v1/auth/session", headers=CSRF)).status_code == 204
 
 
-async def test_expired_invalid_and_revoked_cookies_are_cleared(client, user, clock):
+async def test_expired_invalid_and_revoked_cookies_are_rejected_without_cookie_writes(client, user, clock):
     """Validate expiry and revocation in the API rather than trusting the browser's cookie."""
     response = await sign_in(client, user)
     raw = response.cookies[SESSION_COOKIE]
     clock.now += timedelta(days=2)
     response = await client.get("/v1/auth/session", headers={"Cookie": f"{SESSION_COOKIE}={raw}"})
-    assert response.status_code == 401 and "Max-Age=0" in response.headers["set-cookie"]
+    assert response.status_code == 401 and "set-cookie" not in response.headers
     response = await client.get("/v1/auth/session", headers={"Cookie": f"{SESSION_COOKIE}=invalid"})
-    assert response.status_code == 401 and "Max-Age=0" in response.headers["set-cookie"]
+    assert response.status_code == 401 and "set-cookie" not in response.headers
     assert (
         await client.delete(
             "/v1/auth/session", headers={**CSRF, "Cookie": f"{SESSION_COOKIE}=invalid"}
         )
     ).status_code == 204
+
+
+async def test_old_unauthorized_request_cannot_delete_a_new_login_cookie(client, user):
+    old = (await sign_in(client, user)).cookies[SESSION_COOKIE]
+    await client.delete("/v1/auth/session", headers=CSRF)
+    current = (await sign_in(client, user)).cookies[SESSION_COOKIE]
+    response = await client.get("/v1/users/me", headers={"Cookie": f"{SESSION_COOKIE}={old}"})
+    assert response.status_code == 401
+    assert "set-cookie" not in response.headers
+    assert client.cookies[SESSION_COOKIE] == current
+    assert (await client.get("/v1/auth/session")).status_code == 200
 
 
 async def test_failed_login_and_account_deletion_clear_browser_cookie(client, user):

@@ -1,4 +1,4 @@
-import { selectLanguage } from "./header-controls";
+import { openUserMenu, selectLanguage } from "./header-controls";
 import { expect, login, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
@@ -37,7 +37,7 @@ test("the eye follows the pointer outside the header before and after login", as
   await login(page, account);
   await page.mouse.move(viewport.width - 10, viewport.height - 30);
   await expect.poll(async () => (await gazeOffset(page)).x).toBeGreaterThan(2);
-  await page.getByRole("link", { name: "Профиль", exact: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
   await page.mouse.move(1, eye.y + eye.height / 2);
   await expect.poll(async () => (await gazeOffset(page)).x).toBeLessThan(-1);
 });

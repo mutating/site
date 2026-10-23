@@ -192,6 +192,22 @@ h3 {
   --font-geist-sans: "Geist";
   --font-geist-mono: "Geist Mono";
 }
+.avatar.avatar--round { border-radius: 50%; }
+.user-menu-placeholder { visibility: hidden; }
+.user-menu .avatar--round {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.user-menu .error-box {
+  margin: 8px 0 0;
+  padding: 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 580px) {
+  .user-menu .avatar--round { width: 36px; height: 36px; }
+}
 .site-header .tmc-language-switcher :where(summary:focus-visible, a:focus-visible),
 .site-header .tmc-mobile-menu > summary:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--hot) 55%, transparent);
@@ -307,47 +323,6 @@ h3 {
   background: var(--ink-muted);
   margin-left: auto;
 }
-.sidebar-account {
-  margin-top: auto;
-  padding-top: 36px;
-}
-.mobile-account-actions {
-  display: none;
-}
-.account-card {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--surface);
-}
-.account-identity {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  min-width: 0;
-  padding: 13px 12px;
-}
-.account-identity .avatar {
-  border-radius: 50%;
-}
-.account-identity > span:last-child {
-  min-width: 0;
-}
-.account-identity strong {
-  display: block;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.account-identity small {
-  display: block;
-  color: var(--ink-muted);
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .avatar {
   display: grid;
   place-items: center;
@@ -372,44 +347,6 @@ h3 {
   height: 88px;
   font-size: 38px;
   border-radius: 24px;
-}
-.account-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
-  padding: 4px;
-  border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--line) 55%, var(--bg));
-}
-.account-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  min-height: 31px;
-  padding: 6px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  font-size: 10px;
-  font-weight: 550;
-  color: var(--ink-muted);
-}
-.account-action svg {
-  flex-shrink: 0;
-}
-.account-profile {
-  background: var(--bg);
-  color: var(--ink);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 5%, transparent);
-}
-.account-action:hover:not(:disabled) {
-  background: var(--surface-raised);
-  color: var(--ink);
-}
-.account-action:focus-visible {
-  outline-offset: -2px;
 }
 .main-content {
   min-width: 0;
@@ -1642,26 +1579,6 @@ td small {
   }
   .sidebar-label {
     display: none;
-  }
-  .sidebar-account {
-    padding-top: 14px;
-  }
-  .account-card {
-    display: none;
-  }
-  .mobile-account-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-  .mobile-account-actions .account-profile {
-    background: transparent;
-    box-shadow: none;
-  }
-  .account-action {
-    min-height: 40px;
-    padding-inline: 9px;
-    font-size: 11px;
   }
   .sidebar nav {
     flex-direction: row;

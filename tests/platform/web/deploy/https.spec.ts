@@ -1,3 +1,4 @@
+import { openUserMenu } from "../e2e/header-controls";
 import { randomUUID } from "node:crypto";
 import { browserAPI, apiURL, expect, origin, test } from "./stack";
 
@@ -188,10 +189,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
     cookie.name,
   );
   await page.goto("profile");
-  await page
-    .locator(".account-card")
-    .getByRole("button", { name: "Sign out", exact: true })
-    .click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Sign out", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Welcome back." }),
   ).toBeVisible();

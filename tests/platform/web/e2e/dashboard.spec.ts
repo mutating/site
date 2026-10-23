@@ -1,4 +1,4 @@
-import { selectLanguage } from "./header-controls";
+import { openUserMenu, selectLanguage } from "./header-controls";
 import {
   test,
   expect,
@@ -47,30 +47,28 @@ test("root routes keep navigation and sessions while account URLs are absent", a
   await expect(page).toHaveURL("http://127.0.0.1:18101/");
 });
 
-test("account card stays desktop-only across the mobile breakpoint", async ({
+test("profile and sign out exist only in the header menu at every breakpoint", async ({
   page,
   account,
 }) => {
   await login(page, account);
   await page.goto("organizations");
-  const card = page.locator(".account-card");
-  const mobileActions = page.locator(".mobile-account-actions");
-  for (const width of [1440, 801, 800, 540, 390, 320, 801]) {
+  const sidebar = page.getByRole("complementary");
+  const trigger = page.getByRole("banner").getByRole("button", { name: "Меню пользователя", exact: true });
+  for (const width of [1920, 1440, 801, 800, 581, 580, 481, 480, 390, 320, 280, 801]) {
     await page.setViewportSize({ width, height: 1000 });
-    if (width <= 800) {
-      await expect(card).toBeHidden();
-      await expect(mobileActions).toBeVisible();
-      await expect(page.locator(".account-identity")).toBeHidden();
-    } else {
-      await expect(card).toBeVisible();
-      await expect(mobileActions).toBeHidden();
-    }
-    await expect(
-      page.getByRole("link", { name: "Профиль", exact: true }),
-    ).toHaveCount(1);
-    await expect(
-      page.getByRole("button", { name: "Выйти", exact: true }),
-    ).toHaveCount(1);
+    await expect(page.locator(".sidebar-account, .account-card, .mobile-account-actions")).toHaveCount(0);
+    await expect(sidebar.getByRole("link", { name: "Профиль", exact: true })).toHaveCount(0);
+    await expect(sidebar.getByRole("button", { name: "Выйти", exact: true })).toHaveCount(0);
+    await expect(sidebar.locator(".avatar")).toHaveCount(0);
+    await expect(sidebar).not.toContainText(account.email);
+    await expect(trigger).toHaveCount(1);
+    await expect(trigger).toBeVisible();
+    const menu = await openUserMenu(page);
+    await expect(page.getByRole("menuitem")).toHaveText(["Профиль", "Выйти"]);
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await trigger.click();
+    await expect(menu).toHaveCount(0);
     // The wordmark updates its available width through ResizeObserver.
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
@@ -78,22 +76,18 @@ test("account card stays desktop-only across the mobile breakpoint", async ({
   }
 });
 
-test("sidebar account actions open the profile and sign out through the browser session API", async ({
+test("header account actions open the profile and sign out through the browser session API", async ({
   page,
   account,
 }) => {
   await login(page, account);
-  const actions = page.locator(".sidebar-account");
   await expect(
     page
       .getByRole("navigation")
       .getByRole("link", { name: "Профиль", exact: true }),
   ).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: "Профиль", exact: true }),
-  ).toHaveCount(1);
-  await expect(actions.locator("small")).toHaveText(account.email);
-  await actions.getByRole("link", { name: "Профиль", exact: true }).click();
+  await expect(page.getByRole("banner").getByRole("button", { name: "Меню пользователя", exact: true })).toHaveAttribute("title", account.email);
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
@@ -101,15 +95,14 @@ test("sidebar account actions open the profile and sign out through the browser 
   await expect(
     page.getByRole("main").getByRole("button", { name: "Выйти", exact: true }),
   ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Выйти", exact: true }),
-  ).toHaveCount(1);
+  const menu = await openUserMenu(page);
+  await expect(page.getByRole("menuitem", { name: "Выйти", exact: true })).toHaveCount(1);
   const signedOut = page.waitForResponse(
     (response) =>
       response.url() === `${API}/auth/session` &&
       response.request().method() === "DELETE",
   );
-  await actions.getByRole("button", { name: "Выйти", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Выйти", exact: true }).click();
   expect((await signedOut).status()).toBe(204);
   await expect(
     page.getByRole("heading", { name: "С возвращением." }),
@@ -212,10 +205,7 @@ test("all private pages require login; registration has optional fields and no p
   await expect(
     page.getByRole("heading", { name: "Страница не найдена" }),
   ).toBeVisible();
-  await page
-    .locator(".sidebar-account")
-    .getByRole("link", { name: "Профиль" })
-    .click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Фамилия", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Ник", { exact: true })).toHaveValue("");
@@ -662,10 +652,8 @@ test("logout revokes its API token and a revoked active session returns to login
     (cookie) => cookie.name === "tmc_session",
   )!;
   await page.goto("profile");
-  const signOut = page
-    .locator(".sidebar-account")
-    .getByRole("button", { name: "Выйти", exact: true });
-  // Account actions must finish loading before taking the browser offline.
+  const signOut = (await openUserMenu(page)).getByRole("menuitem", { name: "Выйти", exact: true });
+  // The menu must finish loading before taking the browser offline.
   await expect(signOut).toBeVisible();
   await expect(signOut).toBeEnabled();
   await page.context().setOffline(true);

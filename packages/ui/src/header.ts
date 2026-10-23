@@ -1,5 +1,6 @@
 import { mountBrand, type BrandOptions } from "./brand";
 import { createScope, type Cleanup } from "./internal";
+import { mountDropdown } from "./dropdown";
 import { createThemeController, mountThemeToggle, type ThemeController, type ThemeOptions, type ThemeToggleOptions } from "./theme";
 
 export interface HeaderOptions {
@@ -76,29 +77,7 @@ export function mountLanguageSwitcher(switcher: HTMLDetailsElement, storageKey =
 }
 
 export function mountMobileMenu(menu: HTMLDetailsElement, options: MobileMenuOptions = {}): Cleanup {
-  const scope = createScope(menu);
-  const { window, document, on } = scope;
-  const summary = menu.querySelector<HTMLElement>(":scope > summary");
-  const close = () => {
-    menu.open = false;
-    if (options.closeNestedMenus !== false) menu.querySelectorAll<HTMLDetailsElement>("details[open]").forEach((child) => { child.open = false; });
-  };
-  if (options.delegateLinks) {
-    on(menu, "click", (event) => {
-      const link = event.target instanceof window.Element ? event.target.closest("a") : null;
-      if (link && menu.contains(link)) close();
-    });
-  } else menu.querySelectorAll("a").forEach((link) => on(link, "click", close));
-  on(document, "pointerdown", (event) => {
-    if (event.target instanceof window.Node && !menu.contains(event.target)) close();
-  });
-  on<KeyboardEvent>(menu, "keydown", (event) => {
-    if (options.closeOnEscape !== false && event.key === "Escape" && !event.defaultPrevented && menu.open) { close(); summary?.focus(); }
-  });
-  const desktop = window.matchMedia("(min-width: 1121px)");
-  on(desktop, "change", () => { if (options.closeOnDesktop !== false && desktop.matches) close(); });
-  scope.add(close);
-  return scope.destroy;
+  return mountDropdown(menu, { ...options, closeOnDesktop: options.closeOnDesktop !== false });
 }
 
 /** Mount server-rendered markup. React uses the individual behaviors instead. */

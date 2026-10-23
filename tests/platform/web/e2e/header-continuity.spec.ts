@@ -1,4 +1,4 @@
-import { openLanguages, selectLanguage } from "./header-controls";
+import { openLanguages, openUserMenu, selectLanguage } from "./header-controls";
 import type { Page } from "@playwright/test";
 import { API, expect, login, password, test } from "./fixtures";
 
@@ -37,7 +37,7 @@ for (const transition of ["session to login", "session to cabinet", "sign in", "
           if (transition === "sign in") {
             await page.getByRole("button", { name: "Войти", exact: true }).click();
           } else if (transition === "sign out") {
-            await page.getByRole("button", { name: "Выйти", exact: true }).filter({ visible: true }).click();
+            await (await openUserMenu(page)).getByRole("menuitem", { name: "Выйти", exact: true }).click();
           } else {
             await page.goto(transition === "session to cabinet" ? "profile" : "login");
             await expect(page.locator(".boot-state .loading")).toBeVisible();
@@ -89,40 +89,45 @@ for (const transition of ["session to login", "session to cabinet", "sign in", "
   }
 }
 
-test("a native touch held during session resolution activates each header control once", async ({ page, browserName, isMobile }) => {
+test("a native touch held during session resolution activates each header control once", async ({ page, account, browserName, isMobile }) => {
   // Chromium exposes separate native touch start/end through CDP; tap() is atomic.
   test.skip(browserName !== "chromium" || !isMobile, "Requires the mobile Chromium touch protocol");
   const touch = await page.context().newCDPSession(page);
-  for (const control of ["language", "theme"] as const) {
-    const held = await holdSession(page, "GET");
-    try {
-      await page.goto("login");
-      await expect(page.locator(".boot-state .loading")).toBeVisible();
-      const button = control === "language"
-        ? (await openLanguages(page, "touch")).locator('[data-language-option="en"]')
-        : page.locator(".tmc-theme-toggle");
-      if (control === "language") await expect.poll(() => page.locator(".tmc-language-switcher:visible").evaluate(element => element.getAnimations({ subtree: true }).some(animation => animation.playState === "running"))).toBe(false);
-      const bounds = (await button.boundingBox())!;
-      await touch.send("Input.dispatchTouchEvent", {
-        type: "touchStart",
-        touchPoints: [{ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }],
-      });
-      held.release();
-      await expect(page.getByRole("heading", { name: /^(С возвращением\.|Welcome back\.)$/ })).toBeVisible();
-      await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      await expect(page.locator("html")).toHaveAttribute(
-        control === "language" ? "lang" : "data-theme",
-        control === "language" ? "en" : "light",
-      );
-      if (control === "language") await selectLanguage(page, "ru", "touch");
-      else await button.tap();
-      await expect(page.locator("html")).toHaveAttribute(
-        control === "language" ? "lang" : "data-theme",
-        control === "language" ? "ru" : "dark",
-      );
-    } finally {
-      held.release();
-      await page.unroute(`${API}/auth/session`);
+  for (const authenticated of [false, true]) {
+    if (authenticated) await login(page, account);
+    for (const control of ["language", "theme"] as const) {
+      const held = await holdSession(page, "GET");
+      try {
+        await page.goto(authenticated ? "profile" : "login");
+        await expect(page.locator(".boot-state .loading")).toBeVisible();
+        const button = control === "language"
+          ? (await openLanguages(page, "touch")).locator('[data-language-option="en"]')
+          : page.locator(".tmc-theme-toggle");
+        if (control === "language") await expect.poll(() => page.locator(".tmc-language-switcher:visible").evaluate(element => element.getAnimations({ subtree: true }).some(animation => animation.playState === "running"))).toBe(false);
+        const bounds = (await button.boundingBox())!;
+        await touch.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }],
+        });
+        held.release();
+        if (authenticated) await expect(page.getByRole("navigation", { name: "Навигация кабинета" })).toBeVisible();
+        else await expect(page.getByRole("heading", { name: /^(С возвращением\.|Welcome back\.)$/ })).toBeVisible();
+        await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await expect(page.locator("html")).toHaveAttribute(
+          control === "language" ? "lang" : "data-theme",
+          control === "language" ? "en" : "light",
+        );
+        if (authenticated) await expect(page.locator(".user-menu .tmc-square-button")).toBeVisible();
+        if (control === "language") await selectLanguage(page, "ru", "touch");
+        else await button.tap();
+        await expect(page.locator("html")).toHaveAttribute(
+          control === "language" ? "lang" : "data-theme",
+          control === "language" ? "ru" : "dark",
+        );
+      } finally {
+        held.release();
+        await page.unroute(`${API}/auth/session`);
+      }
     }
   }
   await touch.detach();

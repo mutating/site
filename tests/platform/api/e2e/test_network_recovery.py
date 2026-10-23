@@ -141,26 +141,187 @@ async def test_empty_claim_does_not_take_global_write_lock(agent_api, caplog):
     assert row["db_writes"] == 0 and row["db_wait_ms"] == 0
 
 
+@pytest.fixture
+async def claim_policy_task(request, app, api, agent_api, provisioning_isolate):
+    """Build real tasks through HTTP with explicit scheduling and no background tick."""
+    from throng_api.controller import run_once
+
+    kind = request.param
+    await run_once(app)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})
+    assert response.status_code == 200, response.text
+    create = response.json()["tasks"][0]
+    assert create["kind"] == "create" and create["isolate_id"] == provisioning_isolate["id"]
+    if kind == "create":
+        return create
+    response = await agent_api.post(f"/agent/v1/tasks/{create['id']}/complete", json={})
+    assert response.status_code == 200, response.text
+    isolate_id = provisioning_isolate["id"]
+    if kind == "snapshot":
+        response = await api.post(
+            f"/v1/isolates/{isolate_id}/snapshots", headers={"Idempotency-Key": str(uuid4())}
+        )
+    else:
+        assert kind == "run"
+        response = await api.post(
+            f"/v1/isolates/{isolate_id}/commands",
+            headers={"Idempotency-Key": str(uuid4())}, json={"command": "pytest -q"},
+        )
+    assert response.status_code == 202, response.text
+    await run_once(app)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})
+    assert response.status_code == 200, response.text
+    return next(task for task in response.json()["tasks"] if task["kind"] == kind)
+
+
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+@pytest.mark.parametrize("claim_policy_task", ["create", "run", "snapshot"], indirect=True)
 @pytest.mark.parametrize("disconnected", [False, True])
 async def test_pending_but_paused_assignment_rechecks_eligibility_before_dispatch(
-    app, agent_api, create_task, monkeypatch, disconnected
+    app, agent_api, claim_policy_task, monkeypatch, caplog, disconnected
 ):
-    """The read fast path never authorizes a task excluded by the locked eligibility check."""
+    """Known paused new work cannot repeatedly serialize an empty long poll."""
     from starlette.requests import Request
 
     from throng_api.models import Computer
 
     async with app.state.db.write() as session:
-        computer = await session.get(Computer, create_task["computer_id"])
+        computer = await session.get(Computer, claim_policy_task["computer_id"])
         computer.accepting_work = False
 
     async def is_disconnected(request):
         return disconnected
 
     monkeypatch.setattr(Request, "is_disconnected", is_disconnected)
-    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0.03})
+    caplog.set_level("INFO", logger="throng.transport")
+    request_id = str(uuid4())
+    response = await agent_api.post(
+        "/agent/v1/tasks/claim", json={"wait_seconds": 0.03},
+        headers={"X-Request-ID": request_id},
+    )
     assert response.status_code == 200 and response.json()["tasks"] == []
+    row = next(json.loads(r.message) for r in caplog.records if request_id in r.message)
+    assert row["db_writes"] == 0 and row["db_wait_ms"] == 0
 
+
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+@pytest.mark.parametrize("claim_policy_task", ["run"], indirect=True)
+async def test_paused_claim_delivers_destroy_and_cancel_before_new_work(
+    app, api, agent_api, claim_policy_task, caplog
+):
+    """A read-only new-work hint must preserve cleanup delivery and its priority."""
+    from throng_api.models import Computer
+
+    response = await api.post(f"/v1/commands/{claim_policy_task['command_id']}/cancel")
+    assert response.status_code == 202, response.text
+    response = await api.delete(f"/v1/isolates/{claim_policy_task['isolate_id']}")
+    assert response.status_code == 202, response.text
+    async with app.state.db.write() as session:
+        computer = await session.get(Computer, claim_policy_task["computer_id"])
+        computer.accepting_work = False
+    caplog.set_level("INFO", logger="throng.transport")
+    request_id = str(uuid4())
+    response = await agent_api.post(
+        "/agent/v1/tasks/claim", json={"wait_seconds": 0},
+        headers={"X-Request-ID": request_id},
+    )
+    assert response.status_code == 200, response.text
+    assert [task["kind"] for task in response.json()["tasks"]] == ["destroy", "cancel"]
+    row = next(json.loads(r.message) for r in caplog.records if request_id in r.message)
+    assert row["db_writes"] == 1
+
+
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+@pytest.mark.parametrize("claim_policy_task", ["create"], indirect=True)
+async def test_claim_read_hint_observes_policy_resume_within_the_same_poll(
+    app, agent_api, claim_policy_task, monkeypatch
+):
+    """Read hints are refreshed each iteration instead of caching the paused policy."""
+    from starlette.requests import Request
+
+    from throng_api.models import Computer
+    from throng_api.transport import db_wait
+
+    computer_id = claim_policy_task["computer_id"]
+    async with app.state.db.write() as session:
+        computer = await session.get(Computer, computer_id)
+        computer.accepting_work = False
+    writes_before_resume = []
+
+    async def resume(request):
+        if not writes_before_resume:
+            writes_before_resume.append(db_wait.get()[1])
+            async with app.state.db.write() as session:
+                computer = await session.get(Computer, computer_id)
+                computer.accepting_work = True
+        return False
+
+    monkeypatch.setattr(Request, "is_disconnected", resume)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 1})
+    assert response.status_code == 200, response.text
+    assert writes_before_resume == [0]
+    assert [task["id"] for task in response.json()["tasks"]] == [claim_policy_task["id"]]
+
+
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+@pytest.mark.parametrize("claim_policy_task", ["create"], indirect=True)
+async def test_claim_rechecks_policy_after_read_hint_before_dispatch(
+    app, agent_api, claim_policy_task, monkeypatch
+):
+    """A positive read hint cannot grant delivery rights after policy changes."""
+    from contextlib import asynccontextmanager
+
+    from throng_api.models import AgentTask, Computer
+
+    original_write = app.state.db.write
+    paused = False
+
+    @asynccontextmanager
+    async def pause_before_write():
+        nonlocal paused
+        if not paused:
+            paused = True
+            async with original_write() as session:
+                computer = await session.get(Computer, claim_policy_task["computer_id"])
+                computer.accepting_work = False
+        async with original_write() as session:
+            yield session
+
+    monkeypatch.setattr(app.state.db, "write", pause_before_write)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 0})
+    assert response.status_code == 200 and response.json()["tasks"] == []
+    assert paused
+    async with app.state.db.read() as session:
+        task = await session.get(AgentTask, claim_policy_task["id"])
+        assert task.status == claim_policy_task["status"]
+        assert task.delivered_at.isoformat().replace("+00:00", "Z") == claim_policy_task["delivered_at"]
+
+
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+async def test_claim_read_hint_observes_work_queued_after_an_empty_read(
+    app, agent_api, provisioning_isolate, monkeypatch
+):
+    """A later scheduler transaction can make work visible within the same long poll."""
+    from starlette.requests import Request
+
+    from throng_api.controller import run_once
+    from throng_api.transport import db_wait
+
+    writes_before_queue = []
+
+    async def queue(request):
+        if not writes_before_queue:
+            writes_before_queue.append(db_wait.get()[1])
+            await run_once(app)
+        return False
+
+    monkeypatch.setattr(Request, "is_disconnected", queue)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 1})
+    assert response.status_code == 200, response.text
+    assert writes_before_queue == [0]
+    tasks = response.json()["tasks"]
+    assert len(tasks) == 1 and tasks[0]["kind"] == "create"
+    assert tasks[0]["isolate_id"] == provisioning_isolate["id"]
 
 async def test_withheld_delivery_payload_is_never_dispatched(agent_api, create_task, monkeypatch):
     """A permission/credential change during payload construction cannot leak a partial task."""

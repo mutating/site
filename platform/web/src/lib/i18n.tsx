@@ -85,6 +85,7 @@ const messages = {
   cloud: ["Облако", "Cloud"],
   organizations: ["Организации", "Organizations"],
   profile: ["Профиль", "Profile"],
+  userMenu: ["Меню пользователя", "User menu"],
   logout: ["Выйти", "Sign out"],
   login: ["Войти", "Sign in"],
   register: ["Создать аккаунт", "Create account"],

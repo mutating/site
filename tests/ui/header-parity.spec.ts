@@ -93,6 +93,17 @@ for (const width of [1440, 1241, 1240, 1121, 1120, 1041, 1040, 921, 920, 861, 86
 }
 
 interface StateImage { name: string; png: Buffer; height: number }
+async function scrollTo(page: Page, top: number) {
+  // Native scroll events are dispatched asynchronously, independently of the
+  // paused JS clock. Wait until the listener has scheduled its animation frame
+  // before advancing the clock, on both the original and the candidate.
+  await page.evaluate(top => new Promise<void>(resolve => {
+    if (window.scrollY === top) { resolve(); return; }
+    window.addEventListener("scroll", () => resolve(), { once: true });
+    window.scrollTo({ top, behavior: "instant" });
+  }), top);
+}
+
 async function captureStates(page: Page): Promise<StateImage[]> {
   const source = await page.locator("html").getAttribute("data-ui-adapter") === "reference";
   const cls = (name: string) => `.${source ? name : "tmc-" + name}`;
@@ -148,8 +159,8 @@ async function captureStates(page: Page): Promise<StateImage[]> {
   }
   await page.evaluate(() => {
     (document.activeElement as HTMLElement)?.blur();
-    window.scrollTo({ top: 500, behavior: "instant" });
   });
+  await scrollTo(page, 500);
   await page.clock.runFor(1024);
   await take("scrolled-glass-background");
   await page.evaluate(() => window.dispatchEvent(new Event("tmc-brand-home-activate")));
@@ -168,8 +179,8 @@ for (const width of [1440, 1120, 480, 360]) {
       await prepare(page, "reference", language, width, theme);
       const expected = await captureStates(page);
       for (const adapter of ["hugo", "react"]) {
+        await scrollTo(page, 0);
         await page.evaluate((theme) => {
-          window.scrollTo({ top: 0, behavior: "instant" });
           document.documentElement.dataset.theme = theme;
           localStorage.setItem("tmc-theme", theme);
         }, theme);
@@ -200,8 +211,8 @@ for (const width of [1440, 360]) {
     await prepare(page, "reference", "ru", width, "dark", true);
     const expected = await captureStates(page);
     for (const adapter of ["hugo", "react"]) {
+      await scrollTo(page, 0);
       await page.evaluate(() => {
-        window.scrollTo({ top: 0, behavior: "instant" });
         document.documentElement.dataset.theme = "dark";
         localStorage.setItem("tmc-theme", "dark");
       });
