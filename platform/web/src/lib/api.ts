@@ -4,6 +4,10 @@ export const apiURL = (path: string) => `${API_BASE}/${path}`;
 let sessionRevision = 0;
 let sessionQueue: Promise<unknown> = Promise.resolve();
 
+export function advanceSessionRevision() {
+  ++sessionRevision;
+}
+
 function withSessionLock<T>(run: () => Promise<T>): Promise<T> {
   // Cookie writes are shared by tabs. Finish an old logout before a new login
   // can issue its cookie, including when the requests return out of order.
@@ -24,25 +28,27 @@ export class ApiError extends Error {
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+  timeoutMs = 20_000,
 ): Promise<{ data: T; total: number | null }> {
   const method = (options.method ?? "GET").toUpperCase();
   const changesCookie = path === "auth/session" && (method === "POST" || method === "DELETE")
     || method === "DELETE" && /^users\/[\da-f-]{36}$/i.test(path);
-  if (changesCookie) return withSessionLock(() => sendRequest<T>(path, options, ++sessionRevision));
-  return sendRequest<T>(path, options, sessionRevision);
+  if (changesCookie) return withSessionLock(() => sendRequest<T>(path, options, ++sessionRevision, timeoutMs));
+  return sendRequest<T>(path, options, sessionRevision, timeoutMs);
 }
 
 async function sendRequest<T>(
   path: string,
   options: RequestInit,
   revision: number,
+  timeoutMs: number,
 ): Promise<{ data: T; total: number | null }> {
   let response: Response;
   try {
     response = await fetch(apiURL(path), {
       ...options,
       signal: AbortSignal.any([
-        AbortSignal.timeout(20_000),
+        AbortSignal.timeout(timeoutMs),
         ...(options.signal ? [options.signal] : []),
       ]),
       credentials: "include",
@@ -74,8 +80,8 @@ async function sendRequest<T>(
       : null,
   };
 }
-export const api = async <T>(path: string, options?: RequestInit) =>
-  (await request<T>(path, options)).data;
+export const api = async <T>(path: string, options?: RequestInit, timeoutMs?: number) =>
+  (await request<T>(path, options, timeoutMs)).data;
 export const json = (method: string, data?: unknown): RequestInit => ({
   method,
   body: data === undefined ? undefined : JSON.stringify(data),
@@ -83,14 +89,15 @@ export const json = (method: string, data?: unknown): RequestInit => ({
 export async function allPages<T>(
   path: string,
   signal?: AbortSignal,
+  pageSize = 200,
 ): Promise<T[]> {
   const rows: T[] = [];
-  for (let offset = 0; ; offset += 200) {
+  for (let offset = 0; ; offset += pageSize) {
     const page = await api<T[]>(
-      `${path}${path.includes("?") ? "&" : "?"}limit=200&offset=${offset}`,
+      `${path}${path.includes("?") ? "&" : "?"}limit=${pageSize}&offset=${offset}`,
       { signal },
     );
     rows.push(...page);
-    if (page.length < 200) return rows;
+    if (page.length < pageSize) return rows;
   }
 }

@@ -212,7 +212,7 @@ export function ErrorBox({
     <div className="error-box" role="alert">
       <span>{t(key)}</span>
       {retry && (
-        <button className="text-button" onClick={retry}>
+        <button type="button" className="text-button" onClick={retry}>
           {t("retry")} ↻
         </button>
       )}

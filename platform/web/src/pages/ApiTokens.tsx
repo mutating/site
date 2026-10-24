@@ -26,6 +26,7 @@ export function ApiTokens() {
     Math.min(1_000_000, Number.parseInt(params.get("page") || "1", 10) || 1),
   );
   const key = `${user!.id}/${owner}/${page}`;
+  const [owners, setOwners] = useState<{ userId: string; items: Pick<Company, "id" | "name">[] } | null>(null);
   const state = useData(
     async (signal) => {
       const companies = (await allPages<Company>("companies", signal)).filter(
@@ -33,6 +34,7 @@ export function ApiTokens() {
           company.my_permissions.includes("tokens.read") ||
           company.my_permissions.includes("tokens.manage"),
       );
+      if (!signal.aborted) setOwners({ userId: user!.id, items: companies.map(({ id, name }) => ({ id, name })) });
       const company = companies.find((value) => value.id === owner);
       if (owner !== "all" && owner !== "personal" && !company)
         throw new ApiError(404, "");
@@ -59,6 +61,7 @@ export function ApiTokens() {
     true,
   );
   const data = state.data?.key === key ? state.data : null;
+  const ownerChoices = owners?.userId === user!.id ? owners.items : [];
   const selected = data?.companies.find((company) => company.id === owner);
   const canManage =
     owner === "all" ||
@@ -115,7 +118,8 @@ export function ApiTokens() {
               <option value="personal">
                 {t("tokenPersonal")} · {personalName}
               </option>
-              {data?.companies.map((company) => (
+              {owner !== "all" && owner !== "personal" && !ownerChoices.some(company => company.id === owner) && <option value={owner}>{t("tokenCompany")} · {owner}</option>}
+              {ownerChoices.map((company) => (
                 <option key={company.id} value={company.id}>
                   {t("tokenCompany")} · {company.name}
                 </option>

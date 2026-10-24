@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, ApiError, json } from "./api";
+import { advanceSessionRevision, api, ApiError, json } from "./api";
 import type { User } from "./types";
 const Context = createContext<{
   user: User | null;
@@ -29,6 +29,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const publishUser = useCallback((next: User | null, expectedGeneration: number) => {
     const current = currentSession.current;
     if (current.generation !== expectedGeneration) return;
+    // A confirmed session also supersedes old 401s after re-login by the same user.
+    advanceSessionRevision();
     const updated = {
       user: next,
       generation: current.generation + Number(current.user?.id !== next?.id),

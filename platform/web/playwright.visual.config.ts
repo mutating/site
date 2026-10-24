@@ -35,7 +35,7 @@ export default defineConfig({
           name: `${language}-${theme}-${size}`,
           metadata: { language, theme },
           ...(size.startsWith("tablet")
-            ? { grep: /owner-aware API token/ }
+            ? { grep: /owner-aware API token|Actions repository/ }
             : {}),
           use: {
             ...(size === "desktop"
