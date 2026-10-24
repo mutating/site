@@ -10,6 +10,7 @@ from sqlalchemy import and_, delete, or_, select
 
 from throng_api.ci import ACTIVE
 from throng_api.ci_controller import close_github, mark_running
+from throng_api.ci_policy import record_revision
 from throng_api.device_security import strict_json
 from throng_api.github import disconnect_user, service
 from throng_api.models import CIReservation, CIRoute, GitHubAccount, GitHubDelivery
@@ -74,8 +75,11 @@ async def webhook(request: Request):
             ).all()
             removed = {row.get("id") for row in payload.get("repositories_removed", [])}
             for route in routes:
-                if action in {"deleted", "suspend"} or route.repository_id in removed:
+                if route.enabled and (
+                    action in {"deleted", "suspend"} or route.repository_id in removed
+                ):
                     route.enabled = False
+                    record_revision(session, route, None, "disabled", now)
         elif event in {"workflow_run", "workflow_job"}:
             repository = payload.get("repository", {}).get("id")
             item = payload.get(event, {})
@@ -114,6 +118,8 @@ async def webhook(request: Request):
                     ):
                         continue
                     if action == "completed":
+                        if event == "workflow_job":
+                            row.started_at = row.started_at or row.finished_at or now
                         close_github(row, item.get("conclusion", "completed"), now)
                     elif (
                         event == "workflow_job"

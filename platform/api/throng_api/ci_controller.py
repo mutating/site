@@ -16,6 +16,8 @@ from throng_api.ci import (
     runner_isolate,
     verify_repository,
 )
+from throng_api.ci_policy import authorizer, workflow_run_allowed
+from throng_api.ci_profiles import effective_profile
 from throng_api.execution import TERMINAL, destroy_isolate
 from throng_api.github_client import GitHubError
 from throng_api.models import CIReservation, CIRoute, Command, Isolate
@@ -81,7 +83,9 @@ async def mark_running(session, row, route, now):
         return
     row.started_at = row.started_at or now
     row.status = "running"
-    row.expires_at = now + timedelta(seconds=route.timeout_seconds)
+    row.expires_at = now + timedelta(
+        seconds=effective_profile(route, row.workflow_path)["timeout_seconds"]
+    )
     isolate.expires_at = row.expires_at
 
 
@@ -208,7 +212,7 @@ async def reconcile(app, work, route):
     repository = None
     if work.status in ACTIVE:
         repository = await verify_repository(
-            request, route.created_by, route.installation_id, route.repository_id
+            request, authorizer(route), route.installation_id, route.repository_id
         )
     async with client.installation_token(
         route.installation_id,
@@ -248,6 +252,7 @@ async def reconcile(app, work, route):
             if github_outcome(work):
                 try:
                     conclusion = await job_conclusion(client, base, work, token)
+                    exact = conclusion is not None
                     outcome_retry = (
                         conclusion is None
                         and work.started_at is not None
@@ -272,6 +277,10 @@ async def reconcile(app, work, route):
 
                         async def settled(session, row):
                             if github_outcome(row) and row.reason == work.reason:
+                                if exact:
+                                    row.started_at = (
+                                        row.started_at or row.finished_at or app.state.clock()
+                                    )
                                 close_github(row, conclusion, row.finished_at or app.state.clock())
 
                         await update(app, work, settled)
@@ -327,7 +336,7 @@ async def reconcile(app, work, route):
             and run.get("head_branch") == route.ref.removeprefix("refs/heads/")
             and run.get("event") in {"push", "workflow_dispatch"}
             and run.get("run_attempt") == work.run_attempt
-            and run.get("path", "").split("@")[0] == route.workflow_path
+            and workflow_run_allowed(route, run.get("path", ""), work.workflow_path)
         )
         if not valid_run or run.get("status") == "completed":
 
@@ -389,7 +398,9 @@ async def reconcile(app, work, route):
                     shell=True,
                     cwd=".",
                     env={},
-                    timeout_seconds=route.timeout_seconds + route.preparation_seconds + 300,
+                    timeout_seconds=effective_profile(route, row.workflow_path)["timeout_seconds"]
+                    + effective_profile(route, row.workflow_path)["preparation_seconds"]
+                    + 300,
                     created_at=app.state.clock(),
                     queued_deadline=row.deadline,
                 )

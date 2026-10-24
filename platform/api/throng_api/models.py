@@ -604,6 +604,23 @@ class CIRoute(Identity, Ownership, Base):
     max_parallel: Mapped[int] = mapped_column(Integer)
     state_artifact_id: Mapped[str] = mapped_column(ForeignKey("artifacts.id"))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    workflow_paths: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    workflow_profiles: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    repository_binding: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    authorized_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class CIRouteRevision(Identity, Base):
+    """Immutable configuration history; execution history keeps its original route ID."""
+
+    __tablename__ = "ci_route_revisions"
+    __table_args__ = (UniqueConstraint("route_id", "revision"),)
+    route_id: Mapped[str] = mapped_column(ForeignKey("ci_routes.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    action: Mapped[str] = mapped_column(String(30))
+    configuration: Mapped[dict] = mapped_column(JSON)
 
 
 class CIReservation(Identity, Base):
@@ -612,6 +629,8 @@ class CIReservation(Identity, Base):
     __tablename__ = "ci_reservations"
     __table_args__ = (UniqueConstraint("route_id", "run_id", "run_attempt", "instance"),)
     route_id: Mapped[str] = mapped_column(ForeignKey("ci_routes.id"), index=True)
+    route_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    workflow_path: Mapped[str | None] = mapped_column(String(250), nullable=True)
     run_id: Mapped[int] = mapped_column(BigInteger)
     run_attempt: Mapped[int] = mapped_column(Integer)
     instance: Mapped[str] = mapped_column(String(100))
