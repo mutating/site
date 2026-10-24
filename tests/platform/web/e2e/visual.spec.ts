@@ -5,6 +5,7 @@ import {
   headers,
   makeAccount,
   password,
+  startSession,
   test,
   type Account,
 } from "./fixtures";
@@ -398,4 +399,35 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await page.keyboard.press("Escape");
   await page.goto("cloud");
   await screenshot("cloud");
+});
+
+/** Repository status, separate settings and immutable revision history must fit every supported layout. */
+test("Actions repository catalog, configuration and history", async ({ page, account }, info) => {
+  const { actionsPeer, binding, repository } = await import("./actions-peer");
+  const { language, theme } = info.project.metadata;
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language); localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  await page.clock.setFixedTime(historyNow);
+  const peer = await actionsPeer(page);
+  peer.repositories = [repository, ...["unconfigured", "connected", "disabled"].map((state, index) => ({ ...repository, id: 790 + index, full_name: ["pomponchik/site", "mutating/platform", "mutating/archived-ci"][index], owner_login: index === 0 ? "pomponchik" : "mutating", owner_type: index === 0 ? "personal" : "organization", state }))];
+  peer.bindings = [{ ...binding, workflow_profiles: { ".github/workflows/deploy.yml": { cpu_millis: 500, memory_bytes: 1024 ** 3, preparation_seconds: 120, timeout_seconds: 180 } } }, { ...binding, id: "connected", repository_id: 791 }, { ...binding, id: "disabled", repository_id: 792, enabled: false }];
+  peer.runs = [{ route_id: binding.id, id: "run", run_id: 42, run_attempt: 1, status: "completed", reason: "github_success", created_at: "2026-10-08T12:00:00Z", url: "https://github.com/mutating/ci-sandbox/actions/runs/42" }, { route_id: "connected", id: "connected-run", run_id: 43, run_attempt: 1, status: "completed", reason: "github_success", started_at: "2026-10-08T12:00:00Z", created_at: "2026-10-08T12:00:00Z", url: "https://github.com/mutating/platform/actions/runs/43" }];
+  await startSession(page, account);
+  const screenshot = async (name: string) => {
+    await expect(page.locator(".loading")).toHaveCount(0); await page.evaluate(() => document.fonts.ready);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page).toHaveScreenshot(name, { fullPage: true, threshold: 0.01, maxDiffPixels: 0 });
+  };
+  await page.goto("actions"); await expect(page.locator(".repository-card")).toHaveCount(4);
+  await screenshot("actions-catalog.png");
+  await page.getByRole("article", { name: repository.full_name }).getByRole("link", { name: language === "ru" ? "Настроить" : "Configure", exact: true }).click();
+  await expect(page.getByLabel("Workflow YAML", { exact: true })).toBeVisible();
+  await screenshot("actions-repository.png");
+  await page.getByLabel("CPU", { exact: true }).fill("1");
+  await page.getByRole("button", { name: language === "ru" ? "Сохранить настройки" : "Save settings", exact: true }).click();
+  await expect(page.getByText(language === "ru" ? "Настройки сохранены." : "Settings saved.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: language === "ru" ? "История изменений" : "Change history", exact: true }).click();
+  await expect(page.locator(".binding-revision")).toHaveCount(2);
+  await screenshot("actions-history.png");
 });
