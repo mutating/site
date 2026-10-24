@@ -1,0 +1,235 @@
+---
+# Read-only production checks. Does not change nginx, firewall or services.
+- name: Inspect production network filtering and web listeners
+  hosts: all
+  become: true
+  gather_facts: false
+  environment:
+    PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+    access_probe_source: ''
+    access_capture: false
+    access_capture_seconds: 45
+    access_capture_all_sources: false
+    access_server_first_ssh: false
+    access_capture_edge: false
+    access_edge_port: 80
+    access_transport_argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ playbook_dir }}/files/diagnose_transport.py"
+      - --domain
+      - mutating.tech
+      - --address
+      - mutating.tech
+      - --only
+      - "{{ access_capture_profile_filter | default('http_default') }}"
+    access_edge_argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ playbook_dir }}/files/diagnose_edge.py"
+      - --address
+      - mutating.tech
+      - --flow-boundary
+      - --port
+      - "{{ access_edge_port | string }}"
+
+  pre_tasks:
+    - name: Wait for the server SSH banner before relaying client data when requested
+      ansible.builtin.set_fact:
+        ansible_ssh_extra_args: >-
+          -o ProxyCommand="{{ ansible_playbook_python }} {{ playbook_dir }}/files/ssh_server_first_proxy.py %h %p"
+      when: access_server_first_ssh | bool
+      tags: [always]
+
+  tasks:
+    - name: Validate the optional source address
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - 'import ipaddress, sys; ipaddress.ip_address(sys.argv[1])'
+          - "{{ access_probe_source }}"
+      changed_when: false
+      when: access_probe_source | length > 0
+      tags: [always]
+
+    - name: Read listeners routing firewall and fail2ban status
+      ansible.builtin.shell: "{{ item.command }}"
+      args:
+        executable: /bin/sh
+      loop:
+        - name: listeners
+          command: "ss -ltnp '( sport = :22 or sport = :80 or sport = :443 or sport = :8444 )'"
+        - name: nftables
+          command: 'if command -v nft >/dev/null; then nft -a list ruleset; else echo NOT_INSTALLED; fi'
+        - name: iptables
+          command: 'if command -v iptables-save >/dev/null; then iptables-save -c; else echo NOT_INSTALLED; fi'
+        - name: ufw
+          command: 'if command -v ufw >/dev/null; then ufw status verbose; else echo NOT_INSTALLED; fi'
+        - name: fail2ban
+          command: 'if command -v fail2ban-client >/dev/null; then fail2ban-client status; else echo NOT_INSTALLED; fi'
+        - name: kernel_firewall_tables
+          command: 'for file in /proc/net/ip_tables_names /proc/net/ip6_tables_names; do if test -e "$file"; then echo "$file"; cat "$file"; fi; done'
+        - name: interface_and_xdp
+          command: 'ip -details link show dev eth0'
+        - name: network_kernel_settings
+          command: 'sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.default.rp_filter net.ipv4.tcp_syncookies net.ipv4.tcp_mtu_probing'
+      register: access_server_status
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Show bounded network and firewall status
+      ansible.builtin.debug:
+        msg:
+          check: "{{ item.item.name }}"
+          rc: "{{ item.rc }}"
+          stdout: "{{ item.stdout[:20000] }}"
+          stderr: "{{ item.stderr[:2000] }}"
+      loop: "{{ access_server_status.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Read the active nginx configuration without logging credentials
+      ansible.builtin.command: /usr/sbin/nginx -T
+      register: access_nginx
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Show only relevant nginx routing filtering and connection directives
+      ansible.builtin.debug:
+        msg:
+          rc: "{{ access_nginx.rc }}"
+          directives: "{{ access_nginx.stdout_lines | select('match', '^\\s*(# configuration file |server_name |listen |ssl_protocols |ssl_reject_handshake |geo |geoip|map |allow |deny |limit_conn|limit_req|return 444|include |worker_connections |worker_processes )') | list }}"
+
+    - name: Read the return route to the failing source
+      ansible.builtin.command:
+        argv: [ip, route, get, "{{ access_probe_source }}"]
+      register: access_return_route
+      changed_when: false
+      when: access_probe_source | length > 0
+
+    - name: Show the return route
+      ansible.builtin.debug:
+        msg: "{{ access_return_route.stdout }}"
+      when: access_probe_source | length > 0
+
+    - name: Check the local TLS endpoint without traversing the provider network
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --silent
+          - --show-error
+          - --max-time
+          - '8'
+          - --resolve
+          - mutating.tech:443:127.0.0.1
+          - --output
+          - /dev/null
+          - --write-out
+          - 'status=%{http_code} tcp=%{time_connect} tls=%{time_appconnect} total=%{time_total} verify=%{ssl_verify_result}'
+          - https://mutating.tech/
+      register: access_loopback
+      changed_when: false
+      failed_when: false
+
+    - name: Show the local TLS result
+      ansible.builtin.debug:
+        msg: "{{ access_loopback.stdout }} {{ access_loopback.stderr }}"
+
+    - name: Require a source address for packet capture
+      ansible.builtin.assert:
+        that: access_probe_source | length > 0
+        fail_msg: Set access_probe_source to the public IP of the failing connection.
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Read the actual source of the administrative connection
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - 'import json, os; print(json.dumps({"ssh_connection": os.environ.get("SSH_CONNECTION", "")}))'
+      register: access_ssh_peer
+      changed_when: false
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Show the administrative connection source
+      ansible.builtin.debug:
+        msg: "{{ access_ssh_peer.stdout | from_json }}"
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Capture TCP metadata during reproduction
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/capture_tcp_metadata.py') }}"
+          - "{{ 'any' if access_capture_all_sources | bool else access_probe_source }}"
+          - --seconds
+          - "{{ access_capture_seconds | string }}"
+          - --max-packets
+          - "{{ access_capture_max_packets | default(80) | string }}"
+      async: "{{ access_capture_seconds | int + 10 }}"
+      poll: 0
+      register: access_capture_job
+      changed_when: false
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Allow the background packet socket to initialize
+      ansible.builtin.pause:
+        seconds: 2
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Reproduce HTTP failure from the controller during the capture
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      ansible.builtin.command:
+        argv: "{{ access_capture_client_argv | default(access_edge_argv if access_capture_edge | bool else access_transport_argv) }}"
+      register: access_capture_probe
+      changed_when: false
+      failed_when: false
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Collect packet metadata
+      ansible.builtin.async_status:
+        jid: "{{ access_capture_job.ansible_job_id }}"
+      register: access_capture_result
+      until: access_capture_result.finished | bool
+      retries: 30
+      delay: 2
+      failed_when: false
+      changed_when: false
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Show correlated source and server observations
+      ansible.builtin.debug:
+        msg:
+          source: "{{ access_capture_probe.stdout | default('{}', true) | from_json }}"
+          source_error: "{{ access_capture_probe.stderr }}"
+          server_packets: "{{ access_capture_result.stdout }}"
+          capture_status: "{{ access_capture_result.stderr }}"
+      when: access_capture | bool
+      tags: [capture]
+
+    - name: Remove the completed temporary asynchronous job result
+      ansible.builtin.async_status:
+        jid: "{{ access_capture_job.ansible_job_id }}"
+        mode: cleanup
+      changed_when: false
+      when: access_capture | bool
+      tags: [capture]

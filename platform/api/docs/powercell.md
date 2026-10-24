@@ -259,7 +259,9 @@ When `accepting_work=false`, or existing reservations exceed the new target, no
 new create/run/snapshot may be delivered or started. Cancels/destroys and completion
 of already running commands remain available. Snapshot API calls return 409 while
 draining. Controller and agent admission both enforce the policy under the same
-transaction lock.
+transaction lock. A claim that sees only paused create/run/snapshot work stays
+read-only. Each poll rereads policy, while cancel/destroy delivery keeps its
+priority and the final write transaction rechecks every admission condition.
 
 Isolate creation accepts `isolation_mode: "vm"|"shared"|null` and
 `retry_allowed: true` by default. A plugin value takes priority; null resolves to

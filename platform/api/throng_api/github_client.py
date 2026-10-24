@@ -10,7 +10,7 @@ import time
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from http.cookiejar import CookieJar, DefaultCookiePolicy
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from cryptography.hazmat.primitives import hashes, serialization
@@ -169,11 +169,13 @@ class GitHubClient:
         return result
 
     async def api(self, method, path, *, token=None, payload=None, params=None):
-        # Callers construct API paths from verified numeric IDs, not arbitrary URLs.
+        # IDs are verified; workflow content paths may contain percent-escaped filenames.
+        decoded = unquote(path)
         if (
-            not re.fullmatch(r"/[A-Za-z0-9_./-]+", path)
-            or any(segment in {".", ".."} for segment in path.split("/"))
-            or "//" in path
+            not re.fullmatch(r"/(?:[A-Za-z0-9_./-]|%[A-Fa-f0-9]{2})+", path)
+            or any(segment in {".", ".."} for segment in decoded.split("/"))
+            or "//" in decoded
+            or re.search(r"[\x00-\x1f\x7f\\]", decoded)
         ):
             raise ValueError("Invalid GitHub API path")
         return await self._json(

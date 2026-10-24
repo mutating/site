@@ -1,7 +1,7 @@
 import { selectLanguage } from "./header-controls";
 import { execFileSync } from "node:child_process";
 import { test, expect, login } from "./fixtures";
-import { actionsPeer, binding } from "./actions-peer";
+import { actionsPeer, binding, repositoryURL } from "./actions-peer";
 
 // The browser sees the platform's actual generated YAML, rather than a second
 // hand-written template that could hide a generator regression.
@@ -22,10 +22,10 @@ test("Actions explains the queue guard and keeps all CI steps on the workload le
     if (!url.pathname.endsWith("/workflow")) return false;
     await route.fulfill({ json: { yaml: workflow } }); return true;
   };
-  await login(page, account); await page.goto("/actions");
-  await page.getByRole("button", { name: "Workflow и запуски", exact: true }).click();
-  const detail = page.locator(".actions-ci-detail");
+  await login(page, account); await page.goto(repositoryURL);
+  const detail = page.locator(".repository-yaml");
   await expect(detail).toContainText(/Скопируйте матрицу.*workload.*каждого.*CI.*шага/);
+  await detail.locator("details > summary").click();
   await expect(detail).toContainText(/queue_guard.*только наблюдает/);
   const yaml = page.getByRole("textbox", { name: "Workflow YAML", exact: true });
   await expect(yaml).toHaveValue(/fail-fast: true/);

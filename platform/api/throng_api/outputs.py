@@ -119,6 +119,7 @@ class AccessToken(Identity):
     ownership_id: str
     created_by_user_id: str
     name: str
+    purpose: Literal["api", "login", "legacy"]
     scopes: list[Scope]
     expires_at: datetime
     revoked_at: datetime | None
@@ -128,10 +129,23 @@ class IssuedToken(AccessToken):
     token: str
 
 
+class ApiToken(AccessToken, Owner):
+    issuer: MemberProfile
+
+
+class IssuedApiToken(ApiToken):
+    token: str
+
+
 class Login(BaseModel):
     access_token: str
     token_type: Literal["bearer"]
     token: AccessToken
+
+
+class TokenCheck(BaseModel):
+    valid: Literal[True]
+    scopes: list[Scope]
 
 
 class ComputerOwnership(Identity, Owner):

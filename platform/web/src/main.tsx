@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@mutating/ui/react";
 import {
@@ -25,6 +25,9 @@ import { Invitation } from "./pages/Invitation";
 import { Profile } from "./pages/Profile";
 import { Cloud } from "./pages/Cloud";
 import { Actions } from "./pages/Actions";
+import { ActionRepository } from "./pages/ActionRepository";
+import { ActionRepositoryHistory } from "./pages/ActionRepositoryHistory";
+import { ApiTokens } from "./pages/ApiTokens";
 import "@mutating/ui/fonts.css";
 import "@mutating/ui/styles/brand.css";
 import "@mutating/ui/styles/header.css";
@@ -58,8 +61,11 @@ function App() {
   const { user, loading, error, reload } = useSession();
   const { t } = useI18n();
   const location = useLocation();
+  const previousPath = useRef(location.pathname);
   useEffect(() => {
-    window.scrollTo(0, 0);
+    const samePage = previousPath.current === location.pathname;
+    previousPath.current = location.pathname;
+    if (!samePage || !location.state?.keepScroll) window.scrollTo(0, 0);
   }, [location.pathname, location.search]);
   useEffect(() => {
     document.title = `${t("account")} — The Mutating Company`;
@@ -91,8 +97,11 @@ function App() {
               <Route path="organizations/:companyId" element={<Organization />} />
               <Route path="invitations/:token" element={<Invitation />} />
               <Route path="profile" element={<Profile />} />
+              <Route path="api-tokens" element={<ApiTokens />} />
               <Route path="cloud" element={<Cloud />} />
-              <Route path="actions" element={<Actions />} />
+              <Route path="actions" element={<Actions key={user?.id} />} />
+              <Route path="actions/repositories/:repositoryId" element={<ActionRepository />} />
+              <Route path="actions/repositories/:repositoryId/history" element={<ActionRepositoryHistory />} />
               <Route path="*" element={<NotFound />} />
             </Route>
           </Route>
@@ -110,7 +119,7 @@ createRoot(document.getElementById("root")!).render(
       cookieDomain="mutating.tech"
     >
       <SessionProvider>
-        <BrowserRouter>
+        <BrowserRouter useTransitions={false}>
           <App />
         </BrowserRouter>
       </SessionProvider>

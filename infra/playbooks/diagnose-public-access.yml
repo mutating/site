@@ -1,0 +1,302 @@
+---
+# Read-only checks from the controller and geographically distributed probes.
+- name: Diagnose public website connectivity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    access_domain: mutating.tech
+    access_address: "{{ access_domain }}"
+    access_probe_nodes: 20
+    access_check_host_nodes: []
+    access_globalping_type: http
+    access_globalping_options:
+      protocol: HTTPS
+      request:
+        method: HEAD
+    access_globalping_locations:
+      - { country: RU, limit: 2 }
+      - { country: US, limit: 2 }
+      - { country: DE, limit: 2 }
+      - { country: NL, limit: 2 }
+      - { country: GB, limit: 2 }
+      - { country: FR, limit: 2 }
+      - { country: FI, limit: 2 }
+      - { country: RO, limit: 2 }
+      - { country: AU, limit: 2 }
+    access_hosts:
+      - "{{ access_domain }}"
+      - "www.{{ access_domain }}"
+      - "api.{{ access_domain }}"
+      - "platform.{{ access_domain }}"
+    access_checks:
+      - { type: dns, host: "{{ access_domain }}" }
+      - { type: http, host: "http://{{ access_domain }}/" }
+      - { type: http, host: "https://{{ access_domain }}/" }
+      - { type: tcp, host: "{{ access_domain }}:443" }
+
+  tasks:
+    - name: Compare TTL-limited TCP SYN data and ICMP observations
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/files/diagnose_edge.py"
+          - --address
+          - "{{ access_address }}"
+          - --port
+          - "{{ access_edge_port | default(80) | string }}"
+          - "{{ '--flow-boundary' if access_edge_fixed_flow | default(false) | bool else '--dense' }}"
+      register: access_edge
+      changed_when: false
+      tags: [edge, never]
+
+    - name: Show TTL-limited observations
+      ansible.builtin.debug:
+        msg: "{{ access_edge.stdout | from_json }}"
+      tags: [edge, never]
+
+    - name: Trace TCP ICMP and UDP paths through the current VPN
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/files/diagnose_edge.py"
+          - --address
+          - "{{ access_address }}"
+          - --trace
+      register: access_trace
+      changed_when: false
+      tags: [trace, never]
+
+    - name: Show path traces
+      ansible.builtin.debug:
+        msg: "{{ access_trace.stdout | from_json }}"
+      tags: [trace, never]
+
+    - name: Compare TLS versions segment sizes and local routes
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/files/diagnose_transport.py"
+          - --domain
+          - "{{ access_domain }}"
+          - --address
+          - "{{ access_address }}"
+          - --physical-interface
+          - "{{ access_physical_interface | default('') }}"
+          - --only
+          - "{{ access_profile_filter | default('') }}"
+      register: access_transport_profiles
+      changed_when: false
+      tags: [profiles, never]
+
+    - name: Show TLS segment size and route comparisons
+      ansible.builtin.debug:
+        msg: "{{ access_transport_profiles.stdout | from_json }}"
+      tags: [profiles, never]
+
+    - name: Compare application handshakes with and without the domain name
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import concurrent.futures, json, socket, ssl, sys, time
+            address, domain = sys.argv[1:]
+            address = socket.gethostbyname(address)
+            tests = [
+                ('http_domain', address, 80, domain, False),
+                ('http_ip', address, 80, address, False),
+                ('tls_sni', address, 443, domain, True),
+                ('tls_no_sni', address, 443, None, True),
+                ('ssh_banner', address, 22, None, False),
+                ('control_http', 'example.com', 80, 'example.com', False),
+                ('control_tls', 'example.com', 443, 'example.com', True),
+            ]
+            def probe(test):
+                name, host, port, server_name, tls = test
+                start = time.monotonic()
+                out = {'test': name}
+                try:
+                    with socket.create_connection((host, port), timeout=6) as raw:
+                        out['tcp_seconds'] = round(time.monotonic() - start, 3)
+                        if tls:
+                            context = ssl.create_default_context()
+                            if server_name is None:
+                                context.check_hostname = False
+                                context.verify_mode = ssl.CERT_NONE
+                            conn = context.wrap_socket(raw, server_hostname=server_name)
+                            out['tls'] = conn.version()
+                        else:
+                            conn = raw
+                        with conn:
+                            if port != 22:
+                                request = ('HEAD / HTTP/1.1\r\nHost: ' + (server_name or domain) + '\r\nConnection: close\r\n\r\n').encode()
+                                conn.sendall(request)
+                            out['response'] = conn.recv(256).split(b'\r\n')[0].decode(errors='replace')
+                except Exception as exc:
+                    out['error'] = type(exc).__name__ + ': ' + str(exc)
+                out['total_seconds'] = round(time.monotonic() - start, 3)
+                return out
+            with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
+                print(json.dumps(list(pool.map(probe, tests))))
+          - "{{ access_address }}"
+          - "{{ access_domain }}"
+      register: access_handshakes
+      changed_when: false
+      tags: [transport]
+
+    - name: Show application handshake comparison
+      ansible.builtin.debug:
+        msg: "{{ access_handshakes.stdout | from_json }}"
+      tags: [transport]
+
+    - name: Read DNS records using independent recursive resolvers
+      ansible.builtin.command:
+        argv:
+          - dig
+          - "+time=3"
+          - "+tries=1"
+          - "+noall"
+          - "+answer"
+          - "@{{ item.0 }}"
+          - "{{ item.1 }}"
+          - "{{ item.2 }}"
+      loop: "{{ ['1.1.1.1', '8.8.8.8'] | product(access_hosts, ['A', 'AAAA', 'NS', 'CAA']) | list }}"
+      register: access_dns
+      changed_when: false
+      failed_when: false
+      tags: [dns]
+
+    - name: Show DNS answers
+      ansible.builtin.debug:
+        msg: "{{ access_dns.results | map(attribute='stdout') | reject('equalto', '') | list }}"
+      tags: [dns]
+
+    - name: Probe HTTP and HTTPS over IPv4 and IPv6 from the controller
+      ansible.builtin.command:
+        argv:
+          - curl
+          - "-{{ item.0 }}"
+          - --silent
+          - --show-error
+          - --output
+          - /dev/null
+          - --connect-timeout
+          - '5'
+          - --max-time
+          - '12'
+          - --write-out
+          - 'ip=%{remote_ip} status=%{http_code} dns=%{time_namelookup} tcp=%{time_connect} tls=%{time_appconnect} first_byte=%{time_starttransfer} total=%{time_total} verify=%{ssl_verify_result}'
+          - "{{ item.1 }}://{{ item.2 }}/"
+      loop: "{{ ['4', '6'] | product(['http', 'https'], access_hosts) | list }}"
+      register: access_local
+      changed_when: false
+      failed_when: false
+      tags: [local]
+
+    - name: Show controller connection results
+      ansible.builtin.debug:
+        msg: "IPv{{ item.item.0 }} {{ item.item.1 }}://{{ item.item.2 }} {{ item.stdout }} {{ item.stderr }}"
+      loop: "{{ access_local.results }}"
+      loop_control:
+        label: "{{ item.item | join(' ') }}"
+      tags: [local]
+
+    - name: Start distributed DNS HTTP HTTPS and TCP checks
+      ansible.builtin.uri:
+        url: "https://check-host.net/check-{{ item.type }}?host={{ item.host | urlencode }}&max_nodes={{ access_probe_nodes }}{{ ('&node=' ~ (access_check_host_nodes | join('&node='))) if access_check_host_nodes else '' }}"
+        headers:
+          Accept: application/json
+        return_content: true
+        timeout: 20
+      loop: "{{ access_checks }}"
+      register: access_distributed
+      tags: [global]
+
+    - name: Start independent Globalping HTTPS checks
+      ansible.builtin.uri:
+        url: https://api.globalping.io/v1/measurements
+        method: POST
+        headers:
+          User-Agent: mutating-access-diagnostics/1.0
+        body_format: json
+        body:
+          type: "{{ access_globalping_type }}"
+          target: "{{ item }}"
+          locations: "{{ access_globalping_locations }}"
+          measurementOptions: "{{ access_globalping_options }}"
+        status_code: 202
+        timeout: 20
+      loop: "{{ access_hosts }}"
+      register: access_globalping
+      tags: [globalping]
+
+    - name: Wait for independent Globalping results
+      ansible.builtin.uri:
+        url: "https://api.globalping.io/v1/measurements/{{ item.json.id }}"
+        timeout: 20
+      register: access_globalping_result
+      until: access_globalping_result.json.status == 'finished'
+      retries: 8
+      delay: 5
+      loop: "{{ access_globalping.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      tags: [globalping]
+
+    - name: Show independent Globalping connection and certificate results
+      ansible.builtin.debug:
+        msg:
+          target: "{{ item.0.target }}"
+          report: "https://api.globalping.io/v1/measurements/{{ item.0.id }}"
+          source: "{{ item.1.probe }}"
+          status: "{{ item.1.result.status }}"
+          address: "{{ item.1.result.resolvedAddress | default('') }}"
+          http_status: "{{ item.1.result.statusCode | default(none) }}"
+          timings: "{{ item.1.result.timings | default({}) }}"
+          tls_authorized: "{{ (item.1.result.tls | default({}, true)).authorized | default(none) }}"
+          tls_expires: "{{ (item.1.result.tls | default({}, true)).expiresAt | default(none) }}"
+          error: "{{ item.1.result.rawOutput if item.1.result.status != 'finished' else '' }}"
+      loop: "{{ access_globalping_result.results | map(attribute='json') | list | subelements('results') }}"
+      loop_control:
+        label: "{{ item.0.target }} {{ item.1.probe.country }} {{ item.1.probe.city }} AS{{ item.1.probe.asn }}"
+      tags: [globalping]
+
+    - name: Show distributed check identifiers and probe locations
+      ansible.builtin.debug:
+        msg:
+          check: "{{ item.item }}"
+          report: "{{ item.json }}"
+      loop: "{{ access_distributed.results }}"
+      loop_control:
+        label: "{{ item.item.type }} {{ item.item.host }}"
+      tags: [global]
+
+    - name: Wait for the distributed checks
+      ansible.builtin.uri:
+        url: "https://check-host.net/check-result/{{ item.json.request_id }}"
+        headers:
+          Accept: application/json
+        return_content: true
+        timeout: 20
+      register: access_global_result
+      until: "access_global_result.json.values() | select('none') | list | length == 0"
+      retries: 6
+      delay: 5
+      loop: "{{ access_distributed.results }}"
+      loop_control:
+        label: "{{ item.item.type }} {{ item.item.host }}"
+      failed_when: false
+      tags: [global]
+
+    - name: Show distributed connection results
+      ansible.builtin.debug:
+        msg:
+          check: "{{ item.item.item }}"
+          report: "{{ item.item.json.permanent_link }}"
+          results: "{{ item.json }}"
+      loop: "{{ access_global_result.results }}"
+      loop_control:
+        label: "{{ item.item.item.type }} {{ item.item.item.host }}"
+      tags: [global]

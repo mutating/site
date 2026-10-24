@@ -55,6 +55,25 @@ export interface Invitation {
 export interface CreatedInvitation extends Invitation {
   token: string;
 }
+
+export type TokenScope = "read" | "execute" | "manage";
+export interface ApiToken {
+  id: string;
+  created_at: string;
+  ownership_id: string;
+  created_by_user_id: string;
+  user_id: string | null;
+  company_id: string | null;
+  issuer: MemberProfile;
+  name: string;
+  purpose: "api" | "legacy";
+  scopes: TokenScope[];
+  expires_at: string;
+  revoked_at: string | null;
+}
+export interface IssuedApiToken extends ApiToken {
+  token: string;
+}
 export interface Resource {
   code: string;
   total: number;

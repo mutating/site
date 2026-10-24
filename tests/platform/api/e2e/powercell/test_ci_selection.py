@@ -5,11 +5,19 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from tests.platform.api.e2e.test_github import connect
 from throng_api import ci
-from throng_api.models import CIReservation, CIRoute, Command, Computer, ComputerOwnership, Isolate
+from throng_api.models import (
+    CIReservation,
+    CIRoute,
+    CIRouteRevision,
+    Command,
+    Computer,
+    ComputerOwnership,
+    Isolate,
+)
 
 from .test_ci import ci_peer as ci_peer
 from .test_ci import github as github
@@ -189,6 +197,10 @@ async def test_reserve_route_deleted_after_identity_is_unavailable(
         reads += 1
         if reads == 2:
             async with app.state.db.write() as session:
+                # The fault deletes both the route and its audit references.
+                await session.execute(
+                    delete(CIRouteRevision).where(CIRouteRevision.route_id == route["id"])
+                )
                 await session.delete(await session.get(CIRoute, route["id"]))
         async with original() as session:
             yield session
@@ -210,6 +222,10 @@ async def test_reserve_route_deleted_before_final_lock_is_unavailable(
     async def verified_then_deleted(*args, **kwargs):
         result = await original(*args, **kwargs)
         async with app.state.db.write() as session:
+            # The fault deletes both the route and its audit references.
+            await session.execute(
+                delete(CIRouteRevision).where(CIRouteRevision.route_id == route["id"])
+            )
             await session.delete(await session.get(CIRoute, route["id"]))
         return result
 
@@ -229,6 +245,10 @@ async def test_cancel_route_deleted_after_identity_is_unavailable(
     async def authenticated_then_deleted(*args, **kwargs):
         claims = await original(*args, **kwargs)
         async with app.state.db.write() as session:
+            # The fault deletes both the route and its audit references.
+            await session.execute(
+                delete(CIRouteRevision).where(CIRouteRevision.route_id == route["id"])
+            )
             await session.delete(await session.get(CIRoute, route["id"]))
         return claims
 

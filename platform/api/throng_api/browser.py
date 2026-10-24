@@ -37,7 +37,7 @@ class BrowserSessionMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope)
-        cookie_auth = SESSION_COOKIE in request.cookies and not request.headers.get("authorization")
+        cookie_auth = SESSION_COOKIE in request.cookies and "authorization" not in request.headers
         session_endpoint = request.url.path == "/v1/auth/session"
         if (
             request.url.path.startswith("/v1/")
@@ -56,7 +56,9 @@ class BrowserSessionMiddleware:
             if message["type"] == "http.response.start" and (cookie_auth or session_endpoint):
                 headers = MutableHeaders(scope=message)
                 headers["Cache-Control"] = "no-store"
-                if message["status"] == 401 or (
+                # An old unauthorized response may arrive after a new login.
+                # Only explicit cookie-changing actions can clear the cookie.
+                if (
                     message["status"] == 204
                     and request.method == "DELETE"
                     and re.fullmatch(r"/v1/users/[0-9a-fA-F-]{36}", request.url.path)

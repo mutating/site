@@ -1,3 +1,6 @@
+@import "./square-button.css";
+@import "./dropdown.css";
+
 /* Header geometry and breakpoints preserved from the original Hugo theme. */
 .tmc-header-shell:where(:not([data-tmc-inherit-typography])) { color: var(--ink); font-family: var(--font-geist-sans), Arial, sans-serif; line-height: normal; }
 .tmc-header-shell, .tmc-header-shell * { box-sizing: border-box; }
@@ -21,8 +24,7 @@
   gap: 10px;
 }
 
-.tmc-header,
-.tmc-platform-link {
+.tmc-header {
   border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
   border-radius: 18px;
   background: color-mix(in srgb, var(--bg) 82%, transparent);
@@ -39,20 +41,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.tmc-platform-link {
-  width: 74px;
-  height: 74px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  color: light-dark(#000, #fff);
-}
-
-.tmc-platform-link svg {
-  width: 36px;
-  height: 36px;
 }
 
 .tmc-nav {
@@ -405,26 +393,6 @@
   height: 20px;
 }
 
-.tmc-mobile-menu nav {
-  position: absolute;
-  top: 50px;
-  right: 0;
-  width: 190px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  display: grid;
-}
-
-.tmc-mobile-menu nav a {
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
 .tmc-mobile-menu__language {
   padding: 0 0 8px;
   margin-bottom: 8px;
@@ -440,8 +408,7 @@
     display: none;
   }
 
-  .tmc-header,
-.tmc-platform-link {
+  .tmc-header {
     background: color-mix(in srgb, var(--bg) 93%, transparent);
   }
 
@@ -484,7 +451,6 @@
   .tmc-header-shell {
     width: min(100% - 32px, 720px);
   }
-
 }
 
 @media (max-width: 580px) {
@@ -503,15 +469,6 @@
     padding: 9px 9px 9px 12px;
   }
 
-  .tmc-platform-link {
-    width: 68px;
-    height: 68px;
-  }
-
-  .tmc-platform-link svg {
-    width: 32px;
-    height: 32px;
-  }
 }
 
 @media (max-width: 480px) {
@@ -535,10 +492,6 @@
 
   .tmc-mobile-menu__icon {
     display: block;
-  }
-
-  .tmc-platform-link {
-    width: 56px;
   }
 }
 

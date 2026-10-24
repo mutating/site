@@ -1,0 +1,9 @@
+{{- $class := "tmc-square-button" -}}
+{{- with .class -}}{{- $class = printf "%s %s" $class . -}}{{- end -}}
+{{- $content := partial "tmc-ui/internal/option.html" (slice . "content" "") -}}
+{{- if isset . "href" -}}
+  {{- $rel := partial "tmc-ui/internal/option.html" (slice . "rel" (cond (eq .target "_blank") "noopener noreferrer" "")) -}}
+  <a class="{{ $class }}" href="{{ .href }}" aria-label="{{ .label }}"{{ with .id }} id="{{ . }}"{{ end }}{{ with .title }} title="{{ . }}"{{ end }}{{ with .target }} target="{{ . }}"{{ end }}{{ if or (isset . "rel") (eq .target "_blank") }} rel="{{ $rel }}"{{ end }}>{{ $content }}</a>
+{{- else -}}
+  <button class="{{ $class }}" type="{{ .type | default "button" }}" aria-label="{{ .label }}"{{ if .disabled }} disabled{{ end }}{{ with .id }} id="{{ . }}"{{ end }}{{ with .title }} title="{{ . }}"{{ end }}>{{ $content }}</button>
+{{- end -}}

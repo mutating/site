@@ -1,12 +1,13 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError, json } from "../lib/api";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import type { User } from "../lib/types";
-import { Avatar } from "../components/Layout";
+import { Avatar } from "../components/Avatar";
 import { ConfirmDialog, ErrorBox, Heading, Icon } from "../components/UI";
 export function Profile() {
-  const { user, setUser } = useSession();
+  const { user, setUser, updateUser } = useSession();
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -26,15 +27,13 @@ export function Profile() {
     setAvatarBusy(true);
     try {
       if (file) {
-        const updated = await api<User>("users/me/avatar", {
+        await updateUser(() => api<User>("users/me/avatar", {
           method: "PUT",
           body: file,
           headers: { "Content-Type": file.type || "application/octet-stream" },
-        });
-        setUser(updated);
+        }));
       } else {
-        await api("users/me/avatar", json("DELETE"));
-        setUser({ ...user!, avatar_version: null });
+        await updateUser(() => api("users/me/avatar", json("DELETE")));
       }
       setAvatarSuccess(true);
     } catch (e) {
@@ -114,15 +113,13 @@ export function Profile() {
             setSuccess(false);
             const values = Object.fromEntries(new FormData(e.currentTarget));
             try {
-              setUser(
-                await api<User>(
+              await updateUser(() => api<User>(
                   `users/${user!.id}`,
                   json("PATCH", {
                     ...values,
                     nickname: values.nickname || null,
                   }),
-                ),
-              );
+                ));
               setSuccess(true);
             } catch (err) {
               setError(err);
@@ -207,6 +204,7 @@ export function Profile() {
           </div>
         </form>
       </div>
+      <section className="token-profile-link panel"><div><h2>{t("apiTokens")}</h2><p>{t("tokenProfileLead")}</p></div><Link className="button secondary" to="/api-tokens">{t("apiTokens")} ↗</Link></section>
       <details className="profile-account-management">
         <summary>
           {t("accountManagement")}

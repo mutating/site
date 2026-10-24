@@ -1,51 +1,60 @@
-import { languageControl, selectLanguage } from "./header-controls";
+import { languageControl, openUserMenu, selectLanguage } from "./header-controls";
 import { expect, login, test } from "./fixtures";
 import { actionsPeer } from "./actions-peer";
 
-test("header controls accept clicks and taps beside the expanded brand at every breakpoint", async ({ page, isMobile }) => {
-  test.setTimeout(90_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("register?source=header-breakpoints#draft");
-  const email = page.locator('input[name="email"]');
-  await email.fill("header-draft@example.com");
-  await page.locator('input[name="password"]').fill("unsaved header password");
-  // End text editing before resizing: macOS WebKit's IME crashes on a focused
-  // password field when the emulated phone viewport changes.
-  await page.getByRole("heading", { name: "Начнём знакомство." }).click();
-  await page.evaluate(() => document.fonts.ready);
-  const originalURL = page.url();
-  const header = page.getByRole("banner");
-  const brand = header.getByRole("link", { name: "The Mutating Company", exact: true });
-  const theme = header.getByRole("button", { name: /^(Переключить тему|Toggle color theme)$/ });
+// Overlapping groups retain every adjacent resize transition while giving each
+// group its own test budget on slower mobile WebKit runners.
+for (const widths of [
+  [320, 360, 380, 381, 390],
+  [390, 480, 540, 768, 800],
+  [800, 900, 1120, 1121, 1240],
+  [1240, 1241, 1440, 1920],
+]) {
+  test(`header controls accept clicks and taps beside the expanded brand at every breakpoint: ${widths[0]}-${widths[widths.length - 1]}px`, async ({ page, isMobile }) => {
+    test.setTimeout(90_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto("register?source=header-breakpoints#draft");
+    const email = page.locator('input[name="email"]');
+    await email.fill("header-draft@example.com");
+    await page.locator('input[name="password"]').fill("unsaved header password");
+    // End text editing before resizing: macOS WebKit's IME crashes on a focused
+    // password field when the emulated phone viewport changes.
+    await page.getByRole("heading", { name: "Начнём знакомство." }).click();
+    await page.evaluate(() => document.fonts.ready);
+    const originalURL = page.url();
+    const header = page.getByRole("banner");
+    const brand = header.getByRole("link", { name: "The Mutating Company", exact: true });
+    const theme = header.getByRole("button", { name: /^(Переключить тему|Toggle color theme)$/ });
 
-  for (const width of [320, 360, 380, 381, 390, 480, 540, 768, 800, 900, 1120, 1121, 1240, 1241, 1440, 1920]) {
-    await test.step(`${width}px, both languages and themes`, async () => {
-      await page.setViewportSize({ width, height: 600 });
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-      for (const next of ["en", "ru"]) {
-        await brand.hover();
-        await expect(languageControl(page)).toBeInViewport();
-        await expect(theme).toBeInViewport();
-        await selectLanguage(page, next, isMobile ? "touch" : "mouse");
-        await expect(page.locator("html")).toHaveAttribute("lang", next);
-        await expect(brand).toHaveAttribute("href", `https://mutating.tech/${next === "ru" ? "ru/" : ""}`);
-        for (const nextTheme of ["light", "dark"]) {
+    for (const width of widths) {
+      await test.step(`${width}px, both languages and themes`, async () => {
+        await page.setViewportSize({ width, height: 600 });
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        for (const next of ["en", "ru"]) {
           await brand.hover();
-          if (isMobile) await theme.tap();
-          else await theme.click();
-          await expect(page.locator("html")).toHaveAttribute("data-theme", nextTheme);
-          await expect(theme).toHaveAttribute("aria-pressed", String(nextTheme === "dark"));
+          await expect(languageControl(page)).toBeInViewport();
+          await expect(theme).toBeInViewport();
+          await selectLanguage(page, next, isMobile ? "touch" : "mouse");
+          await expect(page.locator("html")).toHaveAttribute("lang", next);
+          await expect(brand).toHaveAttribute("href", `https://mutating.tech/${next === "ru" ? "ru/" : ""}`);
+          for (const nextTheme of ["light", "dark"]) {
+            await brand.hover();
+            if (isMobile) await theme.tap();
+            else await theme.click();
+            await expect(page.locator("html")).toHaveAttribute("data-theme", nextTheme);
+            await expect(theme).toHaveAttribute("aria-pressed", String(nextTheme === "dark"));
+          }
+          await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
         }
-        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      }
-      await expect(email).toHaveValue("header-draft@example.com");
-      await expect(page.locator('input[name="password"]')).toHaveValue("unsaved header password");
-      expect(page.url()).toBe(originalURL);
-    });
-  }
-  expect(errors).toEqual([]);
-});
+        await expect(email).toHaveValue("header-draft@example.com");
+        await expect(page.locator('input[name="password"]')).toHaveValue("unsaved header password");
+        expect(page.url()).toBe(originalURL);
+      });
+    }
+    expect(errors).toEqual([]);
+  });
+}
 
 test("keyboard order reaches all header controls and the cabinet skip link stays first", async ({ page, account, browserName }) => {
   // Safari's native sequential navigation includes buttons with Option-Tab.
@@ -108,11 +117,11 @@ test("header controls work through every cabinet section and logout", async ({ p
     await expect(page.locator("html")).toHaveAttribute("lang", "ru");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   }
-  await page.getByRole("link", { name: "Профиль", exact: true }).filter({ visible: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await selectLanguage(page);
   await theme.click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).filter({ visible: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: "Sign out", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(header).toHaveCount(1);

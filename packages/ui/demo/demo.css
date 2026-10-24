@@ -7,6 +7,7 @@
 .demo-panel { padding: 28px; }
 .demo-panel h2 { margin-top: 0; font-size: 22px; letter-spacing: -0.04em; }
 .demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+.demo-row > .tmc-dropdown > .tmc-dropdown-panel { right: auto; left: 0; }
 .demo-swatch { display: grid; gap: 10px; font: 11px var(--font-geist-mono), monospace; color: var(--ink-muted); }
 .demo-swatch i { width: 68px; height: 68px; border-radius: 14px; border: 1px solid var(--line); }
 .demo-footer { border-top: 1px solid var(--line); padding-top: 24px; }

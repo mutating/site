@@ -30,19 +30,33 @@ export default defineConfig({
   use: { ...functional.use, timezoneId: "UTC", reducedMotion: "reduce" },
   projects: ["ru", "en"].flatMap((language) =>
     ["dark", "light"].flatMap((theme) =>
-      ["desktop", "mobile"].map((size) => ({
-        name: `${language}-${theme}-${size}`,
-        metadata: { language, theme },
-        use: {
-          ...(size === "desktop"
-            ? {
-                ...devices["Desktop Chrome"],
-                viewport: { width: 1440, height: 1000 },
-              }
-            : devices["Pixel 7"]),
-          locale: language === "ru" ? "ru-RU" : "en-US",
-        },
-      })),
+      ["desktop", "mobile", "tablet-portrait", "tablet-landscape"].map(
+        (size) => ({
+          name: `${language}-${theme}-${size}`,
+          metadata: { language, theme },
+          ...(size.startsWith("tablet")
+            ? { grep: /owner-aware API token|Actions repository/ }
+            : {}),
+          use: {
+            ...(size === "desktop"
+              ? {
+                  ...devices["Desktop Chrome"],
+                  viewport: { width: 1440, height: 1000 },
+                }
+              : size === "mobile"
+                ? devices["Pixel 7"]
+                : {
+                    ...devices["iPad (gen 7)"],
+                    defaultBrowserType: "chromium",
+                    viewport:
+                      size === "tablet-portrait"
+                        ? { width: 768, height: 1024 }
+                        : { width: 1180, height: 820 },
+                  }),
+            locale: language === "ru" ? "ru-RU" : "en-US",
+          },
+        }),
+      ),
     ),
   ),
 });

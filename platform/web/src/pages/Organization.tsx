@@ -158,6 +158,7 @@ function OrganizationContent({
           {t("membersLead")} · {t(company.my_role)}
         </span>
       </Heading>
+      {(company.my_permissions.includes("tokens.read") || company.my_permissions.includes("tokens.manage")) && <Link className="text-link token-organization-link" to={`/api-tokens?owner=${company.id}`}>{t("apiTokens")} ↗</Link>}
       {canManage && (
         <MemberSharing
           company={company}

@@ -9,11 +9,12 @@ from urllib.parse import urlencode, urlsplit
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, update
+from sqlalchemy import delete, or_, select
 
+from throng_api.ci_policy import record_revision
 from throng_api.github_client import GitHubClient, GitHubError, GitHubToken
 from throng_api.github_oidc import ActionsOIDC
-from throng_api.models import CIRoute, GitHubAccount, GitHubOAuthFlow
+from throng_api.models import CIRoute, GitHubAccount, GitHubOAuthFlow, utcnow
 from throng_api.security import access_token_scheme, authenticate, bearer, digest, personal
 
 router = APIRouter(
@@ -33,6 +34,7 @@ class GitHubService:
         self.app_id = settings.github_app_id
         self.slug = settings.github_app_slug
         self.webhook_secret = settings.github_webhook_secret
+        self.catalog_cache = {}
         self.api_origin = self.origin(settings.github_public_api_url)
         self.dashboard_origin = self.origin(settings.github_dashboard_url)
         self.oidc = ActionsOIDC(self.client, self.api_origin + "/v1/github/ci")
@@ -354,7 +356,7 @@ async def installation_callback(
 
 
 @router.get("/installations")
-async def installations(request: Request, page: int = Query(default=1, ge=1, le=1000)):
+async def installations(request: Request, page: int = Query(default=1, ge=1)):
     user_id = await principal_user(request)
     integration = service(request)
     try:
@@ -385,7 +387,7 @@ async def installations(request: Request, page: int = Query(default=1, ge=1, le=
 
 @router.get("/installations/{installation_id}/repositories")
 async def repositories(
-    request: Request, installation_id: int = Path(gt=0), page: int = Query(default=1, ge=1, le=1000)
+    request: Request, installation_id: int = Path(gt=0), page: int = Query(default=1, ge=1)
 ):
     user_id = await principal_user(request)
     integration = service(request)
@@ -427,8 +429,16 @@ async def disconnect(request: Request):
 
 async def disconnect_user(session, user_id):
     """Invalidate local authority and outstanding exchanges after either revocation source."""
-    await session.execute(
-        update(CIRoute).where(CIRoute.created_by == user_id).values(enabled=False)
-    )
+    for route in await session.scalars(
+        select(CIRoute).where(
+            CIRoute.enabled.is_(True),
+            or_(
+                CIRoute.authorized_by == user_id,
+                (CIRoute.authorized_by.is_(None) & (CIRoute.created_by == user_id)),
+            ),
+        )
+    ):
+        route.enabled = False
+        record_revision(session, route, user_id, "disconnected", utcnow())
     await session.execute(delete(GitHubOAuthFlow).where(GitHubOAuthFlow.user_id == user_id))
     await session.execute(delete(GitHubAccount).where(GitHubAccount.user_id == user_id))

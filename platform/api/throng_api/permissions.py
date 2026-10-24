@@ -53,7 +53,7 @@ def request_permission(request, scope):
         return "resources.manage" if scope == "manage" else "resources.read"
     if resource in {"isolates", "commands", "operations", "artifacts"}:
         return "execution.run" if scope == "execute" else "execution.read"
-    if resource in {"access-tokens", "token-ownerships"}:
+    if resource in {"access-tokens", "api-tokens", "token-ownerships"}:
         return "tokens.manage" if scope == "manage" else "tokens.read"
     if resource == "companies" and request.method == "PATCH":
         return "company.manage"

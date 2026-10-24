@@ -1,16 +1,19 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { useLayoutEffect, useRef } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
-import { api, apiURL, json } from "../lib/api";
-import { ErrorBox, Icon } from "./UI";
-import { Header as SharedHeader } from "@mutating/ui/react";
+import { api } from "../lib/api";
+import { Icon } from "./UI";
+import { Header as SharedHeader, SquareButton } from "@mutating/ui/react";
 import { useData } from "../lib/useData";
 import type { GitHubStatus } from "../lib/github";
+import { UserMenu } from "./UserMenu";
+import { useHeaderPresence } from "../lib/useHeaderPresence";
 
 const siteOrigin = import.meta.env.VITE_SITE_ORIGIN || "https://mutating.tech";
 
 export function Header() {
+  const { user, loading, error } = useSession();
   const { t, language, setLanguage } = useI18n();
   const location = useLocation();
   const languageURL = (code: string) => {
@@ -19,6 +22,7 @@ export function Header() {
     return `${location.pathname}?${query}${location.hash}`;
   };
   const headerRef = useRef<HTMLElement>(null);
+  const hasUserMenu = useHeaderPresence(headerRef, !loading && !error && !!user);
   useLayoutEffect(() => {
     const header = headerRef.current!;
     const root = document.documentElement;
@@ -61,31 +65,15 @@ export function Header() {
       menuLabel={language === "ru" ? "Открыть меню навигации" : "Open navigation menu"}
       menuText={language === "ru" ? "Меню" : "Menu"}
       mobileNavigationLabel={language === "ru" ? "Мобильная навигация" : "Mobile navigation"}
+      adjacent={hasUserMenu ? !loading && !error && user ? <UserMenu key={user.id} />
+        : <SquareButton className="user-menu-placeholder" disabled tabIndex={-1} aria-hidden="true" aria-label="">{null}</SquareButton>
+        : undefined}
     />
-  );
-}
-export function Avatar({ large = false }: { large?: boolean }) {
-  const { user } = useSession();
-  return (
-    <span className={`avatar ${large ? "large" : ""}`}>
-      {user?.avatar_version ? (
-        <img
-          src={apiURL(`users/me/avatar?v=${user.avatar_version}`)}
-          alt=""
-        />
-      ) : (
-        (user?.first_name || user?.nickname || user?.email || "?")
-          .slice(0, 1)
-          .toUpperCase()
-      )}
-    </span>
   );
 }
 export function Layout() {
   const { t } = useI18n();
-  const { user, setUser } = useSession();
-  const [error, setError] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
+  const { user } = useSession();
   const github = useData(
     (signal) => api<GitHubStatus>("github/status", { signal }),
     user!.id,
@@ -95,35 +83,9 @@ export function Layout() {
     ["/power-cells", "Power Cells", "cells"],
     ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
+    ["/api-tokens", "apiTokens", "key"],
   ];
   if (github.data?.enabled) links.splice(2, 0, ["/actions", "actions", "play"]);
-  const accountActions = (
-    <>
-      <Link className="account-action account-profile" to="/profile">
-        <Icon name="user" size={14} />
-        {t("profile")}
-      </Link>
-      <button
-        className="account-action logout-button"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          setError(null);
-          try {
-            await api("auth/session", json("DELETE"));
-            setUser(null);
-          } catch (e) {
-            setError(e);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <Icon name="exit" size={14} />
-        {t("logout")}
-      </button>
-    </>
-  );
   return (
     <>
       <div className="app-shell">
@@ -145,22 +107,6 @@ export function Layout() {
               </NavLink>
             ))}
           </nav>
-          <div className="sidebar-account">
-            <div className="account-card">
-              <div className="account-identity">
-                <Avatar />
-                <span>
-                  <strong>
-                    {user?.first_name || user?.nickname || user?.email}
-                  </strong>
-                  <small>{user?.email}</small>
-                </span>
-              </div>
-              <div className="account-actions">{accountActions}</div>
-            </div>
-            <div className="mobile-account-actions">{accountActions}</div>
-            <ErrorBox error={error} />
-          </div>
         </aside>
         <main id="main" className="main-content">
           <Outlet />

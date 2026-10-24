@@ -167,6 +167,7 @@ async def claim(data: Claim, request: Request):
                     AgentTask.session_id == computer.session_id,
                     AgentTask.status.in_(["pending", "dispatched"]),
                     AgentTask.deadline > now,
+                    or_(AgentTask.kind.in_(["cancel", "destroy"]), computer.can_start_work),
                 )
                 .limit(1)
             )

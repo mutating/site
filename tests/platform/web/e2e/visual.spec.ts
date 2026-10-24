@@ -3,13 +3,118 @@ import {
   addComputer,
   expect,
   headers,
+  makeAccount,
   password,
+  startSession,
   test,
   type Account,
 } from "./fixtures";
 import { GiB, historyNow, reserve, seedHistory } from "./resources";
 import { resolve } from "node:path";
 import { openLanguages } from "./header-controls";
+
+test("owner-aware API token registry and issuance dialog", async ({ page, request, account }, info) => {
+  const { language, theme } = info.project.metadata;
+  const exactPixels = { threshold: 0.01, maxDiffPixels: 0 };
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language);
+    localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  await page.clock.setFixedTime(historyNow);
+  const issuer = await makeAccount(request, "Дмитрий");
+  const studioOwner = await makeAccount(request, "Ирина");
+  for (const [actor, last_name] of [[account, "Волкова"], [issuer, "Орлов"], [studioOwner, "Миронова"]] as const) {
+    expect((await request.patch(`${API}/users/${actor.id}`, { headers: headers(actor), data: { last_name } })).status()).toBe(200);
+  }
+  const response = await request.post(`${API}/companies`, { headers: headers(account), data: { name: "Лаборатория" } });
+  expect(response.status()).toBe(201);
+  const lab = await response.json();
+  const studioResponse = await request.post(`${API}/companies`, { headers: headers(studioOwner), data: { name: "Студия" } });
+  expect(studioResponse.status()).toBe(201);
+  const studio = await studioResponse.json();
+  expect((await request.post(`${API}/memberships`, { headers: headers(studioOwner), data: { company_id: studio.id, user_id: account.id, role: "user", permissions: ["tokens.read"] } })).status()).toBe(201);
+  expect((await request.post(`${API}/memberships`, { headers: headers(account), data: { company_id: lab.id, user_id: issuer.id, role: "admin" } })).status()).toBe(201);
+  const records = [
+    [account, { user_id: account.id }, "Рабочий Mac", ["read", "execute"]],
+    [account, { company_id: lab.id }, "CI лаборатории", ["read", "execute"]],
+    [issuer, { company_id: lab.id }, "Отчёты команды", ["read"]],
+    [studioOwner, { company_id: studio.id }, "Аналитика Студии", ["read"]],
+  ] as const;
+  for (const [actor, owner, name, scopes] of records) expect((await request.post(`${API}/api-tokens`, { headers: headers(actor), data: { ...owner, name, scopes } })).status()).toBe(201);
+  await page.route(`${API}/api-tokens**`, async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const fixedDates = { created_at: "2026-10-07T12:00:00Z", expires_at: "2026-11-06T12:00:00Z" };
+    if (Array.isArray(body)) {
+      const recordNames = records.map(value => value[2]) as readonly string[];
+      body.sort((a, b) => recordNames.indexOf(a.name) - recordNames.indexOf(b.name));
+      return route.fulfill({ response, json: body.map(value => ({ ...value, ...fixedDates })) });
+    }
+    expect(body.issuer.last_name).toBe("Волкова");
+    return route.fulfill({ response, json: { ...body, ...fixedDates, token: "thr_visual_example_only_8A3k7Q" } });
+  });
+  expect((await page.request.post(`${API}/auth/session`, {
+    headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },
+    data: { login: account.email, password },
+  })).status()).toBe(200);
+  await page.goto("api-tokens");
+  await expect(page.locator(".token-registry-row")).toHaveCount(4);
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page).toHaveScreenshot("api-tokens.png", { fullPage: true, ...exactPixels });
+  await page.getByRole("button", { name: language === "ru" ? "Создать токен" : "Create token", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveScreenshot("api-token-personal-create.png", exactPixels);
+  await dialog.getByRole("radio", { name: language === "ru" ? /Организация/ : /Organization/ }).check();
+  await dialog.getByLabel(language === "ru" ? "Название токена" : "Token name", { exact: true }).fill("Ночные сборки");
+  await expect(dialog).toHaveScreenshot("api-token-create.png", exactPixels);
+  await expect(page).toHaveScreenshot("api-token-overlay.png", exactPixels);
+  await dialog.getByRole("button", { name: language === "ru" ? "Создать токен организации" : "Create organization token", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: language === "ru" ? "Токен создан" : "Token created", exact: true })).toBeVisible();
+  await expect(dialog.locator(".token-owner-summary")).toContainText("Алиса Волкова");
+  await expect(dialog).toHaveScreenshot("api-token-issued.png", exactPixels);
+});
+
+test("user menu with the placeholder and a real uploaded avatar", async ({ page, account }, info) => {
+  const { language, theme } = info.project.metadata;
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language);
+    localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  expect((await page.request.post(`${API}/auth/session`, {
+    headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },
+    data: { login: account.email, password },
+  })).status()).toBe(200);
+  await page.goto("/");
+  const trigger = page.locator(".user-menu .tmc-square-button");
+  const exactPixels = { threshold: 0, maxDiffPixels: 0 };
+  // Chromium's clipped raster edges vary by up to 2/255 per color channel
+  // between processes. Keep a zero pixel budget with only that color tolerance.
+  const imagePixels = { threshold: 0.01, maxDiffPixels: 0 };
+  await expect(trigger).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await expect(trigger).toHaveScreenshot("header-avatar-placeholder.png", exactPixels);
+  await trigger.click();
+  const panel = page.getByRole("menu");
+  await expect(panel).toBeVisible();
+  const buttonBox = (await trigger.boundingBox())!;
+  const panelBox = (await panel.boundingBox())!;
+  const x = Math.max(0, Math.min(buttonBox.x, panelBox.x) - 20);
+  const y = Math.max(0, buttonBox.y - 8);
+  const clip = { x, y, width: Math.min(page.viewportSize()!.width, buttonBox.x + buttonBox.width + 20) - x, height: panelBox.y + panelBox.height + 20 - y };
+  await expect(page).toHaveScreenshot("header-user-menu-placeholder.png", { clip, ...exactPixels });
+  expect((await page.request.put(`${API}/users/me/avatar`, {
+    headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard", "Content-Type": "image/png" },
+    data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=", "base64"),
+  })).status()).toBe(200);
+  await page.reload();
+  await expect(trigger.locator("img")).toBeVisible();
+  await expect.poll(() => trigger.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await page.evaluate(() => document.fonts.ready);
+  await expect(trigger).toHaveScreenshot("header-avatar-image.png", imagePixels);
+  await trigger.click();
+  await expect(panel).toBeVisible();
+  await expect(page).toHaveScreenshot("header-user-menu-image.png", { clip, ...imagePixels });
+});
 
 test("the shared language dropdown in both themes and layouts", async ({ page }, info) => {
   const { language, theme } = info.project.metadata;
@@ -294,4 +399,35 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await page.keyboard.press("Escape");
   await page.goto("cloud");
   await screenshot("cloud");
+});
+
+/** Repository status, separate settings and immutable revision history must fit every supported layout. */
+test("Actions repository catalog, configuration and history", async ({ page, account }, info) => {
+  const { actionsPeer, binding, repository } = await import("./actions-peer");
+  const { language, theme } = info.project.metadata;
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language); localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  await page.clock.setFixedTime(historyNow);
+  const peer = await actionsPeer(page);
+  peer.repositories = [repository, ...["unconfigured", "connected", "disabled"].map((state, index) => ({ ...repository, id: 790 + index, full_name: ["pomponchik/site", "mutating/platform", "mutating/archived-ci"][index], owner_login: index === 0 ? "pomponchik" : "mutating", owner_type: index === 0 ? "personal" : "organization", state }))];
+  peer.bindings = [{ ...binding, workflow_profiles: { ".github/workflows/deploy.yml": { cpu_millis: 500, memory_bytes: 1024 ** 3, preparation_seconds: 120, timeout_seconds: 180 } } }, { ...binding, id: "connected", repository_id: 791 }, { ...binding, id: "disabled", repository_id: 792, enabled: false }];
+  peer.runs = [{ route_id: binding.id, id: "run", run_id: 42, run_attempt: 1, status: "completed", reason: "github_success", created_at: "2026-10-08T12:00:00Z", url: "https://github.com/mutating/ci-sandbox/actions/runs/42" }, { route_id: "connected", id: "connected-run", run_id: 43, run_attempt: 1, status: "completed", reason: "github_success", started_at: "2026-10-08T12:00:00Z", created_at: "2026-10-08T12:00:00Z", url: "https://github.com/mutating/platform/actions/runs/43" }];
+  await startSession(page, account);
+  const screenshot = async (name: string) => {
+    await expect(page.locator(".loading")).toHaveCount(0); await page.evaluate(() => document.fonts.ready);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page).toHaveScreenshot(name, { fullPage: true, threshold: 0.01, maxDiffPixels: 0 });
+  };
+  await page.goto("actions"); await expect(page.locator(".repository-card")).toHaveCount(4);
+  await screenshot("actions-catalog.png");
+  await page.getByRole("article", { name: repository.full_name }).getByRole("link", { name: language === "ru" ? "Настроить" : "Configure", exact: true }).click();
+  await expect(page.getByLabel("Workflow YAML", { exact: true })).toBeVisible();
+  await screenshot("actions-repository.png");
+  await page.getByLabel("CPU", { exact: true }).fill("1");
+  await page.getByRole("button", { name: language === "ru" ? "Сохранить настройки" : "Save settings", exact: true }).click();
+  await expect(page.getByText(language === "ru" ? "Настройки сохранены." : "Settings saved.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: language === "ru" ? "История изменений" : "Change history", exact: true }).click();
+  await expect(page.locator(".binding-revision")).toHaveCount(2);
+  await screenshot("actions-history.png");
 });

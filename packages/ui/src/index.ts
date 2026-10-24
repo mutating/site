@@ -1,4 +1,6 @@
 export type { Cleanup } from "./internal";
+export { mountDropdown } from "./dropdown";
+export type { DropdownOptions } from "./dropdown";
 export { createThemeController, mountThemeToggle, initializeTheme, isTheme, DEFAULT_THEME_STORAGE_KEY, THEME_CHANGE_EVENT, THEME_TOGGLE_EVENT } from "./theme";
 export type { Theme, ThemeOptions, ThemeController, ThemeToggleOptions, ThemePreferenceOptions } from "./theme";
 export { mountBrand, BRAND_HOME_ACTIVATE_EVENT, BRAND_POINTER_EVENT } from "./brand";

@@ -103,6 +103,7 @@ async def issue_login(data: Login, request: Request):
             SCOPES,
             request.app.state.clock()
             + timedelta(seconds=request.app.state.settings.login_token_seconds),
+            purpose="login",
         )
         return (
             {"access_token": raw, "token_type": "bearer", "token": public(token)},

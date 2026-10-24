@@ -3,6 +3,14 @@ import { expect, type Page } from "@playwright/test";
 export const languageControl = (page: Page) => page.locator(".tmc-language-switcher > summary:visible, .tmc-mobile-menu > summary:visible").first();
 export const languageSummary = (page: Page) => page.locator(".tmc-language-switcher > summary:visible");
 
+export async function openUserMenu(page: Page) {
+  const trigger = page.getByRole("banner").getByRole("button", { name: /^(Меню пользователя|User menu)$/ });
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+  const menu = page.getByRole("menu", { name: /^(Меню пользователя|User menu)$/ });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
 export async function openLanguages(page: Page, input: "mouse" | "keyboard" | "touch" = "mouse") {
   const activate = async (selector: string) => {
     const control = page.locator(selector).filter({ visible: true });

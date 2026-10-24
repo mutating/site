@@ -36,6 +36,13 @@ export async function makeAccount(
 export const headers = (account: Account) => ({
   Authorization: `Bearer ${account.token}`,
 });
+/** Start a real browser-cookie session when sign-in is setup rather than the behavior under review. */
+export async function startSession(page: Page, account: Account) {
+  expect((await page.request.post(`${API}/auth/session`, {
+    headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },
+    data: { login: account.email, password },
+  })).status()).toBe(200);
+}
 export async function login(
   page: Page,
   account: Account,

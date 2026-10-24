@@ -68,7 +68,20 @@ def test_rejects_incompatible_private_keys(kind):
         GitHubClient("client", "secret", raw)
 
 
-@pytest.mark.parametrize("path", ["https://evil.test/", "//evil.test", "/a/../b", "/a?token=x", ""])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "https://evil.test/",
+        "//evil.test",
+        "/a/../b",
+        "/a?token=x",
+        "",
+        "/a/%2e%2e/b",
+        "/a/%2F/b",
+        "/a/%0Aevil",
+        "/a/%5Cevil",
+    ],
+)
 async def test_api_paths_cannot_redirect_credentials(key, path):
     """Reject URL/path injection before performing a network operation."""
 
@@ -77,6 +90,23 @@ async def test_api_paths_cannot_redirect_credentials(key, path):
 
     with pytest.raises(ValueError, match="Invalid GitHub API path"):
         await client(key, handler).api("GET", path)
+
+
+async def test_encoded_workflow_filename_keeps_credentials_on_the_github_origin(key):
+    """Escaped workflow names need content requests without relaxing origin or traversal protection."""
+
+    def handler(request):
+        assert request.url.host == "api.github.com" and not request.url.query
+        assert request.url.path == "/repositories/42/contents/.github/workflows/build+test #1.yml"
+        assert request.headers["Authorization"] == "Bearer fixture-access"
+        return httpx.Response(200, json={"content": ""})
+
+    result = await client(key, handler).api(
+        "GET",
+        "/repositories/42/contents/.github/workflows/build%2Btest%20%231.yml",
+        token="fixture-access",
+    )
+    assert result == {"content": ""}
 
 
 @pytest.mark.parametrize("status", [200, 201, 204])

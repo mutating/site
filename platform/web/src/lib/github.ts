@@ -1,12 +1,9 @@
+import type { MemberProfile } from "./types";
+// Aggregate discovery has a 60s provider budget plus repository/access verification.
+export const GITHUB_DISCOVERY_TIMEOUT_MS = 90_000;
 export type GitHubStatus = {
   enabled: boolean;
   account: { id: number; login: string } | null;
-};
-export type GitHubInstallation = {
-  id: number;
-  login: string;
-  repository_selection: "all" | "selected";
-  suspended: boolean;
 };
 export type GitHubRepository = {
   id: number;
@@ -23,6 +20,14 @@ export function githubAuthorizationURL(value: string): string {
   return url.href;
 }
 
+export type CIProfile = {
+  cpu_millis: number;
+  memory_bytes: number;
+  disk_bytes: number;
+  preparation_seconds: number;
+  timeout_seconds: number;
+  computer_ids: string[];
+};
 export type CIRoute = {
   id: string;
   repository: string;
@@ -38,6 +43,13 @@ export type CIRoute = {
   timeout_seconds: number;
   max_parallel: number;
   enabled: boolean;
+  installation_id: number;
+  repository_id: number;
+  workflow_paths: string[] | null;
+  workflow_profiles?: Record<string, Partial<CIProfile>>;
+  revision: number;
+  created_at: string;
+  active_runs?: boolean;
 };
 export type CIRun = {
   id: string;
@@ -49,4 +61,32 @@ export type CIRun = {
   isolate_id: string | null;
   url: string;
   created_at: string;
+};
+
+export type RepositoryState = "unconfigured" | "pending" | "connected" | "disabled";
+export type CatalogRepository = GitHubRepository & {
+  installation_id: number;
+  owner_login: string;
+  owner_type: "personal" | "organization";
+  state: RepositoryState;
+  binding_id: string | null;
+  last_run: (CIRun & { workflow_path: string }) | null;
+};
+export type RepositoryConfiguration = {
+  repository: CatalogRepository;
+  branches: string[];
+  workflows: { path: string; name: string; jobs: string[]; parse_error: boolean }[];
+  bindings: CIRoute[];
+  binding_id?: string | null;
+  state: RepositoryState;
+  last_run: CatalogRepository["last_run"];
+};
+export type BindingRevision = {
+  id: string;
+  revision: number;
+  action: string;
+  created_at: string;
+  actor: MemberProfile | null;
+  configuration: Record<string, unknown>;
+  changes: { field: string; before: unknown; after: unknown }[];
 };

@@ -1,9 +1,10 @@
 import {
-  createContext, useContext, useEffect, useRef, useState, useSyncExternalStore,
-  type ComponentPropsWithoutRef, type CSSProperties, type DOMAttributes, type ReactNode, type Ref,
+  createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore,
+  type ComponentPropsWithRef, type ComponentPropsWithoutRef, type CSSProperties, type DOMAttributes, type ReactNode, type Ref,
 } from "react";
 import { mountBrand, type BrandOptions } from "../brand";
-import type { HeaderConfig, HeaderItem, HeaderLanguage } from "../header-config";
+import { mountDropdown } from "../dropdown";
+import type { HeaderConfig, HeaderItem, HeaderLanguage, HeaderLink } from "../header-config";
 import { GITHUB_PATH } from "../icons";
 export type { HeaderConfig, HeaderItem, HeaderBrand, HeaderLanguage, HeaderLink, LanguageOption } from "../header-config";
 import { mountLanguageSwitcher, mountMobileMenu } from "../header";
@@ -17,6 +18,44 @@ export interface ButtonProps extends ComponentPropsWithoutRef<"button"> {
 }
 export function Button({ variant = "primary", size = "default", className, type = "button", ...props }: ButtonProps) {
   return <button {...props} type={type} className={classes("tmc-button", `tmc-button--${variant}`, size === "compact" ? "tmc-button--compact" : undefined, className)} />;
+}
+
+export type SquareButtonProps = { children: ReactNode; "aria-label": string } & (
+  | (ComponentPropsWithRef<"a"> & { href: string })
+  | (ComponentPropsWithRef<"button"> & { href?: never })
+);
+
+/** An independent control; the consumer supplies its entire content. */
+export function SquareButton({ className, children, ...props }: SquareButtonProps) {
+  const classNames = classes("tmc-square-button", className);
+  return props.href !== undefined
+    ? <a {...props} rel={props.rel ?? (props.target === "_blank" ? "noopener noreferrer" : undefined)} className={classNames}>{children}</a>
+    : <button {...props} type={props.type ?? "button"} className={classNames}>{children}</button>;
+}
+
+export type DropdownTriggerProps = ComponentPropsWithoutRef<"button"> & {
+  "aria-label": string;
+  "data-tmc-dropdown-trigger": "";
+};
+export interface DropdownProps {
+  label: string;
+  trigger: (attributes: DropdownTriggerProps) => ReactNode;
+  children: ReactNode;
+  className?: string;
+}
+
+/** The mobile menu's disclosure controller and panel, available at every width. */
+export function Dropdown({ label, trigger, children, className }: DropdownProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  useEffect(() => mountDropdown(ref.current!, {
+    delegateLinks: true, closeOnFocusLeave: true, keyboardNavigation: true, onOpenChange: setOpen,
+  }), []);
+  return <div ref={ref} className={classes("tmc-dropdown", className)}>
+    {trigger({ "aria-label": label, "aria-expanded": open, "aria-controls": id, "aria-haspopup": "menu", "data-tmc-dropdown-trigger": "" })}
+    <div id={id} role="menu" aria-label={label} className="tmc-dropdown-panel" data-tmc-dropdown-panel="" hidden={!open}>{children}</div>
+  </div>;
 }
 
 export interface BrandProps extends Omit<ComponentPropsWithoutRef<"a">, keyof DOMAttributes<HTMLAnchorElement>>, DOMAttributes<HTMLElement> {
@@ -127,6 +166,10 @@ export function LanguageToggle({ current, className, type = "button", ...props }
 }
 
 export interface HeaderProps extends HeaderConfig {
+  /** A control outside the main header, in the original square link's position. */
+  adjacent?: ReactNode;
+  /** Omit children to keep the platform icon; any explicit ReactNode replaces it. */
+  adjacentLink?: HeaderLink & { children?: ReactNode };
   className?: string;
   ref?: Ref<HTMLElement>;
   /** Additional controls before language and theme; visible at every viewport width. */
@@ -151,7 +194,7 @@ function MenuLink({ item, renderLink }: { item: HeaderItem; renderLink?: HeaderP
 export function Header({
   items = [], brand = { href: "/" }, language, themeLabel = "Toggle color theme", showThemeToggle = true,
   navigationLabel = "Navigation", mobileNavigationLabel = navigationLabel,
-  menuLabel = "Open navigation menu", menuText = "Menu", adjacentLink, className, renderLink, actions, ref, onLanguageChange,
+  menuLabel = "Open navigation menu", menuText = "Menu", adjacentLink, adjacent, className, renderLink, actions, ref, onLanguageChange,
   inheritTypography = false,
 }: HeaderProps) {
   const menuRef = useRef<HTMLDetailsElement>(null);
@@ -182,11 +225,12 @@ export function Header({
           </details>}
         </div>
       </div>
-      {adjacentLink && <a className="tmc-platform-link" href={adjacentLink.href} aria-label={adjacentLink.label}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.05" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {adjacent}
+      {adjacentLink && <SquareButton className="tmc-platform-link" href={adjacentLink.href} aria-label={adjacentLink.label}>
+        {adjacentLink.children === undefined ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.05" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="m10 17 5-5-5-5" /><path d="M15 12H3" />
-        </svg>
-      </a>}
+        </svg> : adjacentLink.children}
+      </SquareButton>}
     </header>
   );
 }

@@ -7,14 +7,22 @@ import re
 import tarfile
 import time
 from datetime import timedelta
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPBearer
-from pydantic import Field, model_validator
+from pydantic import Field, StringConstraints, model_validator
 from sqlalchemy import func, or_, select
 
 from throng_api.artifacts import check_storage_quota
+from throng_api.ci_policy import WORKFLOW, authorizer, record_revision, workflow_allowed
+from throng_api.ci_profiles import (
+    ProfileOverride,
+    effective_profile,
+    profile_values,
+    selected_computers,
+)
 from throng_api.execution import allocate_isolate, destroy_isolate
 from throng_api.github import external_error, service, user_get, user_token
 from throng_api.github_client import GitHubError
@@ -31,7 +39,7 @@ from throng_api.models import (
     new_id,
 )
 from throng_api.permissions import effective_permissions
-from throng_api.schemas import Input
+from throng_api.schemas import Input, PaginationOffset
 from throng_api.security import (
     access_token_scheme,
     authenticate,
@@ -63,11 +71,13 @@ GiB = 1024**3
 class RouteCreate(Input):
     installation_id: int = Field(gt=0, lt=2**63)
     repository_id: int = Field(gt=0, lt=2**63)
-    workflow_path: str = Field(
-        pattern=r"^\.github/workflows/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,150}\.ya?ml$"
+    workflow_path: str = Field(default=".github/workflows/ci.yml", pattern=re.compile(WORKFLOW))
+    workflow_paths: list[str] | None = Field(default=None, max_length=200)
+    workflow_profiles: dict[str, ProfileOverride] = Field(default_factory=dict, max_length=200)
+    ref: Annotated[str, StringConstraints(strip_whitespace=False)] = Field(
+        default="refs/heads/main", pattern=r"^refs/heads/[^\x00-\x20\x7f~^:?*\[\\]{1,239}$"
     )
-    ref: str = Field(default="refs/heads/main", pattern=r"^refs/heads/[A-Za-z0-9_./-]{1,200}$")
-    job_key: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_-]{0,99}$")
+    job_key: str = Field(default="test", pattern=r"^[A-Za-z_][A-Za-z0-9_-]{0,99}$")
     company_id: UUID | None = None
     computer_ids: list[UUID] = Field(default_factory=list, max_length=100)
     cpu_millis: int = Field(default=2000, gt=0, le=1000000)
@@ -79,9 +89,17 @@ class RouteCreate(Input):
 
     @model_validator(mode="after")
     def workflow_policy(self):
+        if any(not re.fullmatch(WORKFLOW, path) for path in self.workflow_profiles):
+            raise ValueError("Invalid profile workflow path")
+        if "workflow_path" not in self.model_fields_set and self.workflow_paths is None:
+            self.workflow_paths = []
+        if self.workflow_paths is not None:
+            if any(not re.fullmatch(WORKFLOW, path) for path in self.workflow_paths):
+                raise ValueError("Invalid workflow path")
+            self.workflow_paths = sorted(set(self.workflow_paths))
         if (
-            ".." in self.workflow_path
-            or ".." in self.ref
+            ".." in self.ref
+            or "@{" in self.ref
             or "//" in self.ref
             or self.ref.endswith(("/", "."))
             or any(part.startswith(".") or part.endswith(".lock") for part in self.ref.split("/"))
@@ -102,13 +120,14 @@ async def pool_permission(session, principal, company_id):
 
 
 async def creator_authorized(session, route):
-    if not route.enabled or not await session.get(GitHubAccount, route.created_by):
+    actor = authorizer(route)
+    if not route.enabled or not await session.get(GitHubAccount, actor):
         return False
     if not route.company_id:
-        return route.user_id == route.created_by
+        return route.user_id == actor
     member = await session.scalar(
         select(Membership).where(
-            Membership.company_id == route.company_id, Membership.user_id == route.created_by
+            Membership.company_id == route.company_id, Membership.user_id == actor
         )
     )
     return bool(
@@ -148,7 +167,9 @@ def repository_name(repository, repository_id):
     return name
 
 
-async def verify_repository(request, user_id, installation_id, repository_id):
+async def verify_repository(
+    request, user_id, installation_id, repository_id, *, require_admin=True
+):
     integration = service(request)
     try:
         token = await user_token(request, user_id)
@@ -156,8 +177,8 @@ async def verify_repository(request, user_id, installation_id, repository_id):
         if installation.get("app_id") != integration.app_id or installation.get("suspended_at"):
             raise HTTPException(404, "GitHub installation unavailable")
         repository = await user_get(request, user_id, f"/repositories/{repository_id}", token=token)
-        if repository.get("id") != repository_id or not repository.get("permissions", {}).get(
-            "admin"
+        if repository.get("id") != repository_id or (
+            require_admin and not repository.get("permissions", {}).get("admin")
         ):
             raise HTTPException(403, "GitHub repository administrator required")
         repository_name(repository, repository_id)
@@ -173,6 +194,22 @@ async def verify_repository(request, user_id, installation_id, repository_id):
         return repository
     except GitHubError as error:
         raise external_error(error) from error
+
+
+async def validate_computers(session, data, owner):
+    for computer_id in selected_computers(data):
+        computer = await session.get(Computer, computer_id)
+        ownership = await session.scalar(
+            select(ComputerOwnership).where(
+                ComputerOwnership.computer_id == computer_id,
+                ComputerOwnership.company_id == owner["company_id"],
+                ComputerOwnership.user_id == owner["user_id"],
+            )
+        )
+        if not computer or not ownership:
+            raise HTTPException(404, "Computer unavailable in the selected pool")
+        if computer.runtime != "powercell-ubuntu-arm64-v1":
+            raise HTTPException(422, "CI requires a Linux ARM64 Power Cell")
 
 
 @router.post("/routes", status_code=201)
@@ -211,19 +248,7 @@ async def create_route(data: RouteCreate, request: Request):
             if not account or account.tokens != grant:
                 raise HTTPException(409, "GitHub connection changed; retry creating the binding")
             owner = await owner_values(session, principal, data.company_id)
-            for computer_id in set(map(str, data.computer_ids)):
-                computer = await session.get(Computer, computer_id)
-                ownership = await session.scalar(
-                    select(ComputerOwnership).where(
-                        ComputerOwnership.computer_id == computer_id,
-                        ComputerOwnership.company_id == owner["company_id"],
-                        ComputerOwnership.user_id == owner["user_id"],
-                    )
-                )
-                if not computer or not ownership:
-                    raise HTTPException(404, "Computer unavailable in the selected pool")
-                if computer.runtime != "powercell-ubuntu-arm64-v1":
-                    raise HTTPException(422, "CI requires a Linux ARM64 Power Cell")
+            await validate_computers(session, data, owner)
             condition = (
                 CIRoute.user_id == owner["user_id"]
                 if owner["user_id"]
@@ -232,6 +257,16 @@ async def create_route(data: RouteCreate, request: Request):
             count = await session.scalar(select(func.count()).select_from(CIRoute).where(condition))
             if count >= 100:
                 raise HTTPException(409, "CI route quota exceeded")
+            if data.workflow_paths is not None and await session.scalar(
+                select(CIRoute.id).where(
+                    condition,
+                    CIRoute.repository_id == data.repository_id,
+                    CIRoute.enabled.is_(True),
+                )
+            ):
+                raise HTTPException(
+                    409, "An active binding already exists for this repository and pool owner"
+                )
             await check_storage_quota(session, owner, len(content), request.app.state.settings)
             artifact = Artifact(
                 **owner,
@@ -244,9 +279,12 @@ async def create_route(data: RouteCreate, request: Request):
             session.add(artifact)
             await session.flush()
             route = CIRoute(
-                **data.model_dump(exclude={"company_id", "computer_ids"}),
+                **data.model_dump(exclude={"company_id", "computer_ids", "workflow_profiles"}),
+                workflow_profiles=profile_values(data),
                 **owner,
                 created_by=user_id,
+                authorized_by=user_id,
+                repository_binding=data.workflow_paths is not None,
                 repository=repository["full_name"],
                 repository_owner_id=repository["owner"]["id"],
                 computer_ids=sorted(set(map(str, data.computer_ids))),
@@ -254,6 +292,9 @@ async def create_route(data: RouteCreate, request: Request):
             )
             session.add(route)
             await session.flush()
+            record_revision(
+                session, route, user_id, "created", request.app.state.clock(), advance=False
+            )
             result = public(route)
             keep = True  # Preserve the file if metadata committed but connection cleanup fails.
         return result
@@ -262,23 +303,17 @@ async def create_route(data: RouteCreate, request: Request):
             path.unlink(missing_ok=True)
 
 
-@router.get("/routes")
-async def list_routes(
-    request: Request, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)
-):
-    async with request.app.state.db.read() as session:
-        principal = await authenticate(session, request)
-        memberships = await session.scalars(
-            select(Membership).where(
-                Membership.user_id == (principal.user_id or principal.actor_id)
-            )
-        )
-        readable = [
-            member.company_id
-            for member in memberships
-            if "execution.read" in effective_permissions(member.role, member.permissions)
-        ]
-        rows = await session.scalars(
+async def readable_routes(session, principal, *, limit=None, offset=0):
+    memberships = await session.scalars(
+        select(Membership).where(Membership.user_id == (principal.user_id or principal.actor_id))
+    )
+    readable = [
+        member.company_id
+        for member in memberships
+        if "execution.read" in effective_permissions(member.role, member.permissions)
+    ]
+    return list(
+        await session.scalars(
             select(CIRoute)
             .where(
                 owned_filter(CIRoute, principal),
@@ -287,6 +322,17 @@ async def list_routes(
             .order_by(CIRoute.created_at, CIRoute.id)
             .limit(limit)
             .offset(offset)
+        )
+    )
+
+
+@router.get("/routes")
+async def list_routes(
+    request: Request, limit: int = Query(100, ge=1, le=200), offset: PaginationOffset = 0
+):
+    async with request.app.state.db.read() as session:
+        rows = await readable_routes(
+            session, await authenticate(session, request), limit=limit, offset=offset
         )
         return [public(route) for route in rows]
 
@@ -297,11 +343,24 @@ async def disable_route(route_id: UUID, request: Request):
         principal = await authenticate(session, request, "manage")
         route = await owned(session, CIRoute, route_id, principal)
         await pool_permission(session, principal, route.company_id)
-        route.enabled = False
+        if route.enabled:
+            route.enabled = False
+            record_revision(
+                session,
+                route,
+                principal.user_id or principal.actor_id,
+                "disabled",
+                request.app.state.clock(),
+            )
 
 
 @router.get("/routes/{route_id}/runs")
-async def route_runs(route_id: UUID, request: Request, limit: int = Query(50, ge=1, le=100)):
+async def route_runs(
+    route_id: UUID,
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    offset: PaginationOffset = 0,
+):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request)
         route = await owned(session, CIRoute, route_id, principal)
@@ -310,8 +369,9 @@ async def route_runs(route_id: UUID, request: Request, limit: int = Query(50, ge
         rows = await session.scalars(
             select(CIReservation)
             .where(CIReservation.route_id == route.id)
-            .order_by(CIReservation.created_at.desc())
+            .order_by(CIReservation.created_at.desc(), CIReservation.id.desc())
             .limit(limit)
+            .offset(offset)
         )
         return [
             {
@@ -337,17 +397,29 @@ async def routing_identity(request, route_id):
         route = await session.get(CIRoute, str(route_id))
         if route is None:
             raise HTTPException(404, "CI route unavailable")
-        if (
-            int(claims["repository_id"]) != route.repository_id
-            or int(claims["repository_owner_id"]) != route.repository_owner_id
-            or claims["repository"] != route.repository
-            or claims["ref"] != route.ref
-            or claims["workflow_ref"] != f"{route.repository}/{route.workflow_path}@{route.ref}"
-            or claims["event_name"] not in {"push", "workflow_dispatch"}
-            or claims.get("job_workflow_ref") not in {None, claims["workflow_ref"]}
-        ):
-            raise HTTPException(403, "Workflow is not authorized for this CI route")
+        validate_routing_identity(route, claims)
         return claims
+
+
+def validate_routing_identity(route, claims):
+    """The signed workflow must match the policy used by the current admission transaction."""
+    if (
+        int(claims["repository_id"]) != route.repository_id
+        or int(claims["repository_owner_id"]) != route.repository_owner_id
+        or claims["repository"] != route.repository
+        or claims["ref"] != route.ref
+        or not workflow_allowed(
+            route,
+            claims["workflow_ref"]
+            .removeprefix(route.repository + "/")
+            .removesuffix("@" + route.ref),
+        )
+        or not claims["workflow_ref"].startswith(route.repository + "/")
+        or not claims["workflow_ref"].endswith("@" + route.ref)
+        or claims["event_name"] not in {"push", "workflow_dispatch"}
+        or claims.get("job_workflow_ref") not in {None, claims["workflow_ref"]}
+    ):
+        raise HTTPException(403, "Workflow is not authorized for this CI route")
 
 
 def decision(row):
@@ -385,6 +457,15 @@ def watch_decision(row, now):
     return {"status": "started" if row.status == "running" else "waiting"}
 
 
+def reservation_query(route_id, claims, instance):
+    return select(CIReservation).where(
+        CIReservation.route_id == route_id,
+        CIReservation.run_id == int(claims["run_id"]),
+        CIReservation.run_attempt == int(claims["run_attempt"]),
+        CIReservation.instance == instance,
+    )
+
+
 @public_router.post("/routes/{route_id}/watch")
 async def watch_selection(route_id: UUID, data: Reserve, request: Request):
     claims = await routing_identity(request, route_id)
@@ -394,14 +475,7 @@ async def watch_selection(route_id: UUID, data: Reserve, request: Request):
         route = await session.get(CIRoute, str(route_id))
         if route is None:
             raise HTTPException(404, "CI route unavailable")
-        row = await session.scalar(
-            select(CIReservation).where(
-                CIReservation.route_id == route.id,
-                CIReservation.run_id == int(claims["run_id"]),
-                CIReservation.run_attempt == int(claims["run_attempt"]),
-                CIReservation.instance == data.instance,
-            )
-        )
+        row = await session.scalar(reservation_query(route.id, claims, data.instance))
         if not await creator_authorized(session, route):
             return {"status": "failed", "reason": "authorization_revoked"}
         return watch_decision(row, now)
@@ -458,21 +532,14 @@ async def reserve_once(route_id, data, request):
         route = await session.get(CIRoute, str(route_id))
         if route is None:
             raise HTTPException(404, "CI route unavailable")
-        previous = await session.scalar(
-            select(CIReservation).where(
-                CIReservation.route_id == route.id,
-                CIReservation.run_id == int(claims["run_id"]),
-                CIReservation.run_attempt == int(claims["run_attempt"]),
-                CIReservation.instance == data.instance,
-            )
-        )
+        previous = await session.scalar(reservation_query(route.id, claims, data.instance))
         if previous:
             return decision(previous)
         check_github = await creator_authorized(session, route)
         installation_id, repository_id, creator_id = (
             route.installation_id,
             route.repository_id,
-            route.created_by,
+            authorizer(route),
         )
     # Local rights can change before locking; a skipped provider check grants no approval.
     github_available = check_github
@@ -486,14 +553,8 @@ async def reserve_once(route_id, data, request):
         route = await session.get(CIRoute, str(route_id))
         if route is None:
             raise HTTPException(404, "CI route unavailable")
-        previous = await session.scalar(
-            select(CIReservation).where(
-                CIReservation.route_id == route.id,
-                CIReservation.run_id == int(claims["run_id"]),
-                CIReservation.run_attempt == int(claims["run_attempt"]),
-                CIReservation.instance == data.instance,
-            )
-        )
+        validate_routing_identity(route, claims)
+        previous = await session.scalar(reservation_query(route.id, claims, data.instance))
         if previous:
             return decision(previous)
         authorized = await creator_authorized(session, route)
@@ -511,16 +572,24 @@ async def reserve_once(route_id, data, request):
         )
         if total >= 1000:
             raise HTTPException(409, "Workflow reservation quota exceeded")
+        workflow_path = (
+            claims["workflow_ref"]
+            .removeprefix(route.repository + "/")
+            .removesuffix("@" + route.ref)
+        )
+        profile = effective_profile(route, workflow_path)
         row = CIReservation(
             id=new_id(),
             route_id=route.id,
+            route_revision=route.revision,
+            workflow_path=workflow_path,
             run_id=int(claims["run_id"]),
             run_attempt=int(claims["run_attempt"]),
             instance=data.instance,
             label="powercell-" + new_id(),
-            deadline=started_at + timedelta(seconds=route.preparation_seconds),
+            deadline=started_at + timedelta(seconds=profile["preparation_seconds"]),
             expires_at=now
-            + timedelta(seconds=route.timeout_seconds + route.preparation_seconds + 300),
+            + timedelta(seconds=profile["timeout_seconds"] + profile["preparation_seconds"] + 300),
             next_check=now,
             created_at=now,
         )
@@ -564,9 +633,9 @@ async def reserve_once(route_id, data, request):
                 os="linux",
                 architecture="arm64",
                 runtime="powercell-ubuntu-arm64-v1",
-                cpu_millis=route.cpu_millis,
-                memory_bytes=route.memory_bytes,
-                disk_bytes=route.disk_bytes,
+                cpu_millis=profile["cpu_millis"],
+                memory_bytes=profile["memory_bytes"],
+                disk_bytes=profile["disk_bytes"],
                 created_at=now,
                 expires_at=row.deadline,
                 provisioning_deadline=row.deadline,
@@ -576,7 +645,11 @@ async def reserve_once(route_id, data, request):
             session.add(isolate)
             await session.flush()
             if await allocate_isolate(
-                session, isolate, now, request.app.state.settings, computer_ids=route.computer_ids
+                session,
+                isolate,
+                now,
+                request.app.state.settings,
+                computer_ids=profile["computer_ids"],
             ):
                 row.isolate_id = isolate.id
             else:
@@ -595,14 +668,8 @@ async def cancel_selection(route_id: UUID, data: Reserve, request: Request):
         route = await session.get(CIRoute, str(route_id))
         if route is None:
             raise HTTPException(404, "CI route unavailable")
-        row = await session.scalar(
-            select(CIReservation).where(
-                CIReservation.route_id == route.id,
-                CIReservation.run_id == int(claims["run_id"]),
-                CIReservation.run_attempt == int(claims["run_attempt"]),
-                CIReservation.instance == data.instance,
-            )
-        )
+        validate_routing_identity(route, claims)
+        row = await session.scalar(reservation_query(route.id, claims, data.instance))
         if row and row.status == "running":
             raise HTTPException(409, "CI job has already started")
         if row is None:
@@ -619,6 +686,10 @@ async def cancel_selection(route_id: UUID, data: Reserve, request: Request):
                 raise HTTPException(409, "Workflow reservation quota exceeded")
             row = CIReservation(
                 route_id=route.id,
+                route_revision=route.revision,
+                workflow_path=claims["workflow_ref"]
+                .removeprefix(route.repository + "/")
+                .removesuffix("@" + route.ref),
                 run_id=int(claims["run_id"]),
                 run_attempt=int(claims["run_attempt"]),
                 instance=data.instance,
@@ -649,7 +720,12 @@ async def cancel_selection(route_id: UUID, data: Reserve, request: Request):
 
 
 @router.get("/routes/{route_id}/workflow")
-async def workflow_example(route_id: UUID, request: Request):
+async def workflow_example(
+    route_id: UUID,
+    request: Request,
+    workflow_path: str | None = Query(None, max_length=250),
+    job_key: str | None = Query(None, pattern=r"^[A-Za-z_][A-Za-z0-9_-]*$"),
+):
     from throng_api.ci_workflow import render
 
     async with request.app.state.db.read() as session:
@@ -657,4 +733,12 @@ async def workflow_example(route_id: UUID, request: Request):
         route = await owned(session, CIRoute, route_id, principal)
         if route.company_id:
             await company_access(session, principal, route.company_id, permission="execution.read")
-        return {"path": route.workflow_path, "yaml": render(route, service(request).api_origin)}
+        path = workflow_path or (
+            route.workflow_paths[0] if route.workflow_paths else route.workflow_path
+        )
+        if not workflow_allowed(route, path):
+            raise HTTPException(422, "Workflow is outside this binding's policy")
+        return {
+            "path": path,
+            "yaml": render(route, service(request).api_origin, workflow_path=path, job_key=job_key),
+        }

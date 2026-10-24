@@ -13,8 +13,15 @@ test("the core and React entries can be imported and server rendered without a b
   const core = await import("@mutating/ui");
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const { Header, Brand, LanguageSwitcher, LanguageToggle, ThemeProvider, ThemeToggle, Button } = await import("@mutating/ui/react");
+  const { Header, Brand, LanguageSwitcher, LanguageToggle, ThemeProvider, ThemeToggle, Button, SquareButton, Dropdown } = await import("@mutating/ui/react");
   assert.equal(typeof core.mountHeader, "function");
+  assert.equal(typeof core.mountDropdown, "function");
+  const dropdown = renderToStaticMarkup(createElement(Dropdown, {
+    label: "Account", trigger: attributes => createElement(SquareButton, attributes, "UI"),
+  }, createElement("a", { role: "menuitem", href: "/profile" }, "Profile")));
+  assert.match(dropdown, /aria-expanded="false"/);
+  assert.match(dropdown, /data-tmc-dropdown-trigger=""/);
+  assert.match(dropdown, /role="menu"[^>]*hidden=""/);
   const html = renderToStaticMarkup(createElement(ThemeProvider, null,
     createElement(Header, { brand: { href: "/" } }),
     createElement(Button, null, "Action"),
@@ -32,6 +39,18 @@ test("the core and React entries can be imported and server rendered without a b
   }));
   assert.match(applicationHeader, /<button[^>]*aria-label="Choose language"[^>]*type="button"[^>]*class="tmc-language-toggle">RU<\/button>/);
   assert.doesNotMatch(applicationHeader, /<nav|tmc-mobile-menu/);
+  const square = renderToStaticMarkup(createElement(SquareButton, {
+    href: "", "aria-label": "Custom action", target: "_blank", className: "custom",
+  }, createElement("span", null, "Custom content")));
+  assert.match(square, /^<a[^>]*href=""/);
+  assert.match(square, /class="tmc-square-button custom"/);
+  assert.match(square, /rel="noopener noreferrer"/);
+  assert.match(square, /<span>Custom content<\/span><\/a>$/);
+  assert.doesNotMatch(square, /<svg/);
+  const emptyAdjacent = renderToStaticMarkup(createElement(Header, {
+    showThemeToggle: false, adjacentLink: { href: "/", label: "Empty content", children: null },
+  }));
+  assert.match(emptyAdjacent, /class="tmc-square-button tmc-platform-link"[^>]*><\/a>/);
   const reloadBrand = renderToStaticMarkup(createElement(Brand, { href: "/ru/", animation: { activation: "reload-home" } }));
   assert.match(reloadBrand, /^<div[^>]*role="link"[^>]*tabindex="0"[^>]*data-home-url="\/ru\/"/);
   assert.doesNotMatch(reloadBrand, /href=|draggable=/);
