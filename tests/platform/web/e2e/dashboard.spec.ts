@@ -47,6 +47,7 @@ test("root routes keep navigation and sessions while account URLs are absent", a
   await expect(page).toHaveURL("http://127.0.0.1:18101/");
 });
 
+/** The token shortcut is a deliberate third menu entry; profile/logout must still stay out of the sidebar. */
 test("profile and sign out exist only in the header menu at every breakpoint", async ({
   page,
   account,
@@ -65,7 +66,7 @@ test("profile and sign out exist only in the header menu at every breakpoint", a
     await expect(trigger).toHaveCount(1);
     await expect(trigger).toBeVisible();
     const menu = await openUserMenu(page);
-    await expect(page.getByRole("menuitem")).toHaveText(["Профиль", "Выйти"]);
+    await expect(page.getByRole("menuitem")).toHaveText(["Профиль", "API-токены", "Выйти"]);
     await expect(menu).toBeInViewport({ ratio: 1 });
     await trigger.click();
     await expect(menu).toHaveCount(0);

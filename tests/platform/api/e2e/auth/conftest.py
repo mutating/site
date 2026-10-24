@@ -166,7 +166,12 @@ def api_requests(
         ("GET", "/v1/auth/session", "read", {}),
         ("GET", "/v1/auth/check", ("read", "execute"), {}),
         ("GET", "/v1/api-tokens", "read", {}),
-        ("POST", "/v1/api-tokens", "manage", {"json": {"user_id": user["id"], "name": "API client", "scopes": ["read"]}}),
+        (
+            "POST",
+            "/v1/api-tokens",
+            "manage",
+            {"json": {"user_id": user["id"], "name": "API client", "scopes": ["read"]}},
+        ),
         ("GET", "/v1/organization-directory", "read", {}),
         ("GET", "/v1/github/status", "read", {}),
         ("POST", "/v1/github/authorize", "manage", {}),
@@ -174,11 +179,26 @@ def api_requests(
         ("GET", "/v1/github/installations", "read", {}),
         ("GET", "/v1/github/installations/{installation_id}/repositories", "read", {}),
         ("DELETE", "/v1/github/connection", "manage", {}),
+        ("GET", "/v1/github/repositories", "read", {}),
+        (
+            "GET",
+            "/v1/github/repositories/{repository_id}/configuration",
+            "read",
+            {"params": {"installation_id": 123}},
+        ),
         ("GET", "/v1/github/routes", "read", {}),
+        ("GET", "/v1/github/routes/{route_id}", "read", {}),
+        (
+            "PATCH",
+            "/v1/github/routes/{route_id}",
+            ("manage", "execute"),
+            {"json": {"revision": 1, "enabled": False}},
+        ),
+        ("GET", "/v1/github/routes/{route_id}/revisions", "read", {}),
         (
             "POST",
             "/v1/github/routes",
-            "manage",
+            ("manage", "execute"),
             {
                 "json": {
                     "installation_id": 123,
@@ -402,6 +422,7 @@ def api_requests(
     identifiers["diagnostic_id"] = str(uuid4())
     identifiers["installation_id"] = 123
     identifiers["route_id"] = str(uuid4())
+    identifiers["repository_id"] = 42
     requests.extend(
         [
             (

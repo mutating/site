@@ -165,7 +165,8 @@ async def claim_policy_task(request, app, api, agent_api, provisioning_isolate):
         assert kind == "run"
         response = await api.post(
             f"/v1/isolates/{isolate_id}/commands",
-            headers={"Idempotency-Key": str(uuid4())}, json={"command": "pytest -q"},
+            headers={"Idempotency-Key": str(uuid4())},
+            json={"command": "pytest -q"},
         )
     assert response.status_code == 202, response.text
     await run_once(app)
@@ -196,7 +197,8 @@ async def test_pending_but_paused_assignment_rechecks_eligibility_before_dispatc
     caplog.set_level("INFO", logger="throng.transport")
     request_id = str(uuid4())
     response = await agent_api.post(
-        "/agent/v1/tasks/claim", json={"wait_seconds": 0.03},
+        "/agent/v1/tasks/claim",
+        json={"wait_seconds": 0.03},
         headers={"X-Request-ID": request_id},
     )
     assert response.status_code == 200 and response.json()["tasks"] == []
@@ -222,7 +224,8 @@ async def test_paused_claim_delivers_destroy_and_cancel_before_new_work(
     caplog.set_level("INFO", logger="throng.transport")
     request_id = str(uuid4())
     response = await agent_api.post(
-        "/agent/v1/tasks/claim", json={"wait_seconds": 0},
+        "/agent/v1/tasks/claim",
+        json={"wait_seconds": 0},
         headers={"X-Request-ID": request_id},
     )
     assert response.status_code == 200, response.text
@@ -294,7 +297,10 @@ async def test_claim_rechecks_policy_after_read_hint_before_dispatch(
     async with app.state.db.read() as session:
         task = await session.get(AgentTask, claim_policy_task["id"])
         assert task.status == claim_policy_task["status"]
-        assert task.delivered_at.isoformat().replace("+00:00", "Z") == claim_policy_task["delivered_at"]
+        assert (
+            task.delivered_at.isoformat().replace("+00:00", "Z")
+            == claim_policy_task["delivered_at"]
+        )
 
 
 @pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
@@ -322,6 +328,7 @@ async def test_claim_read_hint_observes_work_queued_after_an_empty_read(
     tasks = response.json()["tasks"]
     assert len(tasks) == 1 and tasks[0]["kind"] == "create"
     assert tasks[0]["isolate_id"] == provisioning_isolate["id"]
+
 
 async def test_withheld_delivery_payload_is_never_dispatched(agent_api, create_task, monkeypatch):
     """A permission/credential change during payload construction cannot leak a partial task."""
@@ -362,3 +369,55 @@ async def test_structured_network_diagnostic_round_trips_without_losing_error_co
     assert response.status_code == 200, response.text
     response = await api.get(f"/v1/computers/{agent['computer']['id']}/diagnostics/{identifier}")
     assert response.status_code == 200 and response.json()["network"] == network
+
+
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+@pytest.mark.parametrize("claim_policy_task", ["create"], indirect=True)
+@pytest.mark.parametrize("disconnect", [True, False])
+async def test_claim_waits_or_disconnects_when_policy_changes_after_a_positive_hint(
+    app, agent_api, claim_policy_task, monkeypatch, disconnect
+):
+    """A positive hint can become empty under the dispatch lock; long polling must then honor disconnect or wait for resumed policy."""
+    from contextlib import asynccontextmanager
+
+    from starlette.requests import Request
+
+    from throng_api.models import AgentTask, Computer
+    from throng_api.transport import db_wait
+
+    original = app.state.db.write
+    paused = False
+    observations = []
+
+    @asynccontextmanager
+    async def pause_before_dispatch():
+        """Pause only after the read hint so the final dispatch query, rather than the hint, filters the task."""
+        nonlocal paused
+        if not paused:
+            paused = True
+            async with original() as session:
+                computer = await session.get(Computer, claim_policy_task["computer_id"])
+                computer.accepting_work = False
+        async with original() as session:
+            yield session
+
+    async def observe_after_dispatch(request):
+        """Resume the computer after observing the empty dispatch, or model the client's disconnect."""
+        observations.append(db_wait.get()[1])
+        if not disconnect:
+            async with original() as session:
+                computer = await session.get(Computer, claim_policy_task["computer_id"])
+                computer.accepting_work = True
+        return disconnect
+
+    monkeypatch.setattr(app.state.db, "write", pause_before_dispatch)
+    monkeypatch.setattr(Request, "is_disconnected", observe_after_dispatch)
+    response = await agent_api.post("/agent/v1/tasks/claim", json={"wait_seconds": 2})
+    assert response.status_code == 200, response.text
+    assert observations == [2]  # Policy update plus the dispatch transaction.
+    assert [task["id"] for task in response.json()["tasks"]] == (
+        [] if disconnect else [claim_policy_task["id"]]
+    )
+    async with app.state.db.read() as session:
+        task = await session.get(AgentTask, claim_policy_task["id"])
+        assert task.status == (claim_policy_task["status"] if disconnect else "dispatched")

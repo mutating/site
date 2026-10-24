@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select, update
+
 from throng_api.models import AccessToken, TokenOwnership
 
 pytestmark = pytest.mark.anyio
@@ -14,11 +15,8 @@ pytestmark = pytest.mark.anyio
 async def test_registry_issues_for_explicit_owner_without_revealing_secret_again(
     api, client, user, company, owner, clock
 ):
-    payload = (
-        {"user_id": user["id"]}
-        if owner == "personal"
-        else {"company_id": company["id"]}
-    )
+    """Issue for the explicitly selected personal or company owner, disclose the secret once, and enforce revocation."""
+    payload = {"user_id": user["id"]} if owner == "personal" else {"company_id": company["id"]}
     response = await api.post(
         "/v1/api-tokens",
         json={
@@ -48,14 +46,13 @@ async def test_registry_issues_for_explicit_owner_without_revealing_secret_again
         await api.patch(f"/v1/access-tokens/{token['id']}", json={"revoke": True})
     ).status_code == 200
     assert (await client.get("/v1/auth/check", headers=auth)).status_code == 401
-    assert (await api.get("/v1/api-tokens", params=payload)).json()[0][
-        "revoked_at"
-    ] is not None
+    assert (await api.get("/v1/api-tokens", params=payload)).json()[0]["revoked_at"] is not None
 
 
 async def test_registry_paginates_after_owner_authorization_and_excludes_login_tokens(
     api, other_api, user, other_user, company, client
 ):
+    """Filter by authorized owners before pagination and never expose browser login credentials in the API registry."""
     issued = []
     for owner in ({"user_id": user["id"]}, {"company_id": company["id"]}):
         for index in range(3):
@@ -73,9 +70,7 @@ async def test_registry_paginates_after_owner_authorization_and_excludes_login_t
     second = await api.get("/v1/api-tokens?limit=2&offset=2")
     third = await api.get("/v1/api-tokens?limit=2&offset=4")
     assert first.headers["x-total-count"] == "6"
-    assert {
-        row["id"] for result in (first, second, third) for row in result.json()
-    } == set(issued)
+    assert {row["id"] for result in (first, second, third) for row in result.json()} == set(issued)
     assert all(row["purpose"] == "api" for row in first.json())
     assert (await api.get("/v1/api-tokens?offset=999")).json() == []
     assert (
@@ -105,10 +100,9 @@ async def test_registry_paginates_after_owner_authorization_and_excludes_login_t
 async def test_registry_permissions_are_independent_of_member_permissions(
     api, other_api, company, membership, permissions, read_status, create_status
 ):
+    """Token read/create rights must follow the dedicated token permissions rather than member-management authority."""
     assert (
-        await api.patch(
-            f"/v1/memberships/{membership['id']}", json={"permissions": permissions}
-        )
+        await api.patch(f"/v1/memberships/{membership['id']}", json={"permissions": permissions})
     ).status_code == 200
     token = (
         await api.post(
@@ -142,6 +136,7 @@ async def test_registry_permissions_are_independent_of_member_permissions(
     ],
 )
 async def test_rejected_creation_does_not_leave_an_ownership(api, app, payload):
+    """Rejected issuance must roll back the provisional ownership instead of leaving orphaned registry entries."""
     async with app.state.db.read() as session:
         before = await session.scalar(select(func.count()).select_from(TokenOwnership))
     response = await api.post(
@@ -149,18 +144,14 @@ async def test_rejected_creation_does_not_leave_an_ownership(api, app, payload):
     )
     assert response.status_code in (404, 422)
     async with app.state.db.read() as session:
-        assert (
-            await session.scalar(select(func.count()).select_from(TokenOwnership))
-            == before
-        )
+        assert await session.scalar(select(func.count()).select_from(TokenOwnership)) == before
 
 
-@pytest.mark.parametrize(
-    "access_token", [{"scopes": ["read", "manage"]}], indirect=True
-)
+@pytest.mark.parametrize("access_token", [{"scopes": ["read", "manage"]}], indirect=True)
 async def test_cannot_escalate_scopes_or_create_as_company(
     api, client, access_token, company_token, user
 ):
+    """Issuance cannot grant more scopes than its caller or use a company credential as a personal issuing session."""
     payload = {
         "user_id": user["id"],
         "name": "Escalation",
@@ -179,15 +170,14 @@ async def test_cannot_escalate_scopes_or_create_as_company(
     )
     assert response.status_code == 403
     assert (
-        await api.get(
-            "/v1/api-tokens", params={"user_id": user["id"], "company_id": str(uuid4())}
-        )
+        await api.get("/v1/api-tokens", params={"user_id": user["id"], "company_id": str(uuid4())})
     ).status_code == 422
 
 
 async def test_legacy_purpose_is_preserved_without_guessing_from_names(
     api, app, user, access_token
 ):
+    """Historical credentials keep their legacy classification instead of inferring security purpose from editable names."""
     async with app.state.db.write() as session:
         await session.execute(update(AccessToken).values(purpose="legacy"))
     result = await api.get("/v1/api-tokens")

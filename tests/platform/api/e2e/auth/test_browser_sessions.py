@@ -128,7 +128,9 @@ async def test_logout_revokes_the_actual_api_token_and_is_idempotent(client, use
     assert (await client.delete("/v1/auth/session", headers=CSRF)).status_code == 204
 
 
-async def test_expired_invalid_and_revoked_cookies_are_rejected_without_cookie_writes(client, user, clock):
+async def test_expired_invalid_and_revoked_cookies_are_rejected_without_cookie_writes(
+    client, user, clock
+):
     """Validate expiry and revocation in the API rather than trusting the browser's cookie."""
     response = await sign_in(client, user)
     raw = response.cookies[SESSION_COOKIE]
@@ -145,6 +147,7 @@ async def test_expired_invalid_and_revoked_cookies_are_rejected_without_cookie_w
 
 
 async def test_old_unauthorized_request_cannot_delete_a_new_login_cookie(client, user):
+    """A delayed unauthorized response must not clear a cookie issued by a later successful login."""
     old = (await sign_in(client, user)).cookies[SESSION_COOKIE]
     await client.delete("/v1/auth/session", headers=CSRF)
     current = (await sign_in(client, user)).cookies[SESSION_COOKIE]

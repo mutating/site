@@ -5,9 +5,17 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
-from throng_api.models import AgentTask, CIReservation, CIRoute, Command, Coordination, Isolate
+from throng_api.models import (
+    AgentTask,
+    CIReservation,
+    CIRoute,
+    CIRouteRevision,
+    Command,
+    Coordination,
+    Isolate,
+)
 
 from .test_ci import ci_peer as ci_peer
 from .test_ci import github as github
@@ -313,6 +321,10 @@ async def test_watch_route_deleted_after_identity_check_is_unavailable(
             async with app.state.db.write() as session:
                 await session.delete(await session.get(CIReservation, watched))
                 await session.flush()
+                # The fault deletes both the route and its audit references.
+                await session.execute(
+                    delete(CIRouteRevision).where(CIRouteRevision.route_id == route["id"])
+                )
                 await session.delete(await session.get(CIRoute, route["id"]))
         async with original() as session:
             yield session

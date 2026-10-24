@@ -11,6 +11,8 @@ from .test_ci import ci_peer as ci_peer
 from .test_ci import deliver, ready_runner
 from .test_ci import github as github
 from .test_ci import powercell as powercell
+from .test_ci_github_outcome_edges import exact_job
+from .test_ci_github_outcome_edges import outcome_peer as outcome_peer
 from .test_ci_review import review_route as review_route
 
 pytestmark = [
@@ -43,6 +45,7 @@ async def test_exact_job_completion_wins_over_workflow_aggregate(
     powercell,
     app,
     clock,
+    outcome_peer,
     job_conclusion,
     run_conclusion,
     job_first,
@@ -77,6 +80,9 @@ async def test_exact_job_completion_wins_over_workflow_aggregate(
             clock.now += timedelta(seconds=5)
             await ci_controller.run_once(app)
         else:
+            if event == "workflow_job":
+                # The REST peer must reflect the exact job whose completion it reports.
+                outcome_peer.jobs = [exact_job(result["runs_on"][0], job_conclusion)]
             response = await deliver(
                 client,
                 github,

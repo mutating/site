@@ -1,11 +1,11 @@
 """A verified runner start remains durable evidence after completion or provider outages."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, timedelta
 
 import anyio
 import pytest
 from alembic import command
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 
 from throng_api import ci_controller
 from throng_api.cli import migration_config
@@ -165,8 +165,11 @@ async def test_mark_running_preserves_the_first_verified_timestamp(
 
 
 async def history(session):
-    """Read every historical field independently of the newly added nullable column."""
-    columns = [column for column in CIReservation.__table__.columns if column.key != "started_at"]
+    """Compare fields present in schema 0012 without selecting columns added by later migrations."""
+    later_columns = {"started_at", "route_revision", "workflow_path"}
+    columns = [
+        column for column in CIReservation.__table__.columns if column.key not in later_columns
+    ]
     return [
         tuple(row)
         for row in (await session.execute(select(*columns).order_by(CIReservation.id))).all()
@@ -179,6 +182,13 @@ async def start_column(app):
         return await connection.run_sync(
             lambda c: {column["name"] for column in inspect(c).get_columns("ci_reservations")}
         )
+
+
+async def database_now(app):
+    """Use the migration's database clock, which can differ from the test client's clock."""
+    async with app.state.db.read() as session:
+        value = await session.scalar(select(func.current_timestamp()))
+    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 async def test_start_migration_backfills_only_running_and_preserves_unknown_history(
@@ -221,10 +231,10 @@ async def test_start_migration_backfills_only_running_and_preserves_unknown_hist
     assert "started_at" not in await start_column(app)
     async with app.state.db.read() as session:
         assert await history(session) == before
-    earliest = datetime.now(UTC) - timedelta(seconds=1)
+    earliest = await database_now(app) - timedelta(seconds=1)
     await app.state.db.close()
     await anyio.to_thread.run_sync(command.upgrade, configuration, "head")
-    latest = datetime.now(UTC) + timedelta(seconds=1)
+    latest = await database_now(app) + timedelta(seconds=1)
     async with app.state.db.read() as session:
         assert await history(session) == before
         rows = (await session.scalars(select(CIReservation).order_by(CIReservation.run_id))).all()

@@ -13,6 +13,7 @@ pytestmark = pytest.mark.anyio
 async def test_token_purpose_upgrade_and_downgrade_preserve_credentials(
     api, user, access_token, http_server, migration_database, alembic_config
 ):
+    """Purpose migration must preserve hashes, ownership and usability when upgrading and downgrading existing credentials."""
     await api.patch(f"/v1/access-tokens/{access_token['id']}", json={"name": "login"})
     http_server.server.should_exit = True
     await asyncio.wait_for(http_server.task, timeout=10)
@@ -33,9 +34,7 @@ async def test_token_purpose_upgrade_and_downgrade_preserve_credentials(
             )
         ).all()
         purposes = (
-            (await connection.execute(text("SELECT purpose FROM access_tokens")))
-            .scalars()
-            .all()
+            (await connection.execute(text("SELECT purpose FROM access_tokens"))).scalars().all()
         )
     assert before == after
     assert purposes == ["legacy", "legacy"]
