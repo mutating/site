@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from throng_api import outputs as out
 from throng_api.benchmark_schemas import (
@@ -14,12 +14,13 @@ from throng_api.benchmark_schemas import (
 )
 from throng_api.computers import computer_for_user
 from throng_api.device_security import agent_device_proof
-from throng_api.models import BenchmarkResult
+from throng_api.models import BenchmarkResult, Computer, ComputerOwnership
 from throng_api.security import (
     access_token_scheme,
     agent_auth,
     agent_credential_scheme,
     authenticate,
+    owned_filter,
 )
 from throng_api.serialization import public
 
@@ -66,9 +67,26 @@ async def results_for_computer(session, request, computer_id, latest_only):
     computer = await computer_for_user(session, principal, computer_id)
     rows = list(
         await session.scalars(
-            select(BenchmarkResult).where(BenchmarkResult.computer_id == computer.id)
+            select(BenchmarkResult)
+            .join(Computer, Computer.id == BenchmarkResult.computer_id)
+            .outerjoin(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
+            .where(
+                BenchmarkResult.computer_id == computer.id,
+                # A transfer can commit after the initial computer check; read
+                # measurements only within the owner scope of this statement.
+                or_(
+                    owned_filter(ComputerOwnership, principal),
+                    and_(
+                        ComputerOwnership.id.is_(None),
+                        Computer.registered_by_user_id == principal.user_id,
+                    ),
+                ),
+            )
         )
     )
+    if not rows:
+        # Preserve valid empty inventories while hiding access lost in a transfer.
+        await computer_for_user(session, principal, computer_id)
     if rows and latest_only:
         version = max((row.benchmarker_version for row in rows), key=semver_key)
         rows = [row for row in rows if row.benchmarker_version == version]

@@ -7,7 +7,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import APIKeyCookie, HTTPBearer
-from sqlalchemy import and_, or_, select
+from sqlalchemy import String, and_, cast, or_, select
 from starlette.concurrency import run_in_threadpool
 
 from throng_api.models import (
@@ -15,11 +15,14 @@ from throng_api.models import (
     AgentCredential,
     Computer,
     DeviceCertificate,
+    LegacyCredential,
+    LoginSession,
     Membership,
     TokenOwnership,
     User,
 )
-from throng_api.permissions import effective_permissions, request_permission
+from throng_api.permissions import USER_PERMISSIONS, effective_permissions, request_permission
+from throng_api.transport import ProtocolError
 
 PASSWORDS = PasswordHasher()
 DUMMY_PASSWORD_HASH = PASSWORDS.hash(secrets.token_urlsafe(32))
@@ -33,8 +36,9 @@ user_bearer_scheme = HTTPBearer(
     scheme_name="AccessToken",
     auto_error=False,
     description=(
-        "Токен пользователя или компании (thr_…). Получите access_token через "
-        "POST /v1/auth/login либо выпустите токен через /v1/access-tokens. "
+        "Личный API-токен (SELF-…) или токен организации (ORG-…). "
+        "Выпустите его через /v1/api-tokens либо /v1/access-tokens. "
+        "Также принимается access_token сессии из POST /v1/auth/login. "
         "В Authorize вставьте только сам токен, без префикса Bearer."
     ),
 )
@@ -100,7 +104,6 @@ class Principal:
     actor_id: str
     scopes: frozenset[str]
     permission: str | None = None
-    permitted_companies: tuple[str, ...] | None = None
 
     @property
     def key(self):
@@ -108,49 +111,57 @@ class Principal:
 
 
 async def authenticate(session, request: Request, scope="read") -> Principal:
-    token = await session.scalar(
-        select(AccessToken).where(AccessToken.token_hash == digest(bearer(request)))
-    )
-    if not token or token.revoked_at or token.expires_at <= request.app.state.clock():
-        raise HTTPException(401, "Invalid or expired token")
-    owner = await session.get(TokenOwnership, token.ownership_id)
-    if not owner:
-        raise HTTPException(401, "Invalid token owner")
-    if owner.company_id:
-        issuer = await session.scalar(
-            select(Membership).where(
-                Membership.user_id == token.created_by_user_id,
-                Membership.company_id == owner.company_id,
+    try:
+        raw = bearer(request)
+    except HTTPException as error:
+        raise ProtocolError(
+            "token_invalid", error.detail, status_code=401, headers=error.headers
+        ) from error
+    hashed = digest(raw)
+    token = await session.scalar(select(LoginSession).where(LoginSession.session_hash == hashed))
+    if token:
+        user_id, company_id, actor_id = token.user_id, None, token.user_id
+    else:
+        token = await session.scalar(select(AccessToken).where(AccessToken.token_hash == hashed))
+        if token is None:
+            token = await session.scalar(
+                select(LegacyCredential).where(LegacyCredential.token_hash == hashed)
             )
-        )
-        if not issuer or "tokens.manage" not in effective_permissions(
-            issuer.role, issuer.permissions
-        ):
-            raise HTTPException(401, "Token issuer no longer administers this company")
-    if not await session.get(User, token.created_by_user_id):
-        raise HTTPException(401, "Invalid token issuer")
+        if token is None:
+            raise ProtocolError("token_invalid", "Invalid token", status_code=401)
+        owner = await session.get(TokenOwnership, token.ownership_id)
+        if not owner:
+            raise ProtocolError("token_invalid", "Invalid token owner", status_code=401)
+        user_id, company_id, actor_id = owner.user_id, owner.company_id, token.created_by_user_id
+        if company_id:
+            issuer = await session.scalar(
+                select(Membership).where(
+                    Membership.user_id == actor_id,
+                    Membership.company_id == company_id,
+                )
+            )
+            if not issuer or "tokens.manage" not in effective_permissions(
+                issuer.role, issuer.permissions
+            ):
+                raise ProtocolError(
+                    "token_invalid",
+                    "Token issuer no longer administers this company",
+                    status_code=401,
+                )
+    if token.revoked_at:
+        raise ProtocolError("token_invalid", "Invalid token", status_code=401)
+    if not await session.get(User, actor_id):
+        raise ProtocolError("token_invalid", "Invalid token issuer", status_code=401)
+    if token.expires_at is not None and token.expires_at <= request.app.state.clock():
+        raise ProtocolError("token_expired", "Token has expired", status_code=401)
     if scope not in token.scopes:
         raise HTTPException(403, "Token lacks required scope")
-    permission = request_permission(request, scope)
-    permitted = None
-    if permission:
-        memberships = await session.scalars(
-            select(Membership).where(
-                Membership.user_id == (owner.user_id or token.created_by_user_id)
-            )
-        )
-        permitted = tuple(
-            row.company_id
-            for row in memberships
-            if permission in effective_permissions(row.role, row.permissions)
-        )
     return Principal(
-        owner.user_id,
-        owner.company_id,
-        token.created_by_user_id,
+        user_id,
+        company_id,
+        actor_id,
         frozenset(token.scopes),
-        permission,
-        permitted,
+        request_permission(request, scope),
     )
 
 
@@ -220,17 +231,28 @@ async def owner_values(session, principal, company_id=None, admin=False):
     return {"user_id": personal(principal), "company_id": None}
 
 
+def membership_permission(permission):
+    """Mirror effective_permissions in SQL using exact quoted enum values in either JSON store."""
+    custom = cast(Membership.permissions, String)
+    # Explicit JSON null and historical SQL NULL both select the role defaults.
+    defaults = or_(custom.is_(None), custom == "null")
+    return or_(
+        Membership.role == "creator",
+        custom.contains(f'"{permission}"'),
+        and_(defaults, True if permission in USER_PERMISSIONS else Membership.role == "admin"),
+    )
+
+
 def owned_filter(model, principal):
+    """Authorize live membership and owner in the same statement that reads resource data."""
+    companies = select(Membership.company_id).where(
+        Membership.user_id == (principal.user_id or principal.actor_id)
+    )
+    if principal.permission:
+        companies = companies.where(membership_permission(principal.permission))
     if principal.company_id:
-        if (
-            principal.permitted_companies is not None
-            and principal.company_id not in principal.permitted_companies
-        ):
-            return model.company_id.in_([])
-        return model.company_id == principal.company_id
-    companies = principal.permitted_companies
-    if companies is None:
-        companies = select(Membership.company_id).where(Membership.user_id == principal.user_id)
+        companies = companies.where(membership_permission("tokens.manage"))
+        return and_(model.company_id == principal.company_id, model.company_id.in_(companies))
     return or_(
         model.user_id == principal.user_id,
         and_(model.company_id.is_not(None), model.company_id.in_(companies)),
@@ -245,13 +267,13 @@ async def owned(session, model, resource_id, principal, admin=False):
     return row
 
 
-async def issue_token(session, owner, actor_id, name, scopes, expires_at, *, purpose="api"):
-    raw = secret("thr_")
+async def issue_token(session, owner, actor_id, name, scopes, expires_at):
+    prefix = "ORG-" if owner.company_id else "SELF-"
+    raw = prefix + secrets.token_hex(32)
     token = AccessToken(
         ownership_id=owner.id,
         created_by_user_id=actor_id,
         name=name,
-        purpose=purpose,
         scopes=sorted(scopes),
         token_hash=digest(raw),
         expires_at=expires_at,

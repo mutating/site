@@ -164,7 +164,7 @@ class ComputerOwnerCreate(OwnerInput):
 class TokenOptions(Input):
     name: str = Field(min_length=1, max_length=100)
     scopes: list[Scope] = Field(min_length=1, max_length=3)
-    expires_in_seconds: int = Field(default=86400, ge=60, le=31536000)
+    expires_in_seconds: int | None = Field(default=86400, ge=60, le=31536000)
 
 
 class TokenCreate(TokenOptions):

@@ -1,4 +1,4 @@
-"""Transport observability and stable agent error codes; never log request bodies."""
+"""Transport observability and stable protocol error codes; never log request bodies."""
 
 import json
 import logging
@@ -16,8 +16,8 @@ db_wait = ContextVar("transport_db_wait", default=None)
 
 
 class ProtocolError(HTTPException):
-    def __init__(self, code, detail, status_code=409):
-        super().__init__(status_code, detail)
+    def __init__(self, code, detail, status_code=409, headers=None):
+        super().__init__(status_code, detail, headers=headers)
         self.code = code
 
 

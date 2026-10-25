@@ -124,6 +124,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         return JSONResponse(
             status_code=exception.status_code,
             content={"detail": exception.detail, "code": exception.code},
+            headers=exception.headers,
         )
 
     app.add_middleware(browser.BrowserSessionMiddleware, settings=settings)

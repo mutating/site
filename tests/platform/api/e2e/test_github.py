@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import select
 
 from throng_api.github import GitHubService, configure
-from throng_api.models import AccessToken, GitHubAccount, GitHubOAuthFlow, TokenOwnership
+from throng_api.models import GitHubAccount, GitHubOAuthFlow, LoginSession
 from throng_api.security import digest
 
 pytestmark = pytest.mark.anyio
@@ -281,14 +281,18 @@ async def test_oauth_provider_errors_are_sanitized(api, github, status, expected
 
 
 async def test_revocation_during_exchange_prevents_connecting(api, app, github):
-    """Recheck the initiating session after the external token exchange."""
+    """Reject an OAuth callback if its initiating login was revoked mid-exchange.
+
+    The external provider call must not let an already signed-out session finish
+    connecting GitHub merely because authentication succeeded before the call.
+    """
     state = await begin(api)
 
     async def revoke():
         async with app.state.db.write() as session:
             token = await session.scalar(
-                select(AccessToken).where(
-                    AccessToken.token_hash == digest(api.headers["authorization"].split(" ")[1])
+                select(LoginSession).where(
+                    LoginSession.session_hash == digest(api.headers["authorization"].split(" ")[1])
                 )
             )
             token.revoked_at = app.state.clock()
@@ -301,18 +305,21 @@ async def test_revocation_during_exchange_prevents_connecting(api, app, github):
 async def test_session_owner_change_during_exchange_cannot_link_the_new_owner(
     api, app, other_user, github
 ):
-    """Do not attach an in-flight authorization to a different session owner."""
+    """Keep an in-flight GitHub OAuth flow bound to its initiating account.
+
+    If the session owner changes during the provider exchange, the callback must
+    reject it instead of completing the flow under the new account.
+    """
     state = await begin(api)
 
     async def transfer():
         async with app.state.db.write() as session:
             token = await session.scalar(
-                select(AccessToken).where(
-                    AccessToken.token_hash == digest(api.headers["authorization"].split(" ")[1])
+                select(LoginSession).where(
+                    LoginSession.session_hash == digest(api.headers["authorization"].split(" ")[1])
                 )
             )
-            owner = await session.get(TokenOwnership, token.ownership_id)
-            owner.user_id = other_user["id"]
+            token.user_id = other_user["id"]
 
     github.peer.callback = transfer
     response = await api.get("/v1/github/oauth/callback", params={"state": state, "code": "code"})

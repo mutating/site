@@ -5,6 +5,8 @@ from uuid import uuid4
 
 import pytest
 
+from tests.platform.api.token_helpers import move_to_legacy
+
 pytestmark = pytest.mark.anyio
 
 
@@ -363,10 +365,11 @@ async def test_company_token_cannot_use_personal_or_other_company_resources(
 
 @pytest.mark.parametrize("membership", ["admin"], indirect=True)
 @pytest.mark.parametrize("remove", [False, True])
+@pytest.mark.parametrize("historical", [False, True])
 async def test_company_tokens_stay_revoked_after_membership_restore(
-    api, other_api, client, company, membership, other_user, remove
+    api, other_api, client, company, company_token, membership, other_user, remove, historical, app
 ):
-    """Demoting or removing a token issuer revokes its corporate tokens permanently."""
+    """Membership changes must permanently revoke only that issuer's API/legacy secrets, preserving another issuer's CI; restoring rights must never revive the old token."""
     response = await other_api.post("/v1/token-ownerships", json={"company_id": company["id"]})
     assert response.status_code == 201
     response = await other_api.post(
@@ -378,15 +381,23 @@ async def test_company_tokens_stay_revoked_after_membership_restore(
         },
     )
     assert response.status_code == 201
+    token = response.json()
+    if historical:
+        async with app.state.db.write() as session:
+            for credential in (token, company_token):
+                await move_to_legacy(session, credential["id"])
     headers = {"Authorization": "Bearer " + response.json()["token"]}
+    peer_headers = {"Authorization": "Bearer " + company_token["token"]}
     company_path = f"/v1/companies/{company['id']}"
     assert (await client.get(company_path, headers=headers)).status_code == 200
+    assert (await client.get(company_path, headers=peer_headers)).status_code == 200
     path = f"/v1/memberships/{membership['id']}"
     if remove:
         assert (await api.delete(path)).status_code == 204
     else:
         assert (await api.patch(path, json={"role": "user"})).status_code == 200
     assert (await client.get(company_path, headers=headers)).status_code == 401
+    assert (await client.get(company_path, headers=peer_headers)).status_code == 200
     if remove:
         assert (
             await api.post(
@@ -396,7 +407,24 @@ async def test_company_tokens_stay_revoked_after_membership_restore(
         ).status_code == 201
     else:
         assert (await api.patch(path, json={"role": "admin"})).status_code == 200
-    assert (await client.get(company_path, headers=headers)).status_code == 401
+    response = await client.get(company_path, headers=headers)
+    assert response.status_code == 401
+    assert response.json()["code"] == "token_invalid"
+    assert (await client.get(company_path, headers=peer_headers)).status_code == 200
+    # A fresh credential works again: the refusal above must be the old
+    # credential's permanent revocation, rather than an unrestored membership.
+    fresh = await other_api.post(
+        "/v1/access-tokens",
+        json={
+            "ownership_id": token["ownership_id"],
+            "name": "New CI",
+            "scopes": ["read", "execute"],
+        },
+    )
+    assert fresh.status_code == 201
+    assert (
+        await client.get(company_path, headers={"Authorization": "Bearer " + fresh.json()["token"]})
+    ).status_code == 200
 
 
 @pytest.mark.parametrize(

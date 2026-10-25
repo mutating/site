@@ -66,9 +66,9 @@ export interface ApiToken {
   company_id: string | null;
   issuer: MemberProfile;
   name: string;
-  purpose: "api" | "legacy";
+  purpose: "api";
   scopes: TokenScope[];
-  expires_at: string;
+  expires_at: string | null;
   revoked_at: string | null;
 }
 export interface IssuedApiToken extends ApiToken {

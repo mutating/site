@@ -26,7 +26,7 @@ export function ApiTokens() {
     Math.min(1_000_000, Number.parseInt(params.get("page") || "1", 10) || 1),
   );
   const key = `${user!.id}/${owner}/${page}`;
-  const [owners, setOwners] = useState<{ userId: string; items: Pick<Company, "id" | "name">[] } | null>(null);
+  const [owners, setOwners] = useState<{ userId: string; items: Pick<Company, "id" | "name" | "my_permissions">[] } | null>(null);
   const state = useData(
     async (signal) => {
       const companies = (await allPages<Company>("companies", signal)).filter(
@@ -34,7 +34,7 @@ export function ApiTokens() {
           company.my_permissions.includes("tokens.read") ||
           company.my_permissions.includes("tokens.manage"),
       );
-      if (!signal.aborted) setOwners({ userId: user!.id, items: companies.map(({ id, name }) => ({ id, name })) });
+      if (!signal.aborted) setOwners({ userId: user!.id, items: companies });
       const company = companies.find((value) => value.id === owner);
       if (owner !== "all" && owner !== "personal" && !company)
         throw new ApiError(404, "");
@@ -60,8 +60,16 @@ export function ApiTokens() {
     key,
     true,
   );
-  const data = state.data?.key === key ? state.data : null;
   const ownerChoices = owners?.userId === user!.id ? owners.items : [];
+  const readableCompany = (id: string) => ownerChoices.some((company) =>
+    company.id === id && company.my_permissions.includes("tokens.read"));
+  // Only a newer owners snapshot can invalidate an already authorized registry response.
+  const lostAccess = state.data?.key === key && ownerChoices !== state.data.companies && (
+    state.data.companies.some((previous) => (owner === "all" || previous.id === owner) &&
+      previous.my_permissions.includes("tokens.read") && !readableCompany(previous.id)) ||
+    state.data.tokens.some((token) => token.company_id && !readableCompany(token.company_id))
+  );
+  const data = state.data?.key === key && !lostAccess ? state.data : null;
   const selected = data?.companies.find((company) => company.id === owner);
   const canManage =
     owner === "all" ||
@@ -69,6 +77,27 @@ export function ApiTokens() {
     !!selected?.my_permissions.includes("tokens.manage");
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<ApiToken | null>(null);
+  useEffect(() => {
+    setCreating(false);
+    setRevoking(null);
+  }, [key]);
+  useEffect(() => {
+    // Fresh company permissions can deny access before the token request finishes.
+    const denied = state.error instanceof ApiError && [403, 404].includes(state.error.status);
+    if (lostAccess || denied) {
+      state.update(null);
+      setRevoking(null);
+      if (denied) setCreating(false);
+    }
+  }, [lostAccess, state.error, state.update]);
+  const refresh = (failure?: unknown) => {
+    if (failure instanceof ApiError && failure.status === 404) {
+      state.update(null);
+      setCreating(false);
+      setRevoking(null);
+    }
+    state.reload();
+  };
   const pages = Math.max(1, Math.ceil((data?.total || 0) / 10));
   const updatePage = (value: number, replace = false) => {
     const next = new URLSearchParams(params);
@@ -91,7 +120,7 @@ export function ApiTokens() {
   const status = (token: ApiToken) =>
     token.revoked_at
       ? "tokenRevoked"
-      : Date.parse(token.expires_at) <= Date.now()
+      : token.expires_at !== null && Date.parse(token.expires_at) <= Date.now()
         ? "tokenExpired"
         : "tokenActive";
   return (
@@ -162,7 +191,7 @@ export function ApiTokens() {
         ) : null
       ) : !data.canRead ? null : !data.tokens.length ? (
         <Empty icon="key" title={t("noApiTokens")}>
-          {t("noApiTokensLead")}
+          {canManage && t("noApiTokensLead")}
         </Empty>
       ) : (
         <>
@@ -189,9 +218,6 @@ export function ApiTokens() {
                   <small>
                     {t("tokenIssuer")}: {memberName(token.issuer)}
                   </small>
-                  {token.purpose === "legacy" && (
-                    <small className="token-legacy">{t("tokenLegacy")}</small>
-                  )}
                 </div>
                 <div className="token-registry-owner">
                   <div>
@@ -222,11 +248,15 @@ export function ApiTokens() {
                     ))}
                 </div>
                 <div className="token-registry-expiry">
-                  <time dateTime={token.expires_at}>
-                    {new Intl.DateTimeFormat(locale, {
-                      dateStyle: "medium",
-                    }).format(new Date(token.expires_at))}
-                  </time>
+                  {token.expires_at === null ? (
+                    <span>{t("tokenNoExpiry")}</span>
+                  ) : (
+                    <time dateTime={token.expires_at}>
+                      {new Intl.DateTimeFormat(locale, {
+                        dateStyle: "medium",
+                      }).format(new Date(token.expires_at))}
+                    </time>
+                  )}
                   <span
                     className={`token-status ${status(token) === "tokenActive" ? "is-active" : ""}`}
                   >
@@ -292,11 +322,11 @@ export function ApiTokens() {
           {t("tokenCompanyLegend")}
         </span>
       </div>
-      {creating && data && (
+      {creating && (
         <CreateTokenDialog
-          companies={data.companies}
+          companies={ownerChoices}
           initialCompanyId={selected?.id}
-          onCreated={state.reload}
+          onRefresh={refresh}
           onClose={() => setCreating(false)}
         />
       )}
@@ -304,14 +334,19 @@ export function ApiTokens() {
         <ConfirmDialog
           title={t("revokeToken")}
           value={revoking.name}
-          warning={`${t("tokenOwner")}: ${ownerName(revoking)}. ${t("tokenRevokeHelp")}${revoking.purpose === "legacy" ? ` ${t("tokenLegacyHelp")}` : ""}`}
+          warning={`${t("tokenOwner")}: ${ownerName(revoking)}. ${t("tokenRevokeHelp")}`}
           onClose={() => setRevoking(null)}
           onConfirm={async () => {
-            await api(
-              `access-tokens/${revoking.id}`,
-              json("PATCH", { revoke: true }),
-            );
-            state.reload();
+            try {
+              await api(
+                `access-tokens/${revoking.id}`,
+                json("PATCH", { revoke: true }),
+              );
+            } catch (failure) {
+              refresh(failure);
+              throw failure;
+            }
+            refresh();
           }}
         />
       )}

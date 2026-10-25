@@ -640,11 +640,18 @@ test("wrong password, expired session and cross-origin mutation are rejected", a
   ).toBeVisible();
 });
 
-test("logout revokes its API token and a revoked active session returns to login", async ({
+/** Login sessions must stay outside API-token CRUD: logout preserves API access, while password revocation sends the active browser back to login. */
+test("logout only revokes its session and a revoked active session returns to login", async ({
   page,
   request,
   account,
 }) => {
+  const issued = await request.post(`${API}/api-tokens`, {
+    headers: headers(account),
+    data: { user_id: account.id, name: "Survives logout", scopes: ["read", "execute"], expires_in_seconds: null },
+  });
+  expect(issued.status()).toBe(201);
+  const token = await issued.json();
   const before = await (
     await request.get(`${API}/access-tokens`, { headers: headers(account) })
   ).json();
@@ -680,20 +687,16 @@ test("logout revokes its API token and a revoked active session returns to login
     headers: { Cookie: `${sessionCookie.name}=${sessionCookie.value}` },
   });
   expect(replay.status()).toBe(401);
+  expect((await request.get(`${API}/auth/check`, {
+    headers: { Authorization: `Bearer ${token.token}` },
+  })).status()).toBe(200);
   await login(page, account);
-  const tokens: { id: string }[] = await (
-    await request.get(`${API}/access-tokens`, { headers: headers(account) })
-  ).json();
-  const dashboardToken = tokens.find(
-    (token) => !before.some((old: { id: string }) => old.id === token.id),
-  )!;
-  expect(
-    (
-      await request.delete(`${API}/access-tokens/${dashboardToken.id}`, {
-        headers: headers(account),
-      })
-    ).status(),
-  ).toBe(204);
+  // Revoke the active browser through the real account API. Sessions are no
+  // longer discoverable or revocable through the API-token CRUD endpoint.
+  expect((await request.patch(`${API}/users/${account.id}`, {
+    headers: headers(account),
+    data: { password: "new sufficiently long password" },
+  })).status()).toBe(200);
   await page
     .getByRole("navigation", { name: "Навигация кабинета" })
     .getByRole("link", { name: "Power Cells", exact: true })

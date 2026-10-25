@@ -13,6 +13,7 @@ import { GiB, historyNow, reserve, seedHistory } from "./resources";
 import { resolve } from "node:path";
 import { openLanguages } from "./header-controls";
 
+/** Owner and issuer context, permission choices and a full-length safe secret must stay legible in every theme and viewport. */
 test("owner-aware API token registry and issuance dialog", async ({ page, request, account }, info) => {
   const { language, theme } = info.project.metadata;
   const exactPixels = { threshold: 0.01, maxDiffPixels: 0 };
@@ -51,7 +52,7 @@ test("owner-aware API token registry and issuance dialog", async ({ page, reques
       return route.fulfill({ response, json: body.map(value => ({ ...value, ...fixedDates })) });
     }
     expect(body.issuer.last_name).toBe("Волкова");
-    return route.fulfill({ response, json: { ...body, ...fixedDates, token: "thr_visual_example_only_8A3k7Q" } });
+    return route.fulfill({ response, json: { ...body, ...fixedDates, token: `ORG-${"0123456789abcdef".repeat(4)}` } });
   });
   expect((await page.request.post(`${API}/auth/session`, {
     headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },

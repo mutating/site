@@ -1,11 +1,11 @@
-"""Direct browser authentication shares the API's revocable access tokens."""
+"""Direct browser authentication uses independent revocable login sessions."""
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
-from throng_api.models import AccessToken
+from throng_api.models import LoginSession
 from throng_api.security import SESSION_COOKIE, digest
 
 ORIGIN = "https://platform.mutating.tech"
@@ -33,8 +33,8 @@ async def sign_in(client, user):
     return response
 
 
-async def test_browser_login_uses_existing_token_storage(client, user, app):
-    """Keep the token out of JSON and store only its hash in the existing token table."""
+async def test_browser_login_uses_independent_session_storage(client, user, app):
+    """Keep the session secret out of JSON and store only its hash in the independent session table."""
     response = await sign_in(client, user)
     assert response.json()["id"] == user["id"]
     assert "access_token" not in response.json()
@@ -47,10 +47,10 @@ async def test_browser_login_uses_existing_token_storage(client, user, app):
     assert "Domain=" not in response.headers["set-cookie"]
     async with app.state.db.read() as session:
         token = await session.scalar(
-            select(AccessToken).where(AccessToken.token_hash == digest(cookie))
+            select(LoginSession).where(LoginSession.session_hash == digest(cookie))
         )
-        assert token and token.created_by_user_id == user["id"]
-        assert token.token_hash != cookie
+        assert token and token.user_id == user["id"]
+        assert token.session_hash != cookie
     for path in ("/v1/auth/session", "/v1/users/me"):
         profile = await client.get(path, headers={"Origin": ORIGIN})
         assert profile.status_code == 200 and profile.json()["id"] == user["id"]
@@ -112,8 +112,12 @@ async def test_cors_preflights_only_allow_the_dashboard(client):
     assert "x-total-count" in response.headers["access-control-expose-headers"].lower()
 
 
-async def test_logout_revokes_the_actual_api_token_and_is_idempotent(client, user):
-    """A cookie or bearer copied before logout cannot be replayed after the token is deleted."""
+async def test_logout_revokes_the_actual_session_and_is_idempotent(client, user):
+    """Make logout invalidate the server-side session, not just clear its cookie.
+
+    Replaying its secret as either a cookie or Bearer credential must fail, and
+    repeating logout without a session must remain safe and return 204.
+    """
     response = await sign_in(client, user)
     raw = response.cookies[SESSION_COOKIE]
     response = await client.delete("/v1/auth/session", headers=CSRF)

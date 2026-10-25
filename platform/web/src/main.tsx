@@ -97,7 +97,7 @@ function App() {
               <Route path="organizations/:companyId" element={<Organization />} />
               <Route path="invitations/:token" element={<Invitation />} />
               <Route path="profile" element={<Profile />} />
-              <Route path="api-tokens" element={<ApiTokens />} />
+              <Route path="api-tokens" element={<ApiTokens key={user?.id} />} />
               <Route path="cloud" element={<Cloud />} />
               <Route path="actions" element={<Actions key={user?.id} />} />
               <Route path="actions/repositories/:repositoryId" element={<ActionRepository />} />

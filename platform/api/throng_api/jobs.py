@@ -27,7 +27,12 @@ from throng_api.schemas import CommandCreate, IDs, IsolateCreate, PaginationOffs
 from throng_api.security import access_token_scheme, authenticate, owned, owned_filter, owner_values
 from throng_api.serialization import public
 
-router = APIRouter(prefix="/v1", tags=["execution"], dependencies=[Depends(access_token_scheme)])
+router = APIRouter(
+    prefix="/v1",
+    tags=["execution"],
+    dependencies=[Depends(access_token_scheme)],
+    responses={401: {"model": out.TokenAuthenticationError}},
+)
 
 
 async def writable_isolate(session, isolate_id, principal):
