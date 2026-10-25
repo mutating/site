@@ -121,7 +121,7 @@ class AccessToken(Identity):
     name: str
     purpose: Literal["api", "login", "legacy"]
     scopes: list[Scope]
-    expires_at: datetime
+    expires_at: datetime | None
     revoked_at: datetime | None
 
 
@@ -130,6 +130,7 @@ class IssuedToken(AccessToken):
 
 
 class ApiToken(AccessToken, Owner):
+    purpose: Literal["api"]
     issuer: MemberProfile
 
 
@@ -137,10 +138,23 @@ class IssuedApiToken(ApiToken):
     token: str
 
 
+class LoginSession(Identity):
+    user_id: str
+    name: str
+    scopes: list[Scope]
+    expires_at: datetime
+    revoked_at: datetime | None
+
+
 class Login(BaseModel):
     access_token: str
     token_type: Literal["bearer"]
-    token: AccessToken
+    token: LoginSession
+
+
+class TokenAuthenticationError(BaseModel):
+    detail: str
+    code: Literal["token_invalid", "token_expired"]
 
 
 class TokenCheck(BaseModel):

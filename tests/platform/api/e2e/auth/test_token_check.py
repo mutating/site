@@ -65,21 +65,29 @@ async def test_token_check_requires_both_scopes_for_each_owner(client, token_pai
 
 @pytest.mark.parametrize("authorization", [None, "Basic abc", "Bearer", "Bearer thr_unknown"])
 async def test_token_check_rejects_missing_and_invalid_credentials(client, authorization):
-    """Expose standard authentication failures without caching a negative preflight result."""
+    """Return an uncached token_invalid preflight result for unusable credentials.
+
+    Missing or malformed Bearer headers must also retain WWW-Authenticate, so
+    external clients can recognize an authentication failure consistently.
+    """
     headers = {} if authorization is None else {"Authorization": authorization}
     response = await client.get(CHECK, headers=headers)
     assert response.status_code == 401, response.text
     assert response.headers["cache-control"] == "no-store"
     if authorization == "Bearer thr_unknown":
-        assert response.json() == {"detail": "Invalid or expired token"}
+        assert response.json() == {"detail": "Invalid token", "code": "token_invalid"}
     else:
-        assert response.json() == {"detail": "Bearer token required"}
+        assert response.json() == {"detail": "Bearer token required", "code": "token_invalid"}
         assert response.headers["www-authenticate"] == "Bearer"
 
 
 @pytest.mark.parametrize("mode", ["revoked", "deleted", "password_changed"])
 async def test_token_check_rechecks_revocation_and_deletion(api, client, user, token_pair, mode):
-    """A previously successful preflight never authorizes a subsequently invalidated token."""
+    """Recheck personal and company tokens after revoke, delete or password reset.
+
+    A previous successful preflight must not mask invalidation: the next call
+    returns an uncached 401 with token_invalid.
+    """
     for token in token_pair.values():
         response = await client.get(CHECK, headers={"Authorization": "Bearer " + token["token"]})
         assert response.status_code == 200, response.text
@@ -100,7 +108,7 @@ async def test_token_check_rechecks_revocation_and_deletion(api, client, user, t
     for token in token_pair.values():
         response = await client.get(CHECK, headers={"Authorization": "Bearer " + token["token"]})
         assert response.status_code == 401, response.text
-        assert response.json() == {"detail": "Invalid or expired token"}
+        assert response.json() == {"detail": "Invalid token", "code": "token_invalid"}
         assert response.headers["cache-control"] == "no-store"
 
 
@@ -108,12 +116,18 @@ async def test_token_check_rechecks_revocation_and_deletion(api, client, user, t
 async def test_token_check_enforces_the_exact_expiration_boundary(
     client, token_pair, clock, offset_microseconds
 ):
-    """Both owners' tokens expire at, rather than after, their server-side deadline."""
+    """Expire both owners' tokens exactly at the server-side deadline.
+
+    Preflight succeeds one microsecond before expiry, then returns an uncached
+    401 with token_expired at and after expiry, rather than token_invalid.
+    """
     expiry = datetime.fromisoformat(token_pair["personal"]["expires_at"])
     clock.now = expiry + timedelta(microseconds=offset_microseconds)
     for token in token_pair.values():
         response = await client.get(CHECK, headers={"Authorization": "Bearer " + token["token"]})
         assert response.status_code == (200 if offset_microseconds < 0 else 401), response.text
+        if offset_microseconds >= 0:
+            assert response.json() == {"detail": "Token has expired", "code": "token_expired"}
         assert response.headers["cache-control"] == "no-store"
 
 

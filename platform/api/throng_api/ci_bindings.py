@@ -217,14 +217,18 @@ async def binding_revisions(
 ):
     async with request.app.state.db.read() as session:
         route = await read_binding(session, request, route_id)
+        # The binding may move to another owner after authorization. Its audit
+        # rows are immutable, so retain only the authorized revision snapshot.
+        conditions = (
+            CIRouteRevision.route_id == route.id,
+            CIRouteRevision.revision <= route.revision,
+        )
         total = await session.scalar(
-            select(func.count())
-            .select_from(CIRouteRevision)
-            .where(CIRouteRevision.route_id == route.id)
+            select(func.count()).select_from(CIRouteRevision).where(*conditions)
         )
         rows = await session.scalars(
             select(CIRouteRevision)
-            .where(CIRouteRevision.route_id == route.id)
+            .where(*conditions)
             .order_by(CIRouteRevision.revision.desc())
             .offset(offset)
             .limit(limit)

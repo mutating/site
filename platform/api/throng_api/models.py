@@ -154,17 +154,37 @@ class TokenOwnership(Identity, Ownership, Base):
     __table_args__ = (owner_check(),)
 
 
-class AccessToken(Identity, Base):
-    __tablename__ = "access_tokens"
-    __table_args__ = (
-        CheckConstraint("purpose IN ('api', 'login', 'legacy')", name="token_purpose"),
-    )
+class TokenCredential(Identity):
     ownership_id: Mapped[str] = mapped_column(ForeignKey("token_ownerships.id"), index=True)
     created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
-    purpose: Mapped[str] = mapped_column(String(16), default="api", server_default="legacy")
+    purpose: Mapped[str] = mapped_column(String(16), default="api", server_default="api")
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     scopes: Mapped[list] = mapped_column(JSON)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class AccessToken(TokenCredential, Base):
+    __tablename__ = "access_tokens"
+    __table_args__ = (CheckConstraint("purpose = 'api'", name="token_purpose"),)
+
+
+class LegacyCredential(TokenCredential, Base):
+    """Unclassified historical credentials retain their original authority."""
+
+    __tablename__ = "legacy_credentials"
+    __table_args__ = (CheckConstraint("purpose IN ('login', 'legacy')", name="credential_purpose"),)
+    purpose: Mapped[str] = mapped_column(String(16), default="legacy", server_default="legacy")
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class LoginSession(Identity, Base):
+    __tablename__ = "login_sessions"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100), default="login")
+    scopes: Mapped[list] = mapped_column(JSON)
+    session_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 

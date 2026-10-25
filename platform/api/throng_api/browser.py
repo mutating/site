@@ -1,4 +1,4 @@
-"""Browser sessions use the API's revocable access tokens in host-only cookies."""
+"""Independent login sessions authenticate browsers through host-only cookies."""
 
 import re
 
@@ -8,7 +8,7 @@ from sqlalchemy import select
 from starlette.datastructures import MutableHeaders
 
 from throng_api import accounts
-from throng_api.models import AccessToken
+from throng_api.models import LegacyCredential, LoginSession
 from throng_api.schemas import Login, UserOut
 from throng_api.security import SESSION_COOKIE, access_token_scheme, digest
 
@@ -96,8 +96,12 @@ async def logout(request: Request):
     raw = request.cookies.get(SESSION_COOKIE, "")
     async with request.app.state.db.write() as session:
         token = await session.scalar(
-            select(AccessToken).where(AccessToken.token_hash == digest(raw))
+            select(LoginSession).where(LoginSession.session_hash == digest(raw))
         )
+        if token is None:
+            token = await session.scalar(
+                select(LegacyCredential).where(LegacyCredential.token_hash == digest(raw))
+            )
         if token:
             await session.delete(token)
     result = Response(status_code=204)

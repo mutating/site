@@ -61,7 +61,7 @@ async def test_company_deleted_between_access_check_and_read_returns_hidden_404(
 async def test_concurrent_token_ownership_deletion_fails_authentication(
     api, client, access_token, token_ownership, paused_token_owner_lookup
 ):
-    """An authentication already reading a token still rejects it if its ownership is deleted before owner lookup."""
+    """Authentication holding a token must retain token_invalid when its ownership disappears before owner lookup."""
     async with asyncio.TaskGroup() as group:
         read = group.create_task(
             client.get("/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]})
@@ -72,14 +72,15 @@ async def test_concurrent_token_ownership_deletion_fails_authentication(
         ).status_code == 204
         paused_token_owner_lookup["resume"].set()
     assert read.result().status_code == 401 and read.result().json() == {
-        "detail": "Invalid token owner"
+        "detail": "Invalid token owner",
+        "code": "token_invalid",
     }
 
 
 async def test_concurrent_token_issuer_deletion_fails_authentication(
     api, client, user, access_token, paused_token_issuer_lookup
 ):
-    """An authentication holding an old token and ownership cannot proceed after the issuing user has been deleted."""
+    """Authentication holding an old token and ownership must return token_invalid after the issuing user is deleted."""
     async with asyncio.TaskGroup() as group:
         read = group.create_task(
             client.get("/v1/users/me", headers={"Authorization": "Bearer " + access_token["token"]})
@@ -88,7 +89,8 @@ async def test_concurrent_token_issuer_deletion_fails_authentication(
         assert (await api.delete(f"/v1/users/{user['id']}")).status_code == 204
         paused_token_issuer_lookup["resume"].set()
     assert read.result().status_code == 401 and read.result().json() == {
-        "detail": "Invalid token issuer"
+        "detail": "Invalid token issuer",
+        "code": "token_invalid",
     }
 
 
@@ -96,7 +98,7 @@ async def test_concurrent_token_issuer_deletion_fails_authentication(
 async def test_concurrent_issuer_demotion_rechecks_membership_after_token_read(
     api, client, user, company, membership, company_token, paused_corporate_issuer_lookup
 ):
-    """A corporate token read before revocation cannot finish authentication after its issuer loses company administration."""
+    """A corporate token read before revocation must return token_invalid when its issuer loses company administration."""
     rows = (await api.get("/v1/memberships", params={"company_id": company["id"]})).json()
     issuer = next(row for row in rows if row["user_id"] == user["id"])
     async with asyncio.TaskGroup() as group:
@@ -111,7 +113,10 @@ async def test_concurrent_issuer_demotion_rechecks_membership_after_token_read(
         assert response.status_code == 200, response.text
         paused_corporate_issuer_lookup["resume"].set()
     assert read.result().status_code == 401
-    assert read.result().json() == {"detail": "Token issuer no longer administers this company"}
+    assert read.result().json() == {
+        "detail": "Token issuer no longer administers this company",
+        "code": "token_invalid",
+    }
 
 
 async def test_internal_terminal_retries_preserve_results_and_do_not_release_capacity_twice(

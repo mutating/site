@@ -101,7 +101,80 @@ test("registry identifies owners and issuers, filters on the server, and exclude
   ).toBe(true);
 });
 
+for (const lifetimeKind of ["year", "unlimited"] as const) {
+  for (const language of ["ru", "en"] as const) {
+    for (const kind of ["personal", "company"] as const) {
+      /**
+       * Both owners and locales must send 365 days or explicit null to the API
+       * and show the returned expiry after reload. Unlimited tokens must not
+       * acquire a fabricated date and must remain revocable in the registry.
+       */
+      test(`${lifetimeKind} ${kind} API token: ${language}`, async ({ page, request, account }) => {
+        const ru = language === "ru";
+        const unlimited = lifetimeKind === "unlimited";
+        const name = unlimited ? "Unlimited CI" : "Annual CI";
+        const lab = await company(request, account, "Лаборатория");
+        await login(page, account);
+        await page.addInitScript(language => localStorage.setItem("tmc-language", language), language);
+        await page.goto(`api-tokens?owner=${kind === "company" ? lab.id : "personal"}`);
+        await page.getByRole("button", { name: ru ? "Создать токен" : "Create token", exact: true }).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.getByLabel(ru ? "Название токена" : "Token name", { exact: true }).fill(name);
+        const lifetime = dialog.getByRole("combobox", { name: ru ? "Срок действия" : "Lifetime", exact: true });
+        await expect(lifetime).toBeVisible();
+        await expect(lifetime.locator('option[value="365"]')).toHaveText(ru ? "1 год" : "1 year");
+        await expect(lifetime).toHaveValue("30");
+        if (unlimited) await expect(lifetime.locator('option[value="unlimited"]')).toHaveText(ru ? "Без срока действия" : "No expiration");
+        await lifetime.selectOption(unlimited ? "unlimited" : "365");
+        const issued = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/api-tokens"));
+        const started = Date.now();
+        await dialog.getByRole("button", { name: ru
+          ? kind === "company" ? "Создать токен организации" : "Создать личный токен"
+          : kind === "company" ? "Create organization token" : "Create personal token", exact: true }).click();
+        const response = await issued;
+        expect(response.status()).toBe(201);
+        expect(response.request().postDataJSON().expires_in_seconds).toBe(unlimited ? null : 365 * 86400);
+        const value = await response.json();
+        expect(value.company_id).toBe(kind === "company" ? lab.id : null);
+        expect(value.user_id).toBe(kind === "personal" ? account.id : null);
+        if (unlimited) {
+          expect(value.expires_at).toBeNull();
+          await expect(dialog.locator(".token-issued-details")).toContainText(ru ? "Без срока действия" : "No expiration");
+          await expect(dialog.locator(".token-issued-details time")).toHaveCount(0);
+        } else {
+          expect(Date.parse(value.expires_at) - started).toBeGreaterThan(364 * 86400000);
+          expect(Date.parse(value.expires_at) - started).toBeLessThan(366 * 86400000);
+          await expect(dialog.locator(".token-issued-details time")).toHaveAttribute("datetime", value.expires_at);
+        }
+        await dialog.getByRole("button", { name: ru ? "Готово" : "Done", exact: true }).click();
+        await page.reload();
+        const row = page.getByRole("article", { name, exact: true });
+        if (unlimited) {
+          await expect(row.locator("time")).toHaveCount(0);
+          await expect(row.locator(".token-registry-expiry")).toContainText(ru ? "Без срока действия" : "No expiration");
+        } else await expect(row.locator("time")).toHaveAttribute("datetime", value.expires_at);
+        await expect(row.locator(".token-status")).toHaveText(ru ? "Активен" : "Active");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        if (unlimited) {
+          await row.getByRole("button", { name: ru ? "Отозвать токен" : "Revoke token", exact: true }).click();
+          await page.getByRole("dialog").getByRole("textbox").fill(name);
+          await page.getByRole("dialog").getByRole("button", { name: ru ? "Подтвердить" : "Confirm", exact: true }).click();
+          await expect(row.locator(".token-status")).toHaveText(ru ? "Отозван" : "Revoked");
+          await expect(row.getByRole("button")).toBeDisabled();
+        }
+      });
+    }
+  }
+}
+
 for (const kind of ["personal", "company"] as const) {
+  /**
+   * Issuance must honor the selected owner and scopes, show the secret once,
+   * and copy that exact usable credential; a no-op mock hid copying wrong text.
+   * The secret must use its owner's ORG-/SELF- prefix and an alphanumeric body.
+   * Closing and reloading must hide the secret without persisting it locally,
+   * and confirmed revocation must make the copied credential unusable.
+   */
   test(`create ${kind} token once, copy, close, reload, execute and revoke`, async ({
     page,
     request,
@@ -109,9 +182,11 @@ for (const kind of ["personal", "company"] as const) {
   }) => {
     const lab = await company(request, account, "Лаборатория");
     await page.addInitScript(() => {
+      const copied: string[] = [];
+      Object.defineProperty(window, "__copiedApiTokens", { value: copied });
       Object.defineProperty(navigator, "clipboard", {
         configurable: true,
-        value: { writeText: async () => {} },
+        value: { writeText: async (value: string) => { copied.push(value); } },
       });
     });
     await login(page, account);
@@ -196,13 +271,7 @@ for (const kind of ["personal", "company"] as const) {
     const secret = await dialog
       .getByLabel("API-токен", { exact: true })
       .inputValue();
-    expect(secret.startsWith("thr_")).toBe(true);
-    const auth = { Authorization: `Bearer ${secret}` };
-    const checked = await request.get(`${API}/auth/check`, { headers: auth });
-    expect(checked.status()).toBe(200);
-    expect((await checked.json()).scopes).toEqual(
-      kind === "personal" ? ["execute", "manage", "read"] : ["execute", "read"],
-    );
+    expect(secret).toMatch(kind === "company" ? /^ORG-[A-Za-z0-9]+$/ : /^SELF-[A-Za-z0-9]+$/);
     expect(
       await page.evaluate(
         (value) =>
@@ -215,6 +284,14 @@ for (const kind of ["personal", "company"] as const) {
     ).toBe(false);
     await dialog.getByRole("button", { name: "Скопировать токен" }).click();
     await expect(dialog.getByRole("status")).toHaveText("Токен скопирован.");
+    const copied = await page.evaluate(() => Reflect.get(window, "__copiedApiTokens") as string[]);
+    expect(copied).toEqual([secret]);
+    const auth = { Authorization: `Bearer ${copied[0]}` };
+    const checked = await request.get(`${API}/auth/check`, { headers: auth });
+    expect(checked.status()).toBe(200);
+    expect((await checked.json()).scopes).toEqual(
+      kind === "personal" ? ["execute", "manage", "read"] : ["execute", "read"],
+    );
     await dialog.getByRole("button", { name: "Готово", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
@@ -457,22 +534,28 @@ test("long valid issuer names wrap inside creation and the issued result", async
   await dialog.getByRole("button", { name: "Готово", exact: true }).click();
 });
 
+/**
+ * Clipboard permission can change between attempts. Failure must focus/select
+ * the whole secret for manual copying, and later success/failure must replace
+ * stale feedback without changing the selected owner or read-only scopes.
+ */
 test("creation allows choosing between personal and organization ownership and handles denied clipboard", async ({
   page,
   request,
   account,
 }) => {
   const lab = await company(request, account, "Лаборатория");
-  await page.addInitScript(() =>
+  await page.addInitScript(() => {
+    let attempts = 0;
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
         writeText: async () => {
-          throw new Error("Denied");
+          if (++attempts !== 2) throw new Error("Denied");
         },
       },
-    }),
-  );
+    });
+  });
   await login(page, account);
   await page.goto("api-tokens");
   await page
@@ -498,10 +581,20 @@ test("creation allows choosing between personal and organization ownership and h
   await expect(
     dialog.getByRole("heading", { name: "Токен создан", exact: true }),
   ).toBeVisible();
-  await dialog.getByRole("button", { name: "Скопировать токен" }).click();
+  const copy = dialog.getByRole("button", { name: "Скопировать токен" });
+  const secret = dialog.getByLabel("API-токен", { exact: true });
+  await copy.click();
   await expect(dialog.getByRole("status")).toHaveText(
     "Токен выделен. Скопируйте его вручную.",
   );
+  await expect(secret).toBeFocused();
+  expect(await secret.evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd]))
+    .toEqual([0, (await secret.inputValue()).length]);
+  await copy.click();
+  await expect(dialog.getByRole("status")).toHaveText("Токен скопирован.");
+  await copy.click();
+  await expect(dialog.getByRole("status")).toHaveText("Токен выделен. Скопируйте его вручную.");
+  await expect(secret).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   const row = page.getByRole("article", { name: "Только чтение", exact: true });
@@ -509,6 +602,12 @@ test("creation allows choosing between personal and organization ownership and h
   await expect(row.locator(".token-registry-owner")).toContainText("Личный");
 });
 
+/**
+ * Viewing and managing organization tokens are separate permissions, including
+ * changes while creation is open. An empty read-only registry must explain the
+ * restriction without inviting an unavailable creation action; personal empty
+ * registries must retain their creation guidance.
+ */
 test("organization view and manage permissions are independent; loss of manage rejects an open dialog", async ({
   page,
   request,
@@ -581,6 +680,11 @@ test("organization view and manage permissions are independent; loss of manage r
   await expect(
     page.getByRole("heading", { name: "API-токенов пока нет", exact: true }),
   ).toBeVisible();
+  await expect(page.locator(".token-permission-note")).toContainText("просматривать");
+  await expect(page.locator(".empty-state")).not.toContainText("Создайте токен");
+  await page.getByLabel("Владелец токенов", { exact: true }).selectOption("personal");
+  await expect(page.locator(".empty-state")).toContainText("Создайте токен");
+  await expect(page.getByRole("button", { name: "Создать токен", exact: true })).toBeEnabled();
 });
 
 test("multiple organizations have an explicit selector and the dialog preserves the chosen owner", async ({

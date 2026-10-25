@@ -1,4 +1,4 @@
-import { API, expect, headers, password, test } from "./fixtures";
+import { API, expect, headers, startSession, test } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
 const screens = [
@@ -94,18 +94,8 @@ for (const [width, height] of screens) {
           ).status(),
         ).toBe(201);
       }
-      expect(
-        (
-          await page.request.post(`${API}/auth/session`, {
-            headers: {
-              Origin: "http://127.0.0.1:18101",
-              "X-Requested-With": "ThrongDashboard",
-            },
-            data: { login: account.email, password },
-          })
-        ).status(),
-      ).toBe(200);
-      // Use a non-secret placeholder in the saved visual evidence.
+      await startSession(page, account);
+      // Match the real secret's length and format without saving a working credential.
       await page.route(`${API}/api-tokens`, async (route) => {
         if (route.request().method() !== "POST") return route.continue();
         const response = await route.fetch();
@@ -113,7 +103,7 @@ for (const [width, height] of screens) {
           response,
           json: {
             ...(await response.json()),
-            token: "thr_responsive_example_only",
+            token: `ORG-${"0123456789abcdef".repeat(4)}`,
           },
         });
       });
@@ -211,6 +201,41 @@ for (const [width, height] of screens) {
         ru ? "Отозван" : "Revoked",
       );
       await fits(page);
+    });
+  }
+}
+
+/**
+ * The profile's token entry used to place its text and link directly on the
+ * rounded panel border because the shared panel has no default padding.
+ * Both must remain comfortably inside the card at phone, tablet and desktop
+ * widths, and the link must still open the token registry in either language.
+ */
+for (const width of [320, 768, 1440]) {
+  for (const language of ["ru", "en"] as const) {
+    test(`profile token entry has readable insets at ${width}px ${language}`, async ({ page, account }, info) => {
+      const ru = language === "ru";
+      await page.setViewportSize({ width, height: 1000 });
+      await page.addInitScript(language => localStorage.setItem("tmc-language", language), language);
+      await startSession(page, account);
+      await page.goto("/profile");
+      const entry = page.locator(".token-profile-link");
+      const link = entry.getByRole("link", { name: /API/ });
+      await expect(entry).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      await entry.scrollIntoViewIfNeeded();
+      const card = (await entry.boundingBox())!;
+      for (const content of [entry.locator("div"), link]) {
+        const box = (await content.boundingBox())!;
+        expect(box.x - card.x).toBeGreaterThanOrEqual(16);
+        expect(box.y - card.y).toBeGreaterThanOrEqual(16);
+        expect(card.x + card.width - box.x - box.width).toBeGreaterThanOrEqual(16);
+        expect(card.y + card.height - box.y - box.height).toBeGreaterThanOrEqual(16);
+      }
+      await entry.screenshot({ path: info.outputPath("profile-token-entry.png") });
+      await link.click();
+      await expect(page).toHaveURL(/\/api-tokens$/);
+      await expect(page.getByRole("button", { name: ru ? "Создать токен" : "Create token", exact: true })).toBeEnabled();
     });
   }
 }

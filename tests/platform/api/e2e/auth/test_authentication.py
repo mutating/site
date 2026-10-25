@@ -53,7 +53,13 @@ async def test_authentication_matrix_covers_all_protected_operations(
 async def test_every_client_operation_rejects_invalid_authentication(
     client, api, api_requests, access_token, agent, clock, mode, running_command, artifact
 ):
-    """Every client handler rejects absent, malformed, unknown, expired, revoked and worker tokens."""
+    """Enforce the same authentication contract on every protected client route.
+
+    Missing, malformed, unknown, revoked and worker credentials return
+    token_invalid; only an expired credential returns token_expired. Missing or
+    malformed Bearer headers retain the challenge, and rejected requests must
+    leave the running command and artifact unchanged.
+    """
     authorization = {
         "missing": None,
         "basic": "Basic abc",
@@ -77,9 +83,13 @@ async def test_every_client_operation_rejects_invalid_authentication(
         assert response.status_code == 401, (mode, case["method"], case["template"], response.text)
         if mode in {"missing", "basic", "empty"}:
             assert response.headers["www-authenticate"] == "Bearer"
-            assert response.json() == {"detail": "Bearer token required"}
+            assert response.json() == {"detail": "Bearer token required", "code": "token_invalid"}
         else:
-            assert response.json() == {"detail": "Invalid or expired token"}
+            assert response.json() == (
+                {"detail": "Token has expired", "code": "token_expired"}
+                if mode == "expired"
+                else {"detail": "Invalid token", "code": "token_invalid"}
+            )
 
     response = await api.get(f"/v1/commands/{running_command['command']['id']}")
     assert response.status_code == 200 and response.json()["status"] == "running"

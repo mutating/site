@@ -2,7 +2,7 @@ from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, union_all, update
 
 from throng_api import outputs as out
 from throng_api.models import (
@@ -11,6 +11,8 @@ from throng_api.models import (
     CompanyInvitation,
     GitHubAccount,
     GitHubOAuthFlow,
+    LegacyCredential,
+    LoginSession,
     Membership,
     TokenOwnership,
     User,
@@ -36,6 +38,7 @@ from throng_api.security import (
     access_token_scheme,
     authenticate,
     company_access,
+    digest,
     hash_password,
     issue_token,
     membership_role,
@@ -43,10 +46,12 @@ from throng_api.security import (
     owned_filter,
     owner_access,
     personal,
+    secret,
     verify_password,
 )
 from throng_api.serialization import public
 from throng_api.sharing import grant_allowed, member_view, resolve_user
+from throng_api.transport import ProtocolError
 
 public_router = APIRouter(prefix="/v1", tags=["accounts"])
 router = APIRouter(prefix="/v1", tags=["accounts"], dependencies=[Depends(access_token_scheme)])
@@ -92,19 +97,17 @@ async def issue_login(data: Login, request: Request):
         user = await session.get(User, user_id)
         if not user or user.password_hash != encoded:
             raise HTTPException(401, "Credentials changed; retry login")
-        owner = TokenOwnership(user_id=user.id)
-        session.add(owner)
-        await session.flush()
-        token, raw = await issue_token(
-            session,
-            owner,
-            user.id,
-            "login",
-            SCOPES,
-            request.app.state.clock()
+        raw = secret("thr_")
+        token = LoginSession(
+            user_id=user.id,
+            name="login",
+            scopes=sorted(SCOPES),
+            session_hash=digest(raw),
+            expires_at=request.app.state.clock()
             + timedelta(seconds=request.app.state.settings.login_token_seconds),
-            purpose="login",
         )
+        session.add(token)
+        await session.flush()
         return (
             {"access_token": raw, "token_type": "bearer", "token": public(token)},
             UserOut.model_validate(user),
@@ -117,24 +120,36 @@ async def login(data: Login, request: Request):
     return issued
 
 
+@router.delete("/auth/sessions/{session_id}", status_code=204)
+async def revoke_session(session_id: UUID, request: Request):
+    async with request.app.state.db.write() as session:
+        principal = await authenticate(session, request, "manage")
+        row = await session.get(LoginSession, str(session_id))
+        if row is None or row.user_id != personal(principal):
+            raise HTTPException(404, "Session not found")
+        row.revoked_at = request.app.state.clock()
+
+
+async def profile_user(session, user_id):
+    """Retain the coded 401 contract if the profile disappears after authentication."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise ProtocolError("token_invalid", "Invalid token issuer", status_code=401)
+    return user
+
+
 @router.get("/users", response_model=list[UserOut])
 async def list_users(request: Request):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request)
-        user = await session.get(User, personal(principal))
-        if user is None:
-            raise HTTPException(401, "Invalid token issuer")
-        return [user]
+        return [await profile_user(session, personal(principal))]
 
 
 @router.get("/users/me", response_model=UserOut)
 async def me(request: Request):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request)
-        user = await session.get(User, personal(principal))
-        if user is None:
-            raise HTTPException(401, "Invalid token issuer")
-        return user
+        return await profile_user(session, personal(principal))
 
 
 @router.get("/users/{user_id}", response_model=UserOut)
@@ -143,10 +158,7 @@ async def get_user(user_id: UUID, request: Request):
         principal = await authenticate(session, request)
         if personal(principal) != str(user_id):
             raise HTTPException(404, "User not found")
-        user = await session.get(User, str(user_id))
-        if user is None:
-            raise HTTPException(401, "Invalid token issuer")
-        return user
+        return await profile_user(session, str(user_id))
 
 
 async def authorize_user_update(session, request, user_id, password_change):
@@ -176,11 +188,16 @@ async def update_user(user_id: UUID, data: UserUpdate, request: Request):
             user.nickname = None
         if password_hash:
             user.password_hash = password_hash
-            await session.execute(
-                update(AccessToken)
-                .where(AccessToken.created_by_user_id == user.id)
-                .values(revoked_at=request.app.state.clock())
-            )
+            for model, issuer in (
+                (AccessToken, AccessToken.created_by_user_id),
+                (LegacyCredential, LegacyCredential.created_by_user_id),
+                (LoginSession, LoginSession.user_id),
+            ):
+                await session.execute(
+                    update(model)
+                    .where(issuer == user.id)
+                    .values(revoked_at=request.app.state.clock())
+                )
         return await saved(session, user)
 
 
@@ -199,7 +216,9 @@ async def delete_user(user_id: UUID, request: Request):
             delete(GitHubOAuthFlow).where(GitHubOAuthFlow.user_id == str(user_id))
         )
         await session.execute(delete(GitHubAccount).where(GitHubAccount.user_id == str(user_id)))
-        await session.execute(delete(AccessToken).where(AccessToken.ownership_id.in_(owners)))
+        await session.execute(delete(LoginSession).where(LoginSession.user_id == str(user_id)))
+        for model in (AccessToken, LegacyCredential):
+            await session.execute(delete(model).where(model.ownership_id.in_(owners)))
         await session.execute(delete(TokenOwnership).where(TokenOwnership.user_id == str(user_id)))
         await session.delete(await session.get(User, str(user_id)))
 
@@ -416,15 +435,16 @@ async def get_membership(session, principal, membership_id, *, access_only=False
 
 async def revoke_membership_tokens(session, membership, now):
     owners = select(TokenOwnership.id).where(TokenOwnership.company_id == membership.company_id)
-    await session.execute(
-        update(AccessToken)
-        .where(
-            AccessToken.ownership_id.in_(owners),
-            AccessToken.created_by_user_id == membership.user_id,
-            AccessToken.revoked_at.is_(None),
+    for model in (AccessToken, LegacyCredential):
+        await session.execute(
+            update(model)
+            .where(
+                model.ownership_id.in_(owners),
+                model.created_by_user_id == membership.user_id,
+                model.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
         )
-        .values(revoked_at=now)
-    )
     await session.execute(
         update(CompanyInvitation)
         .where(
@@ -519,10 +539,9 @@ async def update_token_owner(ownership_id: UUID, data: OwnerInput, request: Requ
         principal = await authenticate(session, request, "manage")
         personal(principal)
         row = await owned(session, TokenOwnership, ownership_id, principal, admin=True)
-        if await session.scalar(
-            select(AccessToken.id).where(AccessToken.ownership_id == row.id).limit(1)
-        ):
-            raise HTTPException(409, "Delete attached tokens before changing their ownership")
+        for model in (AccessToken, LegacyCredential):
+            if await session.scalar(select(model.id).where(model.ownership_id == row.id).limit(1)):
+                raise HTTPException(409, "Delete attached tokens before changing their ownership")
         for key, value in (await validate_owner(session, principal, data)).items():
             setattr(row, key, value)
         return public(row)
@@ -534,7 +553,8 @@ async def delete_token_owner(ownership_id: UUID, request: Request):
         principal = await authenticate(session, request, "manage")
         personal(principal)
         row = await owned(session, TokenOwnership, ownership_id, principal, admin=True)
-        await session.execute(delete(AccessToken).where(AccessToken.ownership_id == row.id))
+        for model in (AccessToken, LegacyCredential):
+            await session.execute(delete(model).where(model.ownership_id == row.id))
         await session.delete(row)
 
 
@@ -552,7 +572,9 @@ async def create_token(data: TokenCreate, request: Request):
             actor_id,
             data.name,
             set(data.scopes),
-            request.app.state.clock() + timedelta(seconds=data.expires_in_seconds),
+            request.app.state.clock() + timedelta(seconds=data.expires_in_seconds)
+            if data.expires_in_seconds is not None
+            else None,
         )
         return {**public(token), "token": raw}
 
@@ -563,19 +585,24 @@ async def list_tokens(
 ):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request)
-        rows = await session.scalars(
-            select(AccessToken)
-            .join(TokenOwnership, AccessToken.ownership_id == TokenOwnership.id)
-            .where(owned_filter(TokenOwnership, principal))
-            .order_by(AccessToken.id)
-            .limit(limit)
-            .offset(offset)
+        # Project only public fields and apply ownership before paging both stores.
+        statement = union_all(
+            *(
+                select(*(getattr(model, field).label(field) for field in out.AccessToken.model_fields))
+                .join(TokenOwnership, model.ownership_id == TokenOwnership.id)
+                .where(owned_filter(TokenOwnership, principal))
+                for model in (AccessToken, LegacyCredential)
+            )
         )
-        return [public(row) for row in rows]
+        return (
+            await session.execute(statement.order_by("id").limit(limit).offset(offset))
+        ).mappings().all()
 
 
 async def token_for_user(session, principal, token_id, admin=False):
     token = await session.get(AccessToken, str(token_id))
+    if token is None:
+        token = await session.get(LegacyCredential, str(token_id))
     if not token:
         raise HTTPException(404, "Token not found")
     await owned(session, TokenOwnership, token.ownership_id, principal, admin=admin)

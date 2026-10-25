@@ -22,7 +22,10 @@ router = APIRouter(
         "Success and authentication/authorization failures use Cache-Control: no-store."
     ),
     responses={
-        401: {"description": "Missing, invalid, expired, revoked or otherwise invalidated token"},
+        401: {
+            "model": out.TokenAuthenticationError,
+            "description": "token_expired for expired credentials; token_invalid for invalid credentials",
+        },
         403: {"description": "Missing read/execute scope or organization execution permission"},
     },
 )

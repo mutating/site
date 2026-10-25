@@ -9,12 +9,12 @@ import { ErrorBox, Icon } from "./UI";
 export function CreateTokenDialog({
   companies,
   initialCompanyId,
-  onCreated,
+  onRefresh,
   onClose,
 }: {
-  companies: Company[];
+  companies: Pick<Company, "id" | "name" | "my_permissions">[];
   initialCompanyId?: string;
-  onCreated: () => void;
+  onRefresh: (failure?: unknown) => void;
   onClose: () => void;
 }) {
   const { user } = useSession();
@@ -38,8 +38,7 @@ export function CreateTokenDialog({
     value: IssuedApiToken;
     owner: string;
   } | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"tokenCopied" | "tokenCopyFallback" | null>(null);
   const secret = useRef<HTMLInputElement>(null);
   const resultTitle = useRef<HTMLHeadingElement>(null);
   const company = companies.find((value) => value.id === companyId);
@@ -65,6 +64,27 @@ export function CreateTokenDialog({
       if (ref.current) ref.current.scrollTop = 0;
       resultTitle.current?.focus({ preventScroll: true });
     }
+  }, [issued]);
+  useEffect(() => {
+    const companyId = issued?.value.company_id;
+    if (companyId && !companies.some((company) => company.id === companyId &&
+      company.my_permissions.some((permission) => ["tokens.read", "tokens.manage"].includes(permission)))) onClose();
+  }, [companies, issued, onClose]);
+  useEffect(() => {
+    // Native focus scrolling must reserve the sticky panel's space, including errors.
+    const dialog = ref.current!;
+    const actions = dialog.querySelector<HTMLElement>(".token-dialog-actions");
+    if (!actions) return;
+    const update = () => dialog.style.setProperty(
+      "--token-actions-height", `${actions.getBoundingClientRect().height}px`,
+    );
+    const observer = new ResizeObserver(update);
+    observer.observe(actions);
+    update();
+    return () => {
+      observer.disconnect();
+      dialog.style.removeProperty("--token-actions-height");
+    };
   }, [issued]);
   return (
     <dialog
@@ -125,12 +145,19 @@ export function CreateTokenDialog({
             </small>
           </div>
           <p className="token-issued-details">
-            <strong>{issued.value.name}</strong> · {t("tokenValidUntil")}{" "}
-            <time dateTime={issued.value.expires_at}>
-              {new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
-                new Date(issued.value.expires_at),
-              )}
-            </time>
+            <strong>{issued.value.name}</strong> ·{" "}
+            {issued.value.expires_at === null ? (
+              t("tokenNoExpiry")
+            ) : (
+              <>
+                {t("tokenValidUntil")}{" "}
+                <time dateTime={issued.value.expires_at}>
+                  {new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
+                    new Date(issued.value.expires_at),
+                  )}
+                </time>
+              </>
+            )}
           </p>
           <label className="field">
             {t("apiTokenSecret")}
@@ -148,12 +175,10 @@ export function CreateTokenDialog({
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(issued.value.token);
-                setCopied(true);
-                setCopyError(false);
+                setCopyStatus("tokenCopied");
               } catch {
                 secret.current?.select();
-                setCopied(false);
-                setCopyError(true);
+                setCopyStatus("tokenCopyFallback");
               }
             }}
           >
@@ -164,11 +189,7 @@ export function CreateTokenDialog({
             {t("tokenOneTime")}
           </p>
           <p role="status" className="field-help token-copy-status">
-            {copied
-              ? t("tokenCopied")
-              : copyError
-                ? t("tokenCopyFallback")
-                : ""}
+            {copyStatus && t(copyStatus)}
           </p>
           <button
             type="button"
@@ -200,16 +221,18 @@ export function CreateTokenDialog({
                     : { company_id: companyId }),
                   name: name.trim(),
                   scopes,
-                  expires_in_seconds: Number(days) * 86400,
+                  expires_in_seconds:
+                    days === "unlimited" ? null : Number(days) * 86400,
                 }),
               );
               setIssued({ value, owner });
               setBusy(false);
-              onCreated();
+              onRefresh();
             } catch (failure) {
               setError(failure);
               setBusy(false);
               inFlight.current = false;
+              onRefresh(failure);
             }
           }}
         >
@@ -322,11 +345,12 @@ export function CreateTokenDialog({
               disabled={busy}
               onChange={(event) => setDays(event.target.value)}
             >
-              {[7, 30, 90].map((value) => (
+              {[7, 30, 90, 365].map((value) => (
                 <option key={value} value={value}>
-                  {value} {t("tokenDays")}
+                  {value === 365 ? t("tokenYear") : `${value} ${t("tokenDays")}`}
                 </option>
               ))}
+              <option value="unlimited">{t("tokenNoExpiry")}</option>
             </select>
           </label>
           <fieldset className="token-scope-choices" disabled={busy}>
@@ -378,8 +402,8 @@ export function CreateTokenDialog({
               <p className="field-help">{t("tokenManageReadOnlyHelp")}</p>
             )}
           </details>
-          <ErrorBox error={error} />
           <div className="token-dialog-actions">
+            <ErrorBox error={error} />
             <button
               className="button primary token-full-button"
               disabled={busy || !name.trim() || !canCreate}

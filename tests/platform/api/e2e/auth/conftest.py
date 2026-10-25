@@ -164,6 +164,7 @@ def api_requests(
         ("GET", "/v1/users", "read", {}),
         ("GET", "/v1/users/me", "read", {}),
         ("GET", "/v1/auth/session", "read", {}),
+        ("DELETE", "/v1/auth/sessions/{session_id}", "manage", {}),
         ("GET", "/v1/auth/check", ("read", "execute"), {}),
         ("GET", "/v1/api-tokens", "read", {}),
         (
@@ -275,7 +276,7 @@ def api_requests(
             {"name": "Changed"},
         ),
     ]
-    identifiers = {"user_id": user["id"]}
+    identifiers = {"user_id": user["id"], "session_id": user["login"]["token"]["id"]}
     for resource, identifier, parameter, create, update in resources:
         collection = f"/v1/{resource}"
         item = collection + "/{" + parameter + "}"

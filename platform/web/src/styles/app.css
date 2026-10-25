@@ -2594,7 +2594,6 @@ a.organization-metric:hover {
 .token-registry-row h2 { font-size: 14px; overflow-wrap: anywhere; }
 .token-registry-name small { display: block; margin-top: 7px; color: var(--ink-muted); overflow-wrap: anywhere; }
 .token-registry-owner { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.token-registry-owner svg { flex: 0 0 auto; color: var(--ink-muted); }
 .token-registry-owner small, .token-registry-owner strong { display: block; overflow-wrap: anywhere; }
 .token-registry-owner small { color: var(--ink-muted); font-size: 11px; margin-bottom: 3px; }
 .token-registry-scopes { display: flex; flex-direction: column; gap: 4px; color: var(--ink-muted); font-size: 11px; }
@@ -2607,7 +2606,7 @@ a.organization-metric:hover {
 .token-owner-legend > span { display: flex; align-items: center; gap: 8px; }
 .token-owner-legend svg { flex-shrink: 0; }
 .token-permission-note { padding: 18px; background: var(--surface-raised); border: 1px solid var(--line); border-radius: 12px; font-size: 12px; margin-bottom: 22px; }
-.token-profile-link { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 25px; }
+.token-profile-link { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 25px; padding: 24px; }
 .token-profile-link h2 { font-size: 16px; }
 .token-profile-link p { font-size: 12px; color: var(--ink-muted); margin-top: 6px; }
 .token-organization-link { display: inline-block; margin: -10px 0 25px; }
@@ -2688,4 +2687,5 @@ a.organization-metric:hover {
   .create-token-dialog .token-scope-choices label, .create-token-dialog .token-advanced label { min-height: 44px; }
   .create-token-dialog .token-advanced label { align-items: center; }
   .token-dialog-actions { position: sticky; bottom: calc(0px - var(--token-dialog-gutter)); background: var(--surface); margin: 0 calc(0px - var(--token-dialog-gutter)) calc(0px - var(--token-dialog-gutter)); padding: 14px var(--token-dialog-gutter) var(--token-dialog-gutter); }
+  .create-token-dialog { scroll-padding-block-end: calc(var(--token-actions-height, 0px) + 8px); }
 }

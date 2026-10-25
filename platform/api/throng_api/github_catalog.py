@@ -10,7 +10,7 @@ from uuid import UUID
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from throng_api.ci import readable_routes, verify_repository
 from throng_api.ci_policy import WORKFLOW
@@ -130,7 +130,16 @@ def run_summary(binding, run):
 async def binding_summaries(request):
     async with request.app.state.db.read() as session:
         routes = await readable_routes(session, await authenticate(session, request))
+        if not routes:
+            return {}
         identifiers = [row.id for row in routes]
+        # A binding may move to another owner before the metadata queries.
+        # Bound every reservation read to that binding's authorized revision.
+        reservation_scope = (
+            CIReservation.route_id.in_(identifiers),
+            CIReservation.route_revision
+            <= case(*((CIReservation.route_id == row.id, row.revision) for row in routes), else_=0),
+        )
         latest = (
             select(
                 CIReservation.id,
@@ -141,7 +150,7 @@ async def binding_summaries(request):
                 )
                 .label("position"),
             )
-            .where(CIReservation.route_id.in_(identifiers))
+            .where(*reservation_scope)
             .subquery()
         )
         runs = list(
@@ -156,7 +165,7 @@ async def binding_summaries(request):
                 await session.execute(
                     select(CIReservation.route_id, CIReservation.route_revision)
                     .where(
-                        CIReservation.route_id.in_(identifiers),
+                        *reservation_scope,
                         CIReservation.started_at.is_not(None),
                     )
                     .distinct()
@@ -169,7 +178,7 @@ async def binding_summaries(request):
             await session.scalars(
                 select(CIReservation.route_id)
                 .where(
-                    CIReservation.route_id.in_(identifiers),
+                    *reservation_scope,
                     (
                         CIReservation.status.in_(("preparing", "ready", "selected", "running"))
                         | CIReservation.cleaned_at.is_(None)

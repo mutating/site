@@ -4,7 +4,7 @@ from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 
 from throng_api import outputs as out
 from throng_api.models import AccessToken, TokenOwnership, User
@@ -12,9 +12,7 @@ from throng_api.schemas import ApiTokenCreate, PaginationOffset
 from throng_api.security import (
     access_token_scheme,
     authenticate,
-    bearer,
     company_access,
-    digest,
     issue_token,
     owned_filter,
     owner_access,
@@ -59,12 +57,9 @@ async def registry(
             .join(User, AccessToken.created_by_user_id == User.id)
             .where(
                 owned_filter(TokenOwnership, principal),
-                AccessToken.purpose != "login",
-                # Older rows have no reliable purpose. Protect the current legacy session.
-                or_(
-                    AccessToken.purpose != "legacy",
-                    AccessToken.token_hash != digest(bearer(request)),
-                ),
+                # Legacy credentials may be logins; only explicit API issuance
+                # proves a token belongs in this registry, regardless of its name.
+                AccessToken.purpose == "api",
             )
         )
         if user_id:
@@ -103,7 +98,9 @@ async def create(data: ApiTokenCreate, request: Request, response: Response):
             actor,
             data.name,
             set(data.scopes),
-            request.app.state.clock() + timedelta(seconds=data.expires_in_seconds),
+            request.app.state.clock() + timedelta(seconds=data.expires_in_seconds)
+            if data.expires_in_seconds is not None
+            else None,
         )
         response.headers["Cache-Control"] = "no-store"
         return {**token_view(token, owner, await session.get(User, actor)), "token": raw}

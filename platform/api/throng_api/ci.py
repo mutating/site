@@ -45,6 +45,7 @@ from throng_api.security import (
     authenticate,
     bearer,
     company_access,
+    membership_permission,
     owned,
     owned_filter,
     owner_values,
@@ -304,14 +305,10 @@ async def create_route(data: RouteCreate, request: Request):
 
 
 async def readable_routes(session, principal, *, limit=None, offset=0):
-    memberships = await session.scalars(
-        select(Membership).where(Membership.user_id == (principal.user_id or principal.actor_id))
+    readable = select(Membership.company_id).where(
+        Membership.user_id == (principal.user_id or principal.actor_id),
+        membership_permission("execution.read"),
     )
-    readable = [
-        member.company_id
-        for member in memberships
-        if "execution.read" in effective_permissions(member.role, member.permissions)
-    ]
     return list(
         await session.scalars(
             select(CIRoute)
@@ -368,7 +365,12 @@ async def route_runs(
             await company_access(session, principal, route.company_id, permission="execution.read")
         rows = await session.scalars(
             select(CIReservation)
-            .where(CIReservation.route_id == route.id)
+            .where(
+                CIReservation.route_id == route.id,
+                # A transferred binding can admit runs for a new owner after
+                # our check. Each reservation retains its admission revision.
+                CIReservation.route_revision <= route.revision,
+            )
             .order_by(CIReservation.created_at.desc(), CIReservation.id.desc())
             .limit(limit)
             .offset(offset)

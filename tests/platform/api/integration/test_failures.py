@@ -8,7 +8,7 @@ from alembic import command as alembic
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from throng_api.models import AccessToken, ComputerOwnership, TokenOwnership, User
+from throng_api.models import ComputerOwnership, LoginSession, TokenOwnership, User
 
 pytestmark = pytest.mark.anyio
 
@@ -58,16 +58,20 @@ async def test_ownership_xor_is_enforced_below_the_http_layer(app, user, company
 
 
 async def test_credentials_are_hashed_at_rest(app, user):
-    """The database stores Argon2 password hashes and token digests instead of recoverable secrets."""
+    """Store an Argon2 password hash and a digest of the login-session secret.
+
+    Inspecting real persisted rows must not reveal the supplied password or
+    reusable login credential after moving sessions out of the API-token table.
+    """
     async with app.state.db.read() as session:
         row = await session.get(User, user["id"])
         token = await session.scalar(
-            select(AccessToken).where(AccessToken.id == user["login"]["token"]["id"])
+            select(LoginSession).where(LoginSession.id == user["login"]["token"]["id"])
         )
         assert row.password_hash.startswith("$argon2id$")
         assert row.password_hash != user["password"]
-        assert user["login"]["access_token"] not in token.token_hash
-        assert len(token.token_hash) == 64
+        assert user["login"]["access_token"] not in token.session_hash
+        assert len(token.session_hash) == 64
 
 
 async def test_migrations_round_trip_without_model_drift(alembic_config):

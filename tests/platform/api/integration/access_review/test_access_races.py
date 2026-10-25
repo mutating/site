@@ -60,7 +60,7 @@ async def test_deleted_agent_computer_invalidates_an_authentication_already_in_p
 async def test_user_deletion_between_authentication_and_profile_read_returns_401(
     api, user, paused_profile_lookup, route
 ):
-    """Each profile endpoint rejects an issuer deleted after authentication instead of returning a missing user through its required response schema and causing 500."""
+    """Each profile endpoint must retain the token_invalid 401 contract if its issuer disappears after authentication, rather than returning 500 or an uncoded authentication error."""
     entered, resume = paused_profile_lookup
     path = "/v1" + route.format(user_id=user["id"])
     pending = asyncio.create_task(api.get(path))
@@ -72,7 +72,7 @@ async def test_user_deletion_between_authentication_and_profile_read_returns_401
         resume.set()
         response = await asyncio.wait_for(pending, timeout=5)
     assert response.status_code == 401, response.text
-    assert response.json() == {"detail": "Invalid token issuer"}
+    assert response.json() == {"detail": "Invalid token issuer", "code": "token_invalid"}
 
 
 @pytest.mark.parametrize("limit, offset", [(1, 0), (2, 1), (2, 3)])
