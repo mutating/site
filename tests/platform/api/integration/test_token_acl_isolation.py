@@ -16,9 +16,7 @@ pytestmark = pytest.mark.anyio
 
 async def issue_registry_token(api, app, owner, name, historical=False):
     """Issue through HTTP, optionally preserving the credential in historical storage."""
-    response = await api.post(
-        "/v1/api-tokens", json={**owner, "name": name, "scopes": ["read"]}
-    )
+    response = await api.post("/v1/api-tokens", json={**owner, "name": name, "scopes": ["read"]})
     assert response.status_code == 201, response.text
     token = response.json()
     if historical:
@@ -56,8 +54,18 @@ def paused_token_registry(monkeypatch, endpoint):
     [("personal", "tokens.read"), ("company", "tokens.read"), ("company", "tokens.manage")],
 )
 async def test_registry_does_not_read_tokens_created_after_permission_revocation(
-    api, other_api, client, app, other_user, company, membership,
-    endpoint, historical, owner, revoked_permission, paused_token_registry,
+    api,
+    other_api,
+    client,
+    app,
+    other_user,
+    company,
+    membership,
+    endpoint,
+    historical,
+    owner,
+    revoked_permission,
+    paused_token_registry,
 ):
     """An in-flight personal/API/legacy read cannot combine old ACLs with newly issued metadata.
 
@@ -70,9 +78,11 @@ async def test_registry_does_not_read_tokens_created_after_permission_revocation
     response = await api.patch(path, json={"permissions": sorted(permissions)})
     assert response.status_code == 200, response.text
     reader = await issue_registry_token(
-        other_api, app,
+        other_api,
+        app,
         {"user_id": other_user["id"]} if owner == "personal" else {"company_id": company["id"]},
-        "Registry reader", historical,
+        "Registry reader",
+        historical,
     )
     headers = {"Authorization": "Bearer " + reader["token"]}
     entered, resume = paused_token_registry
@@ -107,7 +117,15 @@ async def test_registry_does_not_read_tokens_created_after_permission_revocation
 @pytest.mark.parametrize("endpoint", ["api-tokens", "access-tokens"])
 @pytest.mark.parametrize("historical", [False, True])
 async def test_registry_filters_current_acl_before_pagination_and_count(
-    api, other_api, app, user, other_user, company, membership, endpoint, historical,
+    api,
+    other_api,
+    app,
+    user,
+    other_user,
+    company,
+    membership,
+    endpoint,
+    historical,
 ):
     """Each page contains only personal or readable-company rows, across both stores.
 
@@ -120,7 +138,9 @@ async def test_registry_filters_current_acl_before_pagination_and_count(
     response = await api.post(
         "/v1/memberships",
         json={
-            "company_id": denied.json()["id"], "user_id": other_user["id"], "permissions": [],
+            "company_id": denied.json()["id"],
+            "user_id": other_user["id"],
+            "permissions": [],
         },
     )
     assert response.status_code == 201, response.text
@@ -137,7 +157,8 @@ async def test_registry_filters_current_acl_before_pagination_and_count(
                 visible.append(token)
     visible.sort(
         key=(lambda token: (token["created_at"], token["id"]))
-        if endpoint == "api-tokens" else (lambda token: token["id"]),
+        if endpoint == "api-tokens"
+        else (lambda token: token["id"]),
         reverse=endpoint == "api-tokens",
     )
     for offset in range(len(visible) + 1):
@@ -151,7 +172,11 @@ async def test_registry_filters_current_acl_before_pagination_and_count(
 
 
 async def test_owned_filter_matches_effective_permissions_for_all_acl_representations(
-    api, app, other_user, company, membership,
+    api,
+    app,
+    other_user,
+    company,
+    membership,
 ):
     """SQL authorization matches Python for every permission, role and default/custom ACL.
 
@@ -163,8 +188,12 @@ async def test_owned_filter_matches_effective_permissions_for_all_acl_representa
     assert response.status_code == 201, response.text
     ownership_id = response.json()["id"]
     variants = [
-        (None, False), (None, True), ([], False),
-        (["tokens.read"], False), (["tokens.manage"], False), (sorted(PERMISSIONS), False),
+        (None, False),
+        (None, True),
+        ([], False),
+        (["tokens.read"], False),
+        (["tokens.manage"], False),
+        (sorted(PERMISSIONS), False),
     ]
     async with app.state.db.write() as session:
         for role in ("creator", "admin", "user"):
@@ -180,8 +209,11 @@ async def test_owned_filter_matches_effective_permissions_for_all_acl_representa
                     )
                     actual = await session.scalar(
                         select(TokenOwnership.id).where(
-                            TokenOwnership.id == ownership_id, owned_filter(TokenOwnership, principal)
+                            TokenOwnership.id == ownership_id,
+                            owned_filter(TokenOwnership, principal),
                         )
                     )
-                    allowed = permission is None or permission in effective_permissions(role, custom)
+                    allowed = permission is None or permission in effective_permissions(
+                        role, custom
+                    )
                     assert (actual is not None) == allowed, (role, custom, sql_null, permission)

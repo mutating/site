@@ -588,15 +588,19 @@ async def list_tokens(
         # Project only public fields and apply ownership before paging both stores.
         statement = union_all(
             *(
-                select(*(getattr(model, field).label(field) for field in out.AccessToken.model_fields))
+                select(
+                    *(getattr(model, field).label(field) for field in out.AccessToken.model_fields)
+                )
                 .join(TokenOwnership, model.ownership_id == TokenOwnership.id)
                 .where(owned_filter(TokenOwnership, principal))
                 for model in (AccessToken, LegacyCredential)
             )
         )
         return (
-            await session.execute(statement.order_by("id").limit(limit).offset(offset))
-        ).mappings().all()
+            (await session.execute(statement.order_by("id").limit(limit).offset(offset)))
+            .mappings()
+            .all()
+        )
 
 
 async def token_for_user(session, principal, token_id, admin=False):
