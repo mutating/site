@@ -58,6 +58,52 @@ const roster = (page: Page) =>
 const person = (page: Page, name: string) =>
   roster(page).getByRole("article", { name, exact: true });
 
+test("member avatar API downloads retry automatically and release the image on navigation", async ({ page, request, account }) => {
+  await page.addInitScript(() => {
+    const revokedAvatarURLs: string[] = [];
+    Object.assign(window, { revokedAvatarURLs });
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = url => { revokedAvatarURLs.push(url); revoke(url); };
+  });
+  const bob = await makeAccount(request, "Боб");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=", "base64");
+  expect((await request.put(`${API}/users/me/avatar`, {
+    headers: { ...headers(bob), "Content-Type": "image/png" }, data: png,
+  })).status()).toBe(200);
+  const company = await (await request.post(`${API}/companies`, {
+    headers: headers(account), data: { name: "Аватары команды" },
+  })).json();
+  const member = await (await request.post(`${API}/memberships`, {
+    headers: headers(account), data: { company_id: company.id, user_id: bob.id },
+  })).json();
+  let fail = true;
+  const reads: import("@playwright/test").Request[] = [];
+  await page.route(`${API}/memberships/${member.id}/avatar?*`, route => {
+    reads.push(route.request());
+    return fail ? route.abort("failed") : route.continue();
+  });
+  await login(page, account);
+  await page.goto(`organizations/${company.id}`);
+  await expect.poll(() => reads.length).toBeGreaterThan(0);
+  await expect(person(page, "Боб").locator(".avatar")).toHaveText("Б");
+  fail = false;
+  const image = person(page, "Боб").locator("img");
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
+  const src = await image.getAttribute("src");
+  expect(src).toMatch(/^blob:/);
+  expect(reads.length).toBeGreaterThan(1);
+  for (const read of reads) {
+    expect(read.resourceType()).toBe("fetch");
+    expect(await read.headerValue("X-Requested-With")).toBe("ThrongDashboard");
+  }
+  await page.getByRole("navigation", { name: "Навигация кабинета" }).getByRole("link", { name: "Обзор", exact: true }).click();
+  await expect(image).toHaveCount(0);
+  await expect.poll(() => page.evaluate(url =>
+    (Reflect.get(window, "revokedAvatarURLs") as string[]).includes(url), src!),
+  ).toBe(true);
+});
+
 test("find by nickname, add a member, show profiles, edit permissions, and remove safely", async ({
   page,
   request,
@@ -402,13 +448,15 @@ test("member loading and edits recover from transport errors without discarding 
   ).json();
   await login(page, account);
   const listPath = "**/v1/memberships?*";
-  await page.route(listPath, (route) => route.abort("failed"));
+  let attempts = 0;
+  await page.route(listPath, (route) => {
+    ++attempts;
+    return route.abort("failed");
+  });
   await page.goto(`organizations/${company.id}`);
-  await expect(roster(page).getByRole("alert")).toContainText(
-    "Не удалось связаться",
-  );
+  await expect.poll(() => attempts).toBeGreaterThan(0);
+  await expect(roster(page).getByRole("alert")).toHaveCount(0);
   await page.unroute(listPath);
-  await roster(page).getByRole("button", { name: "Попробовать снова" }).click();
   await expect(person(page, "Боб")).toBeVisible();
   const trigger = person(page, "Боб").getByRole("button", {
     name: "Изменить права",

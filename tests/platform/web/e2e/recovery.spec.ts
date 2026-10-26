@@ -130,7 +130,7 @@ test("organization creation preserves the draft on failure and creates once on r
 });
 
 for (const endpoint of ["summary", "availability-history"]) {
-  test(`capacity recovers from a failed ${endpoint} request without displaying false zeros`, async ({
+  test(`capacity automatically recovers from a failed ${endpoint} request without displaying false zeros`, async ({
     page,
     request,
     account,
@@ -138,16 +138,18 @@ for (const endpoint of ["summary", "availability-history"]) {
     await addComputer(request, account, "Узел восстановления");
     await login(page, account);
     const path = `**/v1/users/${account.id}/resources/${endpoint}?*`;
-    await page.route(path, (route) => route.abort("failed"));
+    let attempts = 0;
+    await page.route(path, (route) => {
+      ++attempts;
+      return route.abort("failed");
+    });
     await page.goto("power-cells");
     const pool = page.getByRole("region", { name: "Личные компьютеры" });
-    await expect(pool.getByRole("alert")).toContainText(
-      "Не удалось связаться с сервером",
-    );
+    await expect.poll(() => attempts).toBeGreaterThan(0);
+    await expect(pool.getByRole("alert")).toHaveCount(0);
     await expect(pool.getByTestId("computer-count")).toHaveCount(0);
     await expect(pool.locator(".capacity-chart")).toHaveCount(0);
     await page.unroute(path);
-    await pool.getByRole("button", { name: "Попробовать снова" }).click();
     await expect(pool.getByTestId("computer-count")).toHaveText("1");
     await expect(pool.locator(".metric-free")).toHaveText(["8", "8"]);
     await expect(pool.locator("[data-series]")).toHaveCount(4);
@@ -166,11 +168,12 @@ test("refresh shows newly available capacity and recovery does not discard the s
   await expect(pool.getByTestId("computer-count")).toHaveText("0");
   await addComputer(request, account, "Появился после открытия страницы");
   await page.context().setOffline(true);
+  const refreshStarted = page.waitForRequest(request => request.url().includes("/resources/summary?"));
   await page.getByRole("button", { name: "Обновить", exact: true }).click();
-  await expect(pool.getByRole("alert")).toBeVisible();
+  await refreshStarted;
+  await expect(pool.getByRole("alert")).toHaveCount(0);
   await page.context().setOffline(false);
-  await page.getByRole("button", { name: "Обновить", exact: true }).click();
-  await expect(pool.getByTestId("computer-count")).toHaveText("1");
+  await expect(pool.getByTestId("computer-count")).toHaveText("1", { timeout: 30_000 });
   await expect(page.getByRole("alert")).toHaveCount(0);
   expect(
     (await page.context().cookies()).some((c) => c.name === "tmc_session"),

@@ -211,6 +211,23 @@ test("YAML copy has a manual fallback and selecting jobs requests the right exam
 });
 
 /** Catalog/read errors must never masquerade as an empty repo list or an unavailable integration. */
+for (const endpoint of ["status", "repositories"]) {
+  test(`Actions automatically recovers after repeated network failures loading GitHub ${endpoint}`, async ({ page, account }) => {
+    await actionsPeer(page);
+    let attempts = 0;
+    await page.route(url => url.pathname === `/v1/github/${endpoint}`, route => {
+      if (++attempts <= 2) return route.abort("failed");
+      return route.fallback();
+    });
+    await login(page, account);
+    await page.goto("actions");
+    await expect(page.locator(".repository-card")).toHaveCount(1);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(attempts).toBeGreaterThanOrEqual(3);
+  });
+}
+
+/** HTTP errors still offer explicit retry instead of being treated as a transport outage. */
 test("catalog failures are retryable and disconnect removes repository data", async ({ page, account }) => {
   const peer = await actionsPeer(page); peer.failures.set("GET github/repositories", [503]);
   await login(page, account); await page.goto("actions");

@@ -6,7 +6,7 @@ import {
   useSearchParams,
   useLocation,
 } from "react-router-dom";
-import { api, apiURL, allPages, json, request } from "../lib/api";
+import { api, allPages, json, request } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useSession } from "../lib/session";
 import { useI18n, type MessageKey } from "../lib/i18n";
@@ -20,6 +20,7 @@ import type {
 import { ConfirmDialog, ErrorBox, Heading, Loading } from "../components/UI";
 import { MemberSharing } from "../components/MemberSharing";
 import { MemberEditor } from "../components/MemberEditor";
+import { ApiImage } from "../components/ApiImage";
 import {
   InvitationFacts,
   PermissionSummary,
@@ -185,16 +186,12 @@ function OrganizationContent({
                 >
                   <div className="member-identity">
                     <span className="avatar">
-                      {member.user.avatar_version ? (
-                        <img
-                          src={apiURL(
-                            `memberships/${member.id}/avatar?v=${member.user.avatar_version}`,
-                          )}
-                          alt=""
-                        />
-                      ) : (
-                        memberName(member.user).slice(0, 1).toUpperCase()
-                      )}
+                      <ApiImage
+                        path={member.user.avatar_version
+                          ? `memberships/${member.id}/avatar?v=${encodeURIComponent(member.user.avatar_version)}`
+                          : null}
+                        fallback={memberName(member.user).slice(0, 1).toUpperCase()}
+                      />
                     </span>
                     <div>
                       <h3>{memberName(member.user)}</h3>

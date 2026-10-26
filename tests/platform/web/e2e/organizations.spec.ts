@@ -416,26 +416,26 @@ test("declining a pending invitation removes only that row reactively", async ({
   await expect(page.getByRole("status")).toHaveText("Приглашение отклонено.");
 });
 
-test("failed directory load shows a retry without fabricating an empty list", async ({
+test("failed directory load retries automatically without fabricating an empty list", async ({
   page,
   request,
   account,
 }) => {
   await space(request, account, "Команда после повтора");
   await login(page, account);
-  await page.route("**/v1/organization-directory?*", (route) =>
-    route.abort("failed"),
-  );
+  let attempts = 0;
+  await page.route("**/v1/organization-directory?*", (route) => {
+    ++attempts;
+    return route.abort("failed");
+  });
   await page.goto("organizations");
-  await expect(page.getByRole("alert")).toContainText(
-    "Не удалось связаться с сервером",
-  );
+  await expect.poll(() => attempts).toBeGreaterThan(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.locator(".directory-count")).toHaveText("—");
   await expect(
     page.getByRole("heading", { name: "Ваша команда начинается здесь" }),
   ).toHaveCount(0);
   await page.unroute("**/v1/organization-directory?*");
-  await page.getByRole("button", { name: "Попробовать снова" }).click();
   await expect(page.locator(".organization-row h3")).toHaveText([
     "Команда после повтора",
   ]);

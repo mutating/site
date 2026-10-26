@@ -182,7 +182,7 @@ test("a delayed obsolete response cannot replace newer results even when transpo
   }
 });
 
-test("search transport failure retains the query, offers retry and never claims no matches", async ({
+test("search retries transport failures automatically, retaining the query without claiming no matches", async ({
   page,
   request,
   account,
@@ -195,13 +195,14 @@ test("search transport failure retains the query, offers retry and never claims 
   await page.goto("organizations");
   await expect(page.locator(".organization-row")).toHaveCount(1);
   let fail = true;
-  await page.route("**/v1/organization-directory?*", (route) =>
-    fail ? route.abort("failed") : route.continue(),
-  );
+  let attempts = 0;
+  await page.route("**/v1/organization-directory?*", (route) => {
+    ++attempts;
+    return fail ? route.abort("failed") : route.continue();
+  });
   await page.getByRole("searchbox").fill("retry");
-  await expect(page.getByRole("alert")).toContainText(
-    "Не удалось связаться с сервером",
-  );
+  await expect.poll(() => attempts).toBeGreaterThan(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Организации не найдены", exact: true }),
   ).toHaveCount(0);
@@ -209,9 +210,9 @@ test("search transport failure retains the query, offers retry and never claims 
   await expect(page.getByRole("searchbox")).toHaveValue("retry");
   expect(new URL(page.url()).searchParams.get("q")).toBe("retry");
   fail = false;
-  await page.getByRole("button", { name: "Попробовать снова" }).click();
   await expect(page.locator(".organization-row h3")).toHaveText(["Retry lab"]);
   await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(attempts).toBeGreaterThan(1);
   await page.getByRole("searchbox").fill("missing");
   await expect(
     page.getByRole("heading", { name: "Организации не найдены", exact: true }),
