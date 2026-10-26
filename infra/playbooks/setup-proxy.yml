@@ -1,0 +1,273 @@
+---
+# Dedicated Debian/Ubuntu TCP ingress. Never run setup-server.yml on this VPS.
+# Credentials are supplied with --ask-pass or an external Ansible Vault file.
+- name: Set up and verify the dedicated public TCP proxy
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-proxy
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/proxy_known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+    # Public DNS at 1.1.1.1 and 8.8.8.8, excluding the new proxy, 2026-10-26.
+    # Deliberately pinned: resolving mutating.tech here would create a proxy loop.
+    proxy_origin_ipv4: 85.204.240.76
+    proxy_public_ipv4: "{{ ansible_host | default(inventory_hostname) }}"
+    proxy_connect_timeout: 5s
+    proxy_idle_timeout: 300s
+    proxy_relay_idle_timeout: 1h
+    proxy_replace_existing_nginx: false
+    proxy_checks:
+      - {url: 'https://mutating.tech/', status: 200, format: html}
+      - {url: 'https://api.mutating.tech/v1/agent-capabilities', status: 200, format: json}
+      - {url: 'https://api.mutating.tech/health/ready', status: 200, format: json, fields: {status: ready}}
+      - {url: 'https://platform.mutating.tech/', status: 200, format: html}
+      - {url: 'https://www.mutating.tech/', status: 308, location: 'https://mutating.tech/'}
+      - {url: 'http://mutating.tech/', status: 308, location: 'https://mutating.tech/'}
+      - {url: 'http://api.mutating.tech/', status: 308, location: 'https://api.mutating.tech/'}
+      - {url: 'http://platform.mutating.tech/', status: 308, location: 'https://platform.mutating.tech/'}
+      - {url: 'https://api.mutating.tech:8444', format: mtls}
+    proxy_dns_checks: "{{ proxy_checks[:4] }}"
+    proxy_probe_source: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/probe_proxy.py') }}"
+
+  handlers:
+    - name: Reload the validated TCP proxy configuration
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+
+  pre_tasks:
+    - name: Require Debian or Ubuntu
+      ansible.builtin.assert:
+        that: ansible_facts.distribution in ['Debian', 'Ubuntu']
+      tags: [always]
+
+    - name: Require distinct literal origin and proxy IPv4 addresses
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - |
+            import ipaddress, json, sys
+            origin, proxy = map(ipaddress.IPv4Address, sys.argv[1:3])
+            assert origin != proxy, 'The proxy must not forward to itself'
+            assert not origin.is_loopback and not origin.is_unspecified and not origin.is_multicast
+            assert str(origin) not in json.loads(sys.argv[3]), 'Do not provision the origin as a proxy'
+          - "{{ proxy_origin_ipv4 }}"
+          - "{{ proxy_public_ipv4 }}"
+          - "{{ ansible_facts.all_ipv4_addresses | to_json }}"
+      changed_when: false
+      check_mode: false
+      tags: [always]
+
+  tasks:
+    - name: Provision only the dedicated proxy
+      tags: [setup]
+      block:
+        - name: Inspect any existing main nginx configuration
+          ansible.builtin.stat:
+            path: /etc/nginx/nginx.conf
+          register: proxy_existing_nginx
+
+        - name: Read any existing main nginx configuration privately
+          ansible.builtin.slurp:
+            src: /etc/nginx/nginx.conf
+          register: proxy_existing_nginx_source
+          no_log: true
+          when: proxy_existing_nginx.stat.exists
+
+        - name: Refuse to replace another server's nginx configuration implicitly
+          ansible.builtin.assert:
+            that: >-
+              not proxy_existing_nginx.stat.exists
+              or 'Managed by infra/playbooks/setup-proxy.yml' in
+                 (proxy_existing_nginx_source.content | default('') | b64decode)
+              or proxy_replace_existing_nginx | bool
+            fail_msg: >-
+              This is a dedicated proxy playbook. Inspect the existing nginx
+              configuration before setting proxy_replace_existing_nginx=true.
+
+        - name: Install nginx and its TCP stream module without starting the default site
+          ansible.builtin.apt:
+            name: [nginx, libnginx-mod-stream, curl, ca-certificates]
+            state: present
+            update_cache: true
+            cache_valid_time: 3600
+            policy_rc_d: 101
+
+        - name: Check the origin's HTTPS content health and HTTP redirects from this VPS
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - -c
+              - "{{ proxy_probe_source }}"
+              - --address
+              - "{{ proxy_origin_ipv4 }}"
+              - --checks
+              - "{{ proxy_checks | to_json }}"
+          register: proxy_origin_probe
+          changed_when: false
+          failed_when: false
+          when: not ansible_check_mode
+          tags: [verify]
+
+        - name: Show verified origin reachability
+          ansible.builtin.debug:
+            msg: "{{ proxy_origin_probe.stdout | from_json }}"
+          when: not ansible_check_mode
+          tags: [verify]
+
+        - name: Require a reachable and healthy origin before configuring the proxy
+          ansible.builtin.assert:
+            that: proxy_origin_probe.rc == 0
+            fail_msg: Origin checks failed; the existing proxy configuration was not changed.
+          when: not ansible_check_mode
+          tags: [verify]
+
+        - name: Install the complete validated TCP-only nginx configuration
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../../deploy/nginx-stream.conf.j2"
+            dest: /etc/nginx/nginx.conf
+            owner: root
+            group: root
+            mode: '0644'
+            backup: true
+            validate: /usr/sbin/nginx -t -c %s
+          notify: Reload the validated TCP proxy configuration
+
+        - name: Detect an existing UFW installation
+          ansible.builtin.stat:
+            path: /usr/sbin/ufw
+          register: proxy_ufw_binary
+
+        - name: Inspect UFW without enabling or resetting it
+          ansible.builtin.command: /usr/sbin/ufw status
+          environment:
+            LC_ALL: C
+          register: proxy_ufw_status
+          changed_when: false
+          check_mode: false
+          when: proxy_ufw_binary.stat.exists
+
+        - name: Allow the proxy ports if UFW is already active
+          ansible.builtin.command:
+            argv: [/usr/sbin/ufw, allow, "{{ item }}/tcp", comment, Nginx TCP proxy]
+          environment:
+            LC_ALL: C
+          loop: [80, 443, 8444]
+          register: proxy_ufw_rule
+          changed_when: "'Rule added' in proxy_ufw_rule.stdout or 'Rules updated' in proxy_ufw_rule.stdout"
+          when:
+            - "'Status: active' in (proxy_ufw_status.stdout | default(''))"
+            - not ansible_check_mode
+
+        - name: Enable and start nginx on boot
+          ansible.builtin.service:
+            name: nginx
+            enabled: true
+            state: started
+
+        - name: Apply the validated configuration before external verification
+          ansible.builtin.meta: flush_handlers
+
+    - name: Verify the running TCP proxy
+      tags: [verify]
+      when: not ansible_check_mode
+      block:
+        - name: Validate the installed nginx configuration
+          ansible.builtin.command: /usr/sbin/nginx -t
+          changed_when: false
+
+        - name: Read nginx startup and running state
+          ansible.builtin.command:
+            argv: [systemctl, show, nginx, --property=ActiveState, --property=SubState, --property=UnitFileState]
+          register: proxy_service_state
+          changed_when: false
+          failed_when: >-
+            'ActiveState=active' not in proxy_service_state.stdout
+            or 'SubState=running' not in proxy_service_state.stdout
+            or 'UnitFileState=enabled' not in proxy_service_state.stdout
+
+        - name: Read public TCP listeners
+          ansible.builtin.command:
+            argv: [ss, -ltnp, '( sport = :80 or sport = :443 or sport = :8444 )']
+          register: proxy_listeners
+          changed_when: false
+
+        - name: Show nginx service state and public listeners
+          ansible.builtin.debug:
+            msg:
+              service: "{{ proxy_service_state.stdout_lines }}"
+              listeners: "{{ proxy_listeners.stdout_lines }}"
+
+        - name: Check all domains through the fixed proxy IP from the controller
+          ansible.builtin.command:
+            argv:
+              - "{{ ansible_playbook_python }}"
+              - -c
+              - "{{ proxy_probe_source }}"
+              - --address
+              - "{{ proxy_public_ipv4 }}"
+              - --checks
+              - "{{ proxy_checks | to_json }}"
+          delegate_to: localhost
+          become: false
+          vars:
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+          register: proxy_controller_probe
+          changed_when: false
+          failed_when: false
+
+        - name: Show verified proxy content redirects and TLS timings
+          ansible.builtin.debug:
+            msg: "{{ proxy_controller_probe.stdout | from_json }}"
+
+        - name: Require working HTTPS redirects and unchanged relay identity through the proxy
+          ansible.builtin.assert:
+            that:
+              - proxy_controller_probe.rc == 0
+              - >-
+                (proxy_controller_probe.stdout | from_json
+                 | selectattr('certificate_sha256', 'defined')
+                 | map(attribute='certificate_sha256') | list)
+                == (proxy_origin_probe.stdout | from_json
+                    | selectattr('certificate_sha256', 'defined')
+                    | map(attribute='certificate_sha256') | list)
+            fail_msg: Proxy checks failed or the relay certificate differs from the origin.
+
+    - name: Check ordinary DNS access from the current controller network
+      tags: [dns]
+      when: not ansible_check_mode
+      block:
+        - name: Request website API health and dashboard without overriding DNS
+          ansible.builtin.command:
+            argv:
+              - "{{ ansible_playbook_python }}"
+              - -c
+              - "{{ proxy_probe_source }}"
+              - --address
+              - dns
+              - --checks
+              - "{{ proxy_dns_checks | to_json }}"
+          delegate_to: localhost
+          become: false
+          vars:
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+          register: proxy_dns_probe
+          changed_when: false
+          failed_when: false
+
+        - name: Show actual DNS destination and HTTPS results
+          ansible.builtin.debug:
+            msg: "{{ proxy_dns_probe.stdout | from_json }}"
+
+        - name: Require successful ordinary DNS access as well as forced proxy checks
+          ansible.builtin.assert:
+            that: proxy_dns_probe.rc == 0
+            fail_msg: >-
+              The proxy is configured, but ordinary DNS access failed. With two A
+              records a client may choose the unreachable origin and stall after
+              TCP connects. Inspect the reported remote_ip and TLS timings;
+              pointing these names only at the proxy avoids that selection.

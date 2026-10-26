@@ -1,0 +1,78 @@
+---
+# Read-only public requests, no authentication, cookie access or server changes.
+- name: Diagnose dashboard to API connectivity from the current network
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    platform_api_origin_ipv4: 85.204.240.76
+    platform_api_proxy_ipv4: 144.31.78.74
+  tasks:
+    - name: Compare DNS requests with fixed origin and proxy addresses
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/files/diagnose_platform_api.py"
+          - --origin
+          - "{{ platform_api_origin_ipv4 }}"
+          - --proxy
+          - "{{ platform_api_proxy_ipv4 }}"
+      register: platform_api_http
+      changed_when: false
+      tags: [http]
+
+    - name: Show destination TLS dashboard configuration and CORS observations
+      ansible.builtin.debug:
+        msg: "{{ platform_api_http.stdout | from_json }}"
+      tags: [http]
+
+    - name: Reproduce dashboard API fetches in clean Chromium sessions
+      ansible.builtin.command:
+        argv:
+          - node
+          - "{{ playbook_dir }}/files/diagnose_platform_browser.mjs"
+          - "{{ platform_api_proxy_ipv4 }}"
+          - "{{ platform_api_origin_ipv4 }}"
+      args:
+        chdir: "{{ playbook_dir }}/../.."
+      register: platform_api_browser
+      changed_when: false
+      tags: [browser, never]
+
+    - name: Show browser responses and network failures without cookies or tokens
+      ansible.builtin.debug:
+        msg: "{{ platform_api_browser.stdout | from_json }}"
+      tags: [browser, never]
+
+    - name: Compare installed browser engines and optional Happy Eyeballs v3
+      ansible.builtin.command:
+        argv: "{{ ['node', playbook_dir ~ '/files/diagnose_browser_fallback.mjs'] + (platform_api_matrix_options | default([])) }}"
+      args:
+        chdir: "{{ playbook_dir }}/../.."
+      register: platform_api_browser_matrix
+      changed_when: false
+      tags: [matrix, never]
+
+    - name: Show browser versions DNS connection attempts and fetch outcomes
+      ansible.builtin.debug:
+        msg: "{{ platform_api_browser_matrix.stdout | from_json }}"
+      tags: [matrix, never]
+
+    - name: Test TLS fallback with fixed DNS answer order in isolated Chromium profiles
+      ansible.builtin.command:
+        argv:
+          - node
+          - "{{ playbook_dir }}/files/diagnose_browser_tls_race.mjs"
+          - "{{ platform_api_origin_ipv4 }}"
+          - "{{ platform_api_proxy_ipv4 }}"
+      args:
+        chdir: "{{ playbook_dir }}/../.."
+      register: platform_api_tls_race
+      changed_when: false
+      tags: [tls-race, never]
+
+    - name: Show controlled DNS and TCP TLS racing evidence
+      ansible.builtin.debug:
+        msg: "{{ platform_api_tls_race.stdout | from_json }}"
+      tags: [tls-race, never]
