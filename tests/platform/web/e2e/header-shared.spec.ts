@@ -19,6 +19,13 @@ test.beforeEach(async ({ context }) => {
   });
 });
 
+// Keep responses alive until routed handlers finish; remove the production
+// network guard only after every page has closed.
+test.afterEach(async ({ context }) => {
+  await Promise.all(context.pages().map(page => page.close()));
+  await context.unrouteAll({ behavior: "wait" });
+});
+
 async function ready(page: Page, web: boolean) {
   if (web) await expect(page.locator(".auth-panel")).toBeVisible();
   else await expect(page.locator("html")).toHaveAttribute("data-theme-ready", "true");
@@ -59,6 +66,39 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as co
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
   });
 }
+
+test.describe("intercepted response cleanup", () => {
+  let pending = Promise.resolve();
+  test.afterAll(async () => { await pending; });
+
+  /** Read a real local response body after page close. Disposing its request
+   * context first invalidates the body used by route.fulfill during teardown.
+   * Await the handler after the test so a late failure cannot pass unnoticed.
+   */
+  test("drains intercepted responses before disposing the request context", async ({ context, page }) => {
+    let received!: () => void;
+    const fetched = new Promise<void>(resolve => { received = resolve; });
+    const closed = new Promise<void>(resolve => page.once("close", () => resolve()));
+    await context.route(`${platform}/__header_cleanup_probe`, route => {
+      pending = (async () => {
+        const response = await route.fetch({ url: "http://127.0.0.1:18101/theme-bootstrap.js" });
+        received();
+        await closed;
+        await route.fulfill({ response, body: await response.body() });
+      })();
+      return pending;
+    });
+    await page.goto(`${platform}/login`);
+    await ready(page, true);
+    await page.evaluate(() => {
+      const image = new Image();
+      image.hidden = true;
+      document.body.append(image);
+      image.src = "/__header_cleanup_probe";
+    });
+    await fetched;
+  });
+});
 
 for (const scheme of ["light", "dark", "no-preference"] as const) {
   test(`platform follows the static site's system-theme policy: ${scheme}`, async ({ page, context }) => {
