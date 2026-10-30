@@ -678,6 +678,33 @@ test.describe("history navigation", () => {
     });
   }
 
+  test("a viewport resize before latest results keeps the selected history in view", async ({
+    page, request, account,
+  }) => {
+    const computer = await computerWithCards(request, account);
+    await login(page, account);
+    const held = await delayedResponse(page, `**/v1/computers/${computer.id}/benchmark-results?latest_only=true`);
+    try {
+      await page.goto(`${detailsPath(computer.id)}?benchmark=bench_0`);
+      await held.ready;
+      await expect(history(page).locator("tbody .numeric")).toHaveText("100");
+      await expect(history(page)).toBeFocused();
+      await settlePaint(page);
+      const beforeResize = await page.evaluate(() => window.scrollY);
+      expect(beforeResize).toBeGreaterThan(0);
+      // A taller viewport clamps scrollY without a wheel, touch or keyboard gesture.
+      await page.setViewportSize({ width: 390, height: 1000 });
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThan(beforeResize);
+      held.release();
+      await held.finished;
+      await expect(latest(page).locator(".benchmark-card")).toHaveCount(12);
+      await expect(history(page).getByRole("heading")).toBeInViewport();
+      await expect(history(page)).toBeFocused();
+    } finally {
+      held.release();
+    }
+  });
+
   test("a late history response keeps all fitting rows in view", async ({ page, request, account }) => {
     const computer = await computerWithCards(request, account);
     await measurement(request, account, computer.id, "1.0.0", "bench_0", 200);

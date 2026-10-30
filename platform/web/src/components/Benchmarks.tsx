@@ -171,7 +171,6 @@ function BenchmarkHistory({
   const { t, locale } = useI18n();
   const { key: navigationKey, hash } = useLocation();
   const section = useRef<HTMLElement>(null);
-  const historyScroll = useRef<number | null>(null);
   useEffect(() => {
     if (hash) return;
     const active = document.activeElement;
@@ -182,21 +181,19 @@ function BenchmarkHistory({
       ) return;
       section.current?.scrollIntoView({ block: "start" });
       section.current?.focus({ preventScroll: true });
-      historyScroll.current = window.scrollY;
     });
     return () => cancelAnimationFrame(frame);
   }, [navigationKey, hash, interrupted]);
   useEffect(() => {
     if (hash) return;
-    // Follow layout changes only while focus and scroll still belong to this navigation.
+    // Layout can change scrollY without user input. Follow this navigation until
+    // a gesture interrupts it or focus moves elsewhere.
     const frame = requestAnimationFrame(() => {
       if (
         !interrupted.current &&
-        section.current?.contains(document.activeElement) &&
-        window.scrollY === historyScroll.current
+        section.current?.contains(document.activeElement)
       ) {
         section.current.scrollIntoView({ block: "start" });
-        historyScroll.current = window.scrollY;
       }
     });
     return () => cancelAnimationFrame(frame);
