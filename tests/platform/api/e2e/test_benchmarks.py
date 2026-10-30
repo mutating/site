@@ -25,21 +25,22 @@ async def create(api, computer, **kwargs):
     return response.json()
 
 
-async def test_crud_upsert_retains_identity_and_other_names_and_versions(api, computer):
-    """CRUD preserves the row UUID on overwrite, isolates other names and versions, and exposes older results when the newest version is deleted."""
+async def test_crud_retains_runs_and_other_names_and_versions(api, computer):
+    """Repeated versions create history; CRUD affects only the selected run."""
     first = await create(api, computer)
-    assert (await create(api, computer, number=55))["id"] == first["id"]
+    repeated = await create(api, computer, number=55)
+    assert repeated["id"] != first["id"]
     second = await create(api, computer, name="multi_core", number=250)
     newer = await create(api, computer, version="0.0.3", number=777)
     path = f"/v1/benchmark-results/{first['id']}"
-    assert (await api.get(path)).json()["number"] == 55
+    assert (await api.get(path)).json()["number"] == 1234.5
     assert (await api.patch(path, json={"number": 0})).json()["number"] == 0
     rows = (
         await api.get(
             "/v1/benchmark-results", params={"computer_id": computer["id"], "latest_only": False}
         )
     ).json()
-    assert {row["id"] for row in rows} == {first["id"], second["id"], newer["id"]}
+    assert {row["id"] for row in rows} == {first["id"], repeated["id"], second["id"], newer["id"]}
     assert (await api.get(f"/v1/computers/{computer['id']}/benchmark-results")).json() == [newer]
     assert (await api.delete(f"/v1/benchmark-results/{newer['id']}")).status_code == 204
     assert len((await api.get(f"/v1/computers/{computer['id']}/benchmark-results")).json()) == 2
@@ -193,8 +194,8 @@ async def test_patch_only_changes_number_and_validates_it(api, computer):
     assert (await api.get(path)).json() == row
 
 
-async def test_concurrent_upserts_create_one_row_per_name_and_version(api, computer):
-    """Concurrent writes for the same computer, benchmark, and version converge on one row UUID."""
+async def test_concurrent_runs_preserve_every_result(api, computer):
+    """Concurrent writes for the same version retain every separate run."""
     responses = await asyncio.gather(
         *(
             api.post("/v1/benchmark-results", json=measurement(computer, number=index))
@@ -202,8 +203,12 @@ async def test_concurrent_upserts_create_one_row_per_name_and_version(api, compu
         )
     )
     assert all(response.status_code == 201 for response in responses)
-    assert len({response.json()["id"] for response in responses}) == 1
+    assert len({response.json()["id"] for response in responses}) == 8
     assert len((await api.get(f"/v1/computers/{computer['id']}/benchmark-results")).json()) == 1
+    history = await api.get(
+        f"/v1/computers/{computer['id']}/benchmark-results", params={"latest_only": False}
+    )
+    assert {row["number"] for row in history.json()} == set(range(8))
 
 
 async def test_successful_worker_result_upload_before_session_and_retry(api, client, computer):
@@ -212,6 +217,7 @@ async def test_successful_worker_result_upload_before_session_and_retry(api, cli
     headers = {"Authorization": "Bearer " + credential["token"]}
     first = {
         "benchmarker_version": "0.0.2",
+        "run_id": str(uuid4()),
         "results": [{"benchmark_name": "single_core", "number": 12.5}],
     }
     path = "/agent/v1/benchmark-results"

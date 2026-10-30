@@ -284,7 +284,7 @@ class ResourceType(Identity, Base):
 class BenchmarkResult(Identity, Base):
     __tablename__ = "benchmark_results"
     __table_args__ = (
-        UniqueConstraint("computer_id", "benchmark_name", "benchmarker_version"),
+        UniqueConstraint("computer_id", "benchmark_name", "run_id"),
         CheckConstraint("number >= 0", name="nonnegative_score"),
     )
     computer_id: Mapped[str] = mapped_column(
@@ -293,6 +293,7 @@ class BenchmarkResult(Identity, Base):
     benchmark_name: Mapped[str] = mapped_column(String(200))
     number: Mapped[float] = mapped_column(Float)
     benchmarker_version: Mapped[str] = mapped_column(String(200))
+    run_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), default=new_id)
 
 
 class ComputerResource(Identity, Base):

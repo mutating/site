@@ -1,5 +1,5 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export const epoch = new Date("2026-10-16T09:00:00Z");
@@ -67,6 +67,9 @@ export async function compare(expected: Shot[], actual: Shot[], info: TestInfo) 
   for (let index = 0; index < expected.length; index++) {
     if (actual[index].png.equals(expected[index].png)) continue;
     failures.push(expected[index].name);
+    // Keep the pair in CI artifacts even when the reporter keeps buffer attachments in memory.
+    await writeFile(info.outputPath(expected[index].name + "-before.png"), expected[index].png);
+    await writeFile(info.outputPath(expected[index].name + "-after.png"), actual[index].png);
     await info.attach(expected[index].name + "-before", { body: expected[index].png, contentType: "image/png" });
     await info.attach(expected[index].name + "-after", { body: actual[index].png, contentType: "image/png" });
   }

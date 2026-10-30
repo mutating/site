@@ -1,6 +1,7 @@
 """Storage separation preserves credentials instead of inferring purpose from names."""
 
 import asyncio
+import json
 from datetime import timedelta
 
 import anyio
@@ -36,6 +37,44 @@ async def old_credentials(database):
             )
         ).all()
         return [tuple(row) for row in rows]
+
+
+async def rollback_state(database):
+    """Capture schema, revision and every credential field before a rejected rollback."""
+
+    def schema(connection):
+        """Reflect columns and constraints without relying on the current ORM models."""
+        inspector = inspect(connection)
+        return {
+            name: json.dumps(
+                {
+                    "columns": inspector.get_columns(name),
+                    "primary_key": inspector.get_pk_constraint(name),
+                    "foreign_keys": inspector.get_foreign_keys(name),
+                    "unique_constraints": inspector.get_unique_constraints(name),
+                    "check_constraints": inspector.get_check_constraints(name),
+                    "indexes": inspector.get_indexes(name),
+                },
+                sort_keys=True,
+                default=str,
+            )
+            for name in inspector.get_table_names()
+        }
+
+    async with database.engine.connect() as connection:
+        rows = {}
+        for name, sql in {
+            "access_tokens": "SELECT * FROM access_tokens ORDER BY id",
+            "login_sessions": "SELECT * FROM login_sessions ORDER BY id",
+            "legacy_credentials": "SELECT * FROM legacy_credentials ORDER BY id",
+            "token_ownerships": "SELECT * FROM token_ownerships ORDER BY id",
+        }.items():
+            rows[name] = [tuple(row) for row in await connection.execute(text(sql))]
+        return {
+            "schema": await connection.run_sync(schema),
+            "revision": await connection.scalar(text("SELECT version_num FROM alembic_version")),
+            "rows": rows,
+        }
 
 
 @pytest.mark.parametrize("session_mode", ["active", "revoked", "expired", "read_only"])
@@ -151,15 +190,23 @@ async def test_rollback_with_unlimited_tokens_is_rejected_before_any_schema_chan
     assert response.status_code == 201, response.text
     http_server.server.should_exit = True
     await asyncio.wait_for(http_server.task, timeout=10)
-    before = await tables(migration_database)
+    await migration_database.close()
+    # Isolate 0017's guard from successful rollbacks of later revisions. SQLite
+    # does not roll those earlier steps back when this revision rejects a downgrade.
+    await anyio.to_thread.run_sync(command.downgrade, alembic_config, "0017")
+    before = await rollback_state(migration_database)
+    assert before["revision"] == "0017"
+    assert before["rows"]["login_sessions"]
     await migration_database.close()
     with pytest.raises(CommandError, match="non-expiring"):
         await anyio.to_thread.run_sync(command.downgrade, alembic_config, "0016")
-    assert await tables(migration_database) == before
+    assert await rollback_state(migration_database) == before
     async with migration_database.engine.connect() as connection:
         assert (
             await connection.execute(text("SELECT expires_at FROM access_tokens"))
         ).scalars().all() == [None]
+    await migration_database.close()
+    await anyio.to_thread.run_sync(command.upgrade, alembic_config, "head")
     await anyio.to_thread.run_sync(command.check, alembic_config)
 
 
