@@ -61,6 +61,16 @@ function App() {
   const { user, loading, error, reload } = useSession();
   const { t } = useI18n();
   const location = useLocation();
+  const interrupted = useRef(false);
+  useEffect(() => {
+    if (!location.hash) interrupted.current = false;
+    const interrupt = () => { interrupted.current = true; };
+    const events = ["pointerdown", "keydown", "wheel", "touchmove"] as const;
+    for (const event of events) window.addEventListener(event, interrupt, { capture: true, passive: true });
+    return () => {
+      for (const event of events) window.removeEventListener(event, interrupt, true);
+    };
+  }, [location.key, location.hash]);
   const previousPath = useRef(location.pathname);
   useEffect(() => {
     const samePage = previousPath.current === location.pathname;
@@ -92,7 +102,7 @@ function App() {
               <Route index element={<Overview />} />
               <Route path="power-cells" element={<PowerCells />} />
               <Route path="power-cells/computers" element={<Computers />} />
-              <Route path="power-cells/computers/:computerId" element={<Computer />} />
+              <Route path="power-cells/computers/:computerId" element={<Computer interrupted={interrupted} />} />
               <Route path="organizations" element={<Organizations />} />
               <Route path="organizations/:companyId" element={<Organization />} />
               <Route path="invitations/:token" element={<Invitation />} />

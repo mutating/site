@@ -1,4 +1,4 @@
-"""The benchmark identity includes the name: a version contains an entire suite."""
+"""A run contains a suite; a tooling version can have many runs."""
 
 from typing import Annotated
 from uuid import UUID
@@ -33,6 +33,7 @@ class BenchmarkMeasurement(Input):
 class BenchmarkCreate(BenchmarkMeasurement):
     computer_id: UUID
     benchmarker_version: Version
+    run_id: UUID | None = None
 
 
 class BenchmarkUpdate(Input):
@@ -42,6 +43,7 @@ class BenchmarkUpdate(Input):
 class BenchmarkSuite(Input):
     model_config = ConfigDict(str_strip_whitespace=False)
     benchmarker_version: Version
+    run_id: UUID | None = None
     results: list[BenchmarkMeasurement] = Field(min_length=1, max_length=1024)
 
     @model_validator(mode="after")

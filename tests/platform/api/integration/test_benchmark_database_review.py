@@ -8,7 +8,7 @@ import anyio
 import pytest
 from alembic import command as alembic
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete, event, inspect, select
+from sqlalchemy import delete, event, inspect, select, update
 from sqlalchemy.schema import CreateTable
 
 from throng_api.app import create_app
@@ -33,10 +33,10 @@ async def create_result(api, computer, *, name="single_core", version="0.0.2", n
     return response.json()
 
 
-async def test_older_version_upsert_retains_identity_after_application_restart(
+async def test_older_version_run_retains_history_after_application_restart(
     api, computer, http_server, settings, clock, user
 ):
-    """After API restart, overwriting an older version keeps its row identity and does not change which newer version is listed."""
+    """After restart a repeated older version adds history without replacing either existing run."""
     older = await create_result(api, computer, version="0.0.2")
     newer = await create_result(api, computer, version="0.0.3", number=90)
     http_server.server.should_exit = True
@@ -53,19 +53,22 @@ async def test_older_version_upsert_retains_identity_after_application_restart(
         ) as restarted:
             assert (await restarted.get(f"/v1/benchmark-results/{older['id']}")).json() == older
             updated = await create_result(restarted, computer, version="0.0.2", number=7)
-            assert updated == {**older, "number": 7}
+            assert updated["id"] != older["id"]
+            assert updated["number"] == 7
+            assert (await restarted.get(f"/v1/benchmark-results/{older['id']}")).json() == older
             listing = f"/v1/computers/{computer['id']}/benchmark-results"
             assert (await restarted.get(listing)).json() == [newer]
             assert (await restarted.get(listing, params={"latest_only": False})).json() == [
+                older,
                 updated,
                 newer,
             ]
 
 
-async def test_mid_suite_database_failure_rolls_back_flushed_updates_and_inserts(
+async def test_mid_suite_database_failure_rolls_back_all_new_run_results(
     api, agent_api, app, computer
 ):
-    """A storage failure after partial flushing rolls back every update and insert from the failed upload."""
+    """A storage failure after partial flushing rolls back every result from the failed run."""
     existing = await create_result(api, computer)
     untouched = await create_result(api, computer, version="0.0.1", number=2)
     payload = {
@@ -92,7 +95,7 @@ async def test_mid_suite_database_failure_rolls_back_flushed_updates_and_inserts
         event.remove(engine, "before_cursor_execute", fail_third_write)
     assert response.status_code == 500
     assert len(attempted) == 3
-    assert attempted[0].startswith("UPDATE") and attempted[1].startswith("INSERT")
+    assert all(statement.startswith("INSERT") for statement in attempted)
     listing = f"/v1/computers/{computer['id']}/benchmark-results"
     assert (await api.get(listing, params={"latest_only": False})).json() == [untouched, existing]
     async with app.state.db.read() as session:
@@ -101,8 +104,9 @@ async def test_mid_suite_database_failure_rolls_back_flushed_updates_and_inserts
 
     retry = await agent_api.put("/agent/v1/benchmark-results", json=payload)
     assert retry.status_code == 200, retry.text
-    assert retry.json()[0] == {**existing, "number": 99}
-    assert len((await api.get(listing, params={"latest_only": False})).json()) == 4
+    assert retry.json()[0]["id"] != existing["id"]
+    assert retry.json()[0]["number"] == 99
+    assert len((await api.get(listing, params={"latest_only": False})).json()) == 5
 
 
 @pytest.mark.parametrize("number", [0.0, 5e-324, 0.1, 1.0000000000000002, sys.float_info.max])
@@ -129,6 +133,9 @@ async def test_populated_downgrade_reupgrade_preserves_workers_and_recreates_usa
     """Downgrading removes benchmark history without altering workers; re-upgrading recreates a usable table aligned with model metadata."""
     removed = await create_result(api, computer)
     await create_result(api, computer, name="multi_core", number=50)
+    # This test rolls back the original results table, which had no run IDs.
+    async with migration_database.write() as session:
+        await session.execute(update(BenchmarkResult).values(run_id=BenchmarkResult.id))
     async with migration_database.read() as session:
         worker_before = public(await session.get(Computer, computer["id"]))
         resources_before = [
@@ -258,7 +265,8 @@ async def test_postgres_benchmark_schema_uses_native_uuid_and_cascading_foreign_
     assert "computer_id UUID NOT NULL" in ddl
     assert "number FLOAT NOT NULL" in ddl
     assert "FOREIGN KEY(computer_id) REFERENCES computers (id) ON DELETE CASCADE" in ddl
-    assert "UNIQUE (computer_id, benchmark_name, benchmarker_version)" in ddl
+    assert "run_id UUID NOT NULL" in ddl
+    assert "UNIQUE (computer_id, benchmark_name, run_id)" in ddl
     compiled = select(BenchmarkResult).where(BenchmarkResult.id == str(UUID(int=1)))
     assert "::UUID" in str(compiled.compile(bind=engine))
     assert postgres_configuration.engine.pool.checkedout() == 0
