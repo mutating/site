@@ -7,6 +7,9 @@
     "platform/web"
   ],
   "scripts": {
+    "postinstall": "npm ci --prefix tools/http-lint --ignore-scripts",
+    "lint": "npm run lint --prefix tools/http-lint --",
+    "test:lint": "node --test tests/lint/*.test.mjs",
     "build:ui": "npm run build --workspace @mutating/ui",
     "dev:ui": "npm run dev --workspace @mutating/ui",
     "test:ui": "npm run test --workspace @mutating/ui",
@@ -19,5 +22,8 @@
     "test:web:deploy": "npm run test:deploy --workspace platform/web",
     "test:web:visual": "npm run test:visual --workspace platform/web"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "reboop": "0.1.34"
+  }
 }

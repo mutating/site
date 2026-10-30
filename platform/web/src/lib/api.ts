@@ -1,3 +1,5 @@
+import { createClient, HTTPError } from "reboop";
+
 export const API_BASE = window.__TMC_API_URL__;
 export const apiURL = (path: string) => `${API_BASE}/${path}`;
 
@@ -26,6 +28,12 @@ export class ApiError extends Error {
   }
 }
 const DEFAULT_TIMEOUT_MS = 20_000;
+const client = createClient({
+  headers: {
+    "Content-Type": "application/json",
+    "X-Requested-With": "ThrongDashboard",
+  },
+});
 type ReadBody<T> = (response: Response) => Promise<T>;
 
 export function request<T>(
@@ -50,36 +58,28 @@ async function requestWithReader<T>(
   const changesCookie = path === "auth/session" && (method === "POST" || method === "DELETE")
     || method === "DELETE" && /^users\/[\da-f-]{36}$/i.test(path);
   if (changesCookie) return withSessionLock(() => sendRequest(path, options, ++sessionRevision, timeoutMs, readBody));
-  const revision = sessionRevision;
-  if (method !== "GET" && method !== "HEAD") return sendRequest(path, options, revision, timeoutMs, readBody);
-  // Only reads can be replayed when the response was lost. Keep the hostname so
-  // DNS and connection selection remain with the browser on every attempt.
-  let delay = 1_000;
-  for (;;) {
-    try {
-      return await sendRequest(path, options, revision, timeoutMs, readBody);
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 0) throw error;
-      await waitForRetry(Math.min(delay + Math.random() * 250, 10_000), options.signal);
-      delay = Math.min(delay * 2, 10_000);
-    }
-  }
+  return sendRequest(path, options, sessionRevision, timeoutMs, readBody);
 }
 
-function waitForRetry(delay: number, signal?: AbortSignal | null): Promise<void> {
-  signal?.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", cancel);
-      resolve();
-    }, delay);
-    const cancel = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", cancel);
-      reject(signal?.reason);
-    };
-    signal?.addEventListener("abort", cancel, { once: true });
-  });
+// reboop protects successful body reads. HTTPError exposes a raw Response, so
+// bound its optional detail separately and cancel its connection on timeout.
+async function errorDetail(response: Response, controller: AbortController, signal: AbortSignal, timeoutMs: number): Promise<string> {
+  let cancel = () => {};
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const body = await Promise.race([
+      response.json().catch(() => null),
+      new Promise<null>(resolve => {
+        cancel = () => resolve(null);
+        signal.addEventListener("abort", cancel, { once: true });
+        if (signal.aborted) cancel();
+      }),
+    ]);
+    return typeof body?.detail === "string" ? body.detail : "";
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", cancel);
+  }
 }
 
 async function sendRequest<T>(
@@ -90,49 +90,28 @@ async function sendRequest<T>(
   readBody: ReadBody<T>,
 ): Promise<{ data: T; total: number | null }> {
   options.signal?.throwIfAborted();
-  const deadline = new AbortController();
-  const timer = setTimeout(() => deadline.abort(new DOMException("Timed out", "TimeoutError")), timeoutMs);
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
   try {
-    const response = await fetch(apiURL(path), {
-      ...options,
-      signal: AbortSignal.any([
-        deadline.signal,
-        ...(options.signal ? [options.signal] : []),
-      ]),
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Requested-With": "ThrongDashboard",
-        ...options.headers,
-      },
-    });
-    if (!response.ok) {
-      if (response.status === 401 && path !== "auth/session" && revision === sessionRevision)
-        window.dispatchEvent(new Event("session-expired"));
-      let detail = "";
-      try {
-        const body = await response.json();
-        detail = typeof body.detail === "string" ? body.detail : "";
-      } catch {}
-      throw new ApiError(response.status, detail);
-    }
-    const data = response.status === 204 || options.method?.toUpperCase() === "HEAD"
-      ? undefined : await readBody(response);
-    return {
-      data: data as T,
-      total: response.headers.has("X-Total-Count")
-        ? Number(response.headers.get("X-Total-Count"))
-        : null,
-    };
+    return await client.read(apiURL(path), async response => ({
+      data: (response.status === 204 || options.method?.toUpperCase() === "HEAD"
+        ? undefined : await readBody(response)) as T,
+      total: response.headers.has("X-Total-Count") ? Number(response.headers.get("X-Total-Count")) : null,
+    }), { ...options, signal, credentials: "include", timeoutMs });
   } catch (error) {
     options.signal?.throwIfAborted();
-    if (error instanceof ApiError || error instanceof SyntaxError) throw error;
-    if (!deadline.signal.aborted && error instanceof Error && error.name === "AbortError") throw error;
+    if (error instanceof HTTPError) {
+      if (error.response.status === 401 && path !== "auth/session" && revision === sessionRevision)
+        window.dispatchEvent(new Event("session-expired"));
+      const detail = await errorDetail(error.response, controller, signal, timeoutMs);
+      options.signal?.throwIfAborted();
+      throw new ApiError(error.response.status, detail);
+    }
+    if (error instanceof SyntaxError || error instanceof Error && error.name === "AbortError") throw error;
     throw new ApiError(0, "Network error");
-  } finally {
-    clearTimeout(timer);
   }
 }
+
 export const api = async <T>(path: string, options?: RequestInit, timeoutMs?: number) =>
   (await request<T>(path, options, timeoutMs)).data;
 export const json = (method: string, data?: unknown): RequestInit => ({

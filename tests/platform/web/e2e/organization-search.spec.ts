@@ -103,6 +103,7 @@ test("typing is debounced for 250 ms and clearing starts an immediate unfiltered
   await expect(page.locator(".organization-row h3")).toHaveText(["Laboratory"]);
 });
 
+/** Deliver a real obsolete response over an independently live transport after cancellation; the newer directory data must remain authoritative. */
 test("a delayed obsolete response cannot replace newer results even when transport ignores abort", async ({
   page,
   request,
@@ -114,18 +115,27 @@ test("a delayed obsolete response cannot replace newer results even when transpo
       data: { name },
     });
   await page.addInitScript(() => {
-    const original = window.fetch;
+    const original = window.fetch.bind(window);
     const aborted: string[] = [];
+    const delivered: { query: string; callerAborted: boolean; transportAborted: boolean; status: number; names: string[] }[] = [];
     Object.defineProperty(window, "__directoryAborted", { value: aborted });
-    window.fetch = (input, options) => {
-      if (String(input).includes("/organization-directory?")) {
-        const query = new URL(String(input)).searchParams.get("q") || "";
-        options?.signal?.addEventListener("abort", () => aborted.push(query), {
-          once: true,
-        });
-        return original(input, { ...options, signal: undefined });
-      }
-      return original(input, options);
+    Object.defineProperty(window, "__directoryDelivered", { value: delivered });
+    window.fetch = async (input, options) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.pathname !== "/v1/organization-directory") return original(input, options);
+      const query = url.searchParams.get("q") || "";
+      const signal = options?.signal ?? (input instanceof Request ? input.signal : undefined);
+      signal?.addEventListener("abort", () => aborted.push(query), { once: true });
+      // undefined would inherit Request.signal; override it with an independent
+      // live signal so the old HTTP response really reaches the browser.
+      const transport = new AbortController();
+      const response = await original(input, { ...options, signal: transport.signal });
+      const body = await response.clone().json();
+      delivered.push({
+        query, callerAborted: signal?.aborted ?? false, transportAborted: transport.signal.aborted,
+        status: response.status, names: body.items.map((item: any) => item.company?.name ?? item.invitation.company_name),
+      });
+      return response;
     };
   });
   await login(page, account);
@@ -168,6 +178,10 @@ test("a delayed obsolete response cannot replace newer results even when transpo
     ]);
     release();
     await oldDelivered;
+    await expect.poll(() => page.evaluate(() => (window as any).__directoryDelivered.find((row: any) => row.query === "Old"))).toEqual({
+      query: "Old", callerAborted: true, transportAborted: false, status: 200, names: ["Old laboratory"],
+    });
+    await page.waitForLoadState("networkidle");
     await expect(page.locator(".organization-row h3")).toHaveText([
       "New laboratory",
     ]);

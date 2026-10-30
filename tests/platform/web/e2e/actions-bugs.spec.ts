@@ -81,28 +81,58 @@ test("unavailable explicit binding never loads another pool's history", async ({
   await expect(page.locator(".binding-revision")).toHaveCount(0);
 });
 
-/** Aggregate GitHub reads can legitimately take the server's 60-second discovery budget; other requests keep their normal deadline. */
+/** Observe transport cancellation and successful recovery: discovery keeps its 90-second budget while an ordinary attempt still stops at 20 seconds. */
 for (const endpoint of ["catalog", "configuration"] as const) {
   test(`${endpoint} allows the server discovery budget without extending ordinary requests`, async ({ page, account }) => {
     await actionsPeer(page);
     await login(page, account);
-    await page.addInitScript(() => {
-      let budget = 0;
-      (window as any).__requestBudgets = [];
-      const timeout = AbortSignal.timeout.bind(AbortSignal);
-      AbortSignal.timeout = milliseconds => { budget = milliseconds; return timeout(milliseconds); };
+    const path = endpoint === "catalog" ? "/v1/github/repositories" : "/v1/github/repositories/789/configuration";
+    await page.addInitScript(target => {
+      const state = {
+        ordinary: { attempts: 0, abortedAfter: null as number | null },
+        discovery: { attempts: 0, abortedAfter: null as number | null },
+      };
+      Object.defineProperty(window, "__requestDeadlines", { value: state });
       const original = window.fetch.bind(window);
       window.fetch = (input, options) => {
-        (window as any).__requestBudgets.push({ path: new URL(String(input), location.href).pathname, budget });
-        return original(input, options);
+        const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+        const request = url.pathname === "/v1/auth/session" ? state.ordinary : url.pathname === target ? state.discovery : null;
+        if (!request || ++request.attempts !== 1) return original(input, options);
+        const signal = options?.signal ?? (input instanceof Request ? input.signal : undefined);
+        if (!signal) throw new Error("Expected a cancellable API transport");
+        const started = Date.now();
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            request.abortedAfter = Date.now() - started;
+            reject(signal.reason);
+          }, { once: true });
+        });
       };
-    });
+    }, path);
+    const now = new Date("2026-10-30T12:00:00Z");
+    await page.clock.install({ time: now });
+    await page.clock.pauseAt(new Date(now.getTime() + 1_000));
     await page.goto(endpoint === "catalog" ? "/actions" : repositoryURL);
-    const path = endpoint === "catalog" ? "/v1/github/repositories" : "/v1/github/repositories/789/configuration";
-    await expect.poll(() => page.evaluate(target => (window as any).__requestBudgets.find((row: any) => row.path === target)?.budget ?? 0, path)).toBeGreaterThan(60_000);
-    const ordinary = await page.evaluate(() => (window as any).__requestBudgets.filter((row: any) => row.path === "/v1/auth/session"));
-    expect(ordinary.length).toBeGreaterThan(0);
-    expect(ordinary.every((row: any) => row.budget === 20_000)).toBe(true);
+    const deadlines = () => page.evaluate(() => (window as any).__requestDeadlines);
+    await expect.poll(async () => (await deadlines()).ordinary.attempts).toBe(1);
+    await page.clock.fastForward(19_999);
+    expect((await deadlines()).ordinary.abortedAfter).toBeNull();
+    await page.clock.fastForward(1);
+    await expect.poll(async () => (await deadlines()).ordinary.abortedAfter).toBe(20_000);
+    await page.clock.fastForward(1_000);
+    await expect.poll(async () => (await deadlines()).discovery.attempts).toBe(1);
+    await page.clock.fastForward(89_999);
+    expect((await deadlines()).discovery).toEqual({ attempts: 1, abortedAfter: null });
+    await page.clock.fastForward(1);
+    await expect.poll(async () => (await deadlines()).discovery.abortedAfter).toBe(90_000);
+    await page.clock.fastForward(1_000);
+    if (endpoint === "catalog") await expect(page.getByRole("article", { name: repository.full_name })).toBeVisible();
+    else await expect(page.getByLabel("Ветка", { exact: true })).toHaveValue("main");
+    expect(await deadlines()).toEqual({
+      ordinary: { attempts: 2, abortedAfter: 20_000 },
+      discovery: { attempts: 2, abortedAfter: 90_000 },
+    });
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 }
 

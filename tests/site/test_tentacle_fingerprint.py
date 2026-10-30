@@ -88,9 +88,28 @@ def _build_site(source: Path, destination: Path) -> str:
 def tentacle_fingerprint_builds(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> dict[str, object]:
-    """Build an isolated site before and after a content-only Tentacles edit."""
+    """Build an isolated site with its locked production JavaScript runtime.
+
+    Copying only the theme and UI misses the site's reboop import. Install
+    production dependencies from the real manifests without scripts or
+    workspaces, so the build cannot borrow node_modules from the checkout.
+    Then compare the generated asset URLs before and after a content-only edit.
+    """
 
     source = tmp_path_factory.mktemp("tentacle-fingerprint") / "site"
+    for manifest in ("package.json", "package-lock.json"):
+        shutil.copy2(REPOSITORY_ROOT / manifest, source.parent / manifest)
+    dependencies = subprocess.run(
+        [
+            "npm", "ci", "--omit=dev", "--ignore-scripts", "--workspaces=false",
+            "--no-audit", "--no-fund",
+        ],
+        cwd=source.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert dependencies.returncode == 0, dependencies.stdout + dependencies.stderr
     content = source / "content"
     theme = source / "themes" / "mutating"
     # Preserve the monorepo mounts in this otherwise isolated Hugo fixture.

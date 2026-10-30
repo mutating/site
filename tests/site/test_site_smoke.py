@@ -745,13 +745,17 @@ def test_distribution_section_runs_the_supplied_pantograph_animation(
     )
 
 
-@pytest.mark.parametrize("failure", ["http", "xml", "network"])
-def test_pantograph_reports_fetch_and_parse_failures_without_breaking_the_page(
+@pytest.mark.parametrize("failure", ["http", "xml"])
+def test_pantograph_reports_terminal_http_and_xml_failures_without_breaking_the_page(
     driver: DriverFactory,
     base_url: str,
     failure: str,
 ) -> None:
-    """Report Pantograph HTTP, network and XML failures without breaking the page."""
+    """Keep received HTTP failures and invalid XML terminal after retry migration.
+
+    Unlike a lost connection, these responses must be reported once without
+    inserting SVG/runtime nodes or breaking the page's theme controls.
+    """
 
     page = driver(
         initial_path="/blog/",
@@ -760,17 +764,18 @@ def test_pantograph_reports_fetch_and_parse_failures_without_breaking_the_page(
     errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(str(error)))
 
+    attempts: list[str] = []
+
     def fail_route(route) -> None:
+        attempts.append(route.request.url)
         if failure == "http":
             route.fulfill(status=404, content_type="image/svg+xml", body="")
-        elif failure == "xml":
+        else:
             route.fulfill(
                 status=200,
                 content_type="image/svg+xml",
                 body="<svg><broken></svg>",
             )
-        else:
-            route.abort("failed")
 
     page.context.route("**/pantograph-variant-20-clean-v2.svg", fail_route)
     page.goto(f"{base_url}/", wait_until="domcontentloaded")
@@ -781,6 +786,43 @@ def test_pantograph_reports_fetch_and_parse_failures_without_breaking_the_page(
     expect(stage.locator("svg")).to_have_count(0)
     expect(stage.locator("script")).to_have_count(0)
     expect(page.get_by_role("button", name="Toggle color theme")).to_be_visible()
+    assert attempts == [f"{base_url}/pantograph-variant-20-clean-v2.svg"]
+    assert errors == []
+
+
+def test_pantograph_retries_a_network_failure_and_mounts_the_recovered_svg(
+    driver: DriverFactory,
+    base_url: str,
+) -> None:
+    """Recover the same SVG URL after a lost connection, without a terminal error.
+
+    The first real browser request fails; the second reads the supplied SVG
+    and executes its runtime. Checking the artwork ID, geometry and runtime
+    catches both disabled retries and an empty placeholder masquerading as a
+    successful mount. Page errors and the terminal-error marker must stay absent.
+    """
+
+    page = driver(initial_path="/blog/", load_interactive_visuals=False)
+    errors: list[str] = []
+    attempts: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    def fail_once(route) -> None:
+        attempts.append(route.request.url)
+        if len(attempts) == 1:
+            route.abort("failed")
+        else:
+            route.continue_()
+
+    page.context.route("**/pantograph-variant-20-clean-v2.svg", fail_once)
+    page.goto(f"{base_url}/", wait_until="domcontentloaded")
+    stage = page.locator(".pantograph-visual__object")
+    artwork = stage.locator("svg#pantographArtwork")
+    expect(artwork).to_have_count(1)
+    expect(artwork).to_have_attribute("viewBox", "0 0 1536 885")
+    page.wait_for_function("typeof window.__pantograph?.metrics === 'function'")
+    expect(stage).not_to_have_attribute("data-pantograph-error", re.compile(r".+"))
+    assert attempts == [f"{base_url}/pantograph-variant-20-clean-v2.svg"] * 2
     assert errors == []
 
 
@@ -816,36 +858,90 @@ def test_pantograph_mounts_valid_svg_without_optional_runtime_script(
     expect(stage).not_to_have_attribute("data-pantograph-error", re.compile(r".+"))
 
 
-def test_pantograph_ignores_intentional_abort_but_reports_network_rejection(
+def test_pantograph_handles_an_already_aborted_signal_without_starting_fetch(
     driver: DriverFactory,
+    base_url: str,
 ) -> None:
-    """Ignore a rejected Pantograph fetch when its own controller is aborted."""
+    """Settle intentional cancellation before transport without reporting UI failure.
+
+    A cancelled reboop call must not reach fetch at all. Observe completion of
+    the rejection handler for the controller's exact reason before checking UI
+    state; an immediate assertion before initialization would pass vacuously.
+    The fetch probe understands both native Request objects and URL inputs.
+    """
 
     page = driver(
+        initial_path="/blog/",
         load_interactive_visuals=False,
         init_scripts=(
             """
             (() => {
               const nativeFetch = window.fetch.bind(window);
               const NativeAbortController = window.AbortController;
+              const nativeCatch = Promise.prototype.catch;
+              const reasons = new WeakSet();
+              const state = window.__pantographCancellation = {
+                controllers: 0, fetches: [], handled: 0,
+              };
               window.AbortController = class extends NativeAbortController {
-                constructor() { super(); this.abort(); }
+                constructor() {
+                  super();
+                  state.controllers += 1;
+                  // Cancel the site's controller, leaving any internal
+                  // transport/deadline controllers unchanged.
+                  if (state.controllers !== 1) return;
+                  const reason = new DOMException(
+                    "Intentional test cancellation", "AbortError",
+                  );
+                  reasons.add(reason);
+                  this.abort(reason);
+                }
               };
               window.fetch = (resource, options) => {
-                if (String(resource).includes("pantograph-variant")) {
-                  window.__pantographFetchFinished = true;
-                  return Promise.reject(new Error("intentional abort"));
+                const url = resource instanceof Request
+                  ? resource.url : new URL(resource, location.href).href;
+                if (new URL(url).pathname === "/pantograph-variant-20-clean-v2.svg") {
+                  state.fetches.push(url);
                 }
                 return nativeFetch(resource, options);
+              };
+              Promise.prototype.catch = function (handler) {
+                if (typeof handler !== "function") {
+                  return nativeCatch.call(this, handler);
+                }
+                return nativeCatch.call(this, error => {
+                  const result = handler(error);
+                  if (!reasons.has(error)) return result;
+                  return Promise.resolve(result).then(value => {
+                    state.handled += 1;
+                    return value;
+                  });
+                });
               };
             })();
             """,
         ),
     )
+    errors: list[str] = []
+    network_requests: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    def record_request(request) -> None:
+        if "pantograph-variant" in request.url:
+            network_requests.append(request.url)
+
+    page.on("request", record_request)
+    page.goto(f"{base_url}/", wait_until="domcontentloaded")
+    page.wait_for_function("window.__pantographCancellation.handled === 1", timeout=5_000)
+    state = page.evaluate("window.__pantographCancellation")
     stage = page.locator(".pantograph-visual__object")
-    page.wait_for_function("window.__pantographFetchFinished === true")
+    assert state["controllers"] >= 1
+    assert state["fetches"] == []
+    assert network_requests == []
+    expect(stage.locator("svg")).to_have_count(0)
     expect(stage).not_to_have_attribute("data-pantograph-error", re.compile(r".+"))
     expect(page.locator("html")).to_have_attribute("data-theme-ready", "true")
+    assert errors == []
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])

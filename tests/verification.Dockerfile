@@ -23,4 +23,6 @@ COPY tests ./tests
 COPY deploy ./deploy
 COPY infra ./infra
 COPY .github ./.github
+COPY tools/http-lint ./tools/http-lint
+COPY eslint.config.mjs ./eslint.config.mjs
 CMD ["tests/site/.venv/bin/python", "-m", "pytest", "tests/site", "-q"]
