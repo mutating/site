@@ -37,6 +37,28 @@ it("sends authenticated JSON writes to the configured API prefix", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
+/** Resolve browser-relative API configuration against the page, preserving an
+ * explicit API origin. A missing base URL prevented even the initial session
+ * probe from reaching Fetch and left the shared-header login page unavailable.
+ */
+it.each([
+  ["/v1", "https://platform.example/v1/companies?limit=1"],
+  ["./v1", "https://platform.example/account/v1/companies?limit=1"],
+  ["https://api.example/v1", "https://api.example/v1/companies?limit=1"],
+])("resolves browser API URLs from %s", async (base, expected) => {
+  vi.stubGlobal("location", new URL("https://platform.example/account/login?draft=1#form"));
+  vi.stubGlobal("window", { __TMC_API_URL__: base, dispatchEvent });
+  const { api } = await import("../../../../platform/web/src/lib/api");
+  fetchMock.mockResolvedValue(new Response('{"ready":true}'));
+
+  await expect(api("companies?limit=1")).resolves.toEqual({ ready: true });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [input, init] = fetchMock.mock.calls[0];
+  expect(new Request(input, init).url).toBe(expected);
+  expect(init.credentials).toBe("include");
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 /** Both Fetch header representations must merge case-insensitively with the CSRF default, including content-type overrides. */
 it.each([
   new Headers({ "content-type": "image/png", "X-Trace": "avatar" }),

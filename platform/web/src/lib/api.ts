@@ -29,6 +29,7 @@ export class ApiError extends Error {
 }
 const DEFAULT_TIMEOUT_MS = 20_000;
 const client = createClient({
+  baseUrl: globalThis.location?.href,
   headers: {
     "Content-Type": "application/json",
     "X-Requested-With": "ThrongDashboard",
