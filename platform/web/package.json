@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@mutating/ui": "0.1.0",
+    "reboop": "0.1.34",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router-dom": "7.18.4"

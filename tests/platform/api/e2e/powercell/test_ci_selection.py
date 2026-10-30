@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import delete, select
@@ -31,8 +32,19 @@ pytestmark = [
 ]
 
 
+@pytest.fixture
+def selection_wait(monkeypatch):
+    """Keep the selection handshake independent of CI scheduling pauses.
+
+    Only reserve's poll-budget clock is frozen; asyncio and HTTP timeouts stay
+    real. Deadline behavior is covered separately in test_ci_readiness_wait.
+    """
+    monkeypatch.setattr(ci, "time", SimpleNamespace(monotonic=lambda: 0))
+
+
 # Assertions: cached and long-polled readiness are selected before returning the
 # label; response replay keeps the original lease, and requires no second request.
+@pytest.mark.usefixtures("selection_wait")
 @pytest.mark.parametrize("held", [False, True])
 async def test_reserve_finalizes_selection_without_another_request(
     client, route, ci_peer, powercell, app, clock, monkeypatch, held
@@ -85,6 +97,7 @@ async def test_reserve_finalizes_selection_without_another_request(
 # Assertions: after observing ready, a final write must re-read authorization,
 # status, deadlines, command and assigned session. No label or renewed lease may
 # escape when any of them changed, whether ready came from cache or long polling.
+@pytest.mark.usefixtures("selection_wait")
 @pytest.mark.parametrize("held", [False, True])
 @pytest.mark.parametrize(
     "change",

@@ -3,6 +3,7 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 COPY platform/web/package.json ./platform/web/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
+COPY tools/http-lint/package.json tools/http-lint/package-lock.json ./tools/http-lint/
 RUN npm ci
 COPY packages/ui ./packages/ui
 COPY platform/web ./platform/web

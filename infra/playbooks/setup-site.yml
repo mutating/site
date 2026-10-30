@@ -22,6 +22,7 @@
     deploy_group: user
     local_site_path: "{{ playbook_dir }}/../../site"
     local_ui_path: "{{ local_site_path }}/../packages/ui"
+    local_runtime_path: "{{ local_site_path }}/../.runtime/site-runtime"
     source_path: /opt/mutating.tech
     source_staging_path: /var/tmp/mutating-tech-source-sync
     deploy_path: /var/www/mutating.tech
@@ -134,6 +135,42 @@
         chdir: "{{ local_ui_path }}/../.."
       changed_when: true
 
+    - name: Create the local Hugo runtime preparation directory
+      tags:
+        - source_sync
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.file:
+        path: "{{ local_runtime_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy the root manifests for Hugo runtime preparation
+      tags:
+        - source_sync
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.copy:
+        src: "{{ local_site_path }}/../{{ item }}"
+        dest: "{{ local_runtime_path }}/{{ item }}"
+        mode: '0644'
+      loop:
+        - package.json
+        - package-lock.json
+
+    - name: Install the pinned Hugo runtime dependencies locally
+      tags:
+        - source_sync
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: npm ci --omit=dev --ignore-scripts --workspaces=false --no-audit --no-fund
+      args:
+        chdir: "{{ local_runtime_path }}"
+      changed_when: true
+
     - name: Create remote source synchronization staging directories
       tags:
         - source_sync
@@ -146,6 +183,7 @@
         - "{{ source_staging_path }}"
         - "{{ source_staging_path }}/site"
         - "{{ source_staging_path }}/packages/ui"
+        - "{{ source_staging_path }}/node_modules"
 
     - name: Synchronize the local site checkout to the server
       tags:
@@ -194,6 +232,24 @@
       loop:
         - hugo
         - dist
+
+    - name: Synchronize the Hugo runtime dependencies to the server
+      tags:
+        - source_sync
+      become: false
+      ansible.posix.synchronize:
+        src: "{{ local_runtime_path }}/node_modules/"
+        dest: "{{ source_staging_path }}/node_modules/"
+        archive: true
+        checksum: true
+        compress: true
+        delete: true
+        owner: false
+        group: false
+        perms: false
+        times: false
+        use_ssh_args: true
+        ssh_connection_multiplexing: true
 
     - name: Promote the synchronized checkout into the source directory
       tags:

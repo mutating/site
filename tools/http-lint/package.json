@@ -1,0 +1,16 @@
+{
+  "name": "@mutating/http-lint",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.mjs",
+  "scripts": {
+    "lint": "cd ../.. && eslint platform/web/src platform/web/public packages/ui/src packages/ui/demo site/themes/mutating/assets --max-warnings 0 --no-inline-config"
+  },
+  "devDependencies": {
+    "eslint": "10.13.0",
+    "@typescript-eslint/parser": "8.72.1",
+    "typescript": "6.0.3",
+    "reboop-eslint": "0.1.34"
+  }
+}

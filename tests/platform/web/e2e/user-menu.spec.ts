@@ -1,4 +1,4 @@
-import { API, expect, login, makeAccount, password, test } from "./fixtures";
+import { API, expect, headers, login, makeAccount, password, test } from "./fixtures";
 import { selectLanguage } from "./header-controls";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=", "base64");
@@ -275,15 +275,19 @@ test("profile upload, page reload and removal immediately update the circular he
   await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
   const image = trigger(page).locator("img");
   await expect(image).toHaveCount(0);
+  const firstRead = page.waitForRequest(request => request.url().startsWith(`${API}/users/me/avatar?`) && request.method() === "GET");
   await page.getByLabel("Загрузить аватар").setInputFiles(avatar);
+  const version = new URL((await firstRead).url()).searchParams.get("v");
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
   await expect(image).toHaveCSS("object-fit", "cover");
-  await expect(image).toHaveAttribute("src", /\/users\/me\/avatar\?v=.+/);
-  const src = await image.getAttribute("src");
+  await expect(image).toHaveAttribute("src", /^blob:/);
+  const reloadedRead = page.waitForRequest(request => request.url().startsWith(`${API}/users/me/avatar?`) && request.method() === "GET");
   await page.reload();
-  await expect(image).toHaveAttribute("src", src!);
+  expect(new URL((await reloadedRead).url()).searchParams.get("v")).toBe(version);
+  await expect(image).toHaveAttribute("src", /^blob:/);
   await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Удалить аватар" }).click();
   await expect(image).toHaveCount(0);
   await expect(trigger(page).locator(".avatar")).toHaveText("А");
@@ -310,10 +314,38 @@ test("a failed avatar download uses the placeholder and recovers after a new upl
   await expect(trigger(page).locator(".avatar")).toHaveText("А");
   await page.unroute(`${API}/users/me/avatar?*`);
   // Identical bytes keep the same avatar hash; an explicit re-upload must retry.
+  const retriedRead = page.waitForRequest(request => request.url().startsWith(`${API}/users/me/avatar?`) && request.method() === "GET");
   await page.getByLabel("Загрузить аватар").setInputFiles(avatar);
   await expect(trigger(page).locator("img")).toBeVisible();
-  expect(new URL((await trigger(page).locator("img").getAttribute("src"))!).searchParams.get("v")).toBe(version);
+  expect(new URL((await retriedRead).url()).searchParams.get("v")).toBe(version);
+  await expect(trigger(page).locator("img")).toHaveAttribute("src", /^blob:/);
   await expect.poll(() => trigger(page).locator("img").evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
+});
+
+test("avatar API downloads automatically recover from transport failures through the common client", async ({ page, request, account }) => {
+  expect((await request.put(`${API}/users/me/avatar`, {
+    headers: { ...headers(account), "Content-Type": "image/png" }, data: png,
+  })).status()).toBe(200);
+  let fail = true;
+  const reads: import("@playwright/test").Request[] = [];
+  await page.route(`${API}/users/me/avatar?*`, route => {
+    reads.push(route.request());
+    return fail ? route.abort("failed") : route.continue();
+  });
+  await login(page, account);
+  await expect.poll(() => reads.length).toBeGreaterThan(0);
+  await expect(trigger(page).locator("img")).toHaveCount(0);
+  await expect(trigger(page).locator(".avatar")).toHaveText("А");
+  fail = false;
+  const image = trigger(page).locator("img");
+  await expect(image).toBeVisible();
+  await expect(image).toHaveAttribute("src", /^blob:/);
+  await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
+  expect(reads.length).toBeGreaterThan(1);
+  for (const read of reads) {
+    expect(read.resourceType()).toBe("fetch");
+    expect(await read.headerValue("X-Requested-With")).toBe("ThrongDashboard");
+  }
 });
 
 for (const intervening of ["same image", "removal", "different image"] as const) {

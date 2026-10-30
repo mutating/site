@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 import shutil
 import subprocess
 from html.parser import HTMLParser
@@ -75,7 +76,12 @@ def test_header_reserves_all_supported_language_codes_on_untranslated_pages(
 def test_bootstrap_synchronized_sources_build_without_the_original_checkout(
     tmp_path: Path,
 ) -> None:
-    """Emulate the playbook's actual uploads, then build only the remote tree."""
+    """Build only the playbook's uploaded tree, including pinned npm runtime.
+
+    Copying just Hugo and UI sources missed reboop after the transport migration.
+    Execute the declared local preparation, then build with no access to the
+    original checkout's node_modules or any frontend toolchain on the server.
+    """
     playbook = (REPOSITORY_ROOT / "infra/playbooks/setup-site.yml").read_text()
     task_parts = re.split(r"^    - name: (.+)\n", playbook, flags=re.MULTILINE)
     tasks = dict(zip(task_parts[1::2], task_parts[2::2]))
@@ -84,6 +90,7 @@ def test_bootstrap_synchronized_sources_build_without_the_original_checkout(
         "playbook_dir": str(REPOSITORY_ROOT / "infra/playbooks"),
         "source_staging_path": str(tmp_path / "staging"),
         "source_path": str(tmp_path / "remote"),
+        "local_runtime_path": str(tmp_path / "runtime"),
     })
 
     def render(value: str) -> str:
@@ -98,6 +105,36 @@ def test_bootstrap_synchronized_sources_build_without_the_original_checkout(
     build_cwd = re.search(r'chdir: "([^"]+)"', build_ui)
     assert build_cwd is not None
     assert Path(render(build_cwd[1])).resolve() == REPOSITORY_ROOT
+
+    runtime_directory = tasks["Create the local Hugo runtime preparation directory"]
+    assert "delegate_to: localhost" in runtime_directory
+    assert "become: false" in runtime_directory
+    assert "state: directory" in runtime_directory
+    runtime_path = re.search(r'^        path: "([^"]+)"$', runtime_directory, re.MULTILINE)
+    assert runtime_path is not None
+    Path(render(runtime_path[1])).mkdir(parents=True)
+
+    manifests = tasks["Copy the root manifests for Hugo runtime preparation"]
+    assert "delegate_to: localhost" in manifests
+    assert "become: false" in manifests
+    manifest_source = re.search(r'^        src: "([^"]+)"$', manifests, re.MULTILINE)
+    manifest_target = re.search(r'^        dest: "([^"]+)"$', manifests, re.MULTILINE)
+    assert manifest_source is not None and manifest_target is not None
+    for item in re.findall(r"^        - ([\w.-]+)$", manifests.split("      loop:", 1)[1], re.MULTILINE):
+        variables["item"] = item
+        shutil.copy2(render(manifest_source[1]), render(manifest_target[1]))
+
+    runtime_install = tasks["Install the pinned Hugo runtime dependencies locally"]
+    assert "delegate_to: localhost" in runtime_install
+    assert "become: false" in runtime_install
+    install_command = re.search(r"ansible.builtin.command: ([^\n]+)", runtime_install)
+    install_cwd = re.search(r'chdir: "([^"]+)"', runtime_install)
+    assert install_command is not None and install_cwd is not None
+    result = subprocess.run(
+        shlex.split(install_command[1]), cwd=render(install_cwd[1]),
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
     for task in tasks.values():
         if "ansible.posix.synchronize:" not in task:
@@ -128,6 +165,9 @@ def test_bootstrap_synchronized_sources_build_without_the_original_checkout(
     _build(Path(render(site_cwd[1])), output, "--baseURL", "https://example.test/")
     assert _HeaderParser((output / "index.html").read_text()).has_header
     assert (output / "ui/index.js").is_file()
+    assert (remote / "node_modules/reboop/package.json").is_file()
+    assert not (remote / "node_modules/typescript").exists()
+    assert not (remote / "node_modules/vite").exists()
 
 
 def test_all_fingerprinted_header_styles_match_both_immutable_nginx_locations(

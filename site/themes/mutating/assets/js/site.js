@@ -1,4 +1,5 @@
 import { mountHeader, mountBrand, mountMobileMenu, BRAND_POINTER_EVENT } from "../ui/index.js";
+import { createClient } from "reboop";
 
 (() => {
   "use strict";
@@ -667,16 +668,10 @@ import { mountHeader, mountBrand, mountMobileMenu, BRAND_POINTER_EVENT } from ".
     const stage = document.querySelector(".pantograph-visual__object");
     if (!stage) return;
     const controller = new AbortController();
-    fetch("/pantograph-variant-20-clean-v2.svg", {
+    createClient({ baseUrl: window.location.origin }).text("/pantograph-variant-20-clean-v2.svg", {
       cache: "no-store",
       signal: controller.signal,
     })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Pantograph SVG failed to load: ${response.status}`);
-        }
-        return response.text();
-      })
       .then((text) => {
         const source = new DOMParser().parseFromString(text, "image/svg+xml");
         const parseError = source.querySelector("parsererror");

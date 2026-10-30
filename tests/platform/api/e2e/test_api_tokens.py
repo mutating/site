@@ -431,10 +431,13 @@ async def test_compatibility_registry_paginates_across_independent_stores(
     ):
         for legacy in (False, True):
             response = await issuer.post(
-                "/v1/api-tokens", json={
-                    **owner, "name": "Page", "scopes": ["read", "execute"],
+                "/v1/api-tokens",
+                json={
+                    **owner,
+                    "name": "Page",
+                    "scopes": ["read", "execute"],
                     "expires_in_seconds": 86400 if legacy else None,
-                }
+                },
             )
             assert response.status_code == 201, response.text
             identifier = response.json()["id"]

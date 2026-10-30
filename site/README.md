@@ -11,7 +11,7 @@ artwork, WebGL tentacles, and tokamak renderer all ship with the custom
 ## Requirements
 
 - Hugo Extended `0.164.0` (the version used by local development and CI)
-- Node.js `24` and npm for the shared `@mutating/ui` header
+- Node.js `24` and npm for the shared `@mutating/ui` header and `reboop` HTTP runtime
 - Python `3.11` or newer for the browser test suite
 
 On macOS, Hugo can be installed with:
@@ -462,7 +462,8 @@ Shared platform setup and release activation are described in
 [the deployment guide](../docs/deployment.md). The commands below run from the
 repository root. The repository includes `infra/playbooks/setup-server.yml`. Run it from a
 clean local checkout. The playbook supports Debian-based servers, builds the
-shared UI locally, copies `site/` and `packages/ui/{hugo,dist}` to the server,
+shared UI locally, prepares the locked production HTTP runtime, and copies
+`site/`, `packages/ui/{hugo,dist}` and the runtime `node_modules/` to the server,
 installs Git, Hugo Extended, nginx, Certbot, OpenSSL,
 and rsync, performs a production Hugo build, and configures nginx, TLS
 certificate issuance/renewal, and the crawler-log report timer. The VPS needs
@@ -504,8 +505,11 @@ cd site
 #### 2. Prepare local build tools and Ansible
 
 Install Node.js 24 locally, then install the workspace dependencies from the
-repository root. The playbook runs `npm run build:ui` on this machine before
-synchronizing sources; Node.js is not needed on the static-site VPS.
+repository root. Before synchronizing sources, the playbook runs
+`npm run build:ui` and prepares `.runtime/site-runtime` with
+`npm ci --omit=dev --ignore-scripts --workspaces=false --no-audit --no-fund`.
+Only the locked production dependencies are uploaded for Hugo's `reboop`
+import; Node.js and frontend build tools are not needed on the static-site VPS.
 
 ```bash
 npm ci
@@ -571,7 +575,7 @@ The defaults use `/opt/mutating.tech` for the copied source tree, with Hugo in
 `/opt/mutating.tech/site` and the library in `/opt/mutating.tech/packages/ui`, and
 `/var/www/mutating.tech` for the generated site served by nginx and updated
 by CI. They target `mutating.tech` and the deployment account `user`.
-Override `local_site_path`, `local_ui_path`, `site_domain`, `site_aliases`, `certbot_email`,
+Override `local_site_path`, `local_ui_path`, `local_runtime_path`, `site_domain`, `site_aliases`, `certbot_email`,
 `deploy_user`, `deploy_group`, `source_path`, `source_staging_path`, and
 `deploy_path` with additional variables when provisioning another site. Keep
 the domain-dependent values consistent; for structured values such as

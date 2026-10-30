@@ -684,7 +684,7 @@ test("the full benchmark list loads on demand, retries and keeps historical-only
     "22",
   ]);
   expect(requests).toHaveLength(0);
-  await page.route(path, (route) => route.abort("failed"));
+  await page.route(path, (route) => route.fulfill({ status: 503, json: { detail: "Unavailable" } }));
   const archive = await openArchive(page);
   await expect(archive.getByRole("alert")).toBeVisible();
   await expect(archive.getByLabel("Выберите бенчмарк")).toHaveCount(0);
@@ -919,7 +919,7 @@ test("benchmark failures are isolated, show loading and recover with real update
   await measurement(request, account, computer.id, "1.0.0");
   await login(page, account);
   const latestPath = `**/v1/computers/${computer.id}/benchmark-results?latest_only=true`;
-  await page.route(latestPath, (route) => route.abort("failed"));
+  await page.route(latestPath, (route) => route.fulfill({ status: 503, json: { detail: "Unavailable" } }));
   await page.goto(`power-cells/computers?user_id=${account.id}`);
   const row = page.getByRole("row").filter({ hasText: "Устойчивый узел" });
   await expect(row.locator("td.numeric")).toHaveText(["8 / 8", "8 / 8 GiB"]);
@@ -956,7 +956,7 @@ test("benchmark failures are isolated, show loading and recover with real update
   ).toBeVisible();
   await page.unroute(latestPath);
   const historyPath = `**/v1/computers/${computer.id}/benchmark-results?latest_only=false`;
-  await page.route(historyPath, (route) => route.abort("failed"));
+  await page.route(historyPath, (route) => route.fulfill({ status: 503, json: { detail: "Unavailable" } }));
   await latest(page)
     .getByRole("link", { name: /single_core/ })
     .click();
@@ -969,7 +969,7 @@ test("benchmark failures are isolated, show loading and recover with real update
     .getByRole("button", { name: "Попробовать снова" })
     .click();
   await expect(history(page).locator("tbody td")).toHaveText("42");
-  await page.route(latestPath, (route) => route.abort("failed"));
+  await page.route(latestPath, (route) => route.fulfill({ status: 503, json: { detail: "Unavailable" } }));
   await page.getByRole("button", { name: "Обновить", exact: true }).click();
   await expect(latest(page).getByRole("alert")).toBeVisible();
   await expect(history(page).locator("tbody td")).toHaveText("42");

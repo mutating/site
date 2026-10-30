@@ -4,11 +4,6 @@ beforeEach(() => {
   vi.resetModules(); vi.useFakeTimers();
   vi.stubGlobal("window", { __TMC_API_URL__: "https://api.example/v1" });
   vi.stubGlobal("navigator", {});
-  vi.spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), milliseconds);
-    return controller.signal;
-  });
   vi.stubGlobal("fetch", vi.fn((_url, options) => new Promise<Response>((resolve, reject) => {
     setTimeout(() => resolve(new Response(JSON.stringify({ ready: true }))), 22_000);
     options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
@@ -16,10 +11,13 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-/** A valid aggregate read must survive 20 seconds while ordinary requests keep their existing deadline. */
+/** A valid aggregate read must survive 20 seconds while writes keep their existing deadline. */
 it("permits a per-request discovery budget without changing the default deadline", async () => {
   const { api } = await import("../../../../platform/web/src/lib/api");
-  const results = Promise.allSettled([api("github/repositories", {}, 90_000), api("users/me")]);
+  const results = Promise.allSettled([
+    api("github/repositories", {}, 90_000),
+    api("users/me", { method: "PATCH", body: "{}" }),
+  ]);
   await vi.advanceTimersByTimeAsync(22_000);
   const [discovery, ordinary] = await results;
   expect(discovery).toEqual({ status: "fulfilled", value: { ready: true } });
