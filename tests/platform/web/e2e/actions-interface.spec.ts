@@ -55,7 +55,7 @@ test("mobile editor actions and editable controls remain comfortable to use", as
 /** Mobile token values and secondary controls must not retain the small text and hit areas of desktop controls. */
 test("mobile token creation keeps its name and expiry readable", async ({ page, account }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await actionsPeer(page); await login(page, account); await page.goto("/api-tokens");
+  await actionsPeer(page); await login(page, account); await page.goto("/profile?section=api-tokens");
   await page.getByRole("button", { name: "Создать токен", exact: true }).click();
   const dialog = page.getByRole("dialog");
   expect((await dialog.getByRole("button", { name: "Закрыть диалог", exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -157,7 +157,7 @@ test("mobile token revoke has a usable touch target", async ({ page, account }) 
   await page.setViewportSize({ width: 390, height: 844 });
   await actionsPeer(page);
   expect((await page.request.post(`${API}/api-tokens`, { headers: headers(account), data: { user_id: account.id, name: "Interface review", scopes: ["read"] } })).status()).toBe(201);
-  await login(page, account); await page.goto("/api-tokens");
+  await login(page, account); await page.goto("/profile?section=api-tokens");
   const revoke = page.getByRole("button", { name: "Отозвать токен", exact: true });
   await expect(revoke).toBeVisible();
   expect((await revoke.boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -166,7 +166,7 @@ test("mobile token revoke has a usable touch target", async ({ page, account }) 
 /** A touch-sized dialog wider than the phone breakpoint must keep its primary action visible before the user discovers scrolling. */
 test("token creation action stays visible in a short touch-sized dialog", async ({ page, account }) => {
   await page.setViewportSize({ width: 600, height: 400 });
-  await actionsPeer(page); await login(page, account); await page.goto("/api-tokens");
+  await actionsPeer(page); await login(page, account); await page.goto("/profile?section=api-tokens");
   await page.getByRole("button", { name: "Создать токен", exact: true }).click();
   await expect(page.getByRole("dialog").getByRole("button", { name: "Создать личный токен", exact: true })).toBeInViewport({ ratio: 0.99 });
 });

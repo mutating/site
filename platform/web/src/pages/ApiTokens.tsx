@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { allPages, api, ApiError, json, request } from "../lib/api";
 import { useData } from "../lib/useData";
@@ -11,7 +11,6 @@ import {
   ConfirmDialog,
   Empty,
   ErrorBox,
-  Heading,
   Icon,
   Loading,
 } from "../components/UI";
@@ -26,6 +25,9 @@ export function ApiTokens() {
     Math.min(1_000_000, Number.parseInt(params.get("page") || "1", 10) || 1),
   );
   const key = `${user!.id}/${owner}/${page}`;
+  const registryTitle = useRef<HTMLHeadingElement>(null);
+  const registry = useRef<HTMLDivElement>(null);
+  const pendingFocus = useRef<{ key: string; tokenId?: string } | null>(null);
   const [owners, setOwners] = useState<{ userId: string; items: Pick<Company, "id" | "name" | "my_permissions">[] } | null>(null);
   const state = useData(
     async (signal) => {
@@ -99,7 +101,8 @@ export function ApiTokens() {
     state.reload();
   };
   const pages = Math.max(1, Math.ceil((data?.total || 0) / 10));
-  const updatePage = (value: number, replace = false) => {
+  const updatePage = (value: number, replace = false, focusResult = false) => {
+    if (focusResult) pendingFocus.current = { key: `${user!.id}/${owner}/${value}` };
     const next = new URLSearchParams(params);
     if (value === 1) next.delete("page");
     else next.set("page", String(value));
@@ -108,6 +111,24 @@ export function ApiTokens() {
   useEffect(() => {
     if (data && !state.loading && page > pages) updatePage(pages, true);
   }, [data, state.loading, page, pages]);
+  useEffect(() => {
+    const pending = pendingFocus.current;
+    if (!pending) return;
+    if (pending.key !== key || (!state.loading && state.error)) {
+      pendingFocus.current = null;
+      return;
+    }
+    if (!data || state.loading) return;
+    pendingFocus.current = null;
+    // A list refresh can remove or disable the trigger; respect any newer focus.
+    const focused = document.activeElement;
+    const disabledAction = focused instanceof HTMLButtonElement && focused.disabled && registry.current?.contains(focused);
+    if (focused !== document.body && !disabledAction) return;
+    const row = pending.tokenId && Array.from(registry.current?.querySelectorAll<HTMLElement>(".token-registry-row") || [])
+      .find(element => element.dataset.tokenId === pending.tokenId);
+    if (row) row.focus({ preventScroll: true });
+    else registryTitle.current?.focus();
+  }, [key, data, state.loading, state.error]);
   const personalName =
     [user!.first_name, user!.last_name].filter(Boolean).join(" ") ||
     user!.nickname ||
@@ -125,9 +146,12 @@ export function ApiTokens() {
         : "tokenActive";
   return (
     <div className="api-tokens-page">
-      <Heading index={`06 / ${t("apiTokens")}`} title={t("availableTokens")}>
-        {t("tokensLead")}
-      </Heading>
+      <header className="page-heading">
+        <div>
+          <h2 ref={registryTitle} className="token-registry-title" tabIndex={-1}>{t("availableTokens")}<span className="hot">.</span></h2>
+          <p className="lede">{t("tokensLead")}</p>
+        </div>
+      </header>
       <div className="token-registry-toolbar">
         <div className="token-registry-filter">
           <label className="field">
@@ -196,6 +220,7 @@ export function ApiTokens() {
       ) : (
         <>
           <div
+            ref={registry}
             className="token-registry"
             aria-label={t("apiTokens")}
             aria-busy={state.loading}
@@ -211,6 +236,8 @@ export function ApiTokens() {
               <article
                 className="token-registry-row"
                 key={token.id}
+                data-token-id={token.id}
+                tabIndex={-1}
                 aria-label={token.name}
               >
                 <div className="token-registry-name">
@@ -296,14 +323,14 @@ export function ApiTokens() {
                 <button
                   className="button secondary compact"
                   disabled={page <= 1 || state.loading}
-                  onClick={() => updatePage(page - 1)}
+                  onClick={() => updatePage(page - 1, false, true)}
                 >
                   ← {t("previous")}
                 </button>
                 <button
                   className="button secondary compact"
                   disabled={page >= pages || state.loading}
-                  onClick={() => updatePage(page + 1)}
+                  onClick={() => updatePage(page + 1, false, true)}
                 >
                   {t("next")} →
                 </button>
@@ -342,6 +369,7 @@ export function ApiTokens() {
                 `access-tokens/${revoking.id}`,
                 json("PATCH", { revoke: true }),
               );
+              pendingFocus.current = { key, tokenId: revoking.id };
             } catch (failure) {
               refresh(failure);
               throw failure;

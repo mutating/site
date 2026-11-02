@@ -1,13 +1,109 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError, json } from "../lib/api";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import type { User } from "../lib/types";
 import { Avatar } from "../components/Avatar";
 import { ConfirmDialog, ErrorBox, Heading, Icon } from "../components/UI";
+import { ApiTokens } from "./ApiTokens";
+
+const sections = ["personal", "account", "api-tokens"] as const;
+type ProfileSection = typeof sections[number];
+
 export function Profile() {
-  const { user, setUser, updateUser } = useSession();
+  const { t } = useI18n();
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("section");
+  const active = sections.find(section => section === requested) || "personal";
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const previousSection = useRef(active);
+  // History changes selection without replacing the surviving tab buttons.
+  useEffect(() => {
+    if (previousSection.current === active) return;
+    previousSection.current = active;
+    const focused = document.activeElement;
+    if (focused === document.body || tabsRef.current?.contains(focused)) {
+      document.getElementById(`profile-tab-${active}`)?.focus({ preventScroll: true });
+    }
+  }, [active]);
+  const labels = [t("profileDetails"), t("profileAccount"), t("apiTokens")];
+  const selectSection = (section: ProfileSection) => {
+    if (section === active) return;
+    const next = new URLSearchParams(params);
+    if (section === "personal") next.delete("section");
+    else next.set("section", section);
+    setParams(next, { state: { keepScroll: true } });
+  };
+  return (
+    <div className="profile-page">
+      <div className="profile-heading">
+        <Heading index={`05 / ${t("profile")}`} title={t("profile")}>
+          {t("profileLead")}
+        </Heading>
+      </div>
+      <div ref={tabsRef} className="profile-tabs" role="tablist" aria-label={t("profileSections")}>
+        {sections.map((section, index) => (
+          <button
+            type="button"
+            role="tab"
+            id={`profile-tab-${section}`}
+            aria-controls={`profile-panel-${section}`}
+            aria-selected={active === section}
+            tabIndex={active === section ? 0 : -1}
+            key={section}
+            onClick={() => selectSection(section)}
+            onKeyDown={(event) => {
+              if (event.altKey || event.ctrlKey || event.metaKey) return;
+              let next: number;
+              switch (event.key) {
+                case "ArrowRight": next = (index + 1) % sections.length; break;
+                case "ArrowLeft": next = (index + sections.length - 1) % sections.length; break;
+                case "Home": next = 0; break;
+                case "End": next = sections.length - 1; break;
+                default: return;
+              }
+              event.preventDefault();
+              document.getElementById(`profile-tab-${sections[next]}`)?.focus();
+              selectSection(sections[next]);
+            }}
+          >
+            {labels[index]}
+          </button>
+        ))}
+      </div>
+      <section
+        id="profile-panel-personal"
+        className="profile-personal-panel"
+        role="tabpanel"
+        aria-labelledby="profile-tab-personal"
+        hidden={active !== "personal"}
+      >
+        <PersonalDetails />
+      </section>
+      <section
+        id="profile-panel-account"
+        className="profile-account-panel"
+        role="tabpanel"
+        aria-labelledby="profile-tab-account"
+        hidden={active !== "account"}
+      >
+        {active === "account" && <AccountSettings />}
+      </section>
+      <section
+        id="profile-panel-api-tokens"
+        role="tabpanel"
+        aria-labelledby="profile-tab-api-tokens"
+        hidden={active !== "api-tokens"}
+      >
+        {active === "api-tokens" && <ApiTokens />}
+      </section>
+    </div>
+  );
+}
+
+function PersonalDetails() {
+  const { user, updateUser } = useSession();
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -15,7 +111,7 @@ export function Profile() {
   const [avatarError, setAvatarError] = useState<unknown>(null);
   const [avatarSuccess, setAvatarSuccess] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const editRevision = useRef(0);
   async function changeAvatar(file?: File) {
     setAvatarError(null);
     setAvatarSuccess(false);
@@ -44,13 +140,6 @@ export function Profile() {
     }
   }
   return (
-    <div className="profile-page">
-      <Heading
-        index={`05 / ${t("profile")}`}
-        title={t("profile")}
-      >
-        {t("profileLead")}
-      </Heading>
       <div className="profile-panel">
         <section
           className="profile-section"
@@ -105,6 +194,10 @@ export function Profile() {
         </section>
         <form
           className="profile-settings-form"
+          onChange={() => {
+            editRevision.current++;
+            setSuccess(false);
+          }}
           onSubmit={async (e) => {
             e.preventDefault();
             if (busy) return;
@@ -112,6 +205,7 @@ export function Profile() {
             setError(null);
             setSuccess(false);
             const values = Object.fromEntries(new FormData(e.currentTarget));
+            const submittedRevision = editRevision.current;
             try {
               await updateUser(() => api<User>(
                   `users/${user!.id}`,
@@ -120,7 +214,8 @@ export function Profile() {
                     nickname: values.nickname || null,
                   }),
                 ));
-              setSuccess(true);
+              // A late response only confirms the version this request submitted.
+              setSuccess(editRevision.current === submittedRevision);
             } catch (err) {
               setError(err);
             } finally {
@@ -204,12 +299,17 @@ export function Profile() {
           </div>
         </form>
       </div>
-      <section className="token-profile-link panel"><div><h2>{t("apiTokens")}</h2><p>{t("tokenProfileLead")}</p></div><Link className="button secondary" to="/api-tokens">{t("apiTokens")} ↗</Link></section>
-      <details className="profile-account-management">
-        <summary>
-          {t("accountManagement")}
-          <Icon name="chevron-down" size={15} />
-        </summary>
+  );
+}
+
+function AccountSettings() {
+  const { user, setUser } = useSession();
+  const { t } = useI18n();
+  const [deleting, setDeleting] = useState(false);
+  return (
+    <>
+      <h2 className="profile-account-title">{t("accountManagement")}</h2>
+      <div className="panel profile-account-management">
         <section className="danger-zone">
           <h2>{t("accountDeletion")}</h2>
           <p>{t("deletionLead")}</p>
@@ -223,7 +323,7 @@ export function Profile() {
             {t("deleteAccount")}
           </button>
         </section>
-      </details>
+      </div>
       {deleting && (
         <ConfirmDialog
           title={t("confirmDelete")}
@@ -236,6 +336,6 @@ export function Profile() {
           }}
         />
       )}
-    </div>
+    </>
   );
 }

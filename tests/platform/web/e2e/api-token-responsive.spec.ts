@@ -107,7 +107,7 @@ for (const [width, height] of screens) {
           },
         });
       });
-      await page.goto("api-tokens");
+      await page.goto("/profile?section=api-tokens");
       await expect(page.locator(".token-registry-row")).toHaveCount(2);
       await page.evaluate(() => document.fonts.ready);
       const trigger = page.getByRole("button", {
@@ -206,36 +206,37 @@ for (const [width, height] of screens) {
 }
 
 /**
- * The profile's token entry used to place its text and link directly on the
- * rounded panel border because the shared panel has no default padding.
- * Both must remain comfortably inside the card at phone, tablet and desktop
- * widths, and the link must still open the token registry in either language.
+ * The profile switcher must fit all three labels and usable touch targets at
+ * phone, tablet and desktop widths in either language.
  */
 for (const width of [320, 768, 1440]) {
   for (const language of ["ru", "en"] as const) {
-    test(`profile token entry has readable insets at ${width}px ${language}`, async ({ page, account }, info) => {
+    test(`profile sections fit and open tokens at ${width}px ${language}`, async ({ page, account, isMobile }, info) => {
       const ru = language === "ru";
       await page.setViewportSize({ width, height: 1000 });
       await page.addInitScript(language => localStorage.setItem("tmc-language", language), language);
       await startSession(page, account);
       await page.goto("/profile");
-      const entry = page.locator(".token-profile-link");
-      const link = entry.getByRole("link", { name: /API/ });
+      const entry = page.getByRole("tablist", { name: ru ? "Разделы профиля" : "Profile sections" });
+      const tokenTab = entry.getByRole("tab", { name: ru ? "API-токены" : "API tokens", exact: true });
       await expect(entry).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
       await entry.scrollIntoViewIfNeeded();
-      const card = (await entry.boundingBox())!;
-      for (const content of [entry.locator("div"), link]) {
+      const switcher = (await entry.boundingBox())!;
+      await expect(entry.getByRole("tab")).toHaveCount(3);
+      for (const content of await entry.getByRole("tab").all()) {
         const box = (await content.boundingBox())!;
-        expect(box.x - card.x).toBeGreaterThanOrEqual(16);
-        expect(box.y - card.y).toBeGreaterThanOrEqual(16);
-        expect(card.x + card.width - box.x - box.width).toBeGreaterThanOrEqual(16);
-        expect(card.y + card.height - box.y - box.height).toBeGreaterThanOrEqual(16);
+        expect(box.x).toBeGreaterThan(switcher.x);
+        expect(box.x + box.width).toBeLessThan(switcher.x + switcher.width);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(await content.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
       }
-      await entry.screenshot({ path: info.outputPath("profile-token-entry.png") });
-      await link.click();
-      await expect(page).toHaveURL(/\/api-tokens$/);
+      await entry.screenshot({ path: info.outputPath("profile-sections.png") });
+      if (isMobile) await tokenTab.tap(); else await tokenTab.click();
+      await expect(page).toHaveURL(/\/profile\?section=api-tokens$/);
+      await expect(tokenTab).toHaveAttribute("aria-selected", "true");
       await expect(page.getByRole("button", { name: ru ? "Создать токен" : "Create token", exact: true })).toBeEnabled();
+      await fits(page);
     });
   }
 }

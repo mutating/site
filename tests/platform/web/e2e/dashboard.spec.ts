@@ -66,7 +66,7 @@ test("profile and sign out exist only in the header menu at every breakpoint", a
     await expect(trigger).toHaveCount(1);
     await expect(trigger).toBeVisible();
     const menu = await openUserMenu(page);
-    await expect(page.getByRole("menuitem")).toHaveText(["Профиль", "API-токены", "Выйти"]);
+    await expect(page.getByRole("menuitem")).toHaveText(["Профиль", "Выйти"]);
     await expect(menu).toBeInViewport({ ratio: 1 });
     await trigger.click();
     await expect(menu).toHaveCount(0);
@@ -263,7 +263,7 @@ test("nickname login, names, avatar, session persistence and confirmed account d
   await expect(page.locator(".avatar.large img")).toBeVisible();
   await page.getByRole("button", { name: "Удалить аватар" }).click();
   await expect(page.locator(".avatar.large img")).toHaveCount(0);
-  await page.getByText("Управление аккаунтом", { exact: true }).click();
+  await page.getByRole("tab", { name: "Аккаунт", exact: true }).click();
   const deleteAccount = page.getByRole("button", {
     name: "Удалить аккаунт",
     exact: true,
@@ -452,7 +452,7 @@ test("organization creation, creator restrictions and safe deletion errors", asy
     page.getByRole("button", { name: "Удалить организацию" }),
   ).toHaveCount(0);
   await page.goto("profile");
-  await page.getByText("Управление аккаунтом", { exact: true }).click();
+  await page.getByRole("tab", { name: "Аккаунт", exact: true }).click();
   await page
     .getByRole("button", { name: "Удалить аккаунт", exact: true })
     .click();
