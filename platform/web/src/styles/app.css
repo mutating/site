@@ -59,7 +59,9 @@ button {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+.benchmark-panel:focus-visible,
+.table-scroll:focus-visible {
   outline: 2px solid var(--hot);
   outline-offset: 4px;
 }
@@ -1046,9 +1048,14 @@ td small {
 }
 .computer-details dl {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
   margin: 24px 0 0;
+}
+@media (min-width: 1360px) {
+  .computer-details dl {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 .computer-details dt {
   color: var(--ink-muted);
@@ -1066,7 +1073,7 @@ td small {
 }
 .benchmark-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 14px;
 }
 .benchmark-card {
@@ -1089,6 +1096,11 @@ td small {
   font: 24px var(--font-geist-mono);
   max-width: 100%;
 }
+@media (max-width: 360px) {
+  .benchmark-card strong {
+    font-size: 18px;
+  }
+}
 .benchmark-card small {
   color: var(--ink-muted);
   font-size: 11px;
@@ -1097,26 +1109,17 @@ td small {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.benchmark-history-table thead th {
+  overflow-wrap: normal;
+}
+.benchmark-history-table .benchmark-tooling-version {
+  overflow-wrap: anywhere;
+}
 .benchmark-history-table tbody th {
   color: var(--ink);
   font: 12px var(--font-geist-mono);
-}
-.benchmark-history-table .numeric {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.benchmark-archive {
-  margin-top: 24px;
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
-  font-size: 13px;
-}
-.benchmark-archive summary {
-  cursor: pointer;
-}
-.benchmark-archive .field,
-.benchmark-archive > .muted {
-  margin: 18px 0 0;
+  min-width: 18ch;
+  overflow-wrap: normal;
 }
 .form-actions {
   display: flex;
@@ -1648,6 +1651,9 @@ td small {
   }
 }
 @media (max-width: 540px) {
+  .computer-details dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .app-shell {
     width: calc(100% - 28px);
   }
@@ -1872,6 +1878,13 @@ td small {
   .table-scroll th,
   .table-scroll td {
     padding: 17px 15px;
+  }
+  .benchmark-history-table th,
+  .benchmark-history-table td {
+    padding-inline: 6px;
+  }
+  .benchmark-history-table .numeric {
+    min-width: calc(8ch + 20px);
   }
   .computer-table,
   .computer-table tbody {

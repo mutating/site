@@ -30,7 +30,8 @@ async def test_openapi_benchmark_input_and_output_contracts(client):
         model = models[name]
         assert model["type"] == "object"
         assert model["additionalProperties"] is False
-        assert set(model["properties"]) == expected
+        optional = {"run_id"} if name in {"BenchmarkCreate", "BenchmarkSuite"} else set()
+        assert set(model["properties"]) == expected | optional
         assert set(model["required"]) == expected
     for name in ["BenchmarkCreate", "BenchmarkMeasurement"]:
         properties = models[name]["properties"]
@@ -50,6 +51,7 @@ async def test_openapi_benchmark_input_and_output_contracts(client):
     assert set(output["required"]) == {
         "id",
         "created_at",
+        "run_id",
         "computer_id",
         "benchmark_name",
         "number",
@@ -165,6 +167,7 @@ async def test_worker_finite_double_extremes_round_trip_without_score_truncation
         assert set(row) == {
             "id",
             "created_at",
+            "run_id",
             "computer_id",
             "benchmark_name",
             "number",

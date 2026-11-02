@@ -117,6 +117,8 @@ export interface Computer {
 }
 export interface BenchmarkResult {
   id: string;
+  run_id: string;
+  created_at: string;
   computer_id: string;
   benchmark_name: string;
   benchmarker_version: string;

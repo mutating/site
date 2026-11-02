@@ -36,6 +36,8 @@ async def test_database_enforces_identity_score_and_foreign_key(app, computer):
     """Database constraints independently reject duplicate benchmark identities, negative scores, and references to nonexistent computers."""
     from throng_api.models import BenchmarkResult
 
+    run_id = str(uuid4())
+
     def row(**changes):
         return BenchmarkResult(
             **{
@@ -43,6 +45,7 @@ async def test_database_enforces_identity_score_and_foreign_key(app, computer):
                 "benchmark_name": "single_core",
                 "number": 1,
                 "benchmarker_version": "0.0.2",
+                "run_id": run_id,
                 **changes,
             }
         )

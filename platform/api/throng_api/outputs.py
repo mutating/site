@@ -34,6 +34,7 @@ class TaskReceipt(BaseModel):
 
 class BenchmarkResult(Identity):
     computer_id: str
+    run_id: str
     benchmark_name: str
     number: float
     benchmarker_version: str

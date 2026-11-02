@@ -15,6 +15,7 @@ TARGET = "/agent/v1/benchmark-results"
 BODY = json.dumps(
     {
         "benchmarker_version": "0.0.2",
+        "run_id": str(uuid4()),
         "results": [
             {"benchmark_name": "single_core", "number": 15},
             {"benchmark_name": "multi_core", "number": 40},

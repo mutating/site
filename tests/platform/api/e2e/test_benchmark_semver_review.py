@@ -65,7 +65,7 @@ async def test_history_orders_prerelease_identifiers_and_large_core_components(a
 async def test_build_metadata_ties_use_lexical_order_and_preserve_distinct_rows(
     api, computer, base
 ):
-    """Build metadata ties use lexical full-version order while distinct versions retain separate rows and repeated versions retain their UUID."""
+    """Build metadata ties use lexical full-version order; repeated versions retain all runs."""
     # Metadata has equal SemVer precedence, so the API's lexical tie rule makes
     # build.2 newer than build.10 and a metadata version newer than the bare one.
     versions = [base, base + "+build.10", base + "+build.2"]
@@ -74,12 +74,16 @@ async def test_build_metadata_ties_use_lexical_order_and_preserve_distinct_rows(
         await create_result(api, computer, version, name="old_metric") for version in versions[:2]
     ]
     replacement = await create_result(api, computer, versions[-1], name="new_metric", number=17)
-    assert replacement["id"] == winner["id"]
+    assert replacement["id"] != winner["id"]
 
     path = f"/v1/computers/{computer['id']}/benchmark-results"
     assert (await api.get(path)).json() == [replacement]
-    assert (await api.get(path, params={"latest_only": False})).json() == [*older, replacement]
-    assert len({row["id"] for row in [*older, replacement]}) == 3
+    assert (await api.get(path, params={"latest_only": False})).json() == [
+        *older,
+        winner,
+        replacement,
+    ]
+    assert len({row["id"] for row in [*older, winner, replacement]}) == 4
 
 
 @pytest.mark.parametrize(

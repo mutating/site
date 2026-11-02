@@ -522,10 +522,11 @@ const messages = {
   ],
   benchmarkVersion: ["Версия тулинга", "Tooling version"],
   benchmarkScore: ["Результат", "Score"],
+  benchmarkDate: ["Дата и время", "Date and time"],
   benchmarkHistory: ["История бенчмарка", "Benchmark history"],
   benchmarkHistoryOrder: [
-    "По версии тулинга: от новых к старым.",
-    "By tooling version, newest first.",
+    "Все запуски: от новых к старым. Время указано в вашем часовом поясе.",
+    "All runs, newest first. Times are shown in your time zone.",
   ],
   noBenchmarks: ["Результатов пока нет", "No results yet"],
   noBenchmarksLead: [
@@ -537,8 +538,6 @@ const messages = {
     "No results for this benchmark yet.",
   ],
   moreBenchmarks: ["ещё", "more"],
-  allBenchmarks: ["Все бенчмарки", "All benchmarks"],
-  chooseBenchmark: ["Выберите бенчмарк", "Choose a benchmark"],
   status: ["Статус", "Status"],
   online: ["Онлайн", "Online"],
   offline: ["Офлайн", "Offline"],

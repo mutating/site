@@ -1,6 +1,7 @@
 """Concurrent suite uploads remain atomic and isolated from other writers and workers."""
 
 import asyncio
+from uuid import uuid4
 
 import pytest
 
@@ -67,7 +68,7 @@ async def test_competing_complete_suites_commit_one_coherent_pair(api, agent_api
                     if row["benchmark_name"] == name
                 }
             )
-            == 1
+            == 4
         )
 
     rows = {row["benchmark_name"]: row for row in await listed(api, computer)}
@@ -77,15 +78,15 @@ async def test_competing_complete_suites_commit_one_coherent_pair(api, agent_api
     }
     assert rows["manual_calibration"] == manual
     all_rows = await listed(api, computer, latest_only=False)
-    assert len(all_rows) == 4
+    assert len(all_rows) == 10
     assert historical in all_rows
 
 
 @pytest.mark.parametrize("owner_method", ["post", "patch"])
-async def test_agent_and_owner_updates_share_identity_without_losing_other_results(
+async def test_agent_and_owner_writes_preserve_separate_run_history(
     api, agent_api, computer, owner_method
 ):
-    """Concurrent worker and owner updates retain the existing row UUID and preserve unrelated measurements in the same version."""
+    """Concurrent writes preserve earlier runs and unrelated benchmark names."""
     original = await owner_result(api, computer)
     retained = await owner_result(api, computer, name="manual_calibration", number=77)
     if owner_method == "post":
@@ -106,24 +107,31 @@ async def test_agent_and_owner_updates_share_identity_without_losing_other_resul
     )
     assert uploaded.status_code == 200, uploaded.text
     assert updated.status_code == (201 if owner_method == "post" else 200), updated.text
-    assert uploaded.json()[0]["id"] == updated.json()["id"] == original["id"]
+    assert uploaded.json()[0]["id"] != original["id"]
+    assert (updated.json()["id"] == original["id"]) == (owner_method == "patch")
     assert updated.json()["number"] == 40
 
     rows = {row["benchmark_name"]: row for row in await listed(api, computer)}
     assert set(rows) == {"single_core", "multi_core", "manual_calibration"}
-    assert rows["single_core"]["id"] == original["id"]
-    assert rows["single_core"]["number"] in {20, 40}
+    if owner_method == "post":
+        assert rows["single_core"] in [uploaded.json()[0], updated.json()]
+    else:
+        assert rows["single_core"] == uploaded.json()[0]
     assert rows["multi_core"] == uploaded.json()[1]
     assert rows["manual_calibration"] == retained
+    history = await listed(api, computer, latest_only=False)
+    assert len(history) == (5 if owner_method == "post" else 4)
+    assert next(row for row in history if row["id"] == original["id"])["number"] == (
+        0 if owner_method == "post" else 40
+    )
 
 
-async def test_delete_racing_upload_is_serializable_and_rerun_restores_missing_measurement(
-    api, agent_api, computer
-):
-    """A delete racing an upload has a valid serial outcome; a later replay restores a deleted measurement without changing unaffected row identities."""
+async def test_delete_racing_new_run_preserves_upload_and_retries(api, agent_api, computer):
+    """Deleting an earlier run cannot remove a concurrent upload; replay with run_id is stable."""
     original = await owner_result(api, computer)
     path = f"/v1/benchmark-results/{original['id']}"
     payload = suite("2.3.0", 10, 20)
+    payload["run_id"] = str(uuid4())
     deleted, uploaded = await asyncio.gather(
         api.delete(path), agent_api.put("/agent/v1/benchmark-results", json=payload)
     )
@@ -133,10 +141,8 @@ async def test_delete_racing_upload_is_serializable_and_rerun_restores_missing_m
     assert (await api.get(path)).status_code == 404
     current = {row["benchmark_name"]: row for row in await listed(api, computer)}
     assert current["multi_core"] == multi
-    if single["id"] == original["id"]:
-        assert set(current) == {"multi_core"}
-    else:
-        assert current == {"single_core": single, "multi_core": multi}
+    assert single["id"] != original["id"]
+    assert current == {"single_core": single, "multi_core": multi}
 
     retry = await agent_api.put("/agent/v1/benchmark-results", json=payload)
     assert retry.status_code == 200, retry.text

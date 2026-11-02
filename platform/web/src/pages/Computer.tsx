@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useData } from "../lib/useData";
@@ -7,12 +8,15 @@ import type { Computer as ComputerData } from "../lib/types";
 import { Benchmarks } from "../components/Benchmarks";
 import { ErrorBox, Heading, Icon, Loading } from "../components/UI";
 
-export function Computer() {
+export function Computer({ interrupted }: { interrupted: RefObject<boolean> }) {
   const { computerId } = useParams();
-  return <ComputerView key={computerId} computerId={computerId!} />;
+  return <ComputerView key={computerId} computerId={computerId!} interrupted={interrupted} />;
 }
 
-function ComputerView({ computerId }: { computerId: string }) {
+function ComputerView({ computerId, interrupted }: {
+  computerId: string;
+  interrupted: RefObject<boolean>;
+}) {
   const { t, locale } = useI18n();
   const [params] = useSearchParams();
   const back = new URLSearchParams(params);
@@ -24,6 +28,7 @@ function ComputerView({ computerId }: { computerId: string }) {
       }),
     computerId,
   );
+  const reload = () => { interrupted.current = false; state.reload(); };
   const computer = state.data;
   return (
     <>
@@ -36,7 +41,7 @@ function ComputerView({ computerId }: { computerId: string }) {
       {state.loading ? (
         <Loading />
       ) : state.error ? (
-        <ErrorBox error={state.error} retry={state.reload} />
+        <ErrorBox error={state.error} retry={reload} />
       ) : (
         computer && (
           <>
@@ -47,7 +52,7 @@ function ComputerView({ computerId }: { computerId: string }) {
                 <button
                   className="button secondary compact"
                   aria-label={t("refresh")}
-                  onClick={state.reload}
+                  onClick={reload}
                 >
                   <Icon name="refresh" size={16} />
                   {t("refresh")}
@@ -106,7 +111,7 @@ function ComputerView({ computerId }: { computerId: string }) {
                 </div>
               </dl>
             </section>
-            <Benchmarks key={computerId} computerId={computerId} />
+            <Benchmarks key={computerId} computerId={computerId} interrupted={interrupted} />
           </>
         )
       )}

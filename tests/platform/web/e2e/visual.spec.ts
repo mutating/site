@@ -137,6 +137,49 @@ test("the shared language dropdown in both themes and layouts", async ({ page },
   } });
 });
 
+test("responsive computer benchmarks and focused run history", async ({ page, request, account }, info) => {
+  const { language, theme } = info.project.metadata;
+  await page.addInitScript(({ language, theme }) => {
+    localStorage.setItem("tmc-language", language);
+    localStorage.setItem("tmc-theme", theme);
+  }, { language, theme });
+  const computer = await addComputer(request, account, "Mac mini — Евгений");
+  const dates = new Map<string, string>();
+  for (const [version, name, number] of [
+    ["0.0.1", "single_core", 97012.458439],
+    ["0.0.2", "single_core", 98001.314159],
+    ["0.0.2", "single_core", 98969.99106397117],
+    ["0.0.2", "multi_core", 652398.8650576969],
+  ] as const) {
+    const response = await request.post(`${API}/benchmark-results`, {
+      headers: headers(account),
+      data: { computer_id: computer.id, benchmarker_version: version, benchmark_name: name, number },
+    });
+    expect(response.status()).toBe(201);
+    const row = await response.json();
+    dates.set(row.id, new Date(Date.UTC(2026, 9, 7, 12, dates.size)).toISOString());
+  }
+  await page.route(`**/v1/computers/${computer.id}/benchmark-results?*`, async route => {
+    const response = await route.fetch();
+    const rows: { id: string }[] = await response.json();
+    await route.fulfill({ response, json: rows.map(row => ({ ...row, created_at: dates.get(row.id) })) });
+  });
+  await startSession(page, account);
+  await page.goto(`power-cells/computers/${computer.id}?user_id=${account.id}`);
+  await expect(page.locator(".benchmark-card")).toHaveCount(2);
+  await page.evaluate(async () => {
+    await Promise.all(Array.from(document.fonts, face => face.load()));
+    await document.fonts.ready;
+  });
+  await expect(page).toHaveScreenshot("computer-responsive-details.png", { fullPage: true });
+  await page.getByRole("link", { name: /single_core/ }).press("Enter");
+  const history = page.locator('section[aria-labelledby="benchmark-history-title"]');
+  await expect(history).toBeFocused();
+  await expect(history.locator("tbody tr")).toHaveCount(3);
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page).toHaveScreenshot("computer-responsive-history.png");
+});
+
 test("auth, every product page, populated and empty pools, and confirmation dialog", async ({
   page,
   request,
@@ -259,10 +302,12 @@ test("auth, every product page, populated and empty pools, and confirmation dial
       ).status(),
     ).toBe(200);
   }
+  const benchmarkDates = new Map<string, string>();
   for (const [version, name, number] of [
     ["1.2.0", "single_core", 1100],
     ["1.2.0", "legacy_only", 875.25],
     ["1.9.0", "single_core", 1200.25],
+    ["1.10.0", "single_core", 1240],
     ["1.10.0", "single_core", 1250.5],
     ["1.10.0", "multi_core", 9350.75],
     ["1.10.0", "memory_copy", 0],
@@ -277,7 +322,17 @@ test("auth, every product page, populated and empty pools, and confirmation dial
       },
     });
     expect(result.status()).toBe(201);
+    const row = await result.json();
+    benchmarkDates.set(row.id, new Date(Date.UTC(2026, 9, 7, 12, benchmarkDates.size)).toISOString());
   }
+  // API receipt times vary between runs; keep displayed dates stable in pixel comparisons.
+  await page.route("**/v1/computers/*/benchmark-results?*", async route => {
+    const response = await route.fetch();
+    const rows: { id: string; created_at: string }[] = await response.json();
+    await route.fulfill({ response, json: rows.map(row => ({
+      ...row, created_at: benchmarkDates.get(row.id) || row.created_at,
+    })) });
+  });
   await reserve(request, account, 1250, 2 * GiB);
   const companyResponse = await request.post(`${API}/companies`, {
     headers: headers(account),
@@ -308,17 +363,9 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await screenshot("computer-details");
   await page.getByRole("link", { name: /single_core/ }).click();
   await expect(page.locator(".benchmark-history-table tbody tr")).toHaveCount(
-    3,
+    4,
   );
   await screenshot("computer-benchmark-history");
-  await page.locator(".benchmark-archive summary").click();
-  await page
-    .getByLabel(language === "ru" ? "Выберите бенчмарк" : "Choose a benchmark")
-    .selectOption("legacy_only");
-  await expect(page.locator(".benchmark-history-table tbody th")).toHaveText([
-    "1.2.0",
-  ]);
-  await screenshot("computer-benchmark-archive");
   await page.goto(`power-cells/computers/${mini.id}?user_id=${account.id}`);
   await screenshot("computer-benchmarks-empty");
   await page.goto("organizations");
