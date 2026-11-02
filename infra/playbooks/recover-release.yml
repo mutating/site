@@ -1,0 +1,131 @@
+---
+- name: Recover a prepared release after freeing disk space
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+    ansible_remote_tmp: /run/ansible-maintenance
+    disk_ssh_interface: ''
+    ansible_ssh_extra_args: >-
+      {% if disk_ssh_interface | length > 0 %}
+      -o ProxyCommand="{{ ansible_playbook_python }} {{ playbook_dir }}/files/ssh_server_first_proxy.py %h %p --interface {{ disk_ssh_interface }}"
+      {% endif %}
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+  tasks:
+    - name: Require explicit reviewed release IDs
+      ansible.builtin.assert:
+        that:
+          - recovery_release_id is defined
+          - recovery_expected_current_id is defined
+          - recovery_release_id is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+          - recovery_expected_current_id is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+
+    - name: Read the current release
+      ansible.builtin.command: readlink -f /opt/mutating/current
+      register: recovery_current
+      changed_when: false
+
+    - name: Refuse an unexpected concurrent deployment
+      ansible.builtin.assert:
+        that:
+          - recovery_current.stdout in ['/opt/mutating/releases/' + recovery_expected_current_id, '/opt/mutating/releases/' + recovery_release_id]
+
+    - name: Check the prepared release directory
+      ansible.builtin.stat:
+        path: '/opt/mutating/releases/{{ recovery_release_id }}'
+        follow: false
+      register: recovery_directory
+
+    - name: Require a direct release directory
+      ansible.builtin.assert:
+        that:
+          - recovery_directory.stat.isdir | default(false)
+          - not recovery_directory.stat.islnk | default(false)
+
+    - name: Refuse to duplicate a live activation worker
+      ansible.builtin.shell: |
+        file='/opt/mutating/releases/{{ recovery_release_id }}/.activation/pid'
+        if test -f "$file"; then
+          pid="$(cat "$file")"
+          [[ "$pid" =~ ^[1-9][0-9]*$ ]] || exit 2
+          state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+          state="${state//[[:space:]]/}"
+          [[ -z "$state" || "$state" == Z* ]] || exit 1
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Read database size and available bytes
+      ansible.builtin.stat:
+        path: /var/lib/throng/throng.db
+      register: recovery_database
+
+    - name: Read disk space available to the runtime account
+      ansible.builtin.command: df --output=avail -B1 /var/lib/throng
+      register: recovery_space
+      changed_when: false
+
+    - name: Require room for a fresh backup and service writes
+      ansible.builtin.assert:
+        that:
+          - recovery_space.stdout_lines[-1] | trim | int > (recovery_database.stat.size | default(0) | int) * 2 + 134217728
+
+    - name: Activate the intended release with the installed backup and migration wrapper
+      ansible.builtin.command:
+        argv: [/usr/local/sbin/mutating-activate, '{{ recovery_release_id }}']
+      environment:
+        MUTATING_EXPECTED_CURRENT: '{{ recovery_current.stdout }}'
+      async: 1200
+      poll: 5
+      when: recovery_current.stdout != '/opt/mutating/releases/' + recovery_release_id
+
+    - name: Verify API and dashboard readiness
+      ansible.builtin.uri:
+        url: '{{ item }}'
+        status_code: 200
+      loop:
+        - http://127.0.0.1:8000/health/ready
+        - http://127.0.0.1:8001/login
+      register: recovery_health
+      retries: 15
+      delay: 2
+      until: recovery_health is succeeded
+
+    - name: Check database integrity without changing it
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - -u
+          - throng
+          - --
+          - '/opt/mutating/releases/{{ recovery_release_id }}/platform/api/.venv/bin/python'
+          - -c
+          - >-
+            import sqlite3;
+            connection = sqlite3.connect('file:/var/lib/throng/throng.db?mode=ro', uri=True);
+            result = connection.execute('PRAGMA quick_check').fetchall();
+            connection.close();
+            assert result == [('ok',)], 'Database integrity check failed';
+            print('SQLite integrity: ok')
+      changed_when: false
+
+    - name: Record the successful Ansible recovery in the existing activation log
+      ansible.builtin.lineinfile:
+        path: '/opt/mutating/releases/{{ recovery_release_id }}/.activation/output.log'
+        line: 'Recovered successfully via Ansible after disk cleanup; API, dashboard and SQLite integrity verified.'
+
+    - name: Publish confirmed completion for future activation observers
+      ansible.builtin.copy:
+        dest: '/opt/mutating/releases/{{ recovery_release_id }}/.activation/status'
+        content: "0\n"
+        owner: user
+        group: user
+        mode: '0644'
+
+- import_playbook: verify-hosted-sites.yml

@@ -1,0 +1,56 @@
+---
+- name: Verify hosted sites and record nginx configuration fingerprints
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+    ansible_remote_tmp: /run/ansible-maintenance
+    disk_ssh_interface: ''
+    ansible_ssh_extra_args: >-
+      {% if disk_ssh_interface | length > 0 %}
+      -o ProxyCommand="{{ ansible_playbook_python }} {{ playbook_dir }}/files/ssh_server_first_proxy.py %h %p --interface {{ disk_ssh_interface }}"
+      {% endif %}
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+  tasks:
+    - name: Fingerprint nginx configuration without reading private keys
+      ansible.builtin.shell: find /etc/nginx -type f -exec sha256sum '{}' \; | sort
+      register: hosted_nginx_hashes
+      changed_when: false
+
+    - name: Show nginx fingerprints
+      ansible.builtin.debug:
+        msg: "{{ hosted_nginx_hashes.stdout_lines }}"
+
+    - name: Check both static sites on the local TLS listener
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --noproxy
+          - '*'
+          - --silent
+          - --show-error
+          - --fail
+          - --max-time
+          - '15'
+          - --resolve
+          - '{{ item }}:443:127.0.0.1'
+          - --output
+          - /dev/null
+          - --write-out
+          - '%{http_code}'
+          - 'https://{{ item }}/'
+      loop: [mutating.tech, pomponchik.org]
+      register: hosted_sites
+      changed_when: false
+
+    - name: Show site responses
+      ansible.builtin.debug:
+        msg: '{{ item.item }}: HTTP {{ item.stdout }}'
+      loop: '{{ hosted_sites.results }}'
+      loop_control:
+        label: '{{ item.item }}'

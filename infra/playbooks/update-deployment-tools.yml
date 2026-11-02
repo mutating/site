@@ -1,0 +1,76 @@
+---
+- name: Update backup safeguards without replacing releases or restarting applications
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+    ansible_remote_tmp: /run/ansible-maintenance
+    disk_ssh_interface: ''
+    ansible_ssh_extra_args: >-
+      {% if disk_ssh_interface | length > 0 %}
+      -o ProxyCommand="{{ ansible_playbook_python }} {{ playbook_dir }}/files/ssh_server_first_proxy.py %h %p --interface {{ disk_ssh_interface }}"
+      {% endif %}
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+  tasks:
+    - name: Read the current release for its installed Python dependencies
+      ansible.builtin.command: readlink -f /opt/mutating/current
+      register: tools_current
+      changed_when: false
+
+    - name: Require an installed immutable release
+      ansible.builtin.assert:
+        that:
+          - tools_current.stdout is match('^/opt/mutating/releases/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+
+    - name: Create the maintenance helper directory
+      ansible.builtin.file:
+        path: /usr/local/lib/mutating
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the root-owned SQLite backup helper
+      ansible.builtin.copy:
+        src: '{{ playbook_dir }}/../../deploy/sqlite_backup.py'
+        dest: /usr/local/lib/mutating/sqlite_backup.py
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Verify the helper with the current release before switching wrappers
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - -u
+          - throng
+          - --
+          - '{{ tools_current.stdout }}/platform/api/.venv/bin/python'
+          - /usr/local/lib/mutating/sqlite_backup.py
+          - check-space
+          - deployment-tools-check
+          - --env-file
+          - /etc/throng/throng.env
+      changed_when: false
+
+    - name: Install the validated activation wrapper atomically
+      ansible.builtin.copy:
+        src: '{{ playbook_dir }}/../../deploy/activate.sh'
+        dest: /usr/local/sbin/mutating-activate
+        owner: root
+        group: root
+        mode: '0755'
+        validate: /bin/bash -n %s
+
+    - name: Verify running API and dashboard without restarting them
+      ansible.builtin.uri:
+        url: '{{ item }}'
+        status_code: 200
+      loop:
+        - http://127.0.0.1:8000/health/ready
+        - http://127.0.0.1:8001/login

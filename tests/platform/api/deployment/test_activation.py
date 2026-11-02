@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 @pytest.mark.parametrize(
-    "failure", ["", "backup", "migrate", "health", "unsafe", "concurrent", "protected"]
+    "failure", ["", "space", "backup", "migrate", "health", "unsafe", "concurrent", "protected"]
 )
 def test_activation_preserves_the_database_and_current_release_on_failure(tmp_path, failure):
     """Recover before startup, preserve accepted writes afterwards and only switch migrated code."""
@@ -57,7 +57,7 @@ with open(os.environ["ACTION_LOG"], "a") as output:
     output.write(json.dumps([command, *args]) + "\\n")
 failure = os.environ["FAILURE"]
 if command == "runuser":
-    action = "migrate" if "migrate" in args else ("restore" if "restore" in args else "backup")
+    action = "space" if "check-space" in args else "migrate" if "migrate" in args else ("restore" if "restore" in args else "backup")
     sys.exit(1 if failure == action else 0)
 if command == "curl":
     sys.exit(1 if failure == "health" else 0)
@@ -100,7 +100,15 @@ elif command == "mv":
         assert current.resolve() == old
         assert all(action[0] == "flock" for action in actions)
         return
-    maintenance = [action for action in actions if action[0] == "runuser"]
+    if failure == "space":
+        assert result.returncode == 1, result.stderr
+        assert current.resolve() == old
+        assert not any(action[0] == "systemctl" for action in actions)
+        assert "current service was not stopped" in result.stderr
+        return
+    maintenance = [
+        action for action in actions if action[0] == "runuser" and "check-space" not in action
+    ]
     stops = [action for action in actions if action[:2] == ["systemctl", "stop"]]
     starts = [action for action in actions if action[:2] == ["systemctl", "start"]]
     assert stops and actions.index(stops[0]) < actions.index(maintenance[0])

@@ -26,7 +26,15 @@ fi
 if [[ "$phase" == activation-worker ]]; then
   # Publish completion atomically even on failure; the observer never guesses
   # success from a disconnected SSH session or from an empty log.
-  trap 'status=$?; printf "%s\n" "$status" > "$activation/status.tmp"; mv "$activation/status.tmp" "$activation/status"' EXIT
+  finish_activation() {
+    local status=$?
+    trap - EXIT
+    if ! { printf '%s\n' "$status" > "$activation/status.tmp" && mv "$activation/status.tmp" "$activation/status"; }; then
+      echo 'Could not publish activation status; inspect disk space and the activation log.' >&2
+    fi
+    exit "$status"
+  }
+  trap finish_activation EXIT
   deploy_stage 'Activate: lock, SQLite backup, migrations, startup and static publication' \
     sudo -n /usr/local/sbin/mutating-activate "$release_id"
   exit 0
@@ -43,7 +51,26 @@ if [[ "$phase" == all || "$phase" == activate ]]; then
   touch "$activation/output.log"
   tail -n +1 -f "$activation/output.log" & follower=$!
   trap 'kill "$follower" 2>/dev/null || true' EXIT
-  while [[ ! -f "$activation/status" ]]; do sleep 1; done
+  missing_pid=0
+  while [[ ! -f "$activation/status" ]]; do
+    worker_pid="$(cat "$activation/pid" 2>/dev/null || true)"
+    if [[ ! "$worker_pid" =~ ^[1-9][0-9]*$ ]]; then
+      # Another observer can arrive between mkdir and publishing the PID.
+      missing_pid=$((missing_pid + 1))
+      if (( missing_pid < 5 )); then sleep 1; continue; fi
+      echo '::error::Activation PID is missing or invalid; inspect the activation log before retrying.' >&2
+      exit 1
+    fi
+    worker_state="$(ps -o stat= -p "$worker_pid" 2>/dev/null || true)"
+    worker_state="${worker_state//[[:space:]]/}"
+    if [[ -z "$worker_state" || "$worker_state" == Z* ]]; then
+      # Recheck after observing process death: its EXIT trap may just have published.
+      [[ ! -f "$activation/status" ]] || break
+      echo '::error::Activation worker exited without a final status; check disk space and the activation log. Activation was not confirmed successful.' >&2
+      exit 1
+    fi
+    sleep 1
+  done
   # Give tail one interval to flush the final output before collecting the status.
   sleep 1
   status="$(cat "$activation/status")"

@@ -127,7 +127,7 @@ test("a direct token link survives authentication", async ({ page, account }) =>
   await expect(page.getByLabel("Владелец токенов", { exact: true })).toHaveValue("personal");
 });
 
-test("leaving tokens closes its dialog and does not restore secret or draft UI", async ({ page, account }) => {
+test("leaving tokens closes its dialog and does not restore the unfinished draft", async ({ page, account }) => {
   await startSession(page, account);
   await page.goto("/profile");
   await page.getByRole("tab", { name: "API-токены", exact: true }).click();
