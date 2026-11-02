@@ -50,10 +50,8 @@ test("registry identifies owners and issuers, filters on the server, and exclude
   await token(request, account, { user_id: account.id }, "login");
   await token(request, colleague, { company_id: lab.id }, "Командный CI");
   await login(page, account);
-  await page
-    .getByRole("navigation", { name: "Навигация кабинета" })
-    .getByRole("link", { name: "API-токены", exact: true })
-    .click();
+  await page.goto("/profile");
+  await page.getByRole("tab", { name: "API-токены", exact: true }).click();
   await expect(page.locator(".token-registry-row")).toHaveCount(2);
   await expect(
     page.getByText("Личный — от вашего имени", { exact: true }),
@@ -91,6 +89,8 @@ test("registry identifies owners and issuers, filters on the server, and exclude
   ]);
   await page.goto(`organizations/${lab.id}`);
   await page.getByRole("link", { name: "API-токены ↗", exact: true }).click();
+  await expect(page).toHaveURL(`/profile?section=api-tokens&owner=${lab.id}`);
+  await expect(page.getByRole("tab", { name: "API-токены", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(
     page.getByLabel("Владелец токенов", { exact: true }),
   ).toHaveValue(lab.id);
@@ -116,7 +116,7 @@ for (const lifetimeKind of ["year", "unlimited"] as const) {
         const lab = await company(request, account, "Лаборатория");
         await login(page, account);
         await page.addInitScript(language => localStorage.setItem("tmc-language", language), language);
-        await page.goto(`api-tokens?owner=${kind === "company" ? lab.id : "personal"}`);
+        await page.goto(`/profile?section=api-tokens&owner=${kind === "company" ? lab.id : "personal"}`);
         await page.getByRole("button", { name: ru ? "Создать токен" : "Create token", exact: true }).click();
         const dialog = page.getByRole("dialog");
         await dialog.getByLabel(ru ? "Название токена" : "Token name", { exact: true }).fill(name);
@@ -191,7 +191,7 @@ for (const kind of ["personal", "company"] as const) {
     });
     await login(page, account);
     await page.goto(
-      `api-tokens?owner=${kind === "company" ? lab.id : "personal"}`,
+      `/profile?section=api-tokens&owner=${kind === "company" ? lab.id : "personal"}`,
     );
     const trigger = page.getByRole("button", {
       name: "Создать токен",
@@ -330,7 +330,7 @@ test("keyboard issuance announces the result and closing restores focus while th
   account,
 }) => {
   await login(page, account);
-  await page.goto("api-tokens");
+  await page.goto("/profile?section=api-tokens");
   const trigger = page.getByRole("button", {
     name: "Создать токен",
     exact: true,
@@ -388,7 +388,7 @@ test("issuance shows the focused result after scrolling a short landscape dialog
 }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await login(page, account);
-  await page.goto("api-tokens");
+  await page.goto("/profile?section=api-tokens");
   await page
     .getByRole("button", { name: "Создать токен", exact: true })
     .click();
@@ -432,7 +432,7 @@ for (const kind of ["personal", "company"] as const) {
     const lab = await company(request, account, "Лаборатория");
     await login(page, account);
     await page.goto(
-      `api-tokens?owner=${kind === "company" ? lab.id : "personal"}`,
+      `/profile?section=api-tokens&owner=${kind === "company" ? lab.id : "personal"}`,
     );
     await page
       .getByRole("button", { name: "Создать токен", exact: true })
@@ -515,7 +515,7 @@ test("long valid issuer names wrap inside creation and the issued result", async
   expect(response.status()).toBe(200);
   await page.setViewportSize({ width: 320, height: 640 });
   await login(page, { ...account, first_name: "А".repeat(100) });
-  await page.goto("api-tokens");
+  await page.goto("/profile?section=api-tokens");
   await page
     .getByRole("button", { name: "Создать токен", exact: true })
     .click();
@@ -557,7 +557,7 @@ test("creation allows choosing between personal and organization ownership and h
     });
   });
   await login(page, account);
-  await page.goto("api-tokens");
+  await page.goto("/profile?section=api-tokens");
   await page
     .getByRole("button", { name: "Создать токен", exact: true })
     .click();
@@ -636,7 +636,7 @@ test("organization view and manage permissions are independent; loss of manage r
   }
   await token(request, creator, { company_id: readOnly.id }, "Отчёты Студии");
   await login(page, account);
-  await page.goto(`api-tokens?owner=${readOnly.id}`);
+  await page.goto(`/profile?section=api-tokens&owner=${readOnly.id}`);
   await expect(
     page.getByRole("article", { name: "Отчёты Студии", exact: true }),
   ).toBeVisible();
@@ -696,7 +696,7 @@ test("multiple organizations have an explicit selector and the dialog preserves 
   await company(request, account, "Лаборатория");
   const studio = await company(request, account, "Студия");
   await login(page, account);
-  await page.goto("api-tokens");
+  await page.goto("/profile?section=api-tokens");
   const trigger = page.getByRole("button", {
     name: "Создать токен",
     exact: true,
@@ -768,7 +768,7 @@ test("pagination remains scoped to the selected owner and resets after a filter 
   const lab = await company(request, account, "Лаборатория");
   await token(request, account, { company_id: lab.id }, "Командный токен");
   await login(page, account);
-  await page.goto("api-tokens?owner=personal");
+  await page.goto("/profile?section=api-tokens&owner=personal");
   await expect(page.locator(".token-registry-row")).toHaveCount(10);
   await page.getByRole("button", { name: "Далее →", exact: true }).click();
   await expect(page.locator(".token-registry-row")).toHaveCount(1);

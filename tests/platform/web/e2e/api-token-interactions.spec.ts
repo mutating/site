@@ -42,9 +42,9 @@ for (const input of ["mouse", "keyboard", "touch"] as const) {
     );
     await expect(page).toHaveURL(/\/profile$/);
     await activate(
-      page.getByRole("link", { name: "API-токены ↗", exact: true }),
+      page.getByRole("tab", { name: "API-токены", exact: true }),
     );
-    await expect(page).toHaveURL(/\/api-tokens$/);
+    await expect(page).toHaveURL(/\/profile\?section=api-tokens$/);
     const owner = page.getByLabel("Владелец токенов", { exact: true });
     await expect(owner).toBeEnabled();
     // macOS headless browsers delegate the native popup outside the page;
@@ -131,8 +131,9 @@ for (const input of ["mouse", "keyboard", "touch"] as const) {
         .getByRole("button", { name: "Меню пользователя", exact: true }),
     );
     await activate(
-      page.getByRole("menuitem", { name: "API-токены", exact: true }),
+      page.getByRole("menuitem", { name: "Профиль", exact: true }),
     );
-    await expect(page).toHaveURL(/\/api-tokens$/);
+    await activate(page.getByRole("tab", { name: "API-токены", exact: true }));
+    await expect(page).toHaveURL(/\/profile\?section=api-tokens$/);
   });
 }

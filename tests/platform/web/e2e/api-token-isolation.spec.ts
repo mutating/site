@@ -29,7 +29,7 @@ for (const loss of ["manage-only", "no-permissions", "removed", "hidden-page"] a
       } })).status()).toBe(201);
     }
     await startSession(page, account);
-    await page.goto("/api-tokens");
+    await page.goto("/profile?section=api-tokens");
     await expect(page.locator(".token-registry-row")).toHaveCount(10);
     await expect(page.locator(".pagination")).toBeVisible();
     if (loss === "removed") {
@@ -103,7 +103,7 @@ for (const action of ["create", "revoke"] as const) {
         company_id: company.id, name: "Закрытый токен", scopes: ["read"],
       } })).status()).toBe(201);
       await startSession(page, account);
-      await page.goto(`/api-tokens?owner=${company.id}`);
+      await page.goto(`/profile?section=api-tokens&owner=${company.id}`);
       const row = page.getByRole("article", { name: "Закрытый токен", exact: true });
       const dialog = page.getByRole("dialog");
       await expect(row).toBeVisible();
@@ -148,7 +148,7 @@ test("owner-filter navigation discards an organization revoke prompt", async ({ 
     company_id: company.id, name: "Закрытый токен", scopes: ["read"],
   } })).status()).toBe(201);
   await startSession(page, account);
-  await page.goto("/api-tokens?owner=personal");
+  await page.goto("/profile?section=api-tokens&owner=personal");
   await expect(page.locator(".empty-state")).toBeVisible();
   await page.getByLabel("Владелец токенов", { exact: true }).selectOption("all");
   await page.getByRole("article", { name: "Закрытый токен", exact: true }).getByRole("button", { name: "Отозвать токен", exact: true }).click();
@@ -174,7 +174,7 @@ for (const keepManage of [false, true]) {
       company_id: company.id, name: "Прежний клиент", scopes: ["read"],
     } })).status()).toBe(201);
     await startSession(page, account);
-    await page.goto(`/api-tokens?owner=${owner}`);
+    await page.goto(`/profile?section=api-tokens&owner=${owner}`);
     await page.getByRole("button", { name: "Создать токен", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("radio", { name: /Организация/ }).check();
@@ -227,7 +227,7 @@ test("fresh owner denial also clears tokens absent from the older company snapsh
     await route.fulfill({ response });
   });
   await startSession(page, account);
-  await page.goto("/api-tokens");
+  await page.goto("/profile?section=api-tokens");
   const row = page.getByRole("article", { name: "Временно доступный токен", exact: true });
   await expect(row).toBeVisible();
   await page.unrouteAll({ behavior: "wait" });

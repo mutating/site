@@ -58,7 +58,7 @@ test("owner-aware API token registry and issuance dialog", async ({ page, reques
     headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },
     data: { login: account.email, password },
   })).status()).toBe(200);
-  await page.goto("api-tokens");
+  await page.goto("/profile?section=api-tokens");
   await expect(page.locator(".token-registry-row")).toHaveCount(4);
   await page.evaluate(() => document.fonts.ready);
   await expect(page).toHaveScreenshot("api-tokens.png", { fullPage: true, ...exactPixels });
@@ -427,14 +427,8 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   });
   await page.goto("profile");
   await screenshot("profile");
-  await page
-    .getByText(
-      language === "ru" ? "Управление аккаунтом" : "Account management",
-      {
-        exact: true,
-      },
-    )
-    .click();
+  await page.getByRole("tab", { name: language === "ru" ? "Аккаунт" : "Account", exact: true }).click();
+  await screenshot("profile-account");
   await page
     .getByRole("button", {
       name: language === "ru" ? "Удалить аккаунт" : "Delete account",

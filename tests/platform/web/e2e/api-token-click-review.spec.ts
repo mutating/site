@@ -31,7 +31,7 @@ for (const denial of [403, 404]) {
       })).status()).toBe(201);
     }
     await startSession(page, account);
-    await page.goto(`api-tokens?owner=${company.id}`);
+    await page.goto(`/profile?section=api-tokens&owner=${company.id}`);
     const row = page.getByRole("article", { name: "Скрыть после отзыва прав", exact: true });
     const refresh = page.getByRole("button", { name: "Обновить", exact: true });
     const create = page.getByRole("button", { name: "Создать токен", exact: true });
@@ -95,7 +95,7 @@ test("organization token owner stays selected through a failed load and retry", 
   const created = await request.post(`${API}/companies`, { headers: headers(account), data: { name: "CI Lab" } });
   expect(created.status()).toBe(201);
   const company = await created.json();
-  await login(page, account); await page.goto("/api-tokens");
+  await login(page, account); await page.goto("/profile?section=api-tokens");
   const owner = page.getByLabel("Владелец токенов", { exact: true });
   await expect(owner.locator(`option[value="${company.id}"]`)).toBeAttached();
   let release!: () => void;
@@ -151,7 +151,7 @@ test("token revoke confirmation is discarded after an actual account switch", as
     await page.getByLabel("Имя", { exact: true }).fill("Анна");
     await page.locator(".profile-settings-form").getByRole("button", { name: "Сохранить изменения", exact: true }).click();
     await expect.poll(() => profileRequested).toBe(true);
-    await page.getByRole("navigation", { name: "Навигация кабинета" }).getByRole("link", { name: "API-токены", exact: true }).click();
+    await page.getByRole("tab", { name: "API-токены", exact: true }).click();
     await page.getByRole("article", { name: token.name, exact: true }).getByRole("button", { name: "Отозвать токен", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
@@ -195,7 +195,7 @@ for (const [width, height] of [[390, 568], [568, 320]]) {
     expect(response.status()).toBe(201);
     const company = await response.json();
     await startSession(page, account);
-    await page.goto(`api-tokens?owner=${company.id}`);
+    await page.goto(`/profile?section=api-tokens&owner=${company.id}`);
     await page.getByRole("button", { name: "Создать токен", exact: true }).click();
     const dialog = page.getByRole("dialog");
     const name = dialog.getByLabel("Название токена", { exact: true });

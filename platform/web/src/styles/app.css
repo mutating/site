@@ -1183,53 +1183,98 @@ td small {
 }
 .profile-page {
   width: 100%;
-  max-width: 880px;
 }
-.profile-page .page-heading {
+.profile-heading .page-heading {
   margin-bottom: 32px;
 }
-.profile-page .page-heading .eyebrow {
+.profile-heading .page-heading .eyebrow {
   margin-bottom: 12px;
 }
-.profile-page .page-heading h1 {
+.profile-heading .page-heading h1 {
   font-size: clamp(32px, 3vw, 40px);
   letter-spacing: -0.05em;
   line-height: 1.12;
 }
-.profile-page .page-heading .lede {
+.profile-heading .page-heading .lede {
   font-size: 14px;
   margin-top: 10px;
+}
+.profile-heading {
+  max-width: 880px;
+  margin-bottom: 28px;
+}
+.profile-heading > .page-heading {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.profile-tabs {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  gap: 5px;
+  max-width: 880px;
+  margin-bottom: 28px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-raised);
+}
+.profile-tabs > button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+.profile-tabs > button:hover {
+  color: var(--ink);
+}
+.profile-tabs > button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.profile-personal-panel,
+.profile-account-panel {
+  max-width: 880px;
+}
+.profile-panel {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
 }
 .profile-panel,
 .profile-settings-form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 24px;
 }
 .profile-section {
-  display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
+  min-width: 0;
+}
+.profile-panel > .profile-section {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
 }
 .profile-section-label {
-  padding-top: 22px;
-}
-.profile-section-label h2 {
-  font-size: 15px;
-  letter-spacing: -0.025em;
-  line-height: 1.4;
-}
-.profile-section-label p {
-  margin-top: 6px;
-  color: var(--ink-muted);
-  font-size: 12px;
-  line-height: 1.55;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .profile-section > .panel {
   min-width: 0;
-  padding: 24px;
-  border-radius: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .profile-section-content > .field:last-child {
   margin-bottom: 0;
@@ -1242,7 +1287,7 @@ td small {
 .profile-section .field input[readonly] {
   background: var(--surface-raised);
 }
-.profile-page .field-help {
+.profile-personal-panel .field-help {
   font-size: 11px;
 }
 .avatar-editor {
@@ -1256,7 +1301,7 @@ td small {
 .avatar-controls > div {
   min-width: 0;
 }
-.profile-page .avatar.large {
+.profile-personal-panel .avatar.large {
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -1288,7 +1333,8 @@ td small {
   color: var(--ink-muted);
 }
 .profile-form-actions {
-  margin-left: 184px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1312,26 +1358,11 @@ td small {
   border-radius: 9px;
 }
 .profile-account-management {
-  margin-top: 30px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  padding: 28px;
 }
-.profile-account-management > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 44px;
-  color: var(--ink-muted);
-  font-size: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-.profile-account-management > summary::-webkit-details-marker {
-  display: none;
-}
-.profile-account-management[open] > summary svg {
-  transform: rotate(180deg);
+.profile-account-title {
+  font-size: 24px;
+  margin-bottom: 22px;
 }
 .file-button {
   position: relative;
@@ -1354,7 +1385,7 @@ td small {
   opacity: 0.5;
 }
 .danger-zone {
-  padding: 16px 0 0 184px;
+  padding: 0;
 }
 .danger-zone h2 {
   font-size: 18px;
@@ -1629,26 +1660,10 @@ td small {
   }
 }
 @media (max-width: 640px) {
-  .profile-section {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
-  .profile-section-label {
-    padding-top: 0;
-  }
-  .profile-section-label p {
-    margin-top: 3px;
-  }
-  .profile-panel,
-  .profile-settings-form {
-    gap: 24px;
-  }
-  .profile-form-actions {
-    margin-left: 0;
-  }
-  .danger-zone {
-    padding-left: 0;
-  }
+  .profile-tabs { gap: 4px; padding: 4px; }
+  .profile-tabs > button { padding: 10px 6px; font-size: 12px; }
+  .profile-panel, .profile-account-management { padding: 20px; }
+  .profile-section .field input { font-size: 16px; }
 }
 @media (max-width: 540px) {
   .computer-details dl {
@@ -1834,9 +1849,6 @@ td small {
   }
   .organization-info {
     flex-basis: calc(100% - 55px);
-  }
-  .profile-section > .panel {
-    padding: 20px;
   }
   .avatar-controls {
     gap: 16px;
@@ -2595,7 +2607,9 @@ a.organization-metric:hover {
   .binding-changes > div { grid-template-columns: minmax(0, 1fr); }
   .binding-changes dd { border-left: 2px solid var(--line); padding-left: 12px; }
 }
-.api-tokens-page .page-heading h1 { font-size: clamp(30px, 3.2vw, 36px); }
+.api-tokens-page .page-heading h2 { font-size: clamp(30px, 3.2vw, 36px); font-weight: 780; line-height: 1.02; letter-spacing: -0.065em; }
+.token-registry-title, .token-registry-row { scroll-margin-top: var(--platform-header-clearance, 110px); }
+.token-registry-title:focus-visible, .token-registry-row:focus-visible { outline: 2px solid var(--hot); outline-offset: 4px; }
 .token-registry-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 28px 0 22px; }
 .token-registry-toolbar > .button { flex-shrink: 0; white-space: nowrap; }
 .token-registry-filter { display: flex; align-items: end; gap: 10px; min-width: 0; }
@@ -2619,9 +2633,6 @@ a.organization-metric:hover {
 .token-owner-legend > span { display: flex; align-items: center; gap: 8px; }
 .token-owner-legend svg { flex-shrink: 0; }
 .token-permission-note { padding: 18px; background: var(--surface-raised); border: 1px solid var(--line); border-radius: 12px; font-size: 12px; margin-bottom: 22px; }
-.token-profile-link { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 25px; padding: 24px; }
-.token-profile-link h2 { font-size: 16px; }
-.token-profile-link p { font-size: 12px; color: var(--ink-muted); margin-top: 6px; }
 .token-organization-link { display: inline-block; margin: -10px 0 25px; }
 .create-token-dialog { --token-dialog-gutter: 23px; width: min(466px, calc(100% - 28px)); max-height: calc(100dvh - 28px); overflow-y: auto; padding: 23px; }
 .create-token-dialog h2 { font-size: 25px; margin: 18px 0 20px; }
@@ -2677,7 +2688,6 @@ a.organization-metric:hover {
 @media (max-width: 540px) {
   .token-registry-toolbar { flex-direction: column; align-items: stretch; gap: 15px; }
   .token-registry-toolbar .field { flex: 1; width: auto; }
-  .token-profile-link { flex-direction: column; align-items: stretch; }
   .create-token-dialog { --token-dialog-gutter: 22px; padding: 22px; }
   .token-owner-choices { grid-template-columns: minmax(0, 1fr); }
   .token-owner-choices > label { min-height: 64px; padding: 12px; }

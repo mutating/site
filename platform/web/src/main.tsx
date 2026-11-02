@@ -27,7 +27,6 @@ import { Cloud } from "./pages/Cloud";
 import { Actions } from "./pages/Actions";
 import { ActionRepository } from "./pages/ActionRepository";
 import { ActionRepositoryHistory } from "./pages/ActionRepositoryHistory";
-import { ApiTokens } from "./pages/ApiTokens";
 import "@mutating/ui/fonts.css";
 import "@mutating/ui/styles/brand.css";
 import "@mutating/ui/styles/header.css";
@@ -56,6 +55,12 @@ function NotFound() {
       </Link>
     </>
   );
+}
+function LegacyApiTokens() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  params.set("section", "api-tokens");
+  return <Navigate to={{ pathname: "/profile", search: `?${params}`, hash: location.hash }} replace />;
 }
 function App() {
   const { user, loading, error, reload } = useSession();
@@ -106,8 +111,8 @@ function App() {
               <Route path="organizations" element={<Organizations />} />
               <Route path="organizations/:companyId" element={<Organization />} />
               <Route path="invitations/:token" element={<Invitation />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="api-tokens" element={<ApiTokens key={user?.id} />} />
+              <Route path="profile" element={<Profile key={user?.id} />} />
+              <Route path="api-tokens" element={<LegacyApiTokens />} />
               <Route path="cloud" element={<Cloud />} />
               <Route path="actions" element={<Actions key={user?.id} />} />
               <Route path="actions/repositories/:repositoryId" element={<ActionRepository />} />
