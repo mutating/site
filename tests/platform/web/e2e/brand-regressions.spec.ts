@@ -93,8 +93,8 @@ test("gaze follows motion preference changes without reloading the header", asyn
 
 for (const motion of ["no-preference", "reduce"] as const) {
   /** Resize must retarget a stationary pointer in both directions and preserve
-   * recentering after pointer exit. Advance animation frames explicitly: a busy
-   * CI host can deliver too few frames within the real-time assertion deadline.
+   * recentering after pointer exit. Keep advancing frames while polling: native
+   * resize notifications can arrive after the initial clock advance has ended.
    */
   test(`gaze follows a stationary pointer after resize with ${motion} motion`, async ({ page }) => {
     await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
@@ -103,24 +103,27 @@ for (const motion of ["no-preference", "reduce"] as const) {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("login");
     await expect(page.locator(".auth-panel")).toBeVisible();
-    const gazeX = () => page.locator(".tmc-eye__pupil").evaluate((pupil) =>
-      Number.parseFloat(getComputedStyle(pupil).getPropertyValue("--gaze-x")),
-    );
+    const advanceGazeX = async () => {
+      await page.clock.runFor(100);
+      return page.locator(".tmc-eye__pupil").evaluate((pupil) =>
+        Number.parseFloat(getComputedStyle(pupil).getPropertyValue("--gaze-x")),
+      );
+    };
     await page.mouse.move(190, 50);
     await page.clock.runFor(1000);
-    await expect.poll(gazeX).toBeGreaterThan(2);
+    await expect.poll(advanceGazeX).toBeGreaterThan(2);
     // The centered header moves to the other side of the stationary pointer.
     await page.setViewportSize({ width: 1920, height: 900 });
     await page.clock.runFor(1000);
-    await expect.poll(gazeX, { timeout: 2000 }).toBeLessThan(-1);
+    await expect.poll(advanceGazeX, { timeout: 2000 }).toBeLessThan(-1);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.clock.runFor(1000);
-    await expect.poll(gazeX).toBeGreaterThan(2);
+    await expect.poll(advanceGazeX).toBeGreaterThan(2);
     await page.mouse.move(2000, 50);
     await page.clock.runFor(1000);
-    await expect.poll(async () => Math.abs(await gazeX())).toBeLessThan(0.1);
+    await expect.poll(async () => Math.abs(await advanceGazeX())).toBeLessThan(0.1);
     await page.setViewportSize({ width: 1920, height: 900 });
     await page.clock.runFor(1000);
-    await expect.poll(async () => Math.abs(await gazeX())).toBeLessThan(0.1);
+    await expect.poll(async () => Math.abs(await advanceGazeX())).toBeLessThan(0.1);
   });
 }
