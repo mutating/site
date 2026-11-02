@@ -61,6 +61,8 @@ if command == 'chmod' and os.environ.get('FAILURE') == 'cache-permissions':
         sys.exit(77)
 if command == 'sudo':
     time.sleep(float(os.environ.get('ACTIVATION_DELAY', '0')))
+    if os.environ.get('BREAK_ACTIVATION_STATUS'):
+        Path(os.environ['ACTIVATION_STATE'], 'status.tmp').mkdir()
     print('Activation worker finished', flush=True)
     sys.exit(int(os.environ.get('ACTIVATION_STATUS', '0')))
 """
@@ -211,6 +213,32 @@ def test_activation_status_and_log_survive_disconnected_observer(deployment, sta
         if observer.poll() is None:
             os.killpg(observer.pid, signal.SIGKILL)
             observer.wait(timeout=5)
+
+
+def test_activation_fails_promptly_when_completion_status_cannot_be_written(deployment):
+    """A full disk must not make the observer wait for its entire seven-minute timeout."""
+    checkout, server, _, env, log = deployment
+    state = server / "releases/new/.activation"
+    started = time.monotonic()
+    result = subprocess.run(
+        ["bash", str(checkout / "deploy/deploy.sh"), "new", "activate"],
+        env={
+            **env,
+            "BREAK_ACTIVATION_STATUS": "1",
+            "ACTIVATION_STATE": str(state),
+            "ACTIVATION_STATUS": "17",
+        },
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert time.monotonic() - started < 8
+    assert "exited without a final status" in result.stderr
+    assert not (state / "status").exists()
+    assert "Could not publish activation status" in (state / "output.log").read_text()
+    actions = [json.loads(line) for line in log.read_text().splitlines()]
+    assert sum(action[0] == "sudo" for action in actions) == 1
 
 
 def test_total_upload_deadline_catches_a_slow_trickle(deployment):

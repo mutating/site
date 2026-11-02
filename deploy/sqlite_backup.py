@@ -4,6 +4,7 @@ import argparse
 import re
 import shutil
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
@@ -11,9 +12,27 @@ from sqlalchemy.engine import make_url
 from throng_api.config import Settings
 
 
+def check_space(database):
+    # A SQLite backup copies pages, including committed WAL pages. Leave room for
+    # service writes and completion metadata rather than filling the filesystem.
+    size = 0
+    if database.exists():
+        with closing(sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)) as source:
+            size = (
+                source.execute("PRAGMA page_count").fetchone()[0]
+                * source.execute("PRAGMA page_size").fetchone()[0]
+            )
+    required = size + max(64 * 1024 * 1024, size // 10)
+    available = shutil.disk_usage(database.parent).free
+    if available < required:
+        raise RuntimeError(
+            f"Not enough free space for SQLite backup: need {required} bytes, available {available} bytes"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["backup", "restore"])
+    parser.add_argument("action", choices=["backup", "restore", "check-space"])
     parser.add_argument("name")
     parser.add_argument("--env-file", type=Path, required=True)
     arguments = parser.parse_args()
@@ -27,16 +46,28 @@ def main():
     directory = database.parent / "backups" / name
     backup = directory / "throng.db"
     action = arguments.action
-    if action == "backup":
+    if action == "check-space":
+        check_space(database)
+    elif action == "backup":
+        check_space(database)
         directory.mkdir(parents=True, mode=0o700, exist_ok=False)
-        if not database.exists():
-            (directory / "absent").touch()
-            return
-        with sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True) as source:
-            with sqlite3.connect(backup) as target:
+        try:
+            if not database.exists():
+                (directory / "absent").touch()
+                return
+            partial = directory / "throng.db.incomplete"
+            with (
+                closing(sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)) as source,
+                closing(sqlite3.connect(partial)) as target,
+            ):
                 source.backup(target)
                 if target.execute("PRAGMA integrity_check").fetchone() != ("ok",):
                     raise RuntimeError("SQLite backup integrity check failed")
+            partial.replace(backup)
+        except BaseException:
+            # Only this invocation's newly created directory is disposable.
+            shutil.rmtree(directory)
+            raise
     elif action == "restore":
         # The caller has stopped all writers. Remove stale WAL/SHM with the file.
         if not backup.is_file() and not (directory / "absent").is_file():

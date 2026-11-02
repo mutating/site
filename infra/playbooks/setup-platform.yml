@@ -117,6 +117,22 @@
       when: not server_environment.stat.exists
       no_log: true
 
+    - name: Create the root-owned maintenance helper directory
+      ansible.builtin.file:
+        path: /usr/local/lib/mutating
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the shared SQLite backup helper
+      ansible.builtin.copy:
+        src: "{{ project_source }}/deploy/sqlite_backup.py"
+        dest: /usr/local/lib/mutating/sqlite_backup.py
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Install the privileged activation wrapper
       ansible.builtin.copy:
         src: "{{ project_source }}/deploy/activate.sh"

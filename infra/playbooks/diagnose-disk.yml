@@ -1,0 +1,75 @@
+---
+- name: Inspect production disk use without changing application data
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+    ansible_remote_tmp: /run/ansible-maintenance
+    disk_ssh_interface: ''
+    ansible_ssh_extra_args: >-
+      {% if disk_ssh_interface | length > 0 %}
+      -o ProxyCommand="{{ ansible_playbook_python }} {{ playbook_dir }}/files/ssh_server_first_proxy.py %h %p --interface {{ disk_ssh_interface }}"
+      {% endif %}
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+  tasks:
+    - name: Read filesystem capacity before scanning directories
+      ansible.builtin.command: df -hT /
+      register: disk_capacity
+      changed_when: false
+      tags: [capacity]
+
+    - name: Show current filesystem capacity
+      ansible.builtin.debug:
+        msg: "{{ disk_capacity.stdout_lines }}"
+      tags: [capacity]
+
+    - name: Collect disk capacity and bounded directory sizes
+      ansible.builtin.shell: |
+        set -eu
+        df -hT / /opt/mutating /var/lib/throng /run
+        df -i / /opt/mutating /var/lib/throng
+        du -xhd1 /opt /var /home /root 2>/dev/null | sort -h
+        du -xhd1 /opt/mutating /var/lib/throng /var/log /var/cache 2>/dev/null | sort -h
+        du -xhd1 /opt/mutating/releases /var/lib/throng/backups 2>/dev/null | sort -h | tail -100
+        du -sh /home/user/.cache /root/.cache /var/tmp /tmp 2>/dev/null || true
+        journalctl --disk-usage
+      args:
+        executable: /bin/bash
+      register: disk_usage
+      changed_when: false
+      failed_when: false
+
+    - name: Show disk usage
+      ansible.builtin.debug:
+        msg: "{{ disk_usage.stdout_lines }}"
+
+    - name: Inspect current release and activation metadata without application logs
+      ansible.builtin.shell: |
+        readlink -f /opt/mutating/current
+        systemctl show throng.service --property=ActiveState,SubState,Result,MainPID
+        for directory in /opt/mutating/releases/*/.activation; do
+          test -d "$directory" || continue
+          printf '%s ' "$directory"
+          for name in pid status; do
+            printf '%s=' "$name"
+            if test -f "$directory/$name"; then tr -cd '0-9\n' < "$directory/$name"; else printf 'missing\n'; fi
+          done
+        done
+        find /var/lib/throng -maxdepth 1 -type f -printf '%f %s bytes\n'
+        if command -v lsof >/dev/null; then lsof -nP +L1 2>/dev/null | head -40; fi
+      args:
+        executable: /bin/bash
+      register: disk_state
+      changed_when: false
+      failed_when: false
+      tags: [state]
+
+    - name: Show release and service state
+      ansible.builtin.debug:
+        msg: "{{ disk_state.stdout_lines }}"
+      tags: [state]

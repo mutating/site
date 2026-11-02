@@ -1,0 +1,60 @@
+---
+- name: Clean explicitly selected old Mutating releases
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+    ansible_remote_tmp: /run/ansible-maintenance
+    disk_ssh_interface: ''
+    ansible_ssh_extra_args: >-
+      {% if disk_ssh_interface | length > 0 %}
+      -o ProxyCommand="{{ ansible_playbook_python }} {{ playbook_dir }}/files/ssh_server_first_proxy.py %h %p --interface {{ disk_ssh_interface }}"
+      {% endif %}
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+    cleanup_release_ids: []
+    cleanup_keep: 3
+    cleanup_minimum_age_hours: 24
+    cleanup_apply: false
+    cleanup_verify_health: true
+  tasks:
+    - name: Validate cleanup parameters
+      ansible.builtin.assert:
+        that:
+          - cleanup_release_ids is sequence
+          - cleanup_release_ids is not string
+          - cleanup_keep | int >= 3
+          - cleanup_minimum_age_hours | int >= 1
+          - cleanup_release_ids | reject('match', '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') | list | length == 0
+
+    - name: Plan or remove old releases under the deployment lock
+      ansible.builtin.script:
+        cmd: >-
+          {{ playbook_dir }}/files/cleanup_releases.py
+          --keep {{ cleanup_keep | int }}
+          --minimum-age-hours {{ cleanup_minimum_age_hours | int }}
+          {% for release in cleanup_release_ids %} --release {{ release | quote }} {% endfor %}
+          {{ '--apply' if cleanup_apply | bool and not ansible_check_mode else '' }}
+        executable: /usr/bin/python3
+      check_mode: false
+      register: cleanup_result
+      changed_when: (cleanup_result.stdout | from_json).applied and (cleanup_result.stdout | from_json).selected | length > 0
+
+    - name: Show protected releases, selected paths and available bytes
+      ansible.builtin.debug:
+        msg: "{{ cleanup_result.stdout | from_json }}"
+
+    - name: Verify application health without restarting services
+      ansible.builtin.uri:
+        url: "{{ item }}"
+        status_code: 200
+      loop:
+        - http://127.0.0.1:8000/health/ready
+        - http://127.0.0.1:8001/login
+        - https://mutating.tech/
+        - https://pomponchik.org/
+      when: cleanup_apply | bool and cleanup_verify_health | bool

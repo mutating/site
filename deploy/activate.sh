@@ -5,6 +5,7 @@ release_id="${1:?Usage: mutating-activate RELEASE_ID}"
 [[ "$release_id" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ ]] || exit 2
 deploy_root="/opt/mutating"
 server_env="/etc/throng/throng.env"
+backup_script="/usr/local/lib/mutating/sqlite_backup.py"
 release="$deploy_root/releases/$release_id"
 [[ -d "$release" && -f "$release/site/public/index.html" && -r "$server_env" ]] || { echo "Missing release or server environment." >&2; exit 2; }
 [[ "$(realpath "$release")" == "$release" ]] || { echo "Release must not be a symlink." >&2; exit 2; }
@@ -21,12 +22,16 @@ if [[ -n "${MUTATING_EXPECTED_CURRENT:-}" && "$(readlink -f "$deploy_root/curren
   echo "The active release changed during preparation; inspect it before activating this release." >&2
   exit 2
 fi
+backup_id="$release_id-$(date -u +%Y%m%dT%H%M%S)"
+maintenance=(runuser -u throng -- "$release/platform/api/.venv/bin/python")
+if ! "${maintenance[@]}" "$backup_script" check-space "$backup_id" --env-file "$server_env"; then
+  echo "Backup space check failed; the current service was not stopped." >&2
+  exit 1
+fi
 was_running=false
 if systemctl is-active --quiet throng.service; then was_running=true; fi
 systemctl stop throng.service
-backup_id="$release_id-$(date -u +%Y%m%dT%H%M%S)"
-maintenance=(runuser -u throng -- "$release/platform/api/.venv/bin/python")
-if ! "${maintenance[@]}" "$release/deploy/sqlite_backup.py" backup "$backup_id" --env-file "$server_env"; then
+if ! "${maintenance[@]}" "$backup_script" backup "$backup_id" --env-file "$server_env"; then
   echo "Backup failed; migrations were not started." >&2
   if $was_running; then systemctl start throng.service; fi
   exit 1
@@ -34,7 +39,7 @@ fi
 if ! "${maintenance[@]}" "$release/deploy/run.py" migrate --env-file "$server_env"; then
   echo "Migration failed; restoring the pre-migration SQLite backup." >&2
   # All writers remain stopped, so restoring cannot lose newly accepted requests.
-  "${maintenance[@]}" "$release/deploy/sqlite_backup.py" restore "$backup_id" --env-file "$server_env"
+  "${maintenance[@]}" "$backup_script" restore "$backup_id" --env-file "$server_env"
   if $was_running; then systemctl start throng.service; fi
   exit 1
 fi
