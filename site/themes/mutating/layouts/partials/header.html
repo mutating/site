@@ -18,7 +18,7 @@
 -}}
 {{- partial "tmc-ui/header.html" (dict
   "inheritTypography" true
-  "brand" (dict "href" ("/" | relLangURL) "label" (T "brand_home_aria") "animation" (dict "activation" "reload-home"))
+  "brand" (dict "href" ("/" | relLangURL) "label" (T "brand_home_aria") "animation" (dict "activation" "reload-home" "fitWordmarkToHeader" true))
   "items" $items
   "navigationLabel" (T "main_navigation")
   "mobileNavigationLabel" (T "mobile_navigation")

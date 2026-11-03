@@ -61,6 +61,8 @@
           done
         done
         find /var/lib/throng -maxdepth 1 -type f -printf '%f %s bytes\n'
+        find /var/lib/throng/backups -mindepth 2 -maxdepth 2 -type f -printf 'backup %P %s bytes\n'
+        ps -eo pid,ppid,user,stat,etime,pcpu,pmem,comm --sort=-pcpu | head -16
         if command -v lsof >/dev/null; then lsof -nP +L1 2>/dev/null | head -40; fi
       args:
         executable: /bin/bash

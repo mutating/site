@@ -1,6 +1,6 @@
 import { openLanguages, openUserMenu, selectLanguage } from "./header-controls";
 import type { Page } from "@playwright/test";
-import { API, expect, login, password, test } from "./fixtures";
+import { API, expect, login, password, startSession, test } from "./fixtures";
 
 async function holdSession(page: Page, method: string) {
   let release!: () => void;
@@ -15,6 +15,79 @@ async function holdSession(page: Page, method: string) {
     await route.fulfill({ response });
   });
   return { release, requested };
+}
+
+async function cancelBrandDrag(page: Page, beforeRelease?: () => Promise<void>) {
+  const brand = page.locator(".tmc-brand");
+  await brand.evaluate(node => {
+    (window as any).headerDragEnded = false;
+    node.addEventListener("dragend", () => { (window as any).headerDragEnded = true; }, { once: true });
+  });
+  const box = (await brand.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(15, 250, { steps: 10 });
+  await beforeRelease?.();
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => (window as any).headerDragEnded)).toBe(true);
+}
+
+for (const control of ["language", "theme"] as const) {
+  test(`${control} keeps its first mouse press after a canceled drag while the session resolves`, async ({ page, account, isMobile }) => {
+    test.skip(isMobile, "This scenario uses native mouse link dragging.");
+    await page.setViewportSize({ width: 390, height: 780 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => {
+      localStorage.setItem("tmc-language", "ru");
+      localStorage.setItem("tmc-theme", "dark");
+    });
+    await startSession(page, account);
+    const held = await holdSession(page, "GET");
+    try {
+      await page.goto("profile");
+      await held.requested;
+      await expect(page.locator(".boot-state .loading")).toBeVisible();
+      await cancelBrandDrag(page);
+      // Keyboard opening preserves WebKit's first post-drag mouse press for the option.
+      const button = control === "language"
+        ? (await openLanguages(page, "keyboard")).locator('[data-language-option="en"]')
+        : page.getByRole("banner").locator(".tmc-theme-toggle");
+      await button.hover();
+      const box = (await button.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      held.release();
+      await expect(page.locator('input[name="first_name"]')).toHaveValue(account.first_name);
+      await page.mouse.up();
+      await expect(page.locator("html")).toHaveAttribute(control === "language" ? "lang" : "data-theme", control === "language" ? "en" : "light");
+      await expect(page.getByRole("button", { name: /^(Меню пользователя|User menu)$/ })).toBeVisible();
+    } finally {
+      held.release();
+    }
+  });
+}
+
+for (const resolves of ["during drag", "after drag"]) {
+  test(`the user menu appears after a canceled brand drag: session resolves ${resolves}`, async ({ page, account, isMobile }) => {
+    test.skip(isMobile, "This scenario uses native mouse link dragging.");
+    await page.setViewportSize({ width: 390, height: 780 });
+    await startSession(page, account);
+    const held = await holdSession(page, "GET");
+    try {
+      await page.goto("profile");
+      await held.requested;
+      await expect(page.locator(".boot-state .loading")).toBeVisible();
+      await cancelBrandDrag(page, resolves === "during drag" ? async () => {
+        held.release();
+        await expect(page.locator('input[name="first_name"]')).toHaveValue(account.first_name);
+      } : undefined);
+      held.release();
+      await expect(page.locator('input[name="first_name"]')).toHaveValue(account.first_name);
+      await expect(page.getByRole("button", { name: /^(Меню пользователя|User menu)$/ })).toBeVisible();
+    } finally {
+      held.release();
+    }
+  });
 }
 
 for (const transition of ["session to login", "session to cabinet", "sign in", "sign out"] as const) {
@@ -71,7 +144,7 @@ for (const transition of ["session to login", "session to cabinet", "sign in", "
           await expect(page.getByRole("banner")).toHaveCount(1);
           if (input === "keyboard") {
             if (control === "theme") await expect(button).toBeFocused();
-            else await expect(page.locator(".tmc-language-switcher--desktop > summary:visible, .tmc-mobile-menu > summary:visible")).toBeFocused();
+            else await expect(page.locator(".tmc-language-switcher > summary:visible")).toBeFocused();
           }
           // A second activation must still produce exactly one change.
           if (control === "language") await selectLanguage(page, "ru");

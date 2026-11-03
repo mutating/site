@@ -14,6 +14,7 @@ function Showcase() {
   const [mounted, setMounted] = useState(true);
   const [count, setCount] = useState(0);
   const [otherMenu, setOtherMenu] = useState(false);
+  const [hideNavigation, setHideNavigation] = useState(brandQuery.has("language-only"));
   const [extraLanguage, setExtraLanguage] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState("ru");
   const [wrappedLinks, setWrappedLinks] = useState(false);
@@ -26,7 +27,7 @@ function Showcase() {
   const { theme, controller } = useTheme();
   return <>
     {mounted && <Header
-      brand={{ href: brandQuery.get("brand-home") ?? "/react.html", animation: brandQuery.has("reload-brand") ? { activation: "reload-home" } : undefined }} items={brandQuery.has("language-only") ? [] : otherMenu ? [{ id: "overview", href: "#overview", label: "Обзор", active: true }, { id: "organizations", href: "#organizations", label: "Организации" }] : items} navigationLabel="Навигация"
+      brand={{ href: brandQuery.get("brand-home") ?? "/react.html", animation: brandQuery.has("reload-brand") ? { activation: "reload-home" } : undefined }} items={hideNavigation ? [] : otherMenu ? [{ id: "overview", href: "#overview", label: "Обзор", active: true }, { id: "organizations", href: "#organizations", label: "Организации" }] : items} navigationLabel="Навигация"
       language={{ ...language, current: currentLanguage, options: extraLanguage ? [...language.options, { code: "de", href: "#de" }] : language.options }} themeLabel="Переключить тему"
       menuLabel="Открыть меню" menuText="Меню"
       adjacentLink={brandQuery.has("square-button-header") ? {
@@ -74,6 +75,7 @@ function Showcase() {
           <div className="demo-row"><ThemeToggle aria-label="Второй переключатель темы" />
             <Button variant="secondary" size="compact" onClick={() => controller?.useSystemTheme()}>Системная тема</Button>
             <Button variant="secondary" size="compact" onClick={() => setMounted((value) => !value)}>Пересоздать хэдер</Button>
+            <Button onClick={() => setHideNavigation(value => !value)}>Скрыть или показать навигацию</Button>
             <Button variant="secondary" size="compact" onClick={() => setOtherMenu((value) => !value)}>Другое меню</Button>
             <Button variant="secondary" size="compact" onClick={() => setExtraLanguage((value) => !value)}>Другие языки</Button>
             <Button variant="secondary" size="compact" onClick={() => setCurrentLanguage((value) => value === "ru" ? "en" : "ru")}>Сменить текущий язык</Button>

@@ -184,6 +184,13 @@ import { createClient } from "reboop";
       const target = findTarget();
       if (!target) return;
       const root = document.documentElement;
+      const header = document.querySelector(".tmc-header-shell");
+      if (header) {
+        const style = getComputedStyle(header);
+        const top = Number.parseFloat(style.top) || 0;
+        const clearance = style.position === "sticky" ? Math.ceil(header.getBoundingClientRect().height + top + 8) : 0;
+        root.style.setProperty("--tmc-header-clearance", `${clearance}px`);
+      }
       const previousScrollBehavior = root.style.scrollBehavior;
       root.style.scrollBehavior = "auto";
       if (target.id === "top") {
@@ -284,6 +291,7 @@ import { createClient } from "reboop";
     window.addEventListener("load", alignCurrentHash);
     window.addEventListener("pageshow", handlePageShow);
     window.addEventListener("hashchange", restartHashAlignment);
+    window.addEventListener("resize", alignCurrentHash);
     window.addEventListener("wheel", cancelPendingAlignmentFromWheel, {
       passive: true,
       capture: true,
@@ -1130,7 +1138,7 @@ import { createClient } from "reboop";
         preferenceSource: "storage",
         cookieDomain: "mutating.tech",
       },
-      language: { closeOnSelection: false, stopEscapePropagation: false },
+      language: { closeOnSelection: false },
       themeToggle: { exposePressedState: false },
       brand: false,
       mobileMenu: false,
@@ -1146,7 +1154,7 @@ import { createClient } from "reboop";
     initTokamak();
     initTentacles();
     header?.querySelectorAll(".tmc-mobile-menu").forEach((menu) => mountMobileMenu(menu, {
-      closeOnEscape: false, closeOnDesktop: false, closeNestedMenus: false,
+      closeNestedMenus: false,
     }));
     initPostToc();
     initUnpaginatedBlogTail();

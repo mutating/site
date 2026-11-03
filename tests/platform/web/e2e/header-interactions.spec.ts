@@ -64,26 +64,19 @@ test("keyboard order reaches all header controls and the cabinet skip link stays
   await expect(page.locator(".auth-panel")).toBeVisible();
   const brand = page.getByRole("link", { name: "The Mutating Company", exact: true });
   const theme = page.getByRole("button", { name: "Переключить тему", exact: true });
-  const mobile = !await page.locator(".tmc-language-switcher--desktop").isVisible();
   async function headerOrder() {
     await expect(brand).toBeFocused();
     await page.keyboard.press(next);
-    if (mobile) {
-      await expect(theme).toBeFocused();
-      await page.keyboard.press(next);
-      await expect(languageControl(page)).toBeFocused();
-    } else {
-      await expect(languageControl(page)).toBeFocused();
-      await page.keyboard.press(next);
-      await expect(theme).toBeFocused();
-    }
+    await expect(languageControl(page)).toBeFocused();
+    await page.keyboard.press(next);
+    await expect(theme).toBeFocused();
   }
   await page.keyboard.press(next);
   await headerOrder();
   await page.keyboard.press(next);
   await expect(page.getByLabel("Email или ник")).toBeFocused();
   await page.keyboard.press(previous);
-  await expect(mobile ? languageControl(page) : theme).toBeFocused();
+  await expect(theme).toBeFocused();
 
   await login(page, account);
   await page.reload();

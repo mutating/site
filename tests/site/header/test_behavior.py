@@ -12,6 +12,53 @@ from playwright.sync_api import Page, expect
 DriverFactory = Callable[..., Page]
 
 
+def test_content_iframe_press_closes_header_menus(driver: DriverFactory) -> None:
+    page = driver(
+        viewport=(390, 780), initial_path="/ru/", stored_language="ru",
+        load_interactive_visuals=True, bounded_tentacle_rendering=True,
+        manual_tentacle_rendering=True, reduced_motion="reduce",
+    )
+    page.locator("#contact").scroll_into_view_if_needed()
+    frame = page.locator("iframe.contact__tentacles")
+    expect(frame).to_have_attribute("src", re.compile(r"/muta-tentacles\.html\?"))
+    expect(page.frame_locator("iframe.contact__tentacles").locator("canvas")).to_be_visible()
+    menu = page.locator(".tmc-mobile-menu")
+    languages = menu.locator(".tmc-language-switcher--mobile")
+    menu.locator(":scope > summary").click()
+    languages.locator("summary").click()
+    point = frame.evaluate("""frame => {
+      const box = frame.getBoundingClientRect();
+      const x = Math.min(innerWidth - 30, box.right - 30);
+      const y = Math.min(innerHeight - 30, box.bottom - 30);
+      return {x, y, exposed: document.elementFromPoint(x, y) === frame};
+    }""")
+    assert point["exposed"], "The click must reach the actual iframe, outside the menus"
+    page.mouse.click(point["x"], point["y"])
+    expect(frame).to_be_focused()
+    expect(menu).not_to_have_attribute("open", "")
+    expect(languages).not_to_have_attribute("open", "")
+
+
+@pytest.mark.parametrize("width", [280, 320, 380, 390, 900])
+def test_post_fragment_heading_clears_the_actual_header(
+    driver: DriverFactory, width: int,
+) -> None:
+    page = driver(
+        viewport=(width, 800),
+        initial_path="/blog/markdown-feature-fixture/#structured-signals",
+    )
+    page.wait_for_function("""() => {
+      const heading = document.getElementById('structured-signals');
+      return heading.getBoundingClientRect().top >=
+        document.querySelector('.tmc-header-shell').getBoundingClientRect().bottom;
+    }""", timeout=5_000)
+    expect(page.locator("#structured-signals")).to_be_in_viewport()
+    page.set_viewport_size({"width": 320 if width > 380 else 900, "height": 800})
+    page.wait_for_function("""() => document.getElementById('structured-signals')
+      .getBoundingClientRect().top >= document.querySelector('.tmc-header-shell')
+      .getBoundingClientRect().bottom""", timeout=5_000)
+
+
 def _observer_failure_script(failure: str) -> str:
     observer = (
         "undefined" if failure == "missing" else
@@ -213,16 +260,18 @@ def test_touch_menu_language_and_theme_controls(
 
 
 @pytest.mark.parametrize("width", [1040, 360])
-def test_menu_preserves_original_escape_and_resize_behavior(
+def test_menu_dismisses_with_escape_and_when_returning_to_desktop(
     driver: DriverFactory, width: int,
 ) -> None:
-    """Escape dismisses the language list; the outer menu survives Escape/resize."""
+    """Dismiss the innermost disclosure and reset the mobile menu on desktop."""
     page = driver(viewport=(width, 900))
     menu = page.locator(".tmc-mobile-menu")
     summary = menu.locator(":scope > summary")
     summary.click()
     summary.press("Escape")
-    expect(menu).to_have_attribute("open", "")
+    expect(menu).not_to_have_attribute("open", "")
+    expect(summary).to_be_focused()
+    summary.click()
     language = menu.locator(".tmc-language-switcher")
     language.locator("summary").click()
     language.locator("summary").press("Escape")
@@ -230,9 +279,10 @@ def test_menu_preserves_original_escape_and_resize_behavior(
     expect(language.locator("summary")).to_be_focused()
     expect(menu).to_have_attribute("open", "")
     page.set_viewport_size({"width": 1440, "height": 900})
+    expect(menu).not_to_have_attribute("open", "")
     page.set_viewport_size({"width": width, "height": 900})
-    expect(menu).to_have_attribute("open", "")
-    expect(menu.locator("nav")).to_be_visible()
+    expect(menu).not_to_have_attribute("open", "")
+    expect(menu.locator("nav")).not_to_be_visible()
 
 
 @pytest.mark.parametrize("width", [1440, 1040, 360])
@@ -347,10 +397,10 @@ def test_delayed_header_script_preserves_the_theme_already_painted_by_head(
 
 
 @pytest.mark.parametrize("width", [1440, 1040, 360])
-def test_language_escape_preserves_the_document_keyboard_event_contract(
+def test_language_escape_stops_before_outer_disclosures(
     driver: DriverFactory, width: int,
 ) -> None:
-    """Dismiss the list and restore focus before bubbling Escape to document."""
+    """One Escape dismisses only the language list and restores its focus."""
     page = driver(viewport=(width, 900))
     mobile = width <= 1120
     if mobile:
@@ -371,9 +421,11 @@ def test_language_escape_preserves_the_document_keyboard_event_contract(
       });
     }""")
     page.keyboard.press("Escape")
-    assert page.evaluate("window.headerEscapes") == [
-        {"open": False, "summaryFocused": True, "defaultPrevented": False},
-    ]
+    assert page.evaluate("window.headerEscapes") == []
+    expect(language).not_to_have_attribute("open", "")
+    expect(language.locator("summary")).to_be_focused()
+    if mobile:
+        expect(page.locator(".tmc-mobile-menu")).to_have_attribute("open", "")
 
 
 @pytest.mark.parametrize("failure", ["missing", "constructor"])

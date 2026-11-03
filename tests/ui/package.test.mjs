@@ -39,6 +39,14 @@ test("the core and React entries can be imported and server rendered without a b
   }));
   assert.match(applicationHeader, /<button[^>]*aria-label="Choose language"[^>]*type="button"[^>]*class="tmc-language-toggle">RU<\/button>/);
   assert.doesNotMatch(applicationHeader, /<nav|tmc-mobile-menu/);
+  for (const items of [undefined, []]) {
+    const languageOnly = renderToStaticMarkup(createElement(Header, {
+      items, showThemeToggle: false,
+      language: { current: "en", options: [{ code: "ru", href: "/ru/" }], label: "Language", groupLabel: "Languages" },
+    }));
+    assert.match(languageOnly, /tmc-language-switcher--standalone/);
+    assert.doesNotMatch(languageOnly, /<nav|tmc-mobile-menu|tmc-language-switcher--(?:desktop|mobile)/);
+  }
   const square = renderToStaticMarkup(createElement(SquareButton, {
     href: "", "aria-label": "Custom action", target: "_blank", className: "custom",
   }, createElement("span", null, "Custom content")));
@@ -97,6 +105,9 @@ test("Hugo renders the adapters without depending on the company site's template
   assert.match(html, /tmc-language-switcher--mobile/);
   assert.match(html, /disabled/);
   assert.doesNotMatch(html, /ZgotmplZ|<no value>|{{/);
+  const languageOnly = await readFile(resolve(ui, ".runtime/hugo/language-only/index.html"), "utf8");
+  assert.match(languageOnly, /tmc-language-switcher--standalone/);
+  assert.doesNotMatch(languageOnly, /<nav|tmc-mobile-menu|tmc-language-switcher--(?:desktop|mobile)/);
 });
 
 test("the pixel reference is built from the original home page in both languages", prepareHeaderReference);

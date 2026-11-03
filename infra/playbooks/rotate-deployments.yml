@@ -1,0 +1,57 @@
+---
+# The ordinary CI account may invoke only the installed root-owned wrapper.
+- name: Rotate history only after a verified production deployment
+  hosts: all
+  become: false
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+    rotation_apply: true
+    rotation_run_as: ''
+    disk_ssh_interface: ''
+    ansible_ssh_extra_args: >-
+      {% if disk_ssh_interface | length > 0 %}
+      -o ProxyCommand="{{ ansible_playbook_python }} {{ playbook_dir }}/files/ssh_server_first_proxy.py %h %p --interface {{ disk_ssh_interface }}"
+      {% endif %}
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=yes -o HostKeyAlias=mutating-production
+      -o UserKnownHostsFile="{{ playbook_dir }}/../../deploy/known_hosts"
+      -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+  tasks:
+    - name: Validate the release whose checks have passed
+      ansible.builtin.assert:
+        that:
+          - rotation_release_id is defined
+          - rotation_release_id is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+          - rotation_run_as == '' or rotation_run_as is match('^[a-z_][a-z0-9_-]*$')
+
+    - name: Verify both hosted sites before rotation
+      ansible.builtin.uri:
+        url: '{{ item }}'
+        status_code: 200
+      loop: [https://mutating.tech/, https://pomponchik.org/]
+
+    - name: Invoke the installed rotation policy under the deployment lock
+      become: '{{ rotation_run_as | length > 0 }}'
+      become_user: '{{ rotation_run_as if rotation_run_as | length > 0 else "root" }}'
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - -n
+          - /usr/local/sbin/mutating-activate
+          - '{{ rotation_release_id }}'
+          - '{{ "rotate" if rotation_apply | bool and not ansible_check_mode else "rotate-plan" }}'
+      check_mode: false
+      register: rotation_result
+      changed_when: rotation_result.rc == 0 and (rotation_result.stdout | from_json).changed
+
+    - name: Show retained and removed history without credentials or database contents
+      ansible.builtin.debug:
+        msg: '{{ rotation_result.stdout | from_json }}'
+
+    - name: Verify both hosted sites after rotation
+      ansible.builtin.uri:
+        url: '{{ item }}'
+        status_code: 200
+      loop: [https://mutating.tech/, https://pomponchik.org/]

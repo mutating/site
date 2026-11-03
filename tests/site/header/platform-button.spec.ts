@@ -29,7 +29,7 @@ async function buttonStates(page: Page) {
   return pictures;
 }
 
-for (const width of widths) for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
+for (const width of widths.filter(width => width > 1120)) for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
   test(`platform button pixels ${language} ${theme} ${width}px`, async ({ context }, info) => {
     const before = await context.newPage();
     const after = await context.newPage();
@@ -42,7 +42,7 @@ for (const width of widths) for (const language of ["en", "ru"]) for (const them
 
 test.describe("platform button retina", () => {
   test.use({ deviceScaleFactor: 2 });
-  for (const width of [320, 480, 481, 580, 581, 1120, 1121, 1920]) for (const theme of ["light", "dark"]) {
+  for (const width of [1121, 1920]) for (const theme of ["light", "dark"]) {
     test(`pixels ${theme} ${width}px at DPR 2`, async ({ context }, info) => {
       const before = await context.newPage();
       const after = await context.newPage();
@@ -61,23 +61,34 @@ test.describe("Chromium platform button behavior", () => {
       await page.route(destination, route => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Platform</title>" }));
       for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
+        // This fixture pauses the clock; allow the wordmark's resize frames to run.
+        await page.clock.runFor(128);
         const button = page.getByRole("link", { name: language === "ru" ? "Открыть платформу" : "Open platform", exact: true });
         await expect(button).toBeVisible();
         await expect(button).toHaveAttribute("href", destination);
         await expect(button.locator("svg")).toHaveAttribute("aria-hidden", "true");
         const box = (await button.boundingBox())!;
-        expect(box.width).toBe(width <= 480 ? 56 : width <= 580 ? 68 : 74);
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        if (width > 1120) expect(box.width).toBe(74);
         expect(box.height).toBe(width <= 580 ? 68 : 74);
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(width);
         const header = (await page.locator(".tmc-header").boundingBox())!;
-        expect(box.y).toBe(header.y);
-        expect(box.x - header.x - header.width).toBe(width <= 580 ? 8 : 10);
+        const controls = (await page.locator(".tmc-header-actions").boundingBox())!;
+        expect(Math.abs(box.y + box.height / 2 - controls.y - controls.height / 2)).toBeLessThanOrEqual(1);
+        if (width > 1120) expect(box.x - header.x - header.width).toBe(10);
         const icon = (await button.locator("svg").boundingBox())!;
         expect(icon.width).toBe(width <= 580 ? 32 : 36);
         expect(icon.height).toBe(icon.width);
         expect(icon.x + icon.width / 2).toBe(box.x + box.width / 2);
         expect(icon.y + icon.height / 2).toBe(box.y + box.height / 2);
+        if (width <= 1120) {
+          const theme = (await page.locator(".tmc-theme-toggle").boundingBox())!;
+          const menu = (await page.locator(".tmc-mobile-menu > summary").boundingBox())!;
+          const gap = menu.x - theme.x - theme.width;
+          expect(Math.abs(icon.x - menu.x - menu.width - gap)).toBeLessThanOrEqual(1);
+          expect(Math.abs((box.width - icon.width) / 2 - gap)).toBeLessThanOrEqual(1);
+        }
       }
       await page.locator(".tmc-platform-link").click();
       await expect(page).toHaveURL(destination);

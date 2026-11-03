@@ -18,11 +18,9 @@ export async function openLanguages(page: Page, input: "mouse" | "keyboard" | "t
     else if (input === "touch") await control.tap();
     else await control.click();
   };
-  if (!await page.locator(".tmc-language-switcher--desktop").isVisible() && !await page.locator(".tmc-mobile-menu").evaluate((menu: HTMLDetailsElement) => menu.open)) {
-    await activate(".tmc-mobile-menu > summary");
-  }
-  const variant = await page.locator(".tmc-language-switcher--desktop").isVisible() ? "desktop" : "mobile";
-  const switcher = page.locator(`.tmc-language-switcher--${variant}`);
+  const visibleSwitcher = page.locator(".tmc-language-switcher").filter({ visible: true });
+  if (!await visibleSwitcher.count()) await activate(".tmc-mobile-menu > summary");
+  const switcher = page.locator(".tmc-language-switcher").filter({ visible: true });
   if (!await switcher.evaluate((details: HTMLDetailsElement) => details.open)) await activate(".tmc-language-switcher > summary");
   await expect(switcher).toHaveAttribute("open", "");
   return switcher;
@@ -37,5 +35,5 @@ export async function selectLanguage(page: Page, code?: string, input: "mouse" |
   else await option.click();
   await expect(page.locator("html")).toHaveAttribute("lang", code);
   await expect(switcher).not.toHaveAttribute("open");
-  await expect(page.locator(".tmc-mobile-menu")).not.toHaveAttribute("open");
+  await expect(page.locator(".tmc-mobile-menu[open]")).toHaveCount(0);
 }

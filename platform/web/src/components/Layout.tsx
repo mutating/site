@@ -29,14 +29,21 @@ export function Header() {
     const key = "--platform-header-clearance";
     const previous = root.style.getPropertyValue(key);
     const update = () => {
-      const top = Number.parseFloat(getComputedStyle(header).top) || 0;
-      root.style.setProperty(key, `${Math.max(110, Math.ceil(top + header.getBoundingClientRect().height + 16))}px`);
+      const style = getComputedStyle(header);
+      const top = Number.parseFloat(style.top) || 0;
+      const clearance = style.position === "sticky" ? Math.ceil(top + header.getBoundingClientRect().height + 16) : 0;
+      root.style.setProperty(key, `${Math.max(110, clearance)}px`);
     };
     const observer = new ResizeObserver(update);
     observer.observe(header);
+    const layoutObserver = new MutationObserver(update);
+    layoutObserver.observe(header, { attributes: true, attributeFilter: ["data-tmc-too-tall"] });
+    window.addEventListener("resize", update);
     update();
     return () => {
       observer.disconnect();
+      layoutObserver.disconnect();
+      window.removeEventListener("resize", update);
       if (previous) root.style.setProperty(key, previous);
       else root.style.removeProperty(key);
     };

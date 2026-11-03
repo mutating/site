@@ -185,7 +185,7 @@ test("separate open documents keep the static site's theme policy until reload",
 });
 
 for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as const) {
-  test(`language dropdown matches the static site in every layout: ${language}, ${theme}`, async ({ page }) => {
+  test(`language controls share desktop styling and respect mobile navigation: ${language}, ${theme}`, async ({ page }) => {
     test.setTimeout(90_000);
     await page.addInitScript(({ language, theme }) => {
       localStorage.setItem("tmc-language", language);
@@ -198,7 +198,7 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as co
       await ready(page, web);
       await page.mouse.move(0, 899);
       const menuSummary = page.locator(".tmc-mobile-menu > summary");
-      if (width <= 1120) {
+      if (width <= 1120 && !web) {
         await expect(menuSummary).toBeVisible();
         await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(0);
         await expect(page.locator(".tmc-language-switcher--desktop")).toBeHidden();
@@ -206,37 +206,37 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as co
         await expect(page.locator(".tmc-mobile-menu__label")).toBeVisible({ visible: width > 480 });
       } else {
         await expect(menuSummary).toBeHidden();
-        await expect(page.locator(".tmc-language-switcher--desktop > summary")).toBeVisible();
+        await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(1);
       }
       const dropdown = await openLanguages(page, "keyboard");
-      const png = await dropdown.screenshot({ animations: "disabled" });
+      // Opening starts a CSS transition; compare its final state on both renderers.
+      await expect(dropdown.locator("summary")).toHaveCSS("border-radius", "12px 12px 0px 0px");
       const properties = ["display", "position", "font-family", "font-size", "font-weight", "line-height", "color", "background-color", "border", "border-radius", "padding", "gap", "width", "min-height", "backdrop-filter", "box-shadow", "outline", "outline-offset"];
       const styles = await dropdown.evaluate((element, properties) => [element, ...element.querySelectorAll("summary, summary span, .tmc-language-switcher__list, a")].map(node => {
         const style = getComputedStyle(node);
         return Object.fromEntries(properties.map(property => [property, style.getPropertyValue(property)]));
       }), properties);
-      if (width <= 1120) await menuSummary.focus();
-      const menuStyles = width <= 1120 ? await menuSummary.evaluate((element, properties) => {
+      if (width <= 1120 && !web) await menuSummary.focus();
+      const menuStyles = width <= 1120 && !web ? await menuSummary.evaluate((element, properties) => {
         // Reduced-motion focus transitions still have a nonzero duration.
         element.getAnimations().forEach(animation => animation.finish());
         const style = getComputedStyle(element);
         return Object.fromEntries(properties.map(property => [property, style.getPropertyValue(property)]));
       }, properties) : null;
-      return { styles, menuStyles, png };
+      return { styles, menuStyles };
     }
     for (const width of [320, 390, 900, 1040, 1041, 1120, 1121, 1440]) {
       const original = await appearance(false, width);
       const actual = await appearance(true, width);
-      expect(actual.styles, `${width}px computed styles`).toEqual(original.styles);
-      expect(actual.menuStyles, `${width}px mobile menu button`).toEqual(original.menuStyles);
-      // Backgrounds differ below the translucent desktop popup; compare opaque mobile
-      // menus pixel for pixel in Firefox, which paints deterministic antialiasing.
-      if (width <= 1120 && test.info().project.name === "firefox") {
-        if (!actual.png.equals(original.png)) {
-          await test.info().attach(`${width}-site.png`, { body: original.png, contentType: "image/png" });
-          await test.info().attach(`${width}-platform.png`, { body: actual.png, contentType: "image/png" });
-        }
-        expect(actual.png.equals(original.png), `${width}px dropdown pixels`).toBe(true);
+      if (width > 1120) expect(actual.styles, `${width}px shared desktop styles`).toEqual(original.styles);
+      else {
+        expect(original.menuStyles).not.toBeNull();
+        expect(actual.menuStyles).toBeNull();
+        await expect(page.locator(".tmc-mobile-menu")).toHaveCount(0);
+        await expect(page.locator(".tmc-language-switcher--standalone")).toBeVisible();
+        expect(actual.styles[0]["width"]).toBe("48px");
+        expect(actual.styles[0]["font-family"]).toBe(original.styles[0]["font-family"]);
+        expect(actual.styles[0]["font-size"]).toBe(original.styles[0]["font-size"]);
       }
       await selectLanguage(page);
       expect(page.url()).toBe(`${platform}/register?draft=1#form`);

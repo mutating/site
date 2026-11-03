@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures";
 import { languageControl, openLanguages, selectLanguage } from "./header-controls";
 
 for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as const) {
-  test(`language collapses into the menu and works with pointer input: ${language}, ${theme}`, async ({ page, isMobile }) => {
+  test(`language stays outside navigation menus and works with pointer input: ${language}, ${theme}`, async ({ page, isMobile }) => {
     test.setTimeout(90_000);
     await page.addInitScript(({ language, theme }) => {
       localStorage.setItem("tmc-language", language);
@@ -15,26 +15,16 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as co
     for (const width of [320, 480, 481, 900, 1120, 1121, 1440]) {
       await page.setViewportSize({ width, height: 800 });
       await page.mouse.move(0, 799);
-      const menu = page.locator(".tmc-mobile-menu");
-      const menuSummary = menu.locator(":scope > summary");
+      await expect(page.locator(".tmc-mobile-menu")).toHaveCount(0);
       await expect(page.locator(".tmc-language-toggle")).toHaveCount(0);
       await expect(page.locator(".tmc-theme-toggle")).toBeVisible();
-      await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(width <= 1120 ? 0 : 1);
-      if (width <= 1120) {
-        await expect(menuSummary).toBeVisible();
-        await expect(page.locator(".tmc-language-switcher--desktop")).toBeHidden();
-        await expect(menu.locator("nav")).toBeHidden();
-        await expect(menu.locator(".tmc-mobile-menu__icon")).toBeVisible({ visible: width <= 480 });
-        await expect(menu.locator(".tmc-mobile-menu__label")).toBeVisible({ visible: width > 480 });
-        const dropdown = await openLanguages(page, input);
-        await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(1);
-        await expect(dropdown.locator("summary")).toHaveText(language.toUpperCase());
-        await expect(dropdown.locator("a")).toBeVisible();
-        if (isMobile) await draft.tap(); else await draft.click();
-        await expect(menu).not.toHaveAttribute("open");
-        await expect(dropdown).not.toHaveAttribute("open");
-        await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(0);
-      } else await expect(menu).toBeHidden();
+      await expect(page.locator(".tmc-language-switcher > summary:visible")).toHaveCount(1);
+      const dropdown = await openLanguages(page, input);
+      await expect(dropdown.locator("summary")).toHaveText(language.toUpperCase());
+      await expect(dropdown.locator("a")).toBeVisible();
+      if (isMobile) await draft.tap(); else await draft.click();
+      await expect(dropdown).not.toHaveAttribute("open");
+      await expect(dropdown.locator("summary")).toBeVisible();
       await selectLanguage(page, language === "en" ? "ru" : "en", input);
       await selectLanguage(page, language, input);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
@@ -68,7 +58,7 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as co
       else if (isMobile) await option.tap();
       else await option.click();
       await expect(page.locator("html")).toHaveAttribute("lang", selected!);
-      await expect(page.locator(".tmc-mobile-menu")).not.toHaveAttribute("open");
+      await expect(page.locator(".tmc-mobile-menu[open]")).toHaveCount(0);
       await expect(dropdown).not.toHaveAttribute("open");
       await expect(draft).toHaveValue("short-menu@example.com");
       await expect(page).toHaveURL(/register\?source=short-menu#draft$/);
@@ -82,6 +72,8 @@ test("language dropdown supports Escape, outside clicks, layout changes and keyb
   await page.locator('input[name="email"]').fill("dropdown@example.com");
   for (const width of [320, 390, 900, 1040, 1041, 1120, 1121, 1440]) {
     await page.setViewportSize({ width, height: 800 });
+    // Media-query callbacks must settle before the next keyboard interaction.
+    await page.evaluate(() => new Promise(requestAnimationFrame));
     const dropdown = await openLanguages(page, "keyboard");
     await expect(dropdown.locator("a")).toHaveCount(1);
     await expect(dropdown.locator("a")).toHaveAttribute("lang", "en");
@@ -89,16 +81,10 @@ test("language dropdown supports Escape, outside clicks, layout changes and keyb
     await page.keyboard.press("Escape");
     await expect(dropdown).not.toHaveAttribute("open");
     await expect(dropdown.locator("summary")).toBeFocused();
-    if (width <= 1120) {
-      await expect(page.locator(".tmc-mobile-menu")).toHaveAttribute("open", "");
-      await page.keyboard.press("Escape");
-      await expect(page.locator(".tmc-mobile-menu")).not.toHaveAttribute("open");
-      await expect(languageControl(page)).toBeFocused();
-    }
     await openLanguages(page);
     await page.locator('input[name="email"]').click();
     await expect(dropdown).not.toHaveAttribute("open");
-    await expect(page.locator(".tmc-mobile-menu")).not.toHaveAttribute("open");
+    await expect(page.locator(".tmc-mobile-menu[open]")).toHaveCount(0);
     await selectLanguage(page, "en", "keyboard");
     await expect(languageControl(page)).toBeFocused();
     await selectLanguage(page, "ru", "keyboard");
@@ -107,17 +93,17 @@ test("language dropdown supports Escape, outside clicks, layout changes and keyb
   }
   await openLanguages(page);
   await page.setViewportSize({ width: 390, height: 800 });
-  await expect(page.locator(".tmc-language-switcher--desktop")).not.toHaveAttribute("open");
+  await expect(page.locator(".tmc-language-switcher--standalone")).not.toHaveAttribute("open");
   await openLanguages(page);
   await page.setViewportSize({ width: 1440, height: 800 });
-  await expect(page.locator(".tmc-mobile-menu")).not.toHaveAttribute("open");
-  await expect(page.locator(".tmc-language-switcher--mobile")).not.toHaveAttribute("open");
+  await expect(page.locator(".tmc-mobile-menu[open]")).toHaveCount(0);
+  await expect(page.locator(".tmc-language-switcher--standalone")).not.toHaveAttribute("open");
 });
 
 test("desktop pointer hover opens the same dropdown as the static site", async ({ page, isMobile }) => {
   test.skip(isMobile, "Requires a fine pointer with hover");
   await page.goto("login");
-  const dropdown = page.locator(".tmc-language-switcher--desktop");
+  const dropdown = page.locator(".tmc-language-switcher--standalone");
   await dropdown.locator("summary").hover();
   await expect(dropdown).toHaveAttribute("open", "");
   await dropdown.locator("a").hover();

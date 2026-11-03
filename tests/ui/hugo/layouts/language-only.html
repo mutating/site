@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Language-only header</title><link rel="stylesheet" href="/dist/styles/index.css"></head><body class="tmc-page">
+{{ partial "tmc-ui/header.html" (dict
+  "language" (dict "current" "ru" "label" "Выбрать язык" "groupLabel" "Языки"
+    "options" (slice (dict "code" "ru" "href" "#ru") (dict "code" "en" "href" "#en")))
+) }}
+<main><h1>Language-only header</h1></main>
+<script type="module">
+import { mountHeader } from "/dist/index.js";
+mountHeader(document.querySelector(".tmc-header-shell"));
+</script>
+</body></html>

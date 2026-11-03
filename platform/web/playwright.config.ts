@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
-const runtime = resolve(".runtime", `playwright-${process.pid}`);
+import { randomUUID } from "node:crypto";
+const runtime = resolve(".runtime", `playwright-${randomUUID()}`);
 export default defineConfig({
   testDir: "../../tests/platform/web/e2e",
   testIgnore: ["**/visual.spec.ts", "**/header-shared.spec.ts"],

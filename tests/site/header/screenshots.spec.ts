@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { epoch, prepare, selector, capture, compare } from "./fixture";
 
+// Frozen pixel comparisons apply to desktop. Mobile geometry is covered by
+// responsive.spec.ts and exact React/Hugo parity in tests/ui/header-parity.spec.ts.
 type Shot = Awaited<ReturnType<typeof capture>>;
 
 async function states(page: Page): Promise<Shot[]> {
@@ -106,7 +108,7 @@ async function states(page: Page): Promise<Shot[]> {
   return pictures;
 }
 
-for (const width of [1440, 1241, 1240, 1121, 1120, 1041, 1040, 921, 920, 861, 860, 581, 580, 481, 480, 381, 380, 360, 280]) {
+for (const width of [1440, 1241, 1240, 1121, 1120, 1041, 1040, 921, 920, 861, 860, 581, 580, 481, 480, 381, 380, 360, 280].filter(width => width > 1120)) {
   for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
     test(`rest ${language} ${theme} ${width}px`, async ({ context }, info) => {
       const before = await context.newPage(); const after = await context.newPage();
@@ -116,7 +118,7 @@ for (const width of [1440, 1241, 1240, 1121, 1120, 1041, 1040, 921, 920, 861, 86
     });
   }
 }
-for (const width of [1440, 1120, 1040, 921, 920, 580, 480, 360, 280]) {
+for (const width of [1440, 1120, 1040, 921, 920, 580, 480, 360, 280].filter(width => width > 1120)) {
   for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
     test(`pointer and controls ${language} ${theme} ${width}px`, async ({ context }, info) => {
       const before = await context.newPage(); const after = await context.newPage();
@@ -127,7 +129,7 @@ for (const width of [1440, 1120, 1040, 921, 920, 580, 480, 360, 280]) {
     });
   }
 }
-for (const width of [1440, 1120, 360]) {
+for (const width of [1440, 1120, 360].filter(width => width > 1120)) {
   test(`reduced motion ${width}px`, async ({ context }, info) => {
     const before = await context.newPage(); const after = await context.newPage();
     await prepare(before, true, "ru", "dark", width, true);
@@ -141,19 +143,20 @@ test.describe("Chromium high contrast", () => {
   test.use({ forcedColors: "active" });
   for (const width of [1440, 375]) {
     for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
-      test(`system colors ${language} ${theme} ${width}px`, async ({ context }, info) => {
-        const before = await context.newPage(); const after = await context.newPage();
-        await prepare(before, true, language, theme, width);
-        await prepare(after, false, language, theme, width);
-        const expected = [await capture(before, "rest")];
-        const actual = [await capture(after, "rest")];
-        for (const [page, pictures] of [[before, expected], [after, actual]] as const) {
-          await page.keyboard.press("Tab");
-          await page.locator(await selector(page, "brand")).focus();
-          await page.clock.runFor(320);
-          pictures.push(await capture(page, "brand-focus-visible"));
-        }
-        await compare(expected, actual, info);
+      test(`system colors ${language} ${theme} ${width}px`, async ({ page }) => {
+        // The original reference hid these controls in forced colors.
+        await prepare(page, false, language, theme, width, true);
+        const toggle = page.locator(".tmc-theme-toggle");
+        await toggle.hover();
+        const initial = await toggle.screenshot({ animations: "disabled" });
+        await toggle.click();
+        await page.clock.runFor(320);
+        expect((await toggle.screenshot({ animations: "disabled" })).equals(initial)).toBe(false);
+        const eye = page.locator(".tmc-eye");
+        const visible = await eye.screenshot({ animations: "disabled" });
+        const hidden = await page.addStyleTag({ content: ".tmc-eye__surface, .tmc-eye__pupil { visibility: hidden !important }" });
+        expect((await eye.screenshot({ animations: "disabled" })).equals(visible)).toBe(false);
+        await hidden.evaluate(node => node.parentNode?.removeChild(node));
       });
     }
   }
@@ -217,7 +220,7 @@ async function keyboardStates(page: Page): Promise<Shot[]> {
   return pictures;
 }
 
-for (const width of [1440, 1120, 360]) {
+for (const width of [1440, 1120, 360].filter(width => width > 1120)) {
   for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
     test(`keyboard focus and language hover ${language} ${theme} ${width}px`, async ({ context }, info) => {
       const before = await context.newPage(); const after = await context.newPage();
@@ -235,7 +238,7 @@ for (const [name, declaration] of [
   ["color", "color:rgb(170,0,0)!important"],
   ["text-spacing", "line-height:1.5!important;letter-spacing:.12em!important;word-spacing:.16em!important"],
 ] as const) {
-  for (const width of [1440, 1040, 360]) for (const language of ["en", "ru"]) {
+  for (const width of [1440, 1040, 360].filter(width => width > 1120)) for (const language of ["en", "ru"]) {
     test(`inherited body typography ${name} ${language} ${width}px`, async ({ context }, info) => {
       const sequences: Shot[][] = [];
       for (const reference of [true, false]) {

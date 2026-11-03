@@ -154,7 +154,7 @@ body {
 }
 
 section[id] {
-  scroll-margin-top: 112px;
+  scroll-margin-top: max(112px, var(--tmc-header-clearance, 0px));
 }
 
 ::selection {
@@ -272,13 +272,13 @@ a.section-index:focus-visible {
 
 .section-shell[id],
 .dispatch-card[id] {
-  scroll-margin-top: 112px;
+  scroll-margin-top: max(112px, var(--tmc-header-clearance, 0px));
 }
 
 .section-list-anchor {
   display: block;
   height: 0;
-  scroll-margin-top: 112px;
+  scroll-margin-top: max(112px, var(--tmc-header-clearance, 0px));
 }
 
 .hero h1 {
@@ -2903,7 +2903,7 @@ a.section-index:focus-visible {
 .post__content h2,
 .post__content h3,
 .post__content h4 {
-  scroll-margin-top: 120px;
+  scroll-margin-top: max(120px, var(--tmc-header-clearance, 0px));
   padding-right: 0.85em;
   color: var(--ink);
   line-height: 1.04;

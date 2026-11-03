@@ -4,11 +4,11 @@
     {{ partial "head.html" . }}
   </head>
   <body class="{{ with .Params.bodyClass }}{{ . }}{{ else }}{{ if .IsHome }}home-page{{ else if or (eq .Section "blog") (eq .Section "news") (eq .Section "author-posts") }}blog-page{{ else }}site-page{{ end }}{{ end }}">
+    {{ partial "header.html" . }}
     <main>
-      {{ partial "header.html" . }}
       {{ block "main" . }}{{ end }}
-      {{ partial "footer.html" . }}
     </main>
+    {{ partial "footer.html" . }}
     {{- $siteScript := resources.Get "js/site.js" | js.Build (dict "target" "es2020" "format" "iife") | minify | fingerprint -}}
     <script src="{{ $siteScript.RelPermalink }}" integrity="{{ $siteScript.Data.Integrity }}" crossorigin="anonymous" defer></script>
     {{- if hugo.IsProduction }}
