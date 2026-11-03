@@ -1,5 +1,5 @@
 import {
-  createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore,
+  createContext, useContext, useEffect, useId, useImperativeHandle, useRef, useState, useSyncExternalStore,
   type ComponentPropsWithRef, type ComponentPropsWithoutRef, type CSSProperties, type DOMAttributes, type ReactNode, type Ref,
 } from "react";
 import { mountBrand, type BrandOptions } from "../brand";
@@ -7,7 +7,7 @@ import { mountDropdown } from "../dropdown";
 import type { HeaderConfig, HeaderItem, HeaderLanguage, HeaderLink } from "../header-config";
 import { GITHUB_PATH } from "../icons";
 export type { HeaderConfig, HeaderItem, HeaderBrand, HeaderLanguage, HeaderLink, LanguageOption } from "../header-config";
-import { mountLanguageSwitcher, mountMobileMenu } from "../header";
+import { mountHeaderLayout, mountLanguageSwitcher, mountMobileMenu } from "../header";
 import { createThemeController, mountThemeToggle, type Theme, type ThemeController, type ThemeOptions } from "../theme";
 
 const classes = (...values: (string | undefined)[]) => values.filter(Boolean).join(" ");
@@ -136,7 +136,7 @@ export function LanguageSwitcher({ current, options, label, groupLabel, variant 
   const ref = useRef<HTMLDetailsElement>(null);
   // Option changes can replace DOM nodes, so remount their listeners too.
   const signature = JSON.stringify(options.map(option => option.code));
-  useEffect(() => mountLanguageSwitcher(ref.current!, storageKey, { desktopMinWidth: 1121 }), [storageKey, variant, signature, current]);
+  useEffect(() => mountLanguageSwitcher(ref.current!, storageKey), [storageKey, variant, signature, current]);
   const width = Math.max(48, 24 + Math.max(current.length, ...options.map((option) => option.code.length), ...supportedCodes.map(code => code.length)) * 7);
   return (
     <details ref={ref} className={`tmc-language-switcher tmc-language-switcher--${variant}`} style={{ "--tmc-language-switcher-desktop-width": `${width}px` } as CSSProperties}>
@@ -166,7 +166,7 @@ export function LanguageToggle({ current, className, type = "button", ...props }
 }
 
 export interface HeaderProps extends HeaderConfig {
-  /** A control outside the main header, in the original square link's position. */
+  /** A trailing control, separate on desktop and part of the mobile header surface. */
   adjacent?: ReactNode;
   /** Omit children to keep the platform icon; any explicit ReactNode replaces it. */
   adjacentLink?: HeaderLink & { children?: ReactNode };
@@ -197,21 +197,24 @@ export function Header({
   menuLabel = "Open navigation menu", menuText = "Menu", adjacentLink, adjacent, className, renderLink, actions, ref, onLanguageChange,
   inheritTypography = false,
 }: HeaderProps) {
+  const headerRef = useRef<HTMLElement>(null);
+  useImperativeHandle(ref, () => headerRef.current!, []);
+  useEffect(() => mountHeaderLayout(headerRef.current!), []);
   const menuRef = useRef<HTMLDetailsElement>(null);
-  const hasMenu = items.length > 0 || !!language;
+  const hasMenu = items.length > 0;
   const itemsSignature = JSON.stringify(items);
   useEffect(() => {
     if (menuRef.current) return mountMobileMenu(menuRef.current, { delegateLinks: true });
   }, [hasMenu, itemsSignature, language?.current]);
   const links = items.map((item) => <MenuLink key={item.id} item={item} renderLink={renderLink} />);
   return (
-    <header ref={ref} className={classes("tmc-header-shell", className)} data-tmc-inherit-typography={inheritTypography ? "" : undefined}>
+    <header ref={headerRef} className={classes("tmc-header-shell", className)} data-tmc-inherit-typography={inheritTypography ? "" : undefined}>
       <div className="tmc-header">
         <Brand href={brand.href} aria-label={brand.label} animation={brand.animation} />
         {items.length > 0 && <nav className="tmc-nav" aria-label={navigationLabel}>{links}</nav>}
         <div className="tmc-header-actions">
           {actions}
-          {language && <LanguageSwitcher {...language} variant="desktop" onSelect={onLanguageChange} />}
+          {language && <LanguageSwitcher {...language} variant={hasMenu ? "desktop" : "standalone"} onSelect={onLanguageChange} />}
           {showThemeToggle && <ThemeToggle aria-label={themeLabel} />}
           {hasMenu && <details ref={menuRef} className="tmc-mobile-menu">
             <summary aria-label={menuLabel}>

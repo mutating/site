@@ -56,7 +56,7 @@ function environment(brand: HTMLElement) {
   return {
     window, document, on, requestAnimationFrame, cancelAnimationFrame, ResizeObserver, setInterval, setTimeout,
     matchMedia: window.matchMedia.bind(window), getComputedStyle: window.getComputedStyle.bind(window),
-    performance: window.performance, CSS: window.CSS, disposed: () => scope.disposed, destroy: scope.destroy,
+    performance: window.performance, CSS: window.CSS, disposed: () => scope.disposed, destroy: scope.destroy, addCleanup: scope.add,
   };
 }
 type Environment = ReturnType<typeof environment>;
@@ -88,6 +88,7 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
     const stage = brand.querySelector<HTMLElement>(".tmc-brand__wordmark-stage");
     const header = stage?.closest<HTMLElement>(".tmc-header");
     const actions = header?.querySelector<HTMLElement>(".tmc-header-actions");
+    let navigation = header?.querySelector<HTMLElement>(".tmc-nav");
     const eye = brand?.querySelector<HTMLElement>(".tmc-brand__mark--eye");
     const wordmark = stage?.querySelector<HTMLElement>(".tmc-brand__wordmark");
     if (!stage || !eye || !wordmark) return;
@@ -135,9 +136,8 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
         setPointerExpansion(false);
         return;
       }
-      const hitTarget =
-        wordmark.dataset.hoverExpanded === "true" ? stage : wordmark;
-      setPointerExpansion(containsPoint(hitTarget, x, y));
+      const expanded = wordmark.dataset.hoverExpanded === "true";
+      setPointerExpansion(containsPoint(wordmark, x, y) || (expanded && containsPoint(stage, x, y)));
     };
 
     const publishExpansionAvailability = (canExpand: boolean) => {
@@ -229,11 +229,14 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
           : reservedStageWidth;
         const requiredWidth =
           eyeRect.width + eyeMargins + brandGap + expandedStageWidth;
+        const navigationWidth = options.fitWordmarkToHeader === true && navigation?.getClientRects().length
+          ? navigation.getBoundingClientRect().width + (Number.parseFloat(getComputedStyle(navigation).marginRight) || 0)
+          : 0;
         const availableWidth =
           headerRect.width -
           (Number.parseFloat(headerStyle.paddingLeft) || 0) -
           (Number.parseFloat(headerStyle.paddingRight) || 0) -
-          (options.fitWordmarkToHeader === true ? Math.max(actionsRect.width, actions.scrollWidth) : actionsRect.width);
+          (options.fitWordmarkToHeader === true ? Math.max(actionsRect.width, actions.scrollWidth) : actionsRect.width) - navigationWidth;
         publishExpansionAvailability(
           availableWidth + 0.5 >= requiredWidth,
         );
@@ -244,13 +247,27 @@ export function mountBrand(brand: HTMLElement, options: BrandOptions = {}): Clea
       });
     };
 
-    const resizeObserver = new ResizeObserver(update);
-    resizeObserver.observe(header);
-    resizeObserver.observe(actions);
-    if (options.fitWordmarkToHeader === true) resizeObserver.observe(stage);
+    // Establish the initial fit and basic resize handling before optional observation.
     on(window, "resize", update);
     update();
     document.fonts?.ready.then(update);
+    const resizeObserver = new ResizeObserver(update);
+    resizeObserver.observe(header);
+    resizeObserver.observe(actions);
+    if (navigation && options.fitWordmarkToHeader === true) resizeObserver.observe(navigation);
+    if (options.fitWordmarkToHeader === true) resizeObserver.observe(stage);
+    if (options.fitWordmarkToHeader === true) {
+      const observer = new window.MutationObserver(() => {
+        const current = header.querySelector<HTMLElement>(".tmc-nav");
+        if (current === navigation) return;
+        if (navigation) resizeObserver.unobserve(navigation);
+        navigation = current;
+        if (navigation) resizeObserver.observe(navigation);
+        update();
+      });
+      observer.observe(header, { childList: true });
+      env.addCleanup(() => observer.disconnect());
+    }
   }
 
 

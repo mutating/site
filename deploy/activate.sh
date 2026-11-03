@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Root-owned activation wrapper, installed by Ansible. Application code runs as throng.
 set -euo pipefail
-release_id="${1:?Usage: mutating-activate RELEASE_ID}"
+release_id="${1:?Usage: mutating-activate RELEASE_ID [activate|rotate|rotate-plan]}"
+phase="${2:-activate}"
 [[ "$release_id" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ ]] || exit 2
+[[ "$phase" =~ ^(activate|rotate|rotate-plan)$ && $# -le 2 ]] || exit 2
 deploy_root="/opt/mutating"
+if [[ "$phase" != activate ]]; then
+  rotation_args=(--expected-current "$release_id")
+  if [[ "$phase" == rotate ]]; then rotation_args+=(--apply); fi
+  exec /usr/bin/python3 /usr/local/lib/mutating/rotate_deployments.py "${rotation_args[@]}"
+fi
 server_env="/etc/throng/throng.env"
 backup_script="/usr/local/lib/mutating/sqlite_backup.py"
 release="$deploy_root/releases/$release_id"

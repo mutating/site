@@ -36,21 +36,32 @@ for (const [adapter, path] of [["React", "/react.html?square-button-header"], ["
   });
 }
 
-test("React square button content can change between SVG, text and an image inside the header", async ({ page }) => {
+test("changing header button content keeps it centered and preserves its right edge", async ({ page }) => {
   await page.goto("/react.html?square-button-header");
   const link = page.getByRole("link", { name: "Свободное содержимое", exact: true });
   await expect(link.locator("svg")).toHaveCount(1);
-  const original = await link.boundingBox();
+  const original = (await link.boundingBox())!;
+  const checkGeometry = async () => {
+    const box = (await link.boundingBox())!;
+    const content = (await link.locator(":scope > *").boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.x + box.width).toBe(original.x + original.width);
+    expect(box.y).toBe(original.y);
+    expect(box.height).toBe(original.height);
+    expect(content.x + content.width / 2).toBe(box.x + box.width / 2);
+    expect(content.y + content.height / 2).toBe(box.y + box.height / 2);
+    if (page.viewportSize()!.width > 1120) expect(box).toEqual(original);
+  };
   await page.getByRole("button", { name: "Сменить содержимое" }).click();
   await expect(link).toHaveText("UI");
   await expect(link.locator("svg")).toHaveCount(0);
-  expect(await link.boundingBox()).toEqual(original);
+  await checkGeometry();
   await page.getByRole("button", { name: "Сменить содержимое" }).click();
   await expect(link.locator("img")).toBeVisible();
-  expect(await link.boundingBox()).toEqual(original);
+  await checkGeometry();
   await page.getByRole("button", { name: "Сменить содержимое" }).click();
   await expect(link.locator("svg")).toHaveCount(1);
-  expect(await link.boundingBox()).toEqual(original);
+  await checkGeometry();
 });
 
 test("standalone square styles preserve dimensions without any header stylesheet", async ({ page }) => {

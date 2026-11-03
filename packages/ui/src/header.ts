@@ -17,7 +17,7 @@ export interface HeaderOptions {
 }
 
 export interface LanguageSwitcherOptions {
-  /** Original HTML behavior uses 1041; the React adapter follows its CSS at 1121. */
+  /** Defaults to 1121, matching the shared header's CSS breakpoint. */
   desktopMinWidth?: number;
   /** Defaults to true. Disable to preserve the originating list on new-tab selection. */
   closeOnSelection?: boolean;
@@ -34,18 +34,63 @@ export interface MobileMenuOptions {
   closeNestedMenus?: boolean;
 }
 
+/** Keep at least as much viewport for page content as for a sticky header. */
+export function mountHeaderLayout(header: HTMLElement): Cleanup {
+  const scope = createScope(header);
+  const offsetKey = "--tmc-header-adjacent-offset";
+  const sync = () => {
+    if (scope.disposed) return;
+    header.toggleAttribute("data-tmc-too-tall", header.getBoundingClientRect().height * 2 > scope.window.innerHeight);
+    const main = header.querySelector<HTMLElement>(":scope > .tmc-header");
+    const actions = main?.querySelector<HTMLElement>(".tmc-header-actions");
+    if (!main || !actions) return;
+    const bounds = main.getBoundingClientRect();
+    const row = actions.getBoundingClientRect();
+    for (const adjacent of Array.from(header.children)) {
+      if (!(adjacent instanceof scope.window.HTMLElement) || adjacent === main) continue;
+      const box = adjacent.getBoundingClientRect();
+      const previous = Number.parseFloat(adjacent.style.getPropertyValue(offsetKey)) || 0;
+      // Keep a separately wrapped slot in its own row. Otherwise align its
+      // center with the controls, including when a larger brand sets the height.
+      const offset = box.top + previous < bounds.bottom
+        ? Math.max(0, Math.min(bounds.height - box.height, bounds.bottom - row.top - row.height / 2 - box.height / 2)) : 0;
+      adjacent.style.setProperty(offsetKey, `${offset}px`);
+    }
+  };
+  scope.observeResize(sync, header, ...header.querySelectorAll(".tmc-header, .tmc-brand, .tmc-header-actions"));
+  scope.on(scope.window, "resize", sync);
+  scope.add(() => {
+    header.removeAttribute("data-tmc-too-tall");
+    for (const adjacent of Array.from(header.children)) {
+      if (adjacent instanceof scope.window.HTMLElement) adjacent.style.removeProperty(offsetKey);
+    }
+  });
+  sync();
+  return scope.destroy;
+}
+
 export function mountLanguageSwitcher(switcher: HTMLDetailsElement, storageKey = "tmc-language", options: LanguageSwitcherOptions = {}): Cleanup {
   const scope = createScope(switcher);
   const { window, document, on } = scope;
   const summary = switcher.querySelector<HTMLElement>(":scope > summary");
-  const minWidth = options.desktopMinWidth ?? 1041;
+  const isStandalone = switcher.classList.contains("tmc-language-switcher--standalone");
+  const minWidth = options.desktopMinWidth ?? 1121;
   const hover = window.matchMedia(`(min-width: ${minWidth}px) and (hover: hover) and (pointer: fine)`);
   const desktop = window.matchMedia(`(min-width: ${minWidth}px)`);
   const isDesktop = switcher.classList.contains("tmc-language-switcher--desktop");
   const close = () => { switcher.open = false; };
-  if (isDesktop) {
+  if (!switcher.classList.contains("tmc-language-switcher--mobile")) {
+    scope.add(mountDropdown(switcher, { closeOnEscape: false, closeOnSelection: false }));
+  } else {
+    if (summary) on(summary, "click", () => scope.focusAfterFrame(summary));
+    scope.onFrameFocus(
+      () => switcher.open,
+      frame => { if (!switcher.contains(frame)) close(); },
+    );
+  }
+  if (isDesktop || isStandalone) {
     on(switcher, "pointerenter", () => { if (hover.matches) switcher.open = true; });
-    on(switcher, "pointerleave", () => { if (hover.matches) close(); });
+    on(switcher, "pointerleave", () => { if (hover.matches && !switcher.contains(document.activeElement)) close(); });
     if (summary) on<MouseEvent>(summary, "click", (event) => {
       if (hover.matches && event.detail !== 0) { event.preventDefault(); switcher.open = true; }
     });
@@ -63,12 +108,15 @@ export function mountLanguageSwitcher(switcher: HTMLDetailsElement, storageKey =
       if (options.closeOnSelection !== false) close();
     });
   });
-  on(document, "pointerdown", (event) => {
+  const closeOutside = (event: Event) => {
     if (event.target instanceof window.Node && !switcher.contains(event.target)) close();
-  });
+  };
+  on(document, "pointerdown", closeOutside);
+  on(document, "mousedown", closeOutside, { capture: true });
+  on(document, "focusin", closeOutside);
   const syncLayout = () => {
     const isMobile = switcher.classList.contains("tmc-language-switcher--mobile");
-    if ((desktop.matches && isMobile) || (!desktop.matches && isDesktop)) close();
+    if (isStandalone || (desktop.matches && isMobile) || (!desktop.matches && isDesktop)) close();
   };
   on(desktop, "change", syncLayout);
   scope.add(close);
@@ -83,6 +131,7 @@ export function mountMobileMenu(menu: HTMLDetailsElement, options: MobileMenuOpt
 /** Mount server-rendered markup. React uses the individual behaviors instead. */
 export function mountHeader(header: HTMLElement, options: HeaderOptions = {}): Cleanup {
   const scope = createScope(header);
+  scope.add(mountHeaderLayout(header));
   const theme = options.theme ?? createThemeController({ root: header.ownerDocument.documentElement, ...options.themeOptions });
   if (!options.theme) scope.add(theme.destroy);
   // Preserve the site's initialization order: animation failures must not

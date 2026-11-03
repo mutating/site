@@ -52,7 +52,7 @@ export function createMutatingHomeHeader(language: "en" | "ru" = "en"): HeaderCo
     brand: {
       href: home,
       label: ru ? "Перезагрузить главную страницу The Mutating Company" : "Reload The Mutating Company home page",
-      animation: { activation: "reload-home" },
+      animation: { activation: "reload-home", fitWordmarkToHeader: true },
     },
     items: [
       { id: "sources", label: ru ? "Исходники" : "Sources", href: "https://github.com/mutating", icon: "github" },

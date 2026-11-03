@@ -18,7 +18,7 @@ jobs:
   deploy:
     name: Build and deploy over SSH
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
       DEPLOY_PATH: /var/www/mutating.tech
       SITE_BASE_URL: https://mutating.tech/
@@ -279,3 +279,21 @@ jobs:
           rg --quiet '^HTTP/[^ ]+ 200' <<< "$cors_headers"
           rg --quiet --ignore-case '^access-control-allow-origin: https://platform\.mutating\.tech\r?$' <<< "$cors_headers"
           rg --quiet --ignore-case '^access-control-allow-credentials: true\r?$' <<< "$cors_headers"
+
+      - name: Set up Python for Ansible rotation
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install pinned Ansible
+        run: python -m pip install ansible-core==2.21.2
+
+      - name: Rotate verified deployment history through Ansible
+        if: ${{ success() }}
+        timeout-minutes: 10
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: python deploy/rotate.py "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

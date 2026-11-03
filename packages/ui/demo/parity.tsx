@@ -5,6 +5,7 @@ import { mountHeader, type HeaderConfig } from "../src";
 import { Header, ThemeProvider, useTheme } from "../src/react";
 
 const config: HeaderConfig = JSON.parse(document.querySelector("#header-config")!.textContent!);
+declare global { interface Window { destroyDemoHeader?: () => void } }
 function Ready() {
   const { controller } = useTheme();
   useEffect(() => { if (controller) document.documentElement.dataset.uiReady = "true"; }, [controller]);
@@ -12,9 +13,10 @@ function Ready() {
 }
 document.fonts.ready.then(() => {
   if (document.documentElement.dataset.uiAdapter === "react") {
-    hydrateRoot(document.querySelector("#header-root")!, <ThemeProvider><Header {...config} /><Ready /></ThemeProvider>);
+    const root = hydrateRoot(document.querySelector("#header-root")!, <ThemeProvider><Header {...config} /><Ready /></ThemeProvider>);
+    window.destroyDemoHeader = () => root.unmount();
   } else {
-    mountHeader(document.querySelector(".tmc-header-shell")!);
+    window.destroyDemoHeader = mountHeader(document.querySelector(".tmc-header-shell")!);
     document.documentElement.dataset.uiReady = "true";
   }
 });

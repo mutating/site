@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 const runtime = resolve(import.meta.dirname, "../../packages/ui/.runtime");
+// Desktop preserves the frozen original; mobile compares the two current adapters.
 const time = new Date("2026-10-16T09:00:00Z");
 
 async function prepare(page: Page, adapter: string, language: string, width: number, theme: "light" | "dark", reducedMotion = false) {
@@ -66,6 +67,7 @@ async function mountCandidate(page: Page, adapter: string, language: string) {
   const markup = html.match(/<div id="header-root" style="display:contents">([\s\S]*?<\/header>)/)![1];
   if (adapter === "hugo") await page.addStyleTag({ url: "/dist/styles/index.css" });
   await page.evaluate(async ({ markup, adapter }) => {
+    window.destroyDemoHeader?.();
     document.documentElement.dataset.uiReady = "false";
     document.documentElement.dataset.uiAdapter = adapter;
     document.querySelector("#header-root")!.innerHTML = markup;
@@ -79,11 +81,11 @@ async function mountCandidate(page: Page, adapter: string, language: string) {
 
 for (const width of [1440, 1241, 1240, 1121, 1120, 1041, 1040, 921, 920, 861, 860, 581, 580, 481, 480, 381, 380, 360, 280]) {
   for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as const) {
-    test(`${language} ${theme} ${width}px matches the current home header exactly`, async ({ context }, info) => {
+    test(`${language} ${theme} ${width}px preserves desktop pixels or matches the shared mobile header`, async ({ context }, info) => {
       const page = await context.newPage();
-      await prepare(page, "reference", language, width, theme);
+      await prepare(page, width > 1120 ? "reference" : "hugo", language, width, theme);
       const expected = await page.screenshot({ clip: { x: 0, y: 0, width, height: 160 }, animations: "allow" });
-      for (const adapter of ["hugo", "react"]) {
+      for (const adapter of width > 1120 ? ["hugo", "react"] : ["react"]) {
         await mountCandidate(page, adapter, language);
         await compare(expected, page, "rest", info);
       }
@@ -176,9 +178,9 @@ for (const width of [1440, 1120, 480, 360]) {
     test(`${language} ${theme} ${width}px interaction states and animation frames match exactly`, async ({ context }, info) => {
       test.setTimeout(90_000);
       const page = await context.newPage();
-      await prepare(page, "reference", language, width, theme);
+      await prepare(page, width > 1120 ? "reference" : "hugo", language, width, theme);
       const expected = await captureStates(page);
-      for (const adapter of ["hugo", "react"]) {
+      for (const adapter of width > 1120 ? ["hugo", "react"] : ["react"]) {
         await scrollTo(page, 0);
         await page.evaluate((theme) => {
           document.documentElement.dataset.theme = theme;
@@ -205,12 +207,12 @@ for (const width of [1440, 1120, 480, 360]) {
 }
 
 for (const width of [1440, 360]) {
-  test(`reduced motion ${width}px preserves the original interaction frames`, async ({ context }, info) => {
+  test(`reduced motion ${width}px matches the expected interaction frames`, async ({ context }, info) => {
     test.setTimeout(90_000);
     const page = await context.newPage();
-    await prepare(page, "reference", "ru", width, "dark", true);
+    await prepare(page, width > 1120 ? "reference" : "hugo", "ru", width, "dark", true);
     const expected = await captureStates(page);
-    for (const adapter of ["hugo", "react"]) {
+    for (const adapter of width > 1120 ? ["hugo", "react"] : ["react"]) {
       await scrollTo(page, 0);
       await page.evaluate(() => {
         document.documentElement.dataset.theme = "dark";

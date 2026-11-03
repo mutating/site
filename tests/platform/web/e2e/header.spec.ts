@@ -15,7 +15,7 @@ for (const route of ["login", "register"]) {
     await selectLanguage(page);
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page).toHaveTitle("Account — The Mutating Company");
-    await expect(page.locator(".tmc-language-switcher > summary span")).toHaveText(["EN", "EN"]);
+    await expect(page.locator(".tmc-language-switcher > summary span")).toHaveText(["EN"]);
     await expect(header.getByRole("link", { name: "The Mutating Company", exact: true })).toHaveAttribute("href", "https://mutating.tech/");
     await expect(identifier).toHaveValue("header@example.com");
     await expect(page.locator('input[name="password"]')).toHaveValue("unsaved header password");
@@ -46,7 +46,7 @@ test("theme and language support keyboard input and survive auth route changes",
   await page.getByRole("link", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "Let’s get started." })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(page.locator(".tmc-language-switcher > summary span")).toHaveText(["EN", "EN"]);
+  await expect(page.locator(".tmc-language-switcher > summary span")).toHaveText(["EN"]);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Let’s get started." })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");

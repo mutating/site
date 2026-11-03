@@ -90,3 +90,44 @@ def test_incomplete_backup_cannot_replace_the_live_database(backup):
     with pytest.raises(FileNotFoundError, match="No completed backup"):
         run("restore")
     assert database.read_bytes() == source
+
+
+@pytest.mark.parametrize("absent", [False, True])
+def test_completed_backup_metadata_is_accepted_without_rescanning(backup, monkeypatch, absent):
+    """The backup writer and rotation reader must agree for real and initially absent databases."""
+    _, database, run = backup
+    if absent:
+        database.unlink()
+    run("backup")
+    spec = importlib.util.spec_from_file_location(
+        "rotation_backup_contract", ROOT / "deploy/rotate_deployments.py"
+    )
+    rotation = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rotation)
+
+    def no_rescan(*_args, **_kwargs):
+        raise AssertionError("A completed new backup should not require another SQLite scan")
+
+    monkeypatch.setattr(rotation.sqlite3, "connect", no_rescan)
+    metadata, state = rotation._complete_backup(database.parent / "backups/release")
+    assert state == "cached"
+    assert metadata["kind"] == ("absent" if absent else "sqlite")
+
+
+def test_completion_marker_write_failure_removes_the_new_backup_only(backup, monkeypatch):
+    """Disk exhaustion during metadata publication must not leave a misleading completed copy."""
+    module, database, run = backup
+    run("backup", "previous")
+    previous = database.parent / "backups/previous/throng.db"
+    saved = previous.read_bytes()
+    source = database.read_bytes()
+
+    def full_disk(*_args):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(module, "mark_complete", full_disk)
+    with pytest.raises(OSError, match="No space left"):
+        run("backup")
+    assert not (database.parent / "backups/release").exists()
+    assert previous.read_bytes() == saved
+    assert database.read_bytes() == source

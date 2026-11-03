@@ -133,6 +133,14 @@
         group: root
         mode: '0644'
 
+    - name: Install the root-owned rotation policy
+      ansible.builtin.copy:
+        src: "{{ project_source }}/deploy/rotate_deployments.py"
+        dest: /usr/local/lib/mutating/rotate_deployments.py
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Install the privileged activation wrapper
       ansible.builtin.copy:
         src: "{{ project_source }}/deploy/activate.sh"

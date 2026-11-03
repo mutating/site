@@ -58,6 +58,18 @@
           - /etc/throng/throng.env
       changed_when: false
 
+    - name: Install the root-owned rotation policy
+      ansible.builtin.copy:
+        src: '{{ playbook_dir }}/../../deploy/rotate_deployments.py'
+        dest: /usr/local/lib/mutating/rotate_deployments.py
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Validate the rotation command before switching wrappers
+      ansible.builtin.command: /usr/bin/python3 /usr/local/lib/mutating/rotate_deployments.py --help
+      changed_when: false
+
     - name: Install the validated activation wrapper atomically
       ansible.builtin.copy:
         src: '{{ playbook_dir }}/../../deploy/activate.sh'

@@ -1,6 +1,9 @@
 /* The static site mobile menu and standalone dropdowns share these surfaces. */
 .tmc-mobile-menu nav,
 .tmc-dropdown-panel {
+  --tmc-dropdown-shift: initial;
+  --tmc-dropdown-max-width: initial;
+  --tmc-dropdown-available-height: initial;
   position: absolute;
   top: 50px;
   right: 0;
@@ -11,14 +14,34 @@
   background: var(--surface);
   box-shadow: var(--shadow);
   display: grid;
+  max-width: var(--tmc-dropdown-max-width, calc(100vw - 24px));
+  /* Keep at least one complete 44px item, including panel padding and border. */
+  min-height: calc(max(44px, 1lh + 24px) + 18px);
+  max-height: max(62px, var(--tmc-dropdown-available-height, calc(100dvh - 110px)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  translate: var(--tmc-dropdown-shift, none);
+}
+
+.tmc-mobile-menu > nav[data-tmc-above],
+.tmc-dropdown-panel[data-tmc-above] {
+  top: auto;
+  bottom: calc(100% + 8px);
 }
 
 .tmc-mobile-menu nav a,
 .tmc-dropdown-panel :is(a, button) {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 12px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 700;
+}
+
+.tmc-mobile-menu > nav {
+  width: max-content;
+  min-width: min(190px, var(--tmc-dropdown-max-width, calc(100vw - 24px)));
 }
 
 .tmc-dropdown {
@@ -31,12 +54,7 @@
 
 .tmc-dropdown-panel {
   top: calc(100% + 8px);
-  z-index: 1;
-  max-width: calc(100vw - 24px);
-  max-height: max(44px, var(--tmc-dropdown-available-height, calc(100dvh - 110px)));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  translate: var(--tmc-dropdown-shift, none);
+  z-index: 3;
 }
 
 .tmc-dropdown-panel[hidden] { display: none; }

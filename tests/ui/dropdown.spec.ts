@@ -1,5 +1,90 @@
 import { expect, test } from "@playwright/test";
 
+test("native and custom dropdowns notify each actual state change once", async ({ page }) => {
+  await page.goto("/react.html");
+  const changes = await page.evaluate(async () => {
+    const modulePath = "/src/index.ts";
+    const { mountDropdown } = await import(modulePath);
+    const results: boolean[][] = [];
+    for (const mode of ["native-nav", "native-div", "custom"]) {
+      const native = mode !== "custom";
+      const root = document.createElement(native ? "details" : "div");
+      root.innerHTML = mode === "native-nav" ? '<summary>Open</summary><nav><a href="#target">Target</a></nav>'
+        : mode === "native-div" ? '<summary>Open</summary><div>Content</div>'
+        : '<button data-tmc-dropdown-trigger>Open</button><div data-tmc-dropdown-panel hidden><a role="menuitem" href="#target">Target</a></div>';
+      document.body.append(root);
+      const events: boolean[] = [];
+      const cleanup = mountDropdown(root, { onOpenChange: (open: boolean) => events.push(open) });
+      root.querySelector<HTMLElement>("summary, button")!.click();
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      root.querySelector<HTMLElement>("summary, button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      cleanup();
+      root.remove();
+      results.push(events);
+    }
+    return results;
+  });
+  expect(changes).toEqual([[true, false], [true, false], [true, false]]);
+});
+
+test("dropdown opens above a visible trigger at the bottom of the page", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/react.html");
+  const trigger = page.getByRole("button", { name: "Меню примера", exact: true });
+  await trigger.evaluate(node => {
+    const box = node.getBoundingClientRect();
+    window.scrollTo({ top: scrollY + box.top - (innerHeight - box.height - 2), behavior: "instant" });
+  });
+  await expect(trigger).toBeInViewport({ ratio: 1 });
+  await trigger.click();
+  const menu = page.getByRole("menu", { name: "Меню примера", exact: true });
+  await expect(menu).toBeInViewport({ ratio: 1 });
+  expect((await menu.boundingBox())!.y + (await menu.boundingBox())!.height).toBeLessThanOrEqual((await trigger.boundingBox())!.y);
+});
+
+test("resizing an open dropdown keeps its focused item visible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/react.html");
+  const trigger = page.getByRole("button", { name: "Меню примера", exact: true });
+  await trigger.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("End");
+  const last = page.getByRole("menuitem", { name: "Выполнить", exact: true });
+  await expect(last).toBeFocused();
+  await page.setViewportSize({ width: 320, height: 180 });
+  await expect(last).toBeFocused();
+  await expect(last).toBeInViewport({ ratio: 1 });
+});
+
+test("an item taller than the panel keeps its leading edge stable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 180 });
+  await page.goto("/react.html");
+  const trigger = page.getByRole("button", { name: "Меню примера", exact: true });
+  await trigger.evaluate(node => {
+    const root = node.closest<HTMLElement>(".tmc-dropdown")!;
+    document.body.append(root);
+    root.style.cssText = "position:fixed;top:100px;left:120px";
+    root.querySelector("[role=menuitem]")!.textContent = "Общие мощности начинаются с команды. ".repeat(12);
+  });
+  await trigger.focus();
+  await page.keyboard.press("ArrowDown");
+  const panel = page.getByRole("menu", { name: "Меню примера", exact: true });
+  const first = panel.locator("[role=menuitem]").first();
+  await expect(first).toBeFocused();
+  expect((await first.boundingBox())!.height).toBeGreaterThan((await panel.boundingBox())!.height);
+  const samples = await panel.evaluate(async panel => {
+    const positions: number[] = [];
+    for (let frame = 0; frame < 20; frame++) {
+      await new Promise(requestAnimationFrame);
+      positions.push(panel.scrollTop);
+    }
+    return positions;
+  });
+  expect(Math.max(...samples) - Math.min(...samples)).toBeLessThanOrEqual(1);
+  expect(await first.evaluate(node => Math.abs(node.getBoundingClientRect().top - node.parentElement!.getBoundingClientRect().top - node.parentElement!.clientTop))).toBeLessThan(1);
+});
+
 test("dropdown height follows available space and keeps the last item reachable", async ({ page }) => {
   await page.goto("/react.html");
   const trigger = page.getByRole("button", { name: "Меню примера", exact: true });

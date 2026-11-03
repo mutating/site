@@ -1,4 +1,5 @@
 {{- $navigationLabel := partial "tmc-ui/internal/option.html" (slice . "navigationLabel" "Navigation") -}}
+{{- $hasMenu := gt (len (.items | default slice)) 0 -}}
 <header class="tmc-header-shell"{{ if .inheritTypography }} data-tmc-inherit-typography{{ end }}>
   <div class="tmc-header">
     {{ partial "tmc-ui/brand.html" (.brand | default (dict "href" "/")) }}
@@ -6,9 +7,9 @@
       {{ range . }}{{ partial "tmc-ui/menu-link.html" . }}{{ end }}
     </nav>{{ end }}
     <div class="tmc-header-actions">
-      {{ with .language }}{{ partial "tmc-ui/language-switcher.html" (merge . (dict "variant" "desktop")) }}{{ end }}
+      {{ with .language }}{{ partial "tmc-ui/language-switcher.html" (merge . (dict "variant" (cond $hasMenu "desktop" "standalone"))) }}{{ end }}
       {{ if ne .showThemeToggle false }}{{ partial "tmc-ui/theme-toggle.html" (dict "label" (partial "tmc-ui/internal/option.html" (slice . "themeLabel" "Toggle color theme"))) }}{{ end }}
-      {{ if or .items .language }}
+      {{ if $hasMenu }}
       <details class="tmc-mobile-menu">
         <summary aria-label="{{ partial "tmc-ui/internal/option.html" (slice . "menuLabel" "Open navigation menu") }}">
           <span class="tmc-mobile-menu__label">{{ partial "tmc-ui/internal/option.html" (slice . "menuText" "Menu") }}</span>

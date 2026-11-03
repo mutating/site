@@ -141,6 +141,8 @@
 
 .tmc-brand__wordmark-stage {
   width: 11.6em;
+  /* Enclose the full animated text in the link and its focus outline. */
+  min-width: max-content;
   font-size: 35px;
   line-height: 1.2;
   font-family: "science gothic", "helvetica neue", Arial, sans-serif;
@@ -381,7 +383,7 @@ html[data-wordmark-font-ready="false"] .tmc-brand__wordmark {
 
 @media (prefers-reduced-motion: reduce) {
   .tmc-brand *, .tmc-brand *::before, .tmc-brand *::after {
-    scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0s !important;
   }
   .tmc-brand__word-reveal::after {
     display: none;

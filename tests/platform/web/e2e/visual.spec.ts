@@ -88,12 +88,12 @@ test("user menu with the placeholder and a real uploaded avatar", async ({ page,
   await page.goto("/");
   const trigger = page.locator(".user-menu .tmc-square-button");
   const exactPixels = { threshold: 0, maxDiffPixels: 0 };
-  // Chromium's clipped raster edges vary by up to 2/255 per color channel
+  // Chromium's clipped CSS/image edges vary by up to 2/255 per color channel
   // between processes. Keep a zero pixel budget with only that color tolerance.
-  const imagePixels = { threshold: 0.01, maxDiffPixels: 0 };
+  const clippedPixels = { threshold: 0.01, maxDiffPixels: 0 };
   await expect(trigger).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  await expect(trigger).toHaveScreenshot("header-avatar-placeholder.png", exactPixels);
+  await expect(trigger).toHaveScreenshot("header-avatar-placeholder.png", clippedPixels);
   await trigger.click();
   const panel = page.getByRole("menu");
   await expect(panel).toBeVisible();
@@ -111,10 +111,10 @@ test("user menu with the placeholder and a real uploaded avatar", async ({ page,
   await expect(trigger.locator("img")).toBeVisible();
   await expect.poll(() => trigger.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.evaluate(() => document.fonts.ready);
-  await expect(trigger).toHaveScreenshot("header-avatar-image.png", imagePixels);
+  await expect(trigger).toHaveScreenshot("header-avatar-image.png", clippedPixels);
   await trigger.click();
   await expect(panel).toBeVisible();
-  await expect(page).toHaveScreenshot("header-user-menu-image.png", { clip, ...imagePixels });
+  await expect(page).toHaveScreenshot("header-user-menu-image.png", { clip, ...clippedPixels });
 });
 
 test("the shared language dropdown in both themes and layouts", async ({ page }, info) => {
@@ -197,6 +197,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     await page.evaluate(async () => {
       await Promise.all(Array.from(document.fonts, (face) => face.load()));
       await document.fonts.ready;
+      document.querySelector("dialog[open]")?.getBoundingClientRect();
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       );

@@ -1,6 +1,7 @@
 """Back up or restore the deployment database while both services are stopped."""
 
 import argparse
+import json
 import re
 import shutil
 import sqlite3
@@ -30,6 +31,21 @@ def check_space(database):
         )
 
 
+def mark_complete(directory, file, kind):
+    stat = file.stat()
+    (directory / ".complete.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "kind": kind,
+                "size": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns,
+            }
+        )
+        + "\n"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["backup", "restore", "check-space"])
@@ -54,6 +70,7 @@ def main():
         try:
             if not database.exists():
                 (directory / "absent").touch()
+                mark_complete(directory, directory / "absent", "absent")
                 return
             partial = directory / "throng.db.incomplete"
             with (
@@ -64,6 +81,7 @@ def main():
                 if target.execute("PRAGMA integrity_check").fetchone() != ("ok",):
                     raise RuntimeError("SQLite backup integrity check failed")
             partial.replace(backup)
+            mark_complete(directory, backup, "sqlite")
         except BaseException:
             # Only this invocation's newly created directory is disposable.
             shutil.rmtree(directory)
