@@ -423,6 +423,9 @@ test("Products menu survives a header remount", async ({ page }) => {
   await menu.locator(":scope > summary").click();
   await expect(menu).toHaveAttribute("open", "");
   await expect(menu.locator(".tmc-nav-menu__item").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open", "");
+  await expect(menu.locator(":scope > summary")).toBeFocused();
 });
 
 test.describe("header children without JavaScript", () => {

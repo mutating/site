@@ -161,6 +161,10 @@ test("header children preserve link contracts, fallbacks and renderers", async (
   assert.match(markup, /href="\/docs\/"[^>]*aria-current="page"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
   assert.match(markup, /href="\/rel\/"[^>]*target="_blank"[^>]*rel=""/);
   assert.doesNotMatch(markup, /<small><\/small>/);
+  const computeIndex = markup.indexOf('href="/products/compute/"');
+  const docsIndex = markup.indexOf('href="/docs/"');
+  const relIndex = markup.indexOf('href="/rel/"');
+  assert.ok(computeIndex >= 0 && computeIndex < docsIndex && docsIndex < relIndex);
 
   const emptyChildren = renderToStaticMarkup(createElement(Header, {
     showThemeToggle: false,

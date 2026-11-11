@@ -596,6 +596,7 @@ def test_products_menu_panel_geometry_and_copy(
     summary_box = summary.bounding_box()
     assert panel_box is not None and summary_box is not None
     assert 250 <= panel_box["width"] <= 254
+    assert abs(panel_box["x"] - summary_box["x"]) <= 1
     assert panel_box["y"] >= summary_box["y"] + summary_box["height"] - 1
     assert panel_box["x"] >= 0
     assert panel_box["x"] + panel_box["width"] <= width
