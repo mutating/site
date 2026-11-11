@@ -138,6 +138,11 @@ export function mountHeader(header: HTMLElement, options: HeaderOptions = {}): C
   // prevent the theme and language controls from becoming usable.
   header.querySelectorAll<HTMLButtonElement>(".tmc-theme-toggle").forEach((button) => scope.add(mountThemeToggle(button, theme, options.themeToggle)));
   header.querySelectorAll<HTMLDetailsElement>(".tmc-language-switcher").forEach((switcher) => scope.add(mountLanguageSwitcher(switcher, options.languageStorageKey ?? switcher.dataset.tmcLanguageStorageKey, options.language)));
+  header.querySelectorAll<HTMLDetailsElement>(".tmc-nav-menu").forEach((menu) => scope.add(mountDropdown(menu, {
+    closeOnSelection: true,
+    closeOnFocusLeave: true,
+    stopEscapePropagation: true,
+  })));
   const brandOptions = options.brand;
   if (brandOptions !== false) header.querySelectorAll<HTMLElement>(".tmc-brand").forEach((brand) => scope.add(mountBrand(brand, brandOptions)));
   const menuOptions = options.mobileMenu;

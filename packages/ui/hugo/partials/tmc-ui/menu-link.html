@@ -1,3 +1,19 @@
+{{- if .children -}}
+  {{- if .mobile -}}
+    <div class="tmc-nav-menu tmc-nav-menu--expanded">
+      <div class="tmc-nav-menu__label">{{ .label }}</div>
+      {{ partial "tmc-ui/menu-panel.html" (dict "children" .children) }}
+    </div>
+  {{- else -}}
+    <details class="tmc-nav-menu">
+      <summary class="tmc-nav-menu__trigger" aria-haspopup="true">
+        {{- .label -}}
+        <svg class="tmc-nav-menu__chevron" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4"></path></svg>
+      </summary>
+      {{ partial "tmc-ui/menu-panel.html" (dict "children" .children "desktop" true) }}
+    </details>
+  {{- end -}}
+{{- else -}}
 <a href="{{ .href }}"{{ if .icon }} class="tmc-source-link"{{ end }}{{ if .active }} aria-current="page"{{ end }}{{ with .target }} target="{{ . }}"{{ end }}{{ if isset . "rel" }} rel="{{ .rel }}"{{ else }}{{ if eq .target "_blank" }} rel="noopener noreferrer"{{ end }}{{ end }}>
   {{- if eq .icon "github" -}}<span>{{ .label }}</span>
   <svg class="tmc-source-link__icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -5,3 +21,4 @@
   </svg>
 {{- else -}}{{ .label }}{{- end -}}
 </a>
+{{- end -}}

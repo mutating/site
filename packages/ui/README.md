@@ -179,7 +179,7 @@ export function Example() {
 
 | Поле | Значение |
 | --- | --- |
-| `items` | Массив `{ id, label, href, icon?, active?, target?, rel? }` |
+| `items` | Массив `{ id, label, href, children?, icon?, active?, target?, rel? }` |
 | `brand` | `{ href, label?, animation? }`; по умолчанию ссылка `/` |
 | `language` | `{ current, options, label, groupLabel, storageKey?, supportedCodes? }`; без поля переключатель скрыт |
 | `adjacentLink` | `{ href, label }`; необязательная отдельная ссылка справа |
@@ -197,6 +197,27 @@ export function Example() {
 `menuText: ""` оставляет только иконку меню, `rel: ""` отключает библиотечное
 значение по умолчанию, а `language.storageKey: ""` выбирает пустой ключ storage.
 Для значения по умолчанию нужно опустить соответствующее поле.
+
+`children` превращает пункт в раскрывающееся меню на нативном `<details>`.
+Дочерний пункт — `{ id?, label, href, description?, active?, target?, rel? }`;
+`description` выводится под названием. В мобильном меню подменю раскрыто
+постоянно, а шеврон не выводится: пункт работает как группа ссылок.
+Меню закрывается по Escape, клику вне и выбору пункта, а на десктопе — при
+уходе фокуса. Поведение общее для React и Hugo.
+
+```ts
+const items = [{
+  id: "products",
+  label: "Products",
+  href: "/products/compute/",
+  children: [{
+    id: "compute",
+    label: "Compute",
+    href: "/products/compute/",
+    description: "A universal compute platform for your own devices.",
+  }],
+}];
+```
 
 `adjacentLink` рендерится через `SquareButton`. В React можно передать
 `adjacentLink: { href, label, children: <Anything /> }`, в Hugo —

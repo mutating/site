@@ -19,6 +19,8 @@ export interface DropdownOptions {
   closeOnDesktop?: boolean;
   closeOnSelection?: boolean;
   keyboardNavigation?: boolean;
+  /** Keep Escape from also closing an enclosing disclosure such as the mobile menu. */
+  stopEscapePropagation?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
@@ -213,6 +215,7 @@ export function mountDropdown(root: HTMLElement, options: DropdownOptions = {}):
       }
     }
     if (options.closeOnEscape !== false && event.key === "Escape" && isOpen()) {
+      if (options.stopEscapePropagation) event.stopPropagation();
       if (!native) event.preventDefault();
       close();
       trigger()?.focus();

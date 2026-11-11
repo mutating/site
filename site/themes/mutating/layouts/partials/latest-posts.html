@@ -19,7 +19,7 @@
         <a class="section-index" href="#open-source">08 / {{ $content.label }}</a>
         <h2 id="dispatches-heading">{{ $content.heading }}</h2>
       </div>
-      <span class="dispatches__status"><i></i> {{ $content.status }}</span>
+      <span class="dispatches__status"><span class="status-dot" aria-hidden="true"></span> {{ $content.status }}</span>
     </div>
     <div class="dispatch-grid{{ if eq (len $latestPosts) 1 }} dispatch-grid--single{{ end }}">
       {{- range $index, $post := $latestPosts }}

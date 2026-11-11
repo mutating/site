@@ -1,13 +1,21 @@
 import type { BrandOptions } from "./brand";
 
-export interface HeaderItem {
-  id: string;
+/** A plain link inside a header dropdown. */
+export interface HeaderMenuItem {
+  id?: string;
   label: string;
   href: string;
-  icon?: "github";
+  description?: string;
   active?: boolean;
   target?: "_self" | "_blank";
   rel?: string;
+}
+
+export interface HeaderItem extends HeaderMenuItem {
+  id: string;
+  icon?: "github";
+  /** When present, the item becomes a disclosure menu instead of a plain link. */
+  children?: readonly HeaderMenuItem[];
 }
 
 export interface LanguageOption { code: string; href: string; label?: string }
@@ -56,6 +64,17 @@ export function createMutatingHomeHeader(language: "en" | "ru" = "en"): HeaderCo
     },
     items: [
       { id: "sources", label: ru ? "Исходники" : "Sources", href: "https://github.com/mutating", icon: "github" },
+      {
+        id: "products",
+        label: ru ? "Продукты" : "Products",
+        href: `${home}products/compute/`,
+        children: [{
+          id: "compute",
+          label: "Compute",
+          href: `${home}products/compute/`,
+          description: ru ? "Универсальная вычислительная платформа на ваших устройствах." : "A universal compute platform for your own devices.",
+        }],
+      },
       { id: "news", label: ru ? "Новости" : "News", href: `${home}news/` },
       { id: "blog", label: ru ? "Блог" : "Blog", href: `${home}blog/` },
       { id: "contact", label: ru ? "Контакты" : "Contact", href: `${home}#contact` },

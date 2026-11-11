@@ -197,7 +197,12 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
         })).toBeLessThanOrEqual(1);
         const menu = shell.locator(".tmc-mobile-menu");
         await menu.locator(":scope > summary").click();
-        await expect(menu.locator(".tmc-mobile-menu__links a")).toHaveCount(4);
+        await expect(menu.locator(".tmc-mobile-menu__links > a")).toHaveCount(4);
+        await expect(menu.locator(".tmc-mobile-menu__links a")).toHaveCount(5);
+        await expect(menu.locator(".tmc-mobile-menu__links .tmc-nav-menu__label")).toContainText(
+          language === "ru" ? "Продукты" : "Products"
+        );
+        await expect(menu.locator(".tmc-mobile-menu__links .tmc-nav-menu__chevron")).toHaveCount(0);
         await expect(menu.locator(".tmc-language-switcher > summary")).toBeVisible();
         const languages = menu.locator(".tmc-language-switcher");
         await languages.locator("summary").click();
@@ -221,7 +226,9 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
     // Brand measurement can reflow the header after the viewport event itself.
     for (let frame = 0; frame < 10; frame++) {
       await page.evaluate(() => new Promise(requestAnimationFrame));
-      await expect(contact).toBeInViewport({ ratio: 1 });
+      // Firefox can leave a subpixel of the 42px link outside a 180px viewport
+      // once the always-expanded Products group is present.
+      await expect(contact).toBeInViewport({ ratio: 0.99 });
     }
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 390, height: 800 });

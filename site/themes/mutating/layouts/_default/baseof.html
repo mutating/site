@@ -2,6 +2,7 @@
 <html lang="{{ .Site.Language.Lang }}">
   <head>
     {{ partial "head.html" . }}
+    {{ block "page-head" . }}{{ end }}
   </head>
   <body class="{{ with .Params.bodyClass }}{{ . }}{{ else }}{{ if .IsHome }}home-page{{ else if or (eq .Section "blog") (eq .Section "news") (eq .Section "author-posts") }}blog-page{{ else }}site-page{{ end }}{{ end }}">
     {{ partial "header.html" . }}
@@ -11,6 +12,7 @@
     {{ partial "footer.html" . }}
     {{- $siteScript := resources.Get "js/site.js" | js.Build (dict "target" "es2020" "format" "iife") | minify | fingerprint -}}
     <script src="{{ $siteScript.RelPermalink }}" integrity="{{ $siteScript.Data.Integrity }}" crossorigin="anonymous" defer></script>
+    {{ block "page-scripts" . }}{{ end }}
     {{- if hugo.IsProduction }}
       {{ partialCached "yandex-metrika.html" . }}
     {{- end }}

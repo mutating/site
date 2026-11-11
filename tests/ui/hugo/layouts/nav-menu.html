@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@mutating/ui · nav menu fixture</title>
+    <link rel="stylesheet" href="/dist/styles/index.css"><link rel="stylesheet" href="/demo/demo.css">
+  </head>
+  <body class="tmc-page">
+    {{ partial "tmc-ui/header.html" (dict
+      "brand" (dict "href" "/")
+      "items" (slice
+        (dict "id" "products" "label" "Products" "href" "/products/compute/"
+          "children" (slice
+            (dict "id" "compute" "label" "Compute" "href" "/products/compute/" "description" "A universal compute platform for your own devices.")
+          ))
+        (dict "id" "news" "href" "/news/" "label" "News")
+      )
+      "navigationLabel" "Navigation"
+      "mobileNavigationLabel" "Mobile navigation"
+      "menuLabel" "Open navigation menu"
+      "menuText" "Menu"
+    ) }}
+    <main class="tmc-shell demo-content">
+      <h1>Header disclosure<span>.</span></h1>
+    </main>
+    <script type="module">
+      import { mountHeader } from "/dist/index.js";
+      mountHeader(document.querySelector(".tmc-header-shell"));
+    </script>
+  </body>
+</html>

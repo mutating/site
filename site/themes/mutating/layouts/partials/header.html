@@ -12,6 +12,10 @@
 {{- end -}}
 {{- $items := slice
   (dict "id" "sources" "label" (T "source_code") "href" "https://github.com/mutating" "icon" "github")
+  (dict "id" "products" "label" (T "nav_products") "href" ("/products/compute/" | relLangURL)
+    "children" (slice
+      (dict "id" "compute" "label" (T "nav_compute") "href" ("/products/compute/" | relLangURL) "description" (T "compute_menu_description"))
+    ))
   (dict "id" "news" "label" (T "nav_news") "href" ("/news/" | relLangURL))
   (dict "id" "blog" "label" (T "nav_blog") "href" ("/blog/" | relLangURL))
   (dict "id" "contact" "label" (T "nav_contact") "href" ("/#contact" | relLangURL))

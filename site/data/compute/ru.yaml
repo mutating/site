@@ -1,0 +1,313 @@
+hero:
+  eyebrow: Mutating Compute
+  category: Распределённые вычисления
+  line: У вас уже есть
+  emphasis: суперкомпьютер.
+  purpose: Объедините свои компьютеры в закрытую сеть.
+  description: Mutating Compute распределяет задачи между вашими устройствами и компьютерами коллег. Например,
+    запускает на них сборки и тесты из GitHub Actions.
+  primary: Возможности платформы
+  secondary: CI с GitHub Actions
+  source: CI на вашем железе
+  pool: Ваша вычислительная сеть
+  rotate: Вращайте планету перетаскиванием или клавишами со стрелками.
+  busy: Вы работаете. Новых задач нет.
+  runs: Выполняет
+  visual: 'Сфера — ваша вычислительная сеть. Показан CI: задания GitHub Actions выполняются на доступных устройствах.
+    Занятый MacBook Pro пропускается.'
+  jobs:
+  - key: A
+    label: Тесты / 01
+  - key: B
+    label: Тесты / 02
+  machines:
+  - key: A
+    name: Mac mini
+    icon: desktop
+    job: Тесты / 01
+    job_key: A
+  - key: B
+    name: Mac Studio
+    icon: server
+    job: Тесты / 02
+    job_key: B
+  - key: C
+    name: MacBook Pro
+    icon: laptop
+    busy: true
+  - key: D
+    name: ПК с Windows
+    icon: windows
+    job: Тесты / 01
+    job_key: A
+  - key: E
+    name: Android TV
+    icon: tv
+    job: Тесты / 02
+    job_key: B
+  - key: F
+    name: ПК с Linux
+    icon: linux
+    job: Тесты / 01
+    job_key: A
+    rear: true
+  - key: G
+    name: Android-смартфон
+    icon: phone
+    job: Тесты / 02
+    job_key: B
+    rear: true
+demo:
+  label: CI на свободных компьютерах.
+  description: Тесты заранее разделены на два независимых задания и выполняются параллельно в отдельных VM. Занятый
+    ноутбук не участвует.
+  source: GitHub Actions
+  workflow: push / tests.yml
+  router: Выбирает компьютеры
+  available: CI разрешён
+  busy: Вы работаете здесь
+  untouched: Новых задач нет
+  vm: Одноразовая VM
+  vm_select: Ожидает задание
+  vm_create: Создаём окружение
+  vm_run: Выполняем тесты
+  vm_clean: Удаляем VM
+  vm_done: VM удалена
+  result: Логи и артефакты → GitHub
+  phases:
+  - Выбрать компьютеры
+  - Создать VM
+  - Запустить тесты
+  - Удалить VM
+  states:
+    select: Выбираем два свободных компьютера, пропуская занятый ноутбук.
+    create: Создаём VM на двух выбранных компьютерах.
+    run: Тесты идут параллельно. Вы работаете на ноутбуке.
+    clean: Тесты завершены. Удаляем обе VM.
+    done: Результаты в GitHub, VM удалены. Ноутбук не участвовал.
+  hosts:
+  - name: Mac mini
+    owner: Ваш компьютер
+    icon: desktop
+    job: Тесты / 01
+  - name: MacBook Pro
+    owner: Ваш рабочий ноутбук
+    icon: laptop
+    busy: true
+  - name: Mac Studio
+    owner: Общий компьютер
+    icon: server
+    job: Тесты / 02
+  eyebrow: CI на Mutating Compute
+  jobs:
+  - Тесты / 01
+  - Тесты / 02
+economics:
+  index: ЭКОНОМИКА CI
+  heading: Сократите расходы на CI.
+  emphasis: Используйте свои компьютеры.
+  description: GitHub берёт плату за минуты раннеров, Mutating Compute — за подключённые устройства.
+  minutes: Платных минут раннера в месяц
+  hosted: Раннеры GitHub
+  monthly: / месяц
+  own: Подписка на устройства
+  price_note: за первые 2 личных устройства
+  pricing_link: Посмотреть тарифы
+  own_description: Дополнительные устройства — по тарифу. Платы за минуты нет.
+  source: Тарифы GitHub
+  checked: Проверено 10 ноября 2026
+  caveat: 'Расчёт для платных минут сверх включённого объёма GitHub. Это сравнение цен, не скорости: время выполнения
+    на вашем железе может отличаться. Электричество и интернет не учтены. GitHub может отдельно брать плату за хранилище
+    и служебные задачи на своих раннерах.'
+workflow:
+  heading: Подключение GitHub Actions.
+  steps:
+  - title: Подключите GitHub
+    text: Разрешите доступ к нужным репозиториям.
+  - title: Выберите задания
+    text: Укажите репозиторий, ветку и задания.
+  - title: Добавьте конфигурацию в workflow
+    text: Скопируйте её из Mutating Compute.
+control:
+  index: 01 / ЛИМИТЫ НАГРУЗКИ
+  heading: Лимиты нагрузки
+  emphasis: для работы и простоя.
+  description: Разрешите вычисления только в простое или задайте разные лимиты для работы и простоя.
+  activity: Я работаю за компьютером
+  activity_hint: Переключите режим, чтобы сравнить лимиты.
+  active_state: Вы за работой
+  idle_state: Вы отошли
+  foreground: Для ваших приложений
+  background: Максимум для задач
+  idle_limit: Во время простоя
+  active_limit: Во время работы
+  power: Лимит фоновой загрузки CPU
+  policy_note: Лимиты CPU, не текущая загрузка. Память и диск тоже ограничиваются.
+  features:
+  - icon: activity
+    title: Автоматическое определение простоя.
+    text: 'Выберите метрики: загрузку CPU, нажатия клавиш или движение мыши. Агент переключит лимиты сам.'
+  - icon: sliders
+    title: Выберите поведение при возвращении.
+    text: Агент перестанет принимать новые задачи. Текущую он остановит сразу или дождётся её завершения — как вы настроите.
+  chart_label: Лимит CPU для задач
+isolation:
+  index: 02 / ИЗОЛЯЦИЯ ЗАДАНИЙ
+  heading: Одноразовая виртуальная машина
+  emphasis: для каждого задания.
+  description: Виртуальная машина (VM) создаётся по запросу, изолирует задание от ваших приложений и удаляется после
+    завершения задания.
+  host: Ваш компьютер
+  apps: Ваши приложения
+  workspace: Продолжают работать во время вычислений
+  job: Вычислительное задание
+  lifecycle:
+  - icon: cube
+    title: Создать VM
+    detail: Чистое окружение
+  - icon: terminal
+    title: Выполнить задание
+    detail: Внутри VM
+    isolated: true
+  - icon: trash
+    title: Удалить VM
+    detail: После завершения задачи
+  encryption_title: Шифрованная передача заданий.
+  encryption_text: Команды и логи заданий не показываются в интерфейсе агента.
+benchmarks:
+  index: 03 / ПРОИЗВОДИТЕЛЬНОСТЬ
+  heading: Встроенные бенчмарки
+  emphasis: для сравнения мощности CPU.
+  description: Сравнивайте мощность разных компьютеров по единой шкале.
+  chart_label: Встроенные бенчмарки
+  single: Один поток
+  multi: Все ядра
+  selector: Режим бенчмарка
+  chart_title: Производительность CPU
+  reference_label: Сравнение с Raspberry Pi 5
+  reference: Результат Raspberry Pi 5 в том же тесте. 2 × pi — вдвое больше.
+  caption: Устройства и результаты условные.
+  nodes:
+  - Устройство A
+  - Устройство B
+  - Устройство C
+team:
+  index: 04 / ОРГАНИЗАЦИИ
+  heading: Делитесь ресурсами
+  emphasis: компьютеров с коллегами.
+  description: Создайте организацию в Mutating Compute, подключите устройства и пригласите коллег.
+  note: Доступ к общим компьютерам — по приглашению.
+  members: Участники организации
+  pool: Общие компьютеры
+  roles:
+  - Вы
+  - Dev
+  - Ops
+download:
+  index: 06 / АГЕНТЫ
+  heading: Установите агента
+  emphasis: на свои устройства.
+  description: Фоновое приложение для запуска заданий. Подключите устройство к аккаунту или организации.
+  button: Скачать для %s
+  note: Доступно для macOS на Apple Silicon. Остальные версии в разработке.
+  platforms:
+  - name: macOS
+    detail: Apple Silicon
+    icon: apple
+    available: true
+  - name: Windows
+    detail: Для компьютера
+    icon: windows
+  - name: Linux
+    detail: Для компьютера
+    icon: linux
+  - name: Android
+    detail: Для смартфона
+    icon: android
+  - name: Android TV
+    detail: Для телевизора
+    icon: tv
+pricing:
+  index: 07 / ТАРИФЫ
+  heading: Подписка на устройства.
+  emphasis: Без платы за минуты.
+  description: 2 устройства бесплатны на каждом личном тарифе. В пакетах они уже учтены.
+  organization_intro:
+    heading: Тариф для организации.
+    emphasis: За каждое устройство.
+    description: Оплачивается каждое подключённое устройство, включая первые два.
+    extra: $1 в месяц или $10 в год за устройство.
+  audience: Выберите тип аккаунта
+  personal: Для себя
+  organization: Для организаций
+  period: Выберите период оплаты
+  monthly: Месяц
+  yearly: Год
+  month: / месяц
+  year: / год
+  billing_monthly: Ежемесячная оплата
+  billing_yearly: Оплата за весь год
+  free: Всегда бесплатно
+  action: Подключить устройства
+  extra: Сверх пакета — $1/месяц или $10/год за устройство. В организациях бесплатных устройств нет.
+  yearly_hint: или $%s / год
+  yearly_savings: Экономия %s в год
+  plans:
+  - name: 2 устройства бесплатно
+    monthly: '0'
+    yearly: '0'
+    count: 2 личных устройства
+  - name: Дополнительные устройства
+    monthly: '1'
+    yearly: '10'
+    count: За каждое устройство сверх двух
+  - name: 7 устройств
+    monthly: '4'
+    yearly: '39'
+    count: 2 бесплатных + 5 платных
+    featured: true
+  - name: 12 устройств
+    monthly: '7.50'
+    yearly: '75'
+    count: 2 бесплатных + 10 платных
+  team_name: Стандартный тариф
+  team_count: За подключённое устройство
+  team_description: Без доплаты за участников.
+  enterprise_name: Индивидуальный тариф
+  enterprise_price: По запросу
+  enterprise_description: Напишите о задачах и числе устройств — подберём условия.
+faq:
+  index: 08 / ВОПРОСЫ И ОТВЕТЫ
+  heading: Частые вопросы.
+  items:
+  - question: На чьих компьютерах выполняются мои задачи?
+    answer:
+    - На ваших устройствах и компьютерах организаций, к которым у вас есть доступ. Публичного обмена мощностями
+      нет.
+  - question: Что можно запускать сейчас?
+    answer:
+    - Сейчас доступен CI через GitHub Actions. Задания выполняются в VM с Linux ARM64 на Mac с Apple Silicon. Запуск
+      — по push или вручную для выбранной ветки.
+    - Пока не поддерживаются задания для macOS/Xcode, запуск по pull request, reusable workflows, Docker container
+      actions и service containers.
+  - question: Что, если компьютеры заняты или недоступны?
+    answer:
+    - Нужны работающий агент, интернет и свободные ресурсы. Выключенные и спящие устройства задания не выполняют.
+    - 'Без подходящего устройства workflow GitHub Actions завершится ошибкой: он не ждёт ресурсов и не переходит
+      автоматически на арендные раннеры. Повторите запуск при появлении ресурсов или после остановки задания.'
+  - question: Что оплачивается помимо подписки?
+    answer:
+    - Электричество и интернет. GitHub может брать плату за хранилище и служебные задачи на своих раннерах. Аренда
+      серверов не включена.
+  - question: Для каких задач подходит Mutating Compute?
+    answer:
+    - Независимые задачи, достаточно долгие, чтобы оправдать подготовку VM и передачу данных. Например, заранее
+      разделённые части тестов можно запускать параллельно. CPU и память устройств не объединяются в одну VM.
+closing:
+  line: Запускайте вычисления
+  emphasis: на своих компьютерах.
+applications:
+  index: 05 / ПРИМЕНЕНИЕ
+  heading: CI с GitHub Actions.
+  emphasis: На вашем железе.
+  description: Запускайте сборки и тесты на своих устройствах и сокращайте расходы на аренду CI-раннеров.

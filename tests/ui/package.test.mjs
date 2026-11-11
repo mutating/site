@@ -83,6 +83,23 @@ test("the core and React entries can be imported and server rendered without a b
   assert.match(relations, /href="\/default\/"[^>]*rel="noopener noreferrer"/);
   assert.match(relations, /href="\/empty\/"[^>]*rel=""/);
   assert.match(relations, /href="\/explicit\/"[^>]*rel="noopener"/);
+  const dropdownHeader = renderToStaticMarkup(createElement(Header, {
+    showThemeToggle: false,
+    items: [{
+      id: "products", href: "/products/", label: "Products",
+      children: [{ id: "compute", label: "Compute", href: "/products/compute/", description: "A universal compute platform for your own devices." }],
+    }],
+  }));
+  assert.match(dropdownHeader, /<details class="tmc-nav-menu">/);
+  assert.match(dropdownHeader, /<summary class="tmc-nav-menu__trigger"[^>]*>Products/);
+  assert.match(dropdownHeader, /class="tmc-nav-menu tmc-nav-menu--expanded"/);
+  assert.match(dropdownHeader, /class="tmc-nav-menu__label">Products</);
+  assert.match(dropdownHeader, /class="tmc-nav-menu__panel"[^>]*data-tmc-dropdown-panel=""/);
+  assert.match(dropdownHeader, /class="tmc-nav-menu__item"/);
+  assert.match(dropdownHeader, /href="\/products\/compute\/"/);
+  assert.match(dropdownHeader, /A universal compute platform for your own devices\./);
+  assert.match(dropdownHeader, /class="tmc-nav-menu__chevron"/);
+  assert.match(dropdownHeader, /class="tmc-nav-menu__arrow"/);
 });
 
 test("all CSS assets resolve inside the self-contained distribution", async () => {
@@ -108,6 +125,17 @@ test("Hugo renders the adapters without depending on the company site's template
   const languageOnly = await readFile(resolve(ui, ".runtime/hugo/language-only/index.html"), "utf8");
   assert.match(languageOnly, /tmc-language-switcher--standalone/);
   assert.doesNotMatch(languageOnly, /<nav|tmc-mobile-menu|tmc-language-switcher--(?:desktop|mobile)/);
+  const navMenu = await readFile(resolve(ui, ".runtime/hugo/nav-menu/index.html"), "utf8");
+  assert.match(navMenu, /<details class="tmc-nav-menu">/);
+  assert.match(navMenu, /<summary class="tmc-nav-menu__trigger"[^>]*>Products/);
+  assert.match(navMenu, /class="tmc-nav-menu tmc-nav-menu--expanded"/);
+  assert.match(navMenu, /class="tmc-nav-menu__label">Products</);
+  assert.match(navMenu, /class="tmc-nav-menu__panel"[^>]*data-tmc-dropdown-panel/);
+  assert.match(navMenu, /class="tmc-nav-menu__item"/);
+  assert.match(navMenu, /href="\/products\/compute\/"/);
+  assert.match(navMenu, /A universal compute platform for your own devices\./);
+  assert.match(navMenu, /class="tmc-nav-menu__chevron"/);
+  assert.match(navMenu, /class="tmc-nav-menu__arrow"/);
 });
 
 test("the pixel reference is built from the original home page in both languages", prepareHeaderReference);

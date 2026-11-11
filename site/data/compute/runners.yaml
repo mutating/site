@@ -1,0 +1,11 @@
+# GitHub's published USD list prices, checked 2026-11-10.
+# The calculator uses paid minutes, after any included allowance.
+source: "https://docs.github.com/en/billing/reference/actions-runner-pricing"
+checked: "2026-11-10"
+items:
+  - name: "Linux ARM64 · 2-core"
+    rate: 0.005
+  - name: "Linux x64 · 2-core"
+    rate: 0.006
+  - name: "Linux x64 · 8-core"
+    rate: 0.022
