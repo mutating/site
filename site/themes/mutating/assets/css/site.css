@@ -23,9 +23,29 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Geist Cyrillic";
+  src: url("/fonts/geist/geist-875ccdd4.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0400-052F, U+2116;
+}
+
+@font-face {
+  font-family: "Geist Mono Cyrillic";
+  src: url("/fonts/geist-mono/geist-mono-44e03052.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0400-052F, U+2116;
+}
+
 :root {
   --font-geist-sans: "Geist";
   --font-geist-mono: "Geist Mono";
+  --site-card-radius: 22px;
+  --site-panel-radius: 24px;
   color-scheme: light;
   --bg: #fffafb;
   --surface: #ffffff;
@@ -50,6 +70,12 @@
   --code-type: #8b2f81;
   --code-operator: #d51d76;
   --code-error: #b91c35;
+}
+
+.home-page,
+.compute-page {
+  --font-geist-sans: "Geist", "Geist Cyrillic";
+  --font-geist-mono: "Geist Mono", "Geist Mono Cyrillic";
 }
 
 @media (prefers-color-scheme: dark) {
@@ -248,8 +274,8 @@ summary:focus-visible {
   color: var(--ink-muted);
 }
 
-.eyebrow span {
-  color: var(--hot);
+.eyebrow__accent {
+  color: color-mix(in srgb, var(--hot) 80%, var(--ink));
 }
 
 a.section-index {
@@ -281,13 +307,25 @@ a.section-index:focus-visible {
   scroll-margin-top: max(112px, var(--tmc-header-clearance, 0px));
 }
 
+.hero h1,
+.display-heading {
+  font-weight: 790;
+  line-height: 0.82;
+  letter-spacing: -0.082em;
+}
+
 .hero h1 {
   margin: 30px 0 40px;
   max-width: 900px;
   font-size: clamp(72px, 8.5vw, 146px);
-  font-weight: 790;
-  line-height: 0.82;
-  letter-spacing: -0.082em;
+}
+
+html:lang(ru) .hero h1 {
+  font-size: clamp(66px, 7.8vw, 116px);
+}
+
+:lang(ru) :is(.hero h1, .display-heading) {
+  letter-spacing: -0.065em;
 }
 
 .hero h1 em {
@@ -353,6 +391,18 @@ a.section-index:focus-visible {
 .button--dark {
   background: #0b0709;
   color: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .button--dark {
+    background: #fff;
+    color: #0b0709;
+  }
+}
+
+:root[data-theme="dark"] .button--dark {
+  background: #fff;
+  color: #0b0709;
 }
 
 .text-link {
@@ -571,7 +621,8 @@ a.section-index:focus-visible {
 .containment h2,
 .coexistence h2,
 .dispatches h2,
-.contact h2 {
+.contact h2,
+.section-heading {
   margin: 0;
   font-size: clamp(42px, 5vw, 78px);
   font-weight: 720;
@@ -633,20 +684,30 @@ a.section-index:focus-visible {
   gap: 14px;
 }
 
+.pillar-card,
+.dispatch-card,
+.site-card {
+  border: 1px solid var(--line);
+  border-radius: var(--site-card-radius);
+  background: var(--surface);
+}
+
+.pillar-card,
+.site-card--interactive {
+  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease;
+}
+
 .pillar-card {
   position: relative;
   min-height: 430px;
   padding: 26px;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: var(--surface);
   display: flex;
   flex-direction: column;
-  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease;
   overflow: hidden;
 }
 
-.pillar-card:hover {
+.pillar-card:hover,
+.site-card--interactive:is(:hover, :focus-visible) {
   transform: translateY(-7px);
   border-color: var(--hot);
   background: var(--surface-raised);
@@ -664,9 +725,14 @@ a.section-index:focus-visible {
   filter: blur(20px);
 }
 
-.pillar-card__number {
+.pillar-card__number,
+.distribution__copy li span,
+.item-number {
   font-family: var(--font-geist-mono), monospace;
   font-size: 10px;
+}
+
+.pillar-card__number {
   color: var(--ink-muted);
 }
 
@@ -724,11 +790,16 @@ a.section-index:focus-visible {
   }
 }
 
+.pillar-card h3,
+.card-heading {
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+
 .pillar-card h3 {
   margin: 22px 0 10px;
   font-size: 23px;
-  line-height: 1.1;
-  letter-spacing: -0.035em;
 }
 
 .pillar-card p {
@@ -758,27 +829,36 @@ a.section-index:focus-visible {
 .complexity__copy > p:not(.section-index),
 .feedback__copy > p:not(.section-index),
 .distribution__copy > p:not(.section-index),
-.containment__copy > p:not(.section-index) {
-  margin: 26px 0 0;
+.containment__copy > p:not(.section-index),
+.section-lede {
   color: var(--ink-muted);
   font-size: 17px;
   line-height: 1.62;
 }
 
+.complexity__copy > p:not(.section-index),
+.feedback__copy > p:not(.section-index),
+.distribution__copy > p:not(.section-index),
+.containment__copy > p:not(.section-index) {
+  margin: 26px 0 0;
+}
+
 .chart-panel {
+  --chart-panel-surface: color-mix(in srgb, var(--hot) 2%, var(--surface));
   position: relative;
   min-width: 0;
-  padding: 18px 20px 15px;
   border: 1px solid var(--line);
-  border-radius: 24px;
-  background:
-    linear-gradient(color-mix(in srgb, var(--hot) 2%, transparent), color-mix(in srgb, var(--hot) 2%, transparent)),
-    var(--surface);
+  border-radius: var(--site-panel-radius);
+  background: var(--chart-panel-surface);
   box-shadow: var(--shadow);
+}
+
+.complexity .chart-panel {
+  padding: 18px 20px 15px;
   overflow: hidden;
 }
 
-.chart-panel::before {
+.complexity .chart-panel::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -794,10 +874,14 @@ a.section-index:focus-visible {
   justify-content: space-between;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
+}
+
+.chart-panel__label {
   color: var(--ink-muted);
   font-family: var(--font-geist-mono), monospace;
   font-size: 9px;
   letter-spacing: 0.06em;
+  user-select: text;
 }
 
 .complexity-chart {
@@ -874,20 +958,22 @@ a.section-index:focus-visible {
 }
 
 .chart-panel__axis-label,
+.chart-panel__caption,
+.chart-axis-label {
+  color: var(--ink-muted);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.chart-panel__axis-label,
 .chart-panel__caption {
   position: absolute;
   margin: 0;
-  color: var(--ink-muted);
-  font-family: var(--font-geist-mono), monospace;
   text-transform: uppercase;
   user-select: text;
 }
 
-.chart-panel__header span {
-  user-select: text;
-}
-
-.chart-panel__axis-label {
+.chart-panel__axis-label,
+.chart-axis-label {
   font-size: 11px;
   font-weight: 500;
   line-height: 1;
@@ -1110,26 +1196,30 @@ a.section-index:focus-visible {
   line-height: 1.45;
 }
 
-.distribution__copy ul {
+.ruled-list {
   list-style: none;
   padding: 0;
-  margin: 40px 0 0;
   border-top: 1px solid var(--line);
 }
 
-.distribution__copy li {
+.ruled-list > li {
   padding: 15px 0;
   border-bottom: 1px solid var(--line);
-  display: flex;
-  gap: 16px;
   font-size: 13px;
   font-weight: 650;
 }
 
+.distribution__copy ul {
+  margin: 40px 0 0;
+}
+
+.distribution__copy li {
+  display: flex;
+  gap: 16px;
+}
+
 .distribution__copy li span {
   color: var(--hot);
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 10px;
 }
 
 .pantograph-visual {
@@ -1722,7 +1812,9 @@ a.section-index:focus-visible {
   text-transform: uppercase;
 }
 
-.dispatches__status i {
+.status-dot {
+  display: inline-block;
+  flex-shrink: 0;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -1744,9 +1836,6 @@ a.section-index:focus-visible {
 .dispatch-card {
   min-height: 360px;
   padding: 27px;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: var(--surface);
   color: inherit;
   display: flex;
   flex-direction: column;
@@ -1776,7 +1865,8 @@ a.section-index:focus-visible {
   letter-spacing: -0.05em;
 }
 
-.dispatch-card__description {
+.dispatch-card__description,
+.card-description {
   color: var(--ink-muted);
   font-size: 13px;
 }
@@ -1874,8 +1964,6 @@ a.section-index:focus-visible {
 }
 
 .contact .button--dark {
-  background: #0b0709;
-  color: #fff;
   text-shadow: none;
   isolation: isolate;
   contain: paint;
@@ -1886,18 +1974,6 @@ a.section-index:focus-visible {
 
 .contact .button--dark:hover {
   transform: translate3d(0, -3px, 0) rotate(-0.6deg);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .contact .button--dark {
-    background: #fff;
-    color: #0b0709;
-  }
-}
-
-:root[data-theme="dark"] .contact .button--dark {
-  background: #fff;
-  color: #0b0709;
 }
 
 .contact .section-index {
@@ -1985,6 +2061,10 @@ a.section-index:focus-visible {
 
   .hero h1 {
     font-size: clamp(72px, 9vw, 112px);
+  }
+
+  html:lang(ru) .hero h1 {
+    font-size: clamp(62px, 7.8vw, 88px);
   }
 
   .manifesto,
@@ -2101,6 +2181,10 @@ a.section-index:focus-visible {
 
   .hero h1 {
     font-size: clamp(70px, 18vw, 124px);
+  }
+
+  html:lang(ru) .hero h1 {
+    font-size: clamp(60px, 15vw, 114px);
   }
 
   .mascot-card {
@@ -2273,23 +2357,31 @@ a.section-index:focus-visible {
 }
 
 @media (max-width: 580px) {
+  :root {
+    --site-hero-mobile-inset: 24px;
+  }
+
   .section-shell {
     width: calc(100% - 24px);
   }
 
   .hero {
-    padding-top: 24px;
+    padding-top: var(--site-hero-mobile-inset);
     gap: 0;
+  }
+
+  .hero h1,
+  .display-heading {
+    letter-spacing: -0.075em;
   }
 
   .hero h1 {
     margin-top: 23px;
     font-size: clamp(61px, 20vw, 92px);
-    letter-spacing: -0.075em;
   }
 
   html:lang(ru) .hero h1 {
-    font-size: clamp(42px, 15vw, 70px);
+    font-size: clamp(39px, 14.6vw, 70px);
   }
 
   .hero__lede {
@@ -2326,7 +2418,7 @@ a.section-index:focus-visible {
   .distribution h2,
   .containment h2,
   .dispatches h2 {
-    font-size: 43px;
+    font-size: clamp(35px, 12.7vw, 43px);
   }
 
   .pillar-card {
@@ -2337,7 +2429,7 @@ a.section-index:focus-visible {
     height: 176px;
   }
 
-  .chart-panel {
+  .complexity .chart-panel {
     padding-inline: 10px;
   }
 
@@ -2449,6 +2541,10 @@ a.section-index:focus-visible {
 
   .coexistence h2 {
     font-size: 68px;
+  }
+
+  html:lang(ru) .coexistence h2 {
+    font-size: clamp(30px, 10.4vw, 68px);
   }
 
   .coexistence > p:not(.section-index) {

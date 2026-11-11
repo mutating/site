@@ -6,7 +6,7 @@
     {{- range $content.paragraphs }}<p>{{ . }}</p>{{ end }}
   </div>
   <div class="chart-panel">
-    <div class="chart-panel__header"><span>{{ $content.chart_metric }}</span><span>{{ $content.chart_model }}</span></div>
+    <div class="chart-panel__header"><span class="chart-panel__label">{{ $content.chart_metric }}</span><span class="chart-panel__label">{{ $content.chart_model }}</span></div>
     <div class="complexity-chart" role="img" aria-label="{{ $content.chart_aria }}" data-curves-revealed="false">
       <canvas class="complexity-chart__layer complexity-chart__static" aria-hidden="true"></canvas>
       <canvas class="complexity-chart__layer complexity-chart__curves" aria-hidden="true"></canvas>

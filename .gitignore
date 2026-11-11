@@ -28,6 +28,8 @@ __pycache__/
 **/.ruff_cache/
 **/htmlcov/
 **/data/
+!/site/data/
+!/site/data/**
 .coverage
 .coverage.*
 coverage.xml

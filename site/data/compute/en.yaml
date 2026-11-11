@@ -1,0 +1,312 @@
+hero:
+  eyebrow: Mutating Compute
+  category: Distributed computing
+  line: You already own a
+  emphasis: supercomputer.
+  purpose: Connect your computers in a private compute network.
+  description: Mutating Compute distributes jobs across your devices and your colleagues’ computers. For example, it
+    can run builds and tests from GitHub Actions.
+  primary: Explore the platform
+  secondary: CI with GitHub Actions
+  source: CI on your hardware
+  pool: Your compute network
+  rotate: Rotate the globe by dragging or using the arrow keys.
+  busy: You’re working. No new jobs.
+  runs: Runs
+  visual: The globe is your compute network. This CI example sends GitHub Actions test jobs to available devices,
+    skipping the busy MacBook Pro.
+  jobs:
+  - key: A
+    label: Tests / 01
+  - key: B
+    label: Tests / 02
+  machines:
+  - key: A
+    name: Mac mini
+    icon: desktop
+    job: Tests / 01
+    job_key: A
+  - key: B
+    name: Mac Studio
+    icon: server
+    job: Tests / 02
+    job_key: B
+  - key: C
+    name: MacBook Pro
+    icon: laptop
+    busy: true
+  - key: D
+    name: Windows PC
+    icon: windows
+    job: Tests / 01
+    job_key: A
+  - key: E
+    name: Android TV
+    icon: tv
+    job: Tests / 02
+    job_key: B
+  - key: F
+    name: Linux PC
+    icon: linux
+    job: Tests / 01
+    job_key: A
+    rear: true
+  - key: G
+    name: Android phone
+    icon: phone
+    job: Tests / 02
+    job_key: B
+    rear: true
+demo:
+  label: CI jobs run on available computers.
+  description: Tests are split into two independent jobs in advance and run in parallel in separate VMs. The busy
+    laptop is skipped.
+  source: GitHub Actions
+  workflow: push / tests.yml
+  router: Finds available computers
+  available: CI enabled
+  busy: You’re working here
+  untouched: No new jobs
+  vm: Disposable VM
+  vm_select: Waiting for a job
+  vm_create: Creating environment
+  vm_run: Running tests
+  vm_clean: Removing VM
+  vm_done: VM removed
+  result: Logs & artifacts → GitHub
+  phases:
+  - Pick computers
+  - Create VMs
+  - Run tests
+  - Remove VMs
+  states:
+    select: Pick two available computers. Skip the busy laptop.
+    create: Create a VM on each selected computer.
+    run: Tests run in parallel while you work on your laptop.
+    clean: Tests finished. Remove both VMs.
+    done: Results are in GitHub. VMs removed; the laptop ran no jobs.
+  hosts:
+  - name: Mac mini
+    owner: Your computer
+    icon: desktop
+    job: Tests / 01
+  - name: MacBook Pro
+    owner: Your work laptop
+    icon: laptop
+    busy: true
+  - name: Mac Studio
+    owner: Shared computer
+    icon: server
+    job: Tests / 02
+  eyebrow: CI on Mutating Compute
+  jobs:
+  - Tests / 01
+  - Tests / 02
+economics:
+  index: CI COSTS
+  heading: Spend less on CI.
+  emphasis: Use your own computers.
+  description: GitHub charges for runner minutes; Mutating Compute charges for connected devices.
+  minutes: Paid runner minutes / month
+  hosted: GitHub-hosted runners
+  monthly: / month
+  own: Device subscription
+  price_note: for your first 2 personal devices
+  pricing_link: Explore pricing
+  own_description: Additional devices use the rates below. No per-minute charges.
+  source: GitHub list prices
+  checked: Checked November 10, 2026
+  caveat: For paid minutes beyond GitHub’s included allowance. Prices are compared, not performance; runtimes may
+    differ on your hardware. Electricity and internet are excluded. GitHub may also charge for storage and integration
+    jobs on its hosted runners.
+workflow:
+  heading: Connect GitHub Actions.
+  steps:
+  - title: Connect GitHub
+    text: Grant access to your selected repositories.
+  - title: Choose jobs
+    text: Select a repository, branch and jobs.
+  - title: Add the configuration to your workflow
+    text: Copy it from Mutating Compute.
+control:
+  index: 01 / RESOURCE LIMITS
+  heading: Resource limits
+  emphasis: for active and idle time.
+  description: Allow jobs only while idle, or set different limits for active and idle time.
+  activity: I’m using this computer
+  activity_hint: Switch modes to compare limits.
+  active_state: You’re at work
+  idle_state: You’ve stepped away
+  foreground: For your applications
+  background: Maximum for jobs
+  idle_limit: While idle
+  active_limit: While in use
+  power: Background CPU limit
+  policy_note: CPU limits, not live usage. Memory and disk limits are configurable too.
+  features:
+  - icon: activity
+    title: Automatic idle detection.
+    text: Choose CPU usage, key presses or mouse movement to trigger automatic limit changes.
+  - icon: sliders
+    title: Choose what happens when you return.
+    text: The agent stops taking new jobs. It lets the current job finish or stops it immediately, as configured.
+  chart_label: CPU limit for jobs
+isolation:
+  index: 02 / JOB ISOLATION
+  heading: A disposable virtual machine
+  emphasis: for every job.
+  description: A virtual machine (VM) is created on demand to isolate the job from your apps, then removed after
+    the job.
+  host: Your computer
+  apps: Your applications
+  workspace: Keep running during compute jobs
+  job: Compute job
+  lifecycle:
+  - icon: cube
+    title: Create a VM
+    detail: Clean environment
+  - icon: terminal
+    title: Run the job
+    detail: Inside the VM
+    isolated: true
+  - icon: trash
+    title: Remove the VM
+    detail: After the job finishes
+  encryption_title: Encrypted job transfer.
+  encryption_text: The agent interface shows no job commands or logs.
+benchmarks:
+  index: 03 / PERFORMANCE
+  heading: Built-in benchmarks
+  emphasis: for comparing CPU performance.
+  description: Compare different computers on the same performance scale.
+  chart_label: Built-in benchmarks
+  single: One thread
+  multi: All cores
+  selector: Benchmark mode
+  chart_title: CPU performance
+  reference_label: Raspberry Pi 5 reference
+  reference: Raspberry Pi 5’s score in this test. 2 × pi is twice that score.
+  caption: Devices and results are illustrative.
+  nodes:
+  - Device A
+  - Device B
+  - Device C
+team:
+  index: 04 / ORGANIZATIONS
+  heading: Share compute resources
+  emphasis: with colleagues.
+  description: Create an organization in Mutating Compute, connect devices and invite colleagues.
+  note: Access to shared computers is by invitation only.
+  members: Organization members
+  pool: Shared computers
+  roles:
+  - You
+  - Dev
+  - Ops
+download:
+  index: 06 / AGENTS
+  heading: Install the agent
+  emphasis: on your devices.
+  description: A background app for running jobs. Connect your device to your account or organization.
+  button: Download for %s
+  note: Available for macOS on Apple Silicon. Other versions are in development.
+  platforms:
+  - name: macOS
+    detail: Apple Silicon
+    icon: apple
+    available: true
+  - name: Windows
+    detail: Desktop agent
+    icon: windows
+  - name: Linux
+    detail: Desktop agent
+    icon: linux
+  - name: Android
+    detail: Mobile agent
+    icon: android
+  - name: Android TV
+    detail: TV agent
+    icon: tv
+pricing:
+  index: 07 / PRICING
+  heading: Device subscriptions.
+  emphasis: No charge per minute.
+  description: All personal plans include 2 free devices. Bundle sizes include them.
+  organization_intro:
+    heading: Organization pricing.
+    emphasis: Per connected device.
+    description: Every connected organization device is billed, including the first two.
+    extra: $1/month or $10/year per organization device.
+  audience: Choose an account type
+  personal: Personal
+  organization: Organizations
+  period: Choose a billing period
+  monthly: Monthly
+  yearly: Yearly
+  month: / month
+  year: / year
+  billing_monthly: Monthly billing
+  billing_yearly: Billed for the full year
+  free: Always free
+  action: Connect your devices
+  extra: 'Extra devices: $1/month or $10/year each. The 2 free devices do not apply to organizations.'
+  yearly_hint: or $%s / year
+  yearly_savings: Save %s per year
+  plans:
+  - name: 2 free devices
+    monthly: '0'
+    yearly: '0'
+    count: 2 personal devices
+  - name: Additional devices
+    monthly: '1'
+    yearly: '10'
+    count: Each device after your first 2
+  - name: 7 devices
+    monthly: '4'
+    yearly: '39'
+    count: 2 free + 5 paid devices
+    featured: true
+  - name: 12 devices
+    monthly: '7.50'
+    yearly: '75'
+    count: 2 free + 10 paid devices
+  team_name: Standard plan
+  team_count: Per connected device
+  team_description: No extra charge for members.
+  enterprise_name: Custom plan
+  enterprise_price: On request
+  enterprise_description: Tell us your tasks and device count for a custom quote.
+faq:
+  index: 08 / QUESTIONS & ANSWERS
+  heading: Frequently asked questions.
+  items:
+  - question: Whose machines run my jobs?
+    answer:
+    - Your personal devices and computers in organizations you have access to. There is no public compute exchange.
+  - question: What can I run today?
+    answer:
+    - Currently, only GitHub Actions CI is available. Jobs run in Linux ARM64 VMs on Apple Silicon Macs. Runs start
+      on a push or manually for the selected branch.
+    - 'Not yet supported: macOS/Xcode jobs, pull request triggers, reusable workflows, Docker container actions
+      or service containers.'
+  - question: What if my computers are busy or offline?
+    answer:
+    - The computer must be on and awake, with the agent running, internet access and available resources.
+    - Without a suitable device, the GitHub Actions workflow fails. It doesn’t wait for resources or automatically
+      fall back to hosted runners. Rerun when resources are available or after stopping a job.
+  - question: What costs are separate from the subscription?
+    answer:
+    - Electricity and internet. GitHub may charge for storage and integration jobs on its hosted runners. Rented
+      servers are not included.
+  - question: Which tasks work well on Mutating Compute?
+    answer:
+    - Independent parallel jobs that take long enough to justify VM setup and data transfer — for example, tests
+      split in advance. Devices don’t combine CPU or memory into one VM.
+closing:
+  line: Run compute jobs
+  emphasis: on your own computers.
+applications:
+  index: 05 / USE CASE
+  heading: CI with GitHub Actions.
+  emphasis: On your own hardware.
+  description: Run builds and tests on your own devices and spend less on rented CI runners.
