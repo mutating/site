@@ -615,8 +615,15 @@
 }
 
 .tmc-mobile-menu__links .tmc-nav-menu__panel .tmc-nav-menu__item {
+  align-items: flex-start;
   padding: 10px;
   border-radius: 8px;
+}
+
+.tmc-mobile-menu__links .tmc-nav-menu__arrow {
+  margin-top: 2px;
+  width: 13px;
+  height: 13px;
 }
 
 .tmc-mobile-menu__links .tmc-nav-menu__copy strong {
@@ -625,11 +632,6 @@
 
 .tmc-mobile-menu__links .tmc-nav-menu__copy small {
   font-size: 11px;
-}
-
-.tmc-mobile-menu__links .tmc-nav-menu__arrow {
-  width: 13px;
-  height: 13px;
 }
 
 @media (max-width: 1120px) {
