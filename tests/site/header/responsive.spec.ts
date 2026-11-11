@@ -197,7 +197,11 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
         })).toBeLessThanOrEqual(1);
         const menu = shell.locator(".tmc-mobile-menu");
         await menu.locator(":scope > summary").click();
-        await expect(menu.locator(".tmc-mobile-menu__links a")).toHaveCount(4);
+        await expect(menu.locator(".tmc-mobile-menu__links > a")).toHaveCount(4);
+        await expect(menu.locator(".tmc-mobile-menu__links a")).toHaveCount(5);
+        await expect(menu.locator(".tmc-mobile-menu__links .tmc-nav-menu > summary")).toContainText(
+          language === "ru" ? "Продукты" : "Products"
+        );
         await expect(menu.locator(".tmc-language-switcher > summary")).toBeVisible();
         const languages = menu.locator(".tmc-language-switcher");
         await languages.locator("summary").click();

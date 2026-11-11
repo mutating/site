@@ -6,6 +6,13 @@ import "./demo.css";
 
 const language = { current: "ru", label: "Выбрать язык", groupLabel: "Языки", options: [{ code: "ru", href: "#ru" }, { code: "en", href: "#en" }] };
 const items = [{ id: "components", label: "Компоненты", href: "#components" }, { id: "html", label: "HTML-версия", href: "/" }];
+const navMenuItems = [
+  { id: "components", label: "Компоненты", href: "#components" },
+  { id: "products", label: "Продукты", href: "#products", children: [
+    { id: "compute", label: "Compute", href: "#compute", description: "Распределённые сборки и тесты на вашем железе." },
+  ] },
+  { id: "html", label: "HTML-версия", href: "/" },
+];
 const brandQuery = new URLSearchParams(location.search);
 function DemoRouterLink(props: ComponentPropsWithoutRef<"a">) {
   return <a {...props} data-demo-router-link="" />;
@@ -27,7 +34,7 @@ function Showcase() {
   const { theme, controller } = useTheme();
   return <>
     {mounted && <Header
-      brand={{ href: brandQuery.get("brand-home") ?? "/react.html", animation: brandQuery.has("reload-brand") ? { activation: "reload-home" } : undefined }} items={hideNavigation ? [] : otherMenu ? [{ id: "overview", href: "#overview", label: "Обзор", active: true }, { id: "organizations", href: "#organizations", label: "Организации" }] : items} navigationLabel="Навигация"
+      brand={{ href: brandQuery.get("brand-home") ?? "/react.html", animation: brandQuery.has("reload-brand") ? { activation: "reload-home" } : undefined }} items={hideNavigation ? [] : otherMenu ? [{ id: "overview", href: "#overview", label: "Обзор", active: true }, { id: "organizations", href: "#organizations", label: "Организации" }] : brandQuery.has("nav-menu") ? navMenuItems : items} navigationLabel="Навигация"
       language={{ ...language, current: currentLanguage, options: extraLanguage ? [...language.options, { code: "de", href: "#de" }] : language.options }} themeLabel="Переключить тему"
       menuLabel="Открыть меню" menuText="Меню"
       adjacentLink={brandQuery.has("square-button-header") ? {

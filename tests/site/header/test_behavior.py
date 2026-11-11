@@ -544,3 +544,52 @@ def test_theme_control_preserves_original_screen_reader_semantics(
         assert "[pressed" not in toggle.aria_snapshot()
         if index < 2:
             toggle.click()
+
+
+@pytest.mark.parametrize(
+    ("language", "prefix", "label"),
+    [("en", "", "Products"), ("ru", "/ru", "Продукты")],
+)
+def test_products_menu_is_a_localized_disclosure(
+    driver: DriverFactory, language: str, prefix: str, label: str,
+) -> None:
+    page = driver(
+        viewport=(1440, 900), initial_path=prefix + "/", stored_language=language,
+    )
+    menu = page.locator(".tmc-nav .tmc-nav-menu")
+    expect(menu).to_have_count(1)
+    summary = menu.locator(":scope > summary")
+    expect(summary).to_contain_text(label)
+    summary.click()
+    expect(menu).to_have_attribute("open", "")
+    link = menu.locator(".tmc-nav-menu__item")
+    expect(link).to_be_visible()
+    expect(link).to_have_attribute("href", prefix + "/products/compute/")
+    page.keyboard.press("Escape")
+    expect(menu).not_to_have_attribute("open", "")
+
+
+@pytest.mark.parametrize(
+    ("language", "prefix", "label"),
+    [("en", "", "Products"), ("ru", "/ru", "Продукты")],
+)
+def test_products_menu_is_available_in_the_mobile_menu(
+    driver: DriverFactory, language: str, prefix: str, label: str,
+) -> None:
+    page = driver(
+        viewport=(390, 780), initial_path=prefix + "/", stored_language=language,
+    )
+    page.locator(".tmc-mobile-menu > summary").click()
+    menu = page.locator(".tmc-mobile-menu__links .tmc-nav-menu")
+    expect(menu).to_have_count(1)
+    summary = menu.locator(":scope > summary")
+    expect(summary).to_contain_text(label)
+    sibling_color = page.locator(".tmc-mobile-menu__links > a").first.evaluate(
+        "element => getComputedStyle(element).color"
+    )
+    assert summary.evaluate("element => getComputedStyle(element).color") == sibling_color
+    summary.click()
+    expect(menu).to_have_attribute("open", "")
+    link = menu.locator(".tmc-nav-menu__item")
+    expect(link).to_be_visible()
+    expect(link).to_have_attribute("href", prefix + "/products/compute/")

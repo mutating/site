@@ -52,8 +52,7 @@ test("explicit empty configuration preserves labels, current-document navigation
   await expect(language).not.toHaveAttribute("open");
 });
 
-test("explicit empty link relation preserves cross-origin referrers", async ({ page, context }) => {
-  const destination = "https://header-destination.example.test/landing";
+test("explicit empty link relation preserves cross-origin referrers", async ({ page, context }) => {  const destination = "https://header-destination.example.test/landing";
   let referer: string | undefined;
   await context.route(destination, async route => {
     referer = route.request().headers().referer;
@@ -323,4 +322,38 @@ test("an obsolete cleanup cannot disable a newly mounted brand", async ({ page }
   const brand = page.getByTestId("remounted-brand");
   await brand.locator(".tmc-brand__wordmark").hover();
   await expect(brand.locator(".tmc-brand__word-reveal").first()).toHaveCSS("opacity", "1");
+});
+
+test("header children render as a disclosure and close with Escape", async ({ page }, testInfo) => {
+  await page.goto("/.runtime/hugo/nav-menu/");
+  const mobile = testInfo.project.name === "mobile";
+  if (mobile) await page.locator(".tmc-mobile-menu > summary").click();
+  const menu = page.locator(mobile ? ".tmc-mobile-menu__links .tmc-nav-menu" : ".tmc-nav .tmc-nav-menu");
+  await expect(menu).toHaveCount(1);
+  const summary = menu.locator(":scope > summary");
+  await expect(summary).toContainText("Products");
+  await summary.click();
+  await expect(menu).toHaveAttribute("open", "");
+  const link = menu.locator(".tmc-nav-menu__item");
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", "/products/compute/");
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open", "");
+});
+
+test("React header children open a disclosure and close with Escape", async ({ page }, testInfo) => {
+  await page.goto("/react.html?nav-menu");
+  const mobile = testInfo.project.name === "mobile";
+  if (mobile) await page.locator(".tmc-mobile-menu > summary").click();
+  const menu = page.locator(mobile ? ".tmc-mobile-menu__links .tmc-nav-menu" : ".tmc-nav .tmc-nav-menu");
+  await expect(menu).toHaveCount(1);
+  const summary = menu.locator(":scope > summary");
+  await expect(summary).toContainText("Продукты");
+  await summary.click();
+  await expect(menu).toHaveAttribute("open", "");
+  const link = menu.locator(".tmc-nav-menu__item");
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", "#compute");
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open", "");
 });

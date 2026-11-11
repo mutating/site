@@ -8,4 +8,4 @@ export type { BrandOptions } from "./brand";
 export { mountHeader, mountLanguageSwitcher, mountMobileMenu } from "./header";
 export type { HeaderOptions, LanguageSwitcherOptions, MobileMenuOptions } from "./header";
 export { createMutatingHomeHeader } from "./header-config";
-export type { HeaderConfig, HeaderItem, HeaderBrand, HeaderLink, HeaderLanguage, LanguageOption } from "./header-config";
+export type { HeaderConfig, HeaderItem, HeaderMenuItem, HeaderBrand, HeaderLink, HeaderLanguage, LanguageOption } from "./header-config";
