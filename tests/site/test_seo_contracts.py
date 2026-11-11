@@ -508,3 +508,14 @@ def test_readme_documents_the_verified_ansible_invocation() -> None:
     assert "ansible.posix.synchronize" in ansible_instructions
     assert "ansible rsync sshpass" in ansible_instructions
     assert "unchanged repeat took 2.4 seconds" in ansible_instructions
+
+
+def test_header_links_to_the_compute_product_in_both_languages(production_site: Path) -> None:
+    cases = (
+        ("index.html", "/products/compute/", "A universal compute platform for your own devices."),
+        ("ru/index.html", "/ru/products/compute/", "Универсальная вычислительная платформа на ваших устройствах."),
+    )
+    for page, href, copy in cases:
+        source = (production_site / page).read_text()
+        assert f'href="{href}"' in source or f"href={href}" in source
+        assert copy in source

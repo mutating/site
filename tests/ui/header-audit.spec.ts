@@ -71,7 +71,7 @@ test("home header fits the expanded wordmark around navigation with custom text 
 
 test("expanded home wordmark remains clickable beyond its reserved width", async ({ page, baseURL }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.setViewportSize({ width: 1440, height: 800 });
   await page.goto("/home.html?language=en");
   await page.evaluate(() => document.fonts.ready);
   await page.addStyleTag({ content: "* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important }" });

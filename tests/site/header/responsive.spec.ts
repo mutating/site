@@ -266,3 +266,20 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
     await expect(page).toHaveURL("https://platform.mutating.tech/");
   });
 }
+
+test("Products switches from a desktop disclosure to the static mobile group at the breakpoint", async ({ page }) => {
+  await page.goto("/");
+  await page.setViewportSize({ width: 1121, height: 900 });
+  await expect(page.locator(".tmc-nav .tmc-nav-menu")).toBeVisible();
+  await expect(page.locator(".tmc-mobile-menu")).toBeHidden();
+  await page.locator(".tmc-nav .tmc-nav-menu > summary").click();
+  await expect(page.locator(".tmc-nav .tmc-nav-menu")).toHaveAttribute("open", "");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+
+  await page.setViewportSize({ width: 1120, height: 900 });
+  await expect(page.locator(".tmc-nav")).toBeHidden();
+  await expect(page.locator(".tmc-mobile-menu")).toBeVisible();
+  await page.locator(".tmc-mobile-menu > summary").click();
+  await expect(page.getByRole("group", { name: "Products", exact: true })).toBeVisible();
+  await expect(page.locator(".tmc-mobile-menu__links .tmc-nav-menu__chevron")).toHaveCount(0);
+});

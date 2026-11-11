@@ -134,8 +134,55 @@ test("Hugo renders the adapters without depending on the company site's template
   assert.match(navMenu, /class="tmc-nav-menu__item"/);
   assert.match(navMenu, /href="\/products\/compute\/"/);
   assert.match(navMenu, /A universal compute platform for your own devices\./);
+  assert.match(navMenu, /href="\/docs\/"[^>]*aria-current="page"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
+  assert.match(navMenu, /<a href="\/empty-products\/">Empty products<\/a>/);
   assert.match(navMenu, /class="tmc-nav-menu__chevron"/);
   assert.match(navMenu, /class="tmc-nav-menu__arrow"/);
 });
 
 test("the pixel reference is built from the original home page in both languages", prepareHeaderReference);
+
+test("header children preserve link contracts, fallbacks and renderers", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { Header } = await import("@mutating/ui/react");
+  const markup = renderToStaticMarkup(createElement(Header, {
+    showThemeToggle: false,
+    items: [{
+      id: "products", href: "/products/", label: "Products",
+      children: [
+        { id: "compute", label: "Compute", href: "/products/compute/", description: "A universal compute platform for your own devices." },
+        { label: "Docs", href: "/docs/", active: true, target: "_blank" },
+        { label: "Empty rel", href: "/rel/", target: "_blank", rel: "" },
+      ],
+    }],
+  }));
+  assert.match(markup, /href="\/products\/compute\/"/);
+  assert.match(markup, /href="\/docs\/"[^>]*aria-current="page"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
+  assert.match(markup, /href="\/rel\/"[^>]*target="_blank"[^>]*rel=""/);
+  assert.doesNotMatch(markup, /<small><\/small>/);
+
+  const emptyChildren = renderToStaticMarkup(createElement(Header, {
+    showThemeToggle: false,
+    items: [{ id: "empty", label: "Empty", href: "/empty/", children: [] }],
+  }));
+  assert.match(emptyChildren, /<a href="\/empty\/"[^>]*>Empty<\/a>/);
+  assert.doesNotMatch(emptyChildren, /<details class="tmc-nav-menu">/);
+
+  const rendered = renderToStaticMarkup(createElement(Header, {
+    showThemeToggle: false,
+    items: [{
+      id: "products", href: "/products/", label: "Products",
+      children: [{ id: "compute", label: "Compute", href: "/products/compute/" }],
+    }],
+    renderLink: (item, attributes, children) => createElement("a", { ...attributes, "data-router": item.id }, children),
+  }));
+  assert.match(rendered, /data-router="compute"/);
+});
+
+test("public type entries expose header menu items", async () => {
+  const coreTypes = await readFile(resolve(ui, "dist/index.d.ts"), "utf8");
+  assert.match(coreTypes, /HeaderMenuItem/);
+  const reactTypes = await readFile(resolve(ui, "dist/react/index.d.ts"), "utf8");
+  assert.match(reactTypes, /HeaderMenuItem/);
+});
