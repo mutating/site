@@ -87,7 +87,7 @@ test("the core and React entries can be imported and server rendered without a b
     showThemeToggle: false,
     items: [{
       id: "products", href: "/products/", label: "Products",
-      children: [{ id: "compute", label: "Compute", href: "/products/compute/", description: "Distributed builds and tests on your own hardware." }],
+      children: [{ id: "compute", label: "Compute", href: "/products/compute/", description: "A universal compute platform for your own devices." }],
     }],
   }));
   assert.match(dropdownHeader, /<details class="tmc-nav-menu">/);
@@ -97,7 +97,7 @@ test("the core and React entries can be imported and server rendered without a b
   assert.match(dropdownHeader, /class="tmc-nav-menu__panel"[^>]*data-tmc-dropdown-panel=""/);
   assert.match(dropdownHeader, /class="tmc-nav-menu__item"/);
   assert.match(dropdownHeader, /href="\/products\/compute\/"/);
-  assert.match(dropdownHeader, /Distributed builds and tests on your own hardware\./);
+  assert.match(dropdownHeader, /A universal compute platform for your own devices\./);
   assert.match(dropdownHeader, /class="tmc-nav-menu__chevron"/);
   assert.match(dropdownHeader, /class="tmc-nav-menu__arrow"/);
 });
@@ -133,7 +133,7 @@ test("Hugo renders the adapters without depending on the company site's template
   assert.match(navMenu, /class="tmc-nav-menu__panel"[^>]*data-tmc-dropdown-panel/);
   assert.match(navMenu, /class="tmc-nav-menu__item"/);
   assert.match(navMenu, /href="\/products\/compute\/"/);
-  assert.match(navMenu, /Distributed builds and tests on your own hardware\./);
+  assert.match(navMenu, /A universal compute platform for your own devices\./);
   assert.match(navMenu, /class="tmc-nav-menu__chevron"/);
   assert.match(navMenu, /class="tmc-nav-menu__arrow"/);
 });

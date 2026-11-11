@@ -214,7 +214,7 @@ const items = [{
     id: "compute",
     label: "Compute",
     href: "/products/compute/",
-    description: "Distributed builds and tests on your own hardware.",
+    description: "A universal compute platform for your own devices.",
   }],
 }];
 ```

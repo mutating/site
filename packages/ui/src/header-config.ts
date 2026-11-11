@@ -72,7 +72,7 @@ export function createMutatingHomeHeader(language: "en" | "ru" = "en"): HeaderCo
           id: "compute",
           label: "Compute",
           href: `${home}products/compute/`,
-          description: ru ? "Распределённые сборки и тесты на вашем железе." : "Distributed builds and tests on your own hardware.",
+          description: ru ? "Универсальная вычислительная платформа на ваших устройствах." : "A universal compute platform for your own devices.",
         }],
       },
       { id: "news", label: ru ? "Новости" : "News", href: `${home}news/` },

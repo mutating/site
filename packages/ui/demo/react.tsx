@@ -9,7 +9,7 @@ const items = [{ id: "components", label: "Компоненты", href: "#compon
 const navMenuItems = [
   { id: "components", label: "Компоненты", href: "#components" },
   { id: "products", label: "Продукты", href: "#products", children: [
-    { id: "compute", label: "Compute", href: "#compute", description: "Распределённые сборки и тесты на вашем железе." },
+    { id: "compute", label: "Compute", href: "#compute", description: "Универсальная вычислительная платформа на ваших устройствах." },
   ] },
   { id: "html", label: "HTML-версия", href: "/" },
 ];
