@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -517,5 +518,10 @@ def test_header_links_to_the_compute_product_in_both_languages(production_site: 
     )
     for page, href, copy in cases:
         source = (production_site / page).read_text()
-        assert f'href="{href}"' in source or f"href={href}" in source
+        pattern = re.compile(
+            r'class=["\']?tmc-nav-menu__item["\']?[^>]*href=["\']?'
+            + re.escape(href)
+            + r'["\'\s>]'
+        )
+        assert pattern.search(source), f"missing Products child link {href} in {page}"
         assert copy in source

@@ -638,6 +638,7 @@ def test_products_menu_works_without_javascript(browser: Browser, base_url: str)
     )
     desktop = desktop_context.new_page()
     desktop.goto(base_url + "/")
+    expect(desktop.locator(".tmc-nav .tmc-nav-menu__panel")).to_be_hidden()
     desktop.locator(".tmc-nav .tmc-nav-menu > summary").click()
     expect(desktop.locator(".tmc-nav .tmc-nav-menu__panel")).to_be_visible()
     expect(desktop.locator(".tmc-nav .tmc-nav-menu__item")).to_be_visible()
@@ -698,3 +699,15 @@ def test_products_mobile_group_is_reachable_on_short_screens(
     link = group.locator(".tmc-nav-menu__item").first
     link.scroll_into_view_if_needed()
     expect(link).to_be_in_viewport(ratio=0.99)
+    panel = page.locator(".tmc-mobile-menu > nav")
+    expect(panel).to_have_css("overflow-y", "auto")
+    contact = page.locator(".tmc-mobile-menu__links a").last
+    contact.scroll_into_view_if_needed()
+    expect(contact).to_be_in_viewport(ratio=0.99)
+    assert contact.evaluate("""element => {
+      const panel = element.closest('nav');
+      if (!panel) return false;
+      const item = element.getBoundingClientRect();
+      const bounds = panel.getBoundingClientRect();
+      return item.top >= bounds.top - 1 && item.bottom <= bounds.bottom + 1;
+    }""")

@@ -136,6 +136,7 @@ test("Hugo renders the adapters without depending on the company site's template
   assert.match(navMenu, /A universal compute platform for your own devices\./);
   assert.match(navMenu, /href="\/docs\/"[^>]*aria-current="page"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
   assert.match(navMenu, /<a href="\/empty-products\/">Empty products<\/a>/);
+  assert.doesNotMatch(navMenu, /<small>\s*<\/small>/);
   assert.match(navMenu, /class="tmc-nav-menu__chevron"/);
   assert.match(navMenu, /class="tmc-nav-menu__arrow"/);
 });
@@ -160,7 +161,7 @@ test("header children preserve link contracts, fallbacks and renderers", async (
   assert.match(markup, /href="\/products\/compute\/"/);
   assert.match(markup, /href="\/docs\/"[^>]*aria-current="page"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
   assert.match(markup, /href="\/rel\/"[^>]*target="_blank"[^>]*rel=""/);
-  assert.doesNotMatch(markup, /<small><\/small>/);
+  assert.doesNotMatch(markup, /<small>\s*<\/small>/);
   const computeIndex = markup.indexOf('href="/products/compute/"');
   const docsIndex = markup.indexOf('href="/docs/"');
   const relIndex = markup.indexOf('href="/rel/"');

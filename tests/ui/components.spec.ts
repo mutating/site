@@ -441,8 +441,12 @@ test.describe("header children without JavaScript", () => {
       return;
     }
     const menu = page.locator(".tmc-nav .tmc-nav-menu");
+    const panel = menu.locator(".tmc-nav-menu__panel");
+    expect(await menu.evaluate(element => element.tagName)).toBe("DETAILS");
+    await expect(panel).toBeHidden();
     await menu.locator(":scope > summary").click();
     await expect(menu).toHaveAttribute("open", "");
+    await expect(panel).toBeVisible();
     await expect(menu.locator(".tmc-nav-menu__item").first()).toBeVisible();
   });
 });
