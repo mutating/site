@@ -17,7 +17,7 @@
         </summary>
         <nav aria-label="{{ partial "tmc-ui/internal/option.html" (slice . "mobileNavigationLabel" $navigationLabel) }}">
           {{ with .language }}<div class="tmc-mobile-menu__language">{{ partial "tmc-ui/language-switcher.html" (merge . (dict "variant" "mobile")) }}</div>{{ end }}
-          {{ with .items }}<div class="tmc-mobile-menu__links">{{ range . }}{{ partial "tmc-ui/menu-link.html" . }}{{ end }}</div>{{ end }}
+          {{ with .items }}<div class="tmc-mobile-menu__links">{{ range . }}{{ partial "tmc-ui/menu-link.html" (merge . (dict "mobile" true)) }}{{ end }}</div>{{ end }}
         </nav>
       </details>
       {{ end }}

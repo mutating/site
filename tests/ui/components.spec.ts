@@ -327,8 +327,20 @@ test("an obsolete cleanup cannot disable a newly mounted brand", async ({ page }
 test("header children render as a disclosure and close with Escape", async ({ page }, testInfo) => {
   await page.goto("/.runtime/hugo/nav-menu/");
   const mobile = testInfo.project.name === "mobile";
-  if (mobile) await page.locator(".tmc-mobile-menu > summary").click();
-  const menu = page.locator(mobile ? ".tmc-mobile-menu__links .tmc-nav-menu" : ".tmc-nav .tmc-nav-menu");
+  if (mobile) {
+    await page.locator(".tmc-mobile-menu > summary").click();
+    const menu = page.locator(".tmc-mobile-menu__links .tmc-nav-menu");
+    await expect(menu).toHaveCount(1);
+    await expect(menu.locator(".tmc-nav-menu__label")).toHaveText("Products");
+    await expect(menu.locator(".tmc-nav-menu__chevron")).toHaveCount(0);
+    const link = menu.locator(".tmc-nav-menu__item");
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", "/products/compute/");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".tmc-mobile-menu")).not.toHaveAttribute("open", "");
+    return;
+  }
+  const menu = page.locator(".tmc-nav .tmc-nav-menu");
   await expect(menu).toHaveCount(1);
   const summary = menu.locator(":scope > summary");
   await expect(summary).toContainText("Products");
@@ -344,8 +356,20 @@ test("header children render as a disclosure and close with Escape", async ({ pa
 test("React header children open a disclosure and close with Escape", async ({ page }, testInfo) => {
   await page.goto("/react.html?nav-menu");
   const mobile = testInfo.project.name === "mobile";
-  if (mobile) await page.locator(".tmc-mobile-menu > summary").click();
-  const menu = page.locator(mobile ? ".tmc-mobile-menu__links .tmc-nav-menu" : ".tmc-nav .tmc-nav-menu");
+  if (mobile) {
+    await page.locator(".tmc-mobile-menu > summary").click();
+    const menu = page.locator(".tmc-mobile-menu__links .tmc-nav-menu");
+    await expect(menu).toHaveCount(1);
+    await expect(menu.locator(".tmc-nav-menu__label")).toHaveText("Продукты");
+    await expect(menu.locator(".tmc-nav-menu__chevron")).toHaveCount(0);
+    const link = menu.locator(".tmc-nav-menu__item");
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", "#compute");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".tmc-mobile-menu")).not.toHaveAttribute("open", "");
+    return;
+  }
+  const menu = page.locator(".tmc-nav .tmc-nav-menu");
   await expect(menu).toHaveCount(1);
   const summary = menu.locator(":scope > summary");
   await expect(summary).toContainText("Продукты");

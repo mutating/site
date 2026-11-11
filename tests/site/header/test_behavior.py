@@ -582,14 +582,13 @@ def test_products_menu_is_available_in_the_mobile_menu(
     page.locator(".tmc-mobile-menu > summary").click()
     menu = page.locator(".tmc-mobile-menu__links .tmc-nav-menu")
     expect(menu).to_have_count(1)
-    summary = menu.locator(":scope > summary")
-    expect(summary).to_contain_text(label)
+    label_element = menu.locator(".tmc-nav-menu__label")
+    expect(label_element).to_contain_text(label)
+    expect(menu.locator(".tmc-nav-menu__chevron")).to_have_count(0)
     sibling_color = page.locator(".tmc-mobile-menu__links > a").first.evaluate(
         "element => getComputedStyle(element).color"
     )
-    assert summary.evaluate("element => getComputedStyle(element).color") == sibling_color
-    summary.click()
-    expect(menu).to_have_attribute("open", "")
+    assert label_element.evaluate("element => getComputedStyle(element).color") == sibling_color
     link = menu.locator(".tmc-nav-menu__item")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", prefix + "/products/compute/")

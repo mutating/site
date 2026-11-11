@@ -1,0 +1,12 @@
+{{- /* Shared panel for the desktop disclosure and the always-expanded mobile group. */ -}}
+<div class="tmc-nav-menu__panel"{{ if .desktop }} data-tmc-dropdown-panel{{ end }}>
+  {{- range .children -}}
+    <a class="tmc-nav-menu__item" href="{{ .href }}"{{ if .active }} aria-current="page"{{ end }}{{ with .target }} target="{{ . }}"{{ end }}{{ if isset . "rel" }} rel="{{ .rel }}"{{ else }}{{ if eq .target "_blank" }} rel="noopener noreferrer"{{ end }}{{ end }}>
+      <span class="tmc-nav-menu__copy">
+        <strong>{{ .label }}</strong>
+        {{- with .description }}<small>{{ . }}</small>{{ end -}}
+      </span>
+      <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+    </a>
+  {{- end -}}
+</div>

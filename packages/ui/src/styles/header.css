@@ -590,14 +590,16 @@
   display: block;
 }
 
-.tmc-mobile-menu__links .tmc-nav-menu > summary {
+.tmc-mobile-menu__links .tmc-nav-menu__label {
   width: 100%;
-  justify-content: space-between;
   padding: 12px;
-  border-radius: 8px;
   color: var(--ink);
   font-size: 13px;
   font-weight: 700;
+}
+
+.tmc-mobile-menu__links .tmc-nav-menu__chevron {
+  display: none;
 }
 
 .tmc-mobile-menu__links .tmc-nav-menu__panel {

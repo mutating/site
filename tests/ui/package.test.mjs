@@ -92,6 +92,8 @@ test("the core and React entries can be imported and server rendered without a b
   }));
   assert.match(dropdownHeader, /<details class="tmc-nav-menu">/);
   assert.match(dropdownHeader, /<summary class="tmc-nav-menu__trigger"[^>]*>Products/);
+  assert.match(dropdownHeader, /class="tmc-nav-menu tmc-nav-menu--expanded"/);
+  assert.match(dropdownHeader, /class="tmc-nav-menu__label">Products</);
   assert.match(dropdownHeader, /class="tmc-nav-menu__panel"[^>]*data-tmc-dropdown-panel=""/);
   assert.match(dropdownHeader, /class="tmc-nav-menu__item"/);
   assert.match(dropdownHeader, /href="\/products\/compute\/"/);
@@ -126,6 +128,8 @@ test("Hugo renders the adapters without depending on the company site's template
   const navMenu = await readFile(resolve(ui, ".runtime/hugo/nav-menu/index.html"), "utf8");
   assert.match(navMenu, /<details class="tmc-nav-menu">/);
   assert.match(navMenu, /<summary class="tmc-nav-menu__trigger"[^>]*>Products/);
+  assert.match(navMenu, /class="tmc-nav-menu tmc-nav-menu--expanded"/);
+  assert.match(navMenu, /class="tmc-nav-menu__label">Products</);
   assert.match(navMenu, /class="tmc-nav-menu__panel"[^>]*data-tmc-dropdown-panel/);
   assert.match(navMenu, /class="tmc-nav-menu__item"/);
   assert.match(navMenu, /href="\/products\/compute\/"/);

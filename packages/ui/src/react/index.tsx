@@ -179,16 +179,51 @@ export interface HeaderProps extends HeaderConfig {
   renderLink?: (item: HeaderItem, attributes: ComponentPropsWithoutRef<"a">, children: ReactNode) => ReactNode;
 }
 
-function NavMenu({ item, renderLink }: { item: HeaderItem; renderLink?: HeaderProps["renderLink"] }) {
+function NavMenuItems({ item, renderLink }: { item: HeaderItem; renderLink?: HeaderProps["renderLink"] }) {
+  return <>{(item.children ?? []).map((child) => {
+    const childItem: HeaderItem = { ...child, id: child.id ?? child.href };
+    const attributes: ComponentPropsWithoutRef<"a"> = {
+      href: child.href,
+      className: "tmc-nav-menu__item",
+      "aria-current": child.active ? "page" : undefined,
+      target: child.target,
+      rel: child.rel ?? (child.target === "_blank" ? "noopener noreferrer" : undefined),
+    };
+    const content = (
+      <>
+        <span className="tmc-nav-menu__copy">
+          <strong>{child.label}</strong>
+          {child.description && <small>{child.description}</small>}
+        </span>
+        <svg className="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 8h10M9 4l4 4-4 4" />
+        </svg>
+      </>
+    );
+    return renderLink
+      ? <span key={childItem.id} className="tmc-nav-menu__entry">{renderLink(childItem, attributes, content)}</span>
+      : <a key={childItem.id} {...attributes}>{content}</a>;
+  })}</>;
+}
+
+function NavMenu({ item, renderLink, mobile = false }: { item: HeaderItem; renderLink?: HeaderProps["renderLink"]; mobile?: boolean }) {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
-    if (!ref.current) return;
+    if (mobile || !ref.current) return;
     return mountDropdown(ref.current, {
       closeOnSelection: true,
       closeOnFocusLeave: true,
       stopEscapePropagation: true,
     });
-  }, []);
+  }, [mobile]);
+  if (mobile) {
+    return (
+      <div className="tmc-nav-menu tmc-nav-menu--expanded">
+        <div className="tmc-nav-menu__label">{item.label}</div>
+        <div className="tmc-nav-menu__panel"><NavMenuItems item={item} renderLink={renderLink} /></div>
+      </div>
+    );
+  }
   return (
     <details ref={ref} className="tmc-nav-menu">
       <summary className="tmc-nav-menu__trigger" aria-haspopup="true">
@@ -196,37 +231,14 @@ function NavMenu({ item, renderLink }: { item: HeaderItem; renderLink?: HeaderPr
         <svg className="tmc-nav-menu__chevron" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" /></svg>
       </summary>
       <div className="tmc-nav-menu__panel" data-tmc-dropdown-panel="">
-        {(item.children ?? []).map((child) => {
-          const childItem: HeaderItem = { ...child, id: child.id ?? child.href };
-          const attributes: ComponentPropsWithoutRef<"a"> = {
-            href: child.href,
-            className: "tmc-nav-menu__item",
-            "aria-current": child.active ? "page" : undefined,
-            target: child.target,
-            rel: child.rel ?? (child.target === "_blank" ? "noopener noreferrer" : undefined),
-          };
-          const content = (
-            <>
-              <span className="tmc-nav-menu__copy">
-                <strong>{child.label}</strong>
-                {child.description && <small>{child.description}</small>}
-              </span>
-              <svg className="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M3 8h10M9 4l4 4-4 4" />
-              </svg>
-            </>
-          );
-          return renderLink
-            ? <span key={childItem.id} className="tmc-nav-menu__entry">{renderLink(childItem, attributes, content)}</span>
-            : <a key={childItem.id} {...attributes}>{content}</a>;
-        })}
+        <NavMenuItems item={item} renderLink={renderLink} />
       </div>
     </details>
   );
 }
 
-function MenuLink({ item, renderLink }: { item: HeaderItem; renderLink?: HeaderProps["renderLink"] }) {
-  if (item.children?.length) return <NavMenu item={item} renderLink={renderLink} />;
+function MenuLink({ item, renderLink, mobile = false }: { item: HeaderItem; renderLink?: HeaderProps["renderLink"]; mobile?: boolean }) {
+  if (item.children?.length) return <NavMenu item={item} renderLink={renderLink} mobile={mobile} />;
   const attributes: ComponentPropsWithoutRef<"a"> = {
     href: item.href,
     className: item.icon ? "tmc-source-link" : undefined,
@@ -254,6 +266,7 @@ export function Header({
     if (menuRef.current) return mountMobileMenu(menuRef.current, { delegateLinks: true });
   }, [hasMenu, itemsSignature, language?.current]);
   const links = items.map((item) => <MenuLink key={item.id} item={item} renderLink={renderLink} />);
+  const mobileLinks = items.map((item) => <MenuLink key={item.id} item={item} renderLink={renderLink} mobile />);
   return (
     <header ref={headerRef} className={classes("tmc-header-shell", className)} data-tmc-inherit-typography={inheritTypography ? "" : undefined}>
       <div className="tmc-header">
@@ -270,7 +283,7 @@ export function Header({
             </summary>
             <nav aria-label={mobileNavigationLabel}>
               {language && <div className="tmc-mobile-menu__language"><LanguageSwitcher {...language} variant="mobile" onSelect={onLanguageChange} /></div>}
-              {items.length > 0 && <div className="tmc-mobile-menu__links">{links}</div>}
+              {items.length > 0 && <div className="tmc-mobile-menu__links">{mobileLinks}</div>}
             </nav>
           </details>}
         </div>
