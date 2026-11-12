@@ -264,8 +264,12 @@ export function ConfirmDialog({
     dialog?.showModal();
     return () => {
       dialog?.close();
-      if (trigger instanceof HTMLElement && trigger.isConnected)
-        trigger.focus({ preventScroll: true });
+      // WebKit applies modal removal after the cleanup callback, so restoring
+      // focus immediately can be undone when the dialog node is detached.
+      window.requestAnimationFrame(() => {
+        if (trigger instanceof HTMLElement && trigger.isConnected)
+          trigger.focus({ preventScroll: true });
+      });
     };
   }, []);
   return (
