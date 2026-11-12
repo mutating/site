@@ -15,9 +15,17 @@ test("native and custom dropdowns notify each actual state change once", async (
       document.body.append(root);
       const events: boolean[] = [];
       const cleanup = mountDropdown(root, { onOpenChange: (open: boolean) => events.push(open) });
-      root.querySelector<HTMLElement>("summary, button")!.click();
+      const trigger = root.querySelector<HTMLElement>("summary, button")!;
+      const nextToggle = () => native
+        ? new Promise<void>(resolve => root.addEventListener("toggle", () => resolve(), { once: true }))
+        : Promise.resolve();
+      const opened = nextToggle();
+      trigger.click();
+      await opened;
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-      root.querySelector<HTMLElement>("summary, button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      const closed = nextToggle();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await closed;
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       cleanup();
       root.remove();
