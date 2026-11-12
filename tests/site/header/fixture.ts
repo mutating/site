@@ -29,6 +29,18 @@ export async function prepare(page: Page, reference: boolean, language: string, 
   await page.goto(reference ? `/__header_reference/${language}.html` : language === "ru" ? "/ru/" : "/");
   await expect(page.locator("html")).toHaveAttribute("data-theme-ready", "true");
   await page.evaluate(() => document.fonts.ready);
+  // The frozen reference only guarantees the header, not the page artwork that
+  // happens to sit under its translucent surface. Mask the rest of the page so
+  // these pixel checks stay focused on the header and its disclosure panels.
+  await page.evaluate(() => {
+    if (document.getElementById("header-pixel-backdrop")) return;
+    const body = getComputedStyle(document.body).backgroundColor;
+    const root = getComputedStyle(document.documentElement).backgroundColor;
+    const layer = document.createElement("div");
+    layer.id = "header-pixel-backdrop";
+    layer.style.cssText = `position:fixed;inset:0;z-index:49;pointer-events:none;background:${body === "rgba(0, 0, 0, 0)" ? root : body}`;
+    document.body.append(layer);
+  });
   await page.evaluate(async () => {
     const surface = document.querySelector(".tmc-eye__surface, .animated-eye-logo__surface")!;
     const url = getComputedStyle(surface).maskImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
@@ -75,4 +87,3 @@ export async function compare(expected: Shot[], actual: Shot[], info: TestInfo) 
   }
   expect(failures, "All header pixels must match the frozen original; no masks or tolerance").toEqual([]);
 }
-

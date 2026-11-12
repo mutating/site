@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { prepare, selector, capture, compare } from "./fixture";
+import { prepare, selector, compare } from "./fixture";
 
 // Every header breakpoint and its neighbor, plus common phones and wide screens.
 const widths = [280, 320, 360, 375, 380, 381, 390, 480, 481, 580, 581, 768,
@@ -7,25 +7,40 @@ const widths = [280, 320, 360, 375, 380, 381, 390, 480, 481, 580, 581, 768,
 const destination = "https://platform.mutating.tech/";
 
 async function buttonStates(page: Page) {
+  // The control is translucent. Hide the other header controls without
+  // changing layout so the comparison sees the button over the header surface
+  // rather than whichever neighbouring control sits behind it at this width.
+  await page.addStyleTag({ content: `
+    .brand, .tmc-brand, .main-nav, .tmc-nav, .language-switcher, .tmc-language-switcher,
+    .theme-toggle, .tmc-theme-toggle, .mobile-menu, .tmc-mobile-menu { visibility: hidden !important; }
+  ` });
   const button = page.locator(await selector(page, "platform-link"));
-  const pictures = [await capture(page, "button-rest")];
+  const freeze = () => page.evaluate(() => {
+    document.body.getBoundingClientRect();
+    for (const animation of document.getAnimations()) { animation.pause(); animation.currentTime = 1000; }
+  });
+  const take = async (name: string) => {
+    await freeze();
+    return { name, png: await button.screenshot({ animations: "allow", caret: "hide" }) };
+  };
+  const pictures = [await take("button-rest")];
   await button.hover();
-  pictures.push(await capture(page, "button-hover"));
+  pictures.push(await take("button-hover"));
   await page.mouse.down();
-  pictures.push(await capture(page, "button-active"));
+  pictures.push(await take("button-active"));
   // Release away from the link to avoid navigation.
   await page.mouse.move(1, 999);
   await page.mouse.up();
   await page.keyboard.press("Tab");
   await button.focus();
-  pictures.push(await capture(page, "button-keyboard-focus"));
+  pictures.push(await take("button-keyboard-focus"));
   await button.hover();
-  pictures.push(await capture(page, "button-hover-and-focus"));
+  pictures.push(await take("button-hover-and-focus"));
   await button.blur();
   await page.mouse.move(1, 999);
   await page.evaluate(() => window.scrollTo({ top: 500, behavior: "instant" }));
   await page.clock.runFor(1024);
-  pictures.push(await capture(page, "button-sticky-over-content"));
+  pictures.push(await take("button-sticky-over-content"));
   return pictures;
 }
 

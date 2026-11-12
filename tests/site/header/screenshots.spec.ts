@@ -66,7 +66,7 @@ async function states(page: Page): Promise<Shot[]> {
   } else {
     const nav = page.locator(await selector(page, "main-nav"));
     for (let index = 0; index < 4; index++) {
-      await nav.locator("a").nth(index).hover();
+      await nav.locator(":scope > a").nth(index).hover();
       await page.clock.runFor(320); await take(`navigation-hover-${index}`);
     }
   }
@@ -200,7 +200,7 @@ async function keyboardStates(page: Page): Promise<Shot[]> {
     await summary.focus(); await take("menu-summary-focus-visible");
     await summary.press("Enter"); await take("menu-keyboard-open", 560);
   } else {
-    const links = page.locator((await selector(page, "main-nav")) + " a");
+    const links = page.locator((await selector(page, "main-nav")) + " > a");
     for (let index = 0; index < 4; index++) {
       await links.nth(index).focus(); await take(`navigation-focus-visible-${index}`);
     }
