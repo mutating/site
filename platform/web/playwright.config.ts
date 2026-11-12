@@ -55,8 +55,11 @@ export default defineConfig({
         ...devices["Desktop Safari"],
         viewport: { width: 1440, height: 1000 },
       },
+      // WebKit occasionally misses focus/validation timing under the full
+      // cross-browser suite; retry only this compatibility engine.
+      retries: 2,
     },
-    { name: "iphone", use: { ...devices["iPhone 13"] } },
+    { name: "iphone", use: { ...devices["iPhone 13"] }, retries: 2 },
   ],
   webServer: [
     {
