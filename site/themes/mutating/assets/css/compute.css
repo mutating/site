@@ -666,7 +666,6 @@
   .compute-closing h2 { font-size: 30px; }
 }
 @media (max-width: 360px) {
-  .compute-grid-devices { grid-template-columns: 1fr; }
   .compute-benchmark__scale { font-size: 9px; }
   .compute-download__button > strong { font-size: var(--compute-body); }
   .compute-ci-source__jobs { grid-template-columns: 1fr; }
@@ -734,6 +733,7 @@
   [data-globe-ready] .compute-hero__planet { margin-bottom: 50px; }
 }
 @media (max-width: 360px) {
+  .compute-grid-devices { grid-template-columns: 1fr; }
   .compute-cost__runner > strong { flex-direction: column; align-items: flex-end; gap: 4px; }
   .compute-grid-device__heading > svg { display: none; }
 }

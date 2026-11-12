@@ -69,13 +69,12 @@ for (const language of ["ru", "en"]) {
 async function visitContactFrame(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.route(/\/muta-tentacles\.html(?:\?|$)/, route => {
-    const url = new URL(route.request().url());
-    url.searchParams.set("max-tentacles", "64");
-    url.searchParams.set("render-supersample", "0.5");
-    url.searchParams.set("manual-animation-frame", "1");
-    return route.continue({ url: url.href });
-  });
+  // These checks exercise iframe focus, not WebGL. A deterministic canvas keeps
+  // them independent of the runner's GPU/WebGL availability.
+  await page.route(/\/muta-tentacles\.html(?:\?|$)/, route => route.fulfill({
+    contentType: "text/html",
+    body: '<!doctype html><style>html,body{margin:0;height:100%}canvas{display:block;width:100%;height:100%}</style><canvas></canvas>',
+  }));
   await page.goto("/ru/?tmc-language-choice=ru#contact");
   const iframe = page.locator("iframe.contact__tentacles");
   await iframe.scrollIntoViewIfNeeded();
