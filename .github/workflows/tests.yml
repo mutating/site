@@ -11,8 +11,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-tests-${{ github.ref }}
-  cancel-in-progress: false
+  # A push and its pull_request event describe the same tree. Sharing a group
+  # avoids running the full browser/WebGL suite twice and cancels superseded
+  # pushes instead of queuing them behind a stale run.
+  group: ${{ github.workflow }}-tests-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   http_lint:
