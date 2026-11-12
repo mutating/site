@@ -197,6 +197,12 @@ h3 {
   --font-geist-sans: "Geist";
   --font-geist-mono: "Geist Mono";
 }
+
+/* Match the static header's language-switcher font stack without changing the
+   rest of the platform typography. */
+.tmc-language-switcher--standalone {
+  --font-geist-mono: "Geist Mono", "Geist Mono Cyrillic";
+}
 .avatar.avatar--round { border-radius: 50%; }
 .user-menu-placeholder { visibility: hidden; }
 .user-menu .avatar--round {
