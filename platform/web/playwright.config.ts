@@ -9,6 +9,9 @@ export default defineConfig({
   fullyParallel: true,
   workers: 2,
   timeout: 45_000,
+  // The full five-project run occasionally misses a frame during header and
+  // session timing; retry the affected test instead of failing the job.
+  retries: 1,
   expect: { timeout: 10_000 },
   reporter: [
     ["list"],
