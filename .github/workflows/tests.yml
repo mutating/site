@@ -162,7 +162,9 @@ jobs:
 
   test-result:
     name: Hugo and Playwright tests
-    if: ${{ always() }}
+    # A superseded concurrency run cancels its shards; do not turn that into a
+    # failed aggregate check on the commit whose surviving run is still green.
+    if: ${{ always() && !cancelled() }}
     needs:
       - pytest
       - seo_contracts
