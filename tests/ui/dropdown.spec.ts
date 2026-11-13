@@ -15,9 +15,17 @@ test("native and custom dropdowns notify each actual state change once", async (
       document.body.append(root);
       const events: boolean[] = [];
       const cleanup = mountDropdown(root, { onOpenChange: (open: boolean) => events.push(open) });
-      root.querySelector<HTMLElement>("summary, button")!.click();
+      const trigger = root.querySelector<HTMLElement>("summary, button")!;
+      const nextToggle = () => native
+        ? new Promise<void>(resolve => root.addEventListener("toggle", () => resolve(), { once: true }))
+        : Promise.resolve();
+      const opened = nextToggle();
+      trigger.click();
+      await opened;
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-      root.querySelector<HTMLElement>("summary, button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      const closed = nextToggle();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await closed;
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       cleanup();
       root.remove();
@@ -287,4 +295,27 @@ test("the shared controller retains native mobile-menu selection, Escape options
     return { keptOpen, selectedClosed, handlersRemoved, escaped };
   });
   expect(result).toEqual({ keptOpen: true, selectedClosed: true, handlersRemoved: true, escaped: true });
+});
+
+test("stopEscapePropagation keeps an enclosing disclosure open", async ({ page }) => {
+  await page.goto("/react.html");
+  const result = await page.evaluate(async () => {
+    const modulePath = "/src/index.ts";
+    const { mountDropdown } = await import(modulePath);
+    const outer = document.createElement("details");
+    outer.innerHTML = '<summary>Outer</summary><div><details id="inner"><summary>Inner</summary><div data-tmc-dropdown-panel><a href="#probe">Probe</a></div></details></div>';
+    outer.open = true;
+    document.body.append(outer);
+    const inner = outer.querySelector("#inner") as HTMLDetailsElement;
+    inner.open = true;
+    const cleanupOuter = mountDropdown(outer, { closeOnSelection: false });
+    const cleanupInner = mountDropdown(inner, { closeOnSelection: false, stopEscapePropagation: true });
+    inner.querySelector("summary")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    const state = { inner: inner.open, outer: outer.open };
+    cleanupInner();
+    cleanupOuter();
+    outer.remove();
+    return state;
+  });
+  expect(result).toEqual({ inner: false, outer: true });
 });

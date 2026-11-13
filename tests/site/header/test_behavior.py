@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Browser, Page, expect
 
 DriverFactory = Callable[..., Page]
 
@@ -547,11 +547,14 @@ def test_theme_control_preserves_original_screen_reader_semantics(
 
 
 @pytest.mark.parametrize(
-    ("language", "prefix", "label"),
-    [("en", "", "Products"), ("ru", "/ru", "Продукты")],
+    ("language", "prefix", "label", "copy"),
+    [
+        ("en", "", "Products", "A universal compute platform for your own devices."),
+        ("ru", "/ru", "Продукты", "Универсальная вычислительная платформа на ваших устройствах."),
+    ],
 )
 def test_products_menu_is_a_localized_disclosure(
-    driver: DriverFactory, language: str, prefix: str, label: str,
+    driver: DriverFactory, language: str, prefix: str, label: str, copy: str,
 ) -> None:
     page = driver(
         viewport=(1440, 900), initial_path=prefix + "/", stored_language=language,
@@ -565,30 +568,146 @@ def test_products_menu_is_a_localized_disclosure(
     link = menu.locator(".tmc-nav-menu__item")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", prefix + "/products/compute/")
+    expect(menu.locator(".tmc-nav-menu__copy small")).to_have_text(copy)
     page.keyboard.press("Escape")
     expect(menu).not_to_have_attribute("open", "")
 
 
+@pytest.mark.parametrize("width", [1440, 1240, 1121])
 @pytest.mark.parametrize(
-    ("language", "prefix", "label"),
-    [("en", "", "Products"), ("ru", "/ru", "Продукты")],
+    ("language", "prefix", "copy"),
+    [
+        ("en", "", "A universal compute platform for your own devices."),
+        ("ru", "/ru", "Универсальная вычислительная платформа на ваших устройствах."),
+    ],
+)
+def test_products_menu_panel_geometry_and_copy(
+    driver: DriverFactory, width: int, language: str, prefix: str, copy: str,
+) -> None:
+    page = driver(
+        viewport=(width, 900), initial_path=prefix + "/", stored_language=language,
+    )
+    menu = page.locator(".tmc-nav .tmc-nav-menu")
+    summary = menu.locator(":scope > summary")
+    summary.click()
+    panel = menu.locator(".tmc-nav-menu__panel")
+    expect(panel).to_be_visible()
+    panel_box = panel.bounding_box()
+    summary_box = summary.bounding_box()
+    assert panel_box is not None and summary_box is not None
+    assert 250 <= panel_box["width"] <= 254
+    assert abs(panel_box["x"] - summary_box["x"]) <= 1
+    assert panel_box["y"] >= summary_box["y"] + summary_box["height"] - 1
+    assert panel_box["x"] >= 0
+    assert panel_box["x"] + panel_box["width"] <= width
+    assert panel_box["y"] + panel_box["height"] <= 900
+    assert panel.evaluate("element => element.scrollHeight <= element.clientHeight + 1")
+    expect(panel.locator(".tmc-nav-menu__copy small")).to_have_text(copy)
+    expect(panel.locator(".tmc-nav-menu__arrow")).to_be_visible()
+    styles = panel.evaluate(
+        "element => { const style = getComputedStyle(element); return {"
+        " radius: style.borderRadius, background: style.backgroundColor, shadow: style.boxShadow }; }"
+    )
+    assert styles["radius"] == "14px"
+    assert styles["background"] != "rgba(0, 0, 0, 0)"
+    assert styles["shadow"] != "none"
+
+
+def test_products_menu_supports_keyboard_and_outside_click(driver: DriverFactory) -> None:
+    page = driver(viewport=(1440, 900), initial_path="/", stored_language="en")
+    menu = page.locator(".tmc-nav .tmc-nav-menu")
+    summary = menu.locator(":scope > summary")
+    link = menu.locator(".tmc-nav-menu__item")
+    summary.focus()
+    page.keyboard.press("Enter")
+    expect(menu).to_have_attribute("open", "")
+    page.keyboard.press("Tab")
+    expect(link).to_be_focused()
+    page.keyboard.press("Escape")
+    expect(menu).not_to_have_attribute("open", "")
+    expect(summary).to_be_focused()
+    page.keyboard.press("Space")
+    expect(menu).to_have_attribute("open", "")
+    page.mouse.click(10, 800)
+    expect(menu).not_to_have_attribute("open", "")
+
+
+def test_products_menu_works_without_javascript(browser: Browser, base_url: str) -> None:
+    desktop_context = browser.new_context(
+        java_script_enabled=False, viewport={"width": 1440, "height": 900},
+    )
+    desktop = desktop_context.new_page()
+    desktop.goto(base_url + "/")
+    expect(desktop.locator(".tmc-nav .tmc-nav-menu__panel")).to_be_hidden()
+    desktop.locator(".tmc-nav .tmc-nav-menu > summary").click()
+    expect(desktop.locator(".tmc-nav .tmc-nav-menu__panel")).to_be_visible()
+    expect(desktop.locator(".tmc-nav .tmc-nav-menu__item")).to_be_visible()
+    desktop_context.close()
+
+    mobile_context = browser.new_context(
+        java_script_enabled=False, viewport={"width": 390, "height": 780},
+    )
+    mobile = mobile_context.new_page()
+    mobile.goto(base_url + "/ru/")
+    mobile.locator(".tmc-mobile-menu > summary").click()
+    group = mobile.get_by_role("group", name="Продукты", exact=True)
+    expect(group).to_be_visible()
+    expect(group.locator(".tmc-nav-menu__item")).to_be_visible()
+    mobile_context.close()
+
+
+@pytest.mark.parametrize(
+    ("language", "prefix", "label", "copy"),
+    [
+        ("en", "", "Products", "A universal compute platform for your own devices."),
+        ("ru", "/ru", "Продукты", "Универсальная вычислительная платформа на ваших устройствах."),
+    ],
 )
 def test_products_menu_is_available_in_the_mobile_menu(
-    driver: DriverFactory, language: str, prefix: str, label: str,
+    driver: DriverFactory, language: str, prefix: str, label: str, copy: str,
 ) -> None:
     page = driver(
         viewport=(390, 780), initial_path=prefix + "/", stored_language=language,
     )
     page.locator(".tmc-mobile-menu > summary").click()
-    menu = page.locator(".tmc-mobile-menu__links .tmc-nav-menu")
-    expect(menu).to_have_count(1)
-    label_element = menu.locator(".tmc-nav-menu__label")
+    group = page.get_by_role("group", name=label, exact=True)
+    expect(group).to_be_visible()
+    expect(group.locator("summary")).to_have_count(0)
+    label_element = group.locator(".tmc-nav-menu__label")
     expect(label_element).to_contain_text(label)
-    expect(menu.locator(".tmc-nav-menu__chevron")).to_have_count(0)
+    expect(group.locator(".tmc-nav-menu__chevron")).to_have_count(0)
     sibling_color = page.locator(".tmc-mobile-menu__links > a").first.evaluate(
         "element => getComputedStyle(element).color"
     )
     assert label_element.evaluate("element => getComputedStyle(element).color") == sibling_color
-    link = menu.locator(".tmc-nav-menu__item")
+    link = group.locator(".tmc-nav-menu__item")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", prefix + "/products/compute/")
+    expect(group.locator(".tmc-nav-menu__copy small")).to_have_text(copy)
+    expect(group.locator(".tmc-nav-menu__arrow")).to_have_css("display", "none")
+
+
+@pytest.mark.parametrize(("width", "height"), [(280, 320), (320, 280)])
+def test_products_mobile_group_is_reachable_on_short_screens(
+    driver: DriverFactory, width: int, height: int,
+) -> None:
+    page = driver(
+        viewport=(width, height), initial_path="/", stored_language="en",
+    )
+    page.locator(".tmc-mobile-menu > summary").click()
+    group = page.get_by_role("group", name="Products", exact=True)
+    link = group.locator(".tmc-nav-menu__item").first
+    link.scroll_into_view_if_needed()
+    expect(link).to_be_in_viewport(ratio=0.99)
+    panel = page.locator(".tmc-mobile-menu > nav")
+    expect(panel).to_have_css("overflow-y", "auto")
+    contact = page.locator(".tmc-mobile-menu__links a").last
+    contact.scroll_into_view_if_needed()
+    expect(contact).to_be_in_viewport(ratio=0.99)
+    assert contact.evaluate("""element => {
+      const panel = element.closest('nav');
+      if (!panel) return false;
+      const item = element.getBoundingClientRect();
+      const bounds = panel.getBoundingClientRect();
+      return item.top >= bounds.top - 1 && item.bottom <= bounds.bottom + 1;
+    }""")

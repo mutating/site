@@ -11,8 +11,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-tests-${{ github.ref }}
-  cancel-in-progress: false
+  # A push and its pull_request event describe the same tree. Sharing a group
+  # avoids running the full browser/WebGL suite twice and cancels superseded
+  # pushes instead of queuing them behind a stale run.
+  group: ${{ github.workflow }}-tests-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   http_lint:
@@ -159,7 +162,9 @@ jobs:
 
   test-result:
     name: Hugo and Playwright tests
-    if: ${{ always() }}
+    # A superseded concurrency run cancels its shards; do not turn that into a
+    # failed aggregate check on the commit whose surviving run is still green.
+    if: ${{ always() && !cancelled() }}
     needs:
       - pytest
       - seo_contracts

@@ -218,7 +218,7 @@ function NavMenu({ item, renderLink, mobile = false }: { item: HeaderItem; rende
   }, [mobile]);
   if (mobile) {
     return (
-      <div className="tmc-nav-menu tmc-nav-menu--expanded">
+      <div className="tmc-nav-menu tmc-nav-menu--expanded" role="group" aria-label={item.label}>
         <div className="tmc-nav-menu__label">{item.label}</div>
         <div className="tmc-nav-menu__panel"><NavMenuItems item={item} renderLink={renderLink} /></div>
       </div>
