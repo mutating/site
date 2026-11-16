@@ -652,10 +652,6 @@ const messages = {
   navigation: ["Навигация кабинета", "Account navigation"],
   menu: ["Меню", "Menu"],
   website: ["На сайт", "Visit website"],
-  authSignal: [
-    "Инфраструктура для ваших задач",
-    "Infrastructure for your work",
-  ],
   authHeading: [
     "Ваша сеть.\nВаши возможности.",
     "Your network.\nYour possibilities.",
