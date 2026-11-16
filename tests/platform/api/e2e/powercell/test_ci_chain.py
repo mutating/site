@@ -85,7 +85,9 @@ async def test_no_mac_fails_the_complete_workflow(chain):
     with pytest.raises(RuntimeError, match="no_capacity"):
         await chain.bootstrap()
     assert not chain.outputs[0].exists() and chain.job is None
-    assert chain.clock.now - started < timedelta(seconds=5)
+    # The generated router may use its ten-second preparation window before
+    # the controller publishes the refusal; it must not reach the full timeout.
+    assert chain.clock.now - started <= timedelta(seconds=10)
     assert chain.peer.jit_count == 0
     await chain.drain()
     async with chain.app.state.db.read() as session:
