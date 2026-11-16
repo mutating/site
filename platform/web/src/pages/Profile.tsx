@@ -308,20 +308,38 @@ function AccountSettings() {
   const [deleting, setDeleting] = useState(false);
   return (
     <>
-      <h2 className="profile-account-title">{t("accountManagement")}</h2>
-      <div className="panel profile-account-management">
-        <section className="danger-zone">
-          <h2>{t("accountDeletion")}</h2>
-          <p>{t("deletionLead")}</p>
-          <button
-            className="button secondary danger-text"
-            onClick={(event) => {
-              event.currentTarget.focus({ preventScroll: true });
-              setDeleting(true);
-            }}
-          >
-            {t("deleteAccount")}
-          </button>
+      <div className="profile-panel">
+        <section
+          className="profile-section"
+          aria-labelledby="profile-danger-zone-title"
+        >
+          <div className="profile-section-label">
+            <h2 id="profile-danger-zone-title">{t("accountDangerZone")}</h2>
+            <p>{t("accountDangerZoneLead")}</p>
+          </div>
+          <div className="panel profile-danger-card">
+            <div className="profile-danger-main">
+              <span className="profile-danger-marker">
+                <Icon name="trash" size={19} />
+              </span>
+              <div className="profile-danger-copy">
+                <div className="profile-danger-heading">
+                  <h3>{t("accountDeletion")}</h3>
+                  <span className="profile-danger-badge">{t("accountPermanent")}</span>
+                </div>
+                <p>{t("deletionLead")}</p>
+              </div>
+            </div>
+            <button
+              className="button secondary danger-text"
+              onClick={(event) => {
+                event.currentTarget.focus({ preventScroll: true });
+                setDeleting(true);
+              }}
+            >
+              {t("deleteAccount")}
+            </button>
+          </div>
         </section>
       </div>
       {deleting && (

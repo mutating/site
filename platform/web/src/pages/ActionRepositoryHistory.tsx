@@ -9,6 +9,7 @@ import { memberName } from "../lib/permissions";
 import type { BindingRevision, CIRoute } from "../lib/github";
 import type { Company } from "../lib/types";
 import { ErrorBox, Heading, Loading } from "../components/UI";
+import { Select } from "../components/Select";
 
 const labels: Record<string, MessageKey> = {
   repository: "bindingRepository", workflow_path: "bindingWorkflow", workflow_paths: "bindingWorkflows", workflow_profiles: "bindingProfiles", ref: "bindingBranches", job_key: "bindingJob", company_id: "ciPool", computer_ids: "ciComputers", cpu_millis: "bindingCPU", memory_bytes: "bindingRAM", disk_bytes: "ciDisk", preparation_seconds: "bindingPreparation", timeout_seconds: "bindingDuration", max_parallel: "bindingParallel", enabled: "repositoryState",
@@ -54,7 +55,7 @@ export function ActionRepositoryHistory() {
     <Heading index={`03 / ${t("bindingHistory")}`} title={binding?.repository ?? t("bindingHistory")}>{t("bindingHistoryLead")}</Heading>
     <ErrorBox error={bindings.error} retry={bindings.reload} />
     {bindings.loading ? <Loading /> : bindings.error ? null : !binding ? <p role="status">{t(selected === null ? "bindingHistoryEmpty" : "bindingHistoryUnavailable")}</p> : <>
-      <label className="field">{t("bindingHistorySelect")}<select aria-label={t("bindingHistorySelect")} value={binding.id} onChange={event => change("binding", event.target.value)}>{bindings.data!.map(row => <option key={row.id} value={row.id}>{row.company_id ? companies.data?.find(company => company.id === row.company_id)?.name ?? t("organizationType") : t("personalType")} · {new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(row.created_at))} · {t(row.enabled ? "ciEnabled" : "ciDisabled")} · {row.id.slice(0, 8)}{row.workflow_paths == null ? ` · ${row.workflow_path} / ${row.job_key}` : ""}</option>)}</select></label>
+      <label className="field">{t("bindingHistorySelect")}<Select aria-label={t("bindingHistorySelect")} value={binding.id} onChange={event => change("binding", event.target.value)}>{bindings.data!.map(row => <option key={row.id} value={row.id}>{row.company_id ? companies.data?.find(company => company.id === row.company_id)?.name ?? t("organizationType") : t("personalType")} · {new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(row.created_at))} · {t(row.enabled ? "ciEnabled" : "ciDisabled")} · {row.id.slice(0, 8)}{row.workflow_paths == null ? ` · ${row.workflow_path} / ${row.job_key}` : ""}</option>)}</Select></label>
       <ErrorBox error={companies.error} retry={companies.reload} /><ErrorBox error={history.error} retry={history.reload} />
       {history.loading ? <Loading /> : history.data && <>
         {!history.data.revisions.length && <p>{t("bindingHistoryEmpty")}</p>}

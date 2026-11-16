@@ -5,6 +5,7 @@ import {
   rolePermissions,
 } from "../lib/permissions";
 import type { Permission, Role } from "../lib/types";
+import { Select } from "./Select";
 
 export function PermissionPicker({
   role,
@@ -38,7 +39,7 @@ export function PermissionPicker({
     <div className="permission-picker">
       <label className="field">
         {t("memberRole")}
-        <select
+        <Select
           aria-label={t("memberRole")}
           value={role}
           disabled={disabled}
@@ -52,7 +53,7 @@ export function PermissionPicker({
               {t(value)}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       {role === "creator" ? (
         <p className="field-help">{t("creatorPermissions")}</p>

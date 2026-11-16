@@ -46,6 +46,7 @@ from throng_api.security import (
     bearer,
     company_access,
     membership_permission,
+    modern_personal,
     owned,
     owned_filter,
     owner_values,
@@ -218,6 +219,8 @@ async def create_route(data: RouteCreate, request: Request):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request, "manage")
         await authenticate(session, request, "execute")
+        if modern_personal(principal) and data.company_id:
+            raise HTTPException(403, "Personal API tokens cannot manage organization CI")
         user_id = personal(principal)
         await pool_permission(session, principal, data.company_id)
     # Refresh first so ordinary token rotation does not invalidate this snapshot.
@@ -339,6 +342,8 @@ async def disable_route(route_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         route = await owned(session, CIRoute, route_id, principal)
+        if modern_personal(principal) and route.company_id:
+            raise HTTPException(403, "Personal API tokens cannot manage organization CI")
         await pool_permission(session, principal, route.company_id)
         if route.enabled:
             route.enabled = False

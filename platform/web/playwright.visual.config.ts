@@ -7,7 +7,9 @@ export default defineConfig({
   ...functional,
   testMatch: "**/visual.spec.ts",
   testIgnore: [],
-  workers: 2,
+  // Parallel workers can starve font rasterization and produce one-pixel text
+  // shifts in otherwise identical screenshots.
+  workers: 1,
   timeout: 90_000,
   updateSnapshots: "none",
   outputDir: "test-results/visual",
@@ -27,7 +29,16 @@ export default defineConfig({
       maxDiffPixels: 100,
     },
   },
-  use: { ...functional.use, timezoneId: "UTC", reducedMotion: "reduce" },
+  use: {
+    ...functional.use,
+    timezoneId: "UTC",
+    reducedMotion: "reduce",
+    // Keep glyph rasterization deterministic when text lands on fractional
+    // line boxes; without this the member dialog alternates by one pixel.
+    launchOptions: {
+      args: ["--disable-font-subpixel-positioning"],
+    },
+  },
   projects: ["ru", "en"].flatMap((language) =>
     ["dark", "light"].flatMap((theme) =>
       ["desktop", "mobile", "tablet-portrait", "tablet-landscape"].map(

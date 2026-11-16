@@ -171,7 +171,7 @@ class AccessToken(TokenCredential, Base):
 
 
 class LegacyCredential(TokenCredential, Base):
-    """Unclassified historical credentials retain their original authority."""
+    """Historical credentials keep their owner and scopes; personal ones follow execution policy."""
 
     __tablename__ = "legacy_credentials"
     __table_args__ = (CheckConstraint("purpose IN ('login', 'legacy')", name="credential_purpose"),)

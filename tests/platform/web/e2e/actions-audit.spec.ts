@@ -22,8 +22,44 @@ for (const permissions of [["execution.read"], ["execution.read", "resources.man
     await expect(page.getByRole("button", { name: "Отключить подключение", exact: true })).toHaveCount(0);
     await expect(page.getByText(/Для изменения подключения нужны права/)).toBeVisible();
     await expect(page.getByLabel("Workflow YAML", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Ветка", { exact: true })).toBeDisabled();
+    await expect(page.getByLabel("Ветка", { exact: true })).toHaveCSS(
+      "opacity",
+      "0",
+    );
+    const branchFace = page.locator(".tmc-select", {
+      has: page.getByLabel("Ветка", { exact: true }),
+    }).locator(".tmc-select__face");
+    await expect(branchFace).toHaveCSS("opacity", "0.5");
+    // DOM click bypasses pointer-events, so it exercises the handler's own guard.
+    await branchFace.evaluate((element: HTMLElement) => element.click());
+    await expect(page.locator(".tmc-select__panel")).toHaveCount(0);
   });
 }
+
+/** Opening a select while a click-induced scroll is still settling must not self-close. */
+test("Actions keeps a filter panel open during the initial scroll settle", async ({
+  page,
+  account,
+}) => {
+  await actionsPeer(page);
+  await login(page, account);
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/actions");
+  await page.getByText("Фильтры и сортировка", { exact: true }).click();
+  const sort = page.getByLabel("Сортировка", { exact: true });
+  const face = page
+    .locator(".tmc-select", { has: sort })
+    .locator(".tmc-select__face");
+  await face.click();
+  const panel = page.locator(".tmc-select__panel");
+  await expect(panel).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("scroll")));
+  await expect(panel).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.dispatchEvent(new Event("scroll")));
+  await expect(panel).toHaveCount(0);
+});
 
 /** Retained metadata keeps the draft, but stale or failed permissions cannot authorize saving. */
 test("Actions blocks saving during metadata refresh and after a discovery failure", async ({ page, account }) => {

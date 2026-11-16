@@ -12,6 +12,40 @@ import {
 import { GiB, historyNow, reserve, seedHistory } from "./resources";
 import { resolve } from "node:path";
 import { openLanguages } from "./header-controls";
+import type { Locator } from "@playwright/test";
+
+/** Effective visibility includes ancestor opacity and filter-based hiding. */
+async function effectivelyVisible(locator: Locator) {
+  return locator.evaluate((element) => {
+    const transparent = (value: string) => {
+      if (value === "transparent") return true;
+      const match = /rgba?\(([^)]+)\)/.exec(value);
+      if (!match) return false;
+      const parts = match[1].split(",").map(Number);
+      return parts.length === 4 && parts[3] === 0;
+    };
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        Number(style.opacity) === 0
+      )
+        return false;
+      const match = /opacity\(\s*([0-9.]+)(%?)\s*\)/.exec(style.filter);
+      if (match && Number(match[1]) / (match[2] ? 100 : 1) === 0)
+        return false;
+      if (
+        transparent(style.color) ||
+        transparent(style.getPropertyValue("-webkit-text-fill-color"))
+      )
+        return false;
+      if (style.clipPath !== "none") return false;
+    }
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+}
 
 /** Owner and issuer context, permission choices and a full-length safe secret must stay legible in every theme and viewport. */
 test("owner-aware API token registry and issuance dialog", async ({ page, request, account }, info) => {
@@ -62,6 +96,14 @@ test("owner-aware API token registry and issuance dialog", async ({ page, reques
   await expect(page.locator(".token-registry-row")).toHaveCount(4);
   await page.evaluate(() => document.fonts.ready);
   await expect(page).toHaveScreenshot("api-tokens.png", { fullPage: true, ...exactPixels });
+  await page.locator(".token-status-filter .tmc-select__face").click();
+  const selectPanel = page.locator(".tmc-select__panel");
+  await expect(selectPanel).toBeVisible();
+  await expect(selectPanel).toHaveScreenshot("api-token-select-panel.png", {
+    maxDiffPixels: 100,
+  });
+  await page.keyboard.press("Escape");
+  await expect(selectPanel).toHaveCount(0);
   await page.getByRole("button", { name: language === "ru" ? "Создать токен" : "Create token", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toHaveScreenshot("api-token-personal-create.png", exactPixels);
@@ -158,6 +200,9 @@ test("responsive computer benchmarks and focused run history", async ({ page, re
     expect(response.status()).toBe(201);
     const row = await response.json();
     dates.set(row.id, new Date(Date.UTC(2026, 9, 7, 12, dates.size)).toISOString());
+    // The API keeps the newest measurement by created_at. Separate the writes
+    // so same-version results have a deterministic order.
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
   await page.route(`**/v1/computers/${computer.id}/benchmark-results?*`, async route => {
     const response = await route.fetch();
@@ -404,10 +449,80 @@ test("auth, every product page, populated and empty pools, and confirmation dial
       language === "ru" ? "Настроить права отдельно" : "Customize permissions",
     )
     .check();
-  // The newly expanded dialog introduces text at additional font sizes/weights.
-  // Let font loading and the following layout/paint settle before pixel capture.
+  // The dialog is centered by the browser; capture it directly so subpixel
+  // viewport positioning cannot shift the whole dialog between runs.
   await settleFonts();
-  await expect(page).toHaveScreenshot("member-permissions.png");
+  const box = (await dialog.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+  // Pixel tolerance covers font rasterization variance; assert the expanded
+  // permission content explicitly so hidden rows cannot slip through.
+  const roleFace = dialog.locator(".tmc-select__face");
+  await expect(roleFace).toBeVisible();
+  expect(await effectivelyVisible(roleFace)).toBe(true);
+  await expect(roleFace.locator(".tmc-select__value")).toHaveText(
+    language === "ru" ? "Участник" : "Member",
+  );
+  const chevron = roleFace.locator(".tmc-select__chevron");
+  await expect(chevron).toBeVisible();
+  expect(await effectivelyVisible(chevron)).toBe(true);
+  const legend = dialog.locator(".permission-grid legend");
+  await expect(legend).toBeVisible();
+  expect(await effectivelyVisible(legend)).toBe(true);
+  await expect(legend).toHaveText(language === "ru" ? "Права" : "Permissions");
+  const permissionBoxes = dialog.locator(
+    ".permission-grid input[type='checkbox']",
+  );
+  await expect(permissionBoxes).toHaveCount(9);
+  for (const box of await permissionBoxes.all()) {
+    await expect(box).toBeVisible();
+    expect(await effectivelyVisible(box)).toBe(true);
+  }
+  const checkedPermissions =
+    language === "ru"
+      ? [
+          "Просмотр участников",
+          "Просмотр ресурсов и истории мощностей",
+          "Просмотр задач, результатов и артефактов",
+          "Выполнение задач и работа с артефактами",
+          "Просмотр API-токенов",
+        ]
+      : [
+          "View members",
+          "View resources and capacity history",
+          "View tasks, results, and artifacts",
+          "Run tasks and manage artifacts",
+          "View API tokens",
+        ];
+  const uncheckedPermissions =
+    language === "ru"
+      ? [
+          "Управление участниками и приглашениями",
+          "Управление компьютерами и ресурсами",
+          "Управление API-токенами",
+          "Настройки организации",
+        ]
+      : [
+          "Manage members and invitations",
+          "Manage computers and resources",
+          "Manage API tokens",
+          "Organization settings",
+        ];
+  for (const name of checkedPermissions)
+    await expect(
+      dialog.getByRole("checkbox", { name, exact: true }),
+    ).toBeChecked();
+  for (const name of uncheckedPermissions)
+    await expect(
+      dialog.getByRole("checkbox", { name, exact: true }),
+    ).not.toBeChecked();
+  // Chromium can rasterize the same fractional text rows one pixel apart
+  // between runs. Allow that small font-rendering variance while still
+  // catching real layout or content changes.
+  await expect(dialog).toHaveScreenshot("member-permissions.png", {
+    maxDiffPixels: 400,
+  });
   await page.keyboard.press("Escape");
   const invited = await request.post(`${API}/invitations`, {
     headers: headers(account),

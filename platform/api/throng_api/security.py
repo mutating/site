@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
@@ -37,6 +38,7 @@ user_bearer_scheme = HTTPBearer(
     auto_error=False,
     description=(
         "Личный API-токен (SELF-…) или токен организации (ORG-…). "
+        "Личный токен выполняет команды только в личном пуле; токен организации — в пуле компании. "
         "Выпустите его через /v1/api-tokens либо /v1/access-tokens. "
         "Также принимается access_token сессии из POST /v1/auth/login. "
         "В Authorize вставьте только сам токен, без префикса Bearer."
@@ -104,6 +106,8 @@ class Principal:
     actor_id: str
     scopes: frozenset[str]
     permission: str | None = None
+    token_kind: Literal["session", "personal", "company"] = "session"
+    legacy: bool = False
 
     @property
     def key(self):
@@ -119,20 +123,25 @@ async def authenticate(session, request: Request, scope="read") -> Principal:
         ) from error
     hashed = digest(raw)
     token = await session.scalar(select(LoginSession).where(LoginSession.session_hash == hashed))
+    legacy = False
     if token:
         user_id, company_id, actor_id = token.user_id, None, token.user_id
+        token_kind = "session"
     else:
         token = await session.scalar(select(AccessToken).where(AccessToken.token_hash == hashed))
+        legacy = False
         if token is None:
             token = await session.scalar(
                 select(LegacyCredential).where(LegacyCredential.token_hash == hashed)
             )
+            legacy = True
         if token is None:
             raise ProtocolError("token_invalid", "Invalid token", status_code=401)
         owner = await session.get(TokenOwnership, token.ownership_id)
         if not owner:
             raise ProtocolError("token_invalid", "Invalid token owner", status_code=401)
         user_id, company_id, actor_id = owner.user_id, owner.company_id, token.created_by_user_id
+        token_kind = "company" if company_id else "personal"
         if company_id:
             issuer = await session.scalar(
                 select(Membership).where(
@@ -162,6 +171,8 @@ async def authenticate(session, request: Request, scope="read") -> Principal:
         actor_id,
         frozenset(token.scopes),
         request_permission(request, scope),
+        token_kind,
+        legacy,
     )
 
 
@@ -169,6 +180,11 @@ def personal(principal):
     if not principal.user_id:
         raise HTTPException(403, "A personal token is required")
     return principal.user_id
+
+
+def modern_personal(principal):
+    """A SELF- API token, excluding historical credentials that keep prior rights."""
+    return principal.token_kind == "personal" and not principal.legacy
 
 
 async def system_administrator(session, principal):

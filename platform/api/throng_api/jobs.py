@@ -24,7 +24,14 @@ from throng_api.models import (
     Isolate,
 )
 from throng_api.schemas import CommandCreate, IDs, IsolateCreate, PaginationOffset
-from throng_api.security import access_token_scheme, authenticate, owned, owned_filter, owner_values
+from throng_api.security import (
+    access_token_scheme,
+    authenticate,
+    owned,
+    owned_filter,
+    owner_access,
+    owner_values,
+)
 from throng_api.serialization import public
 
 router = APIRouter(
@@ -36,7 +43,10 @@ router = APIRouter(
 
 
 async def writable_isolate(session, isolate_id, principal):
-    isolate = await owned(session, Isolate, isolate_id, principal)
+    isolate = await session.get(Isolate, str(isolate_id))
+    if isolate is None or (principal.token_kind == "personal" and isolate.company_id):
+        raise HTTPException(404, "Resource not found")
+    await owner_access(session, principal, isolate)
     if await session.scalar(select(CIReservation.id).where(CIReservation.isolate_id == isolate.id)):
         raise HTTPException(409, "CI isolates are managed by Actions")
     return isolate
@@ -47,6 +57,8 @@ async def create_isolate(data: IsolateCreate, request: Request, idempotency_key:
     settings = request.app.state.settings
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "execute")
+        if principal.token_kind == "personal" and data.company_id is not None:
+            raise HTTPException(403, "Personal API tokens can only execute in the personal pool")
         payload = data.model_dump(mode="json")
         # Preserve hashes of v1 requests stored before these optional fields existed.
         for name, default in (("isolation_mode", None), ("retry_allowed", True)):

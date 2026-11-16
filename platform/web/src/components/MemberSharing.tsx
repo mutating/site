@@ -10,6 +10,7 @@ import type {
   Role,
 } from "../lib/types";
 import { ErrorBox } from "./UI";
+import { Select } from "./Select";
 import { PermissionPicker } from "./PermissionPicker";
 import { ShareLink } from "./InvitationUI";
 
@@ -96,7 +97,7 @@ export function MemberSharing({
         >
           <label className="field">
             {t("sharingMethod")}
-            <select
+            <Select
               aria-label={t("sharingMethod")}
               value={mode}
               disabled={busy}
@@ -112,7 +113,7 @@ export function MemberSharing({
               <option value="add">{t("directMember")}</option>
               <option value="invite">{t("addressedInvite")}</option>
               <option value="link">{t("openInvite")}</option>
-            </select>
+            </Select>
           </label>
           {mode !== "link" && (
             <label className="field">
@@ -193,7 +194,7 @@ export function MemberSharing({
           {mode !== "add" && (
             <label className="field">
               {t("invitationDays")}
-              <select
+              <Select
                 aria-label={t("invitationDays")}
                 value={days}
                 disabled={busy}
@@ -202,7 +203,7 @@ export function MemberSharing({
                 <option value={1}>{t("oneDay")}</option>
                 <option value={7}>{t("sevenDaysInvite")}</option>
                 <option value={30}>{t("thirtyDays")}</option>
-              </select>
+              </Select>
             </label>
           )}
           <ErrorBox

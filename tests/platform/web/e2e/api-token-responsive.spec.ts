@@ -4,6 +4,8 @@ import type { Locator, Page } from "@playwright/test";
 const screens = [
   [320, 568],
   [390, 844],
+  [411, 731],
+  [421, 731],
   [568, 320],
   [600, 960],
   [768, 1024],
@@ -36,7 +38,7 @@ async function fits(page: Page, dialog?: Locator) {
 }
 
 /**
- * Phone and tablet breakpoints must keep long owner names, native selectors and
+ * Phone and tablet breakpoints must keep long owner names, custom selectors and
  * token actions inside the screen, with every step reachable in either orientation.
  * The revoke warning used to leave long organization names unbroken, clipping
  * the owner and forcing horizontal scrolling inside the confirmation dialog.
@@ -123,6 +125,26 @@ for (const [width, height] of screens) {
           });
       };
       await fits(page);
+      if (width <= 640 || isMobile) {
+        await expect(
+          page.locator(".token-owner-filter .tmc-select__face"),
+        ).toHaveCSS("font-size", "16px");
+      }
+      if (width <= 420) {
+        const ownerBox = (await page
+          .locator(".token-owner-filter")
+          .boundingBox())!;
+        const statusBox = (await page
+          .locator(".token-status-filter")
+          .boundingBox())!;
+        expect(statusBox.y).toBeGreaterThanOrEqual(ownerBox.y + ownerBox.height);
+        expect(Math.abs(statusBox.x - ownerBox.x)).toBeLessThanOrEqual(1);
+        expect(
+          await page
+            .locator(".token-owner-filter .tmc-select__value")
+            .evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true);
+      }
       await capture("registry");
       await page
         .getByLabel(ru ? "Владелец токенов" : "Token owner", { exact: true })
@@ -130,6 +152,12 @@ for (const [width, height] of screens) {
       await expect(page.locator(".token-registry-row")).toHaveCount(1);
       await activate(trigger);
       const dialog = page.getByRole("dialog");
+      if (width <= 640 || isMobile) {
+        await expect(dialog.locator(".tmc-select__face")).toHaveCSS(
+          "min-height",
+          "48px",
+        );
+      }
       await fits(page, dialog);
       await dialog.evaluate((element) => (element.scrollTop = 0));
       await capture("personal");

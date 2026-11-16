@@ -19,7 +19,12 @@ test("profile sections preserve unsaved personal data and browser history", asyn
   await accountTab.click();
   await expect(page).toHaveURL("/profile?section=account");
   await expect(page.getByRole("tabpanel")).toHaveAccessibleName("Аккаунт");
-  await expect(page.getByRole("button", { name: "Удалить аккаунт", exact: true })).toBeVisible();
+  const deleteAccount = page.getByRole("button", {
+    name: "Удалить аккаунт",
+    exact: true,
+  });
+  await expect(deleteAccount).toBeVisible();
+  expect((await deleteAccount.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await expect(page.getByLabel("Имя", { exact: true })).toBeHidden();
   expect(tokenReads).toBe(0);
   await page.goBack();
@@ -28,7 +33,7 @@ test("profile sections preserve unsaved personal data and browser history", asyn
   await tokens.click();
   await expect(page.getByRole("button", { name: "Создать токен", exact: true })).toBeEnabled();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Профиль.");
-  await expect(page.getByRole("heading", { level: 2, name: "Доступные токены." })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Доступные токены", exact: true })).toBeVisible();
   expect(tokenReads).toBeGreaterThan(0);
   await page.getByLabel("Владелец токенов", { exact: true }).selectOption("personal");
   await accountTab.click();

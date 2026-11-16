@@ -112,6 +112,51 @@ async def test_registry_issues_for_explicit_owner_without_revealing_secret_again
     assert (await api.get("/v1/api-tokens", params=payload)).json()[0]["revoked_at"] is not None
 
 
+async def test_registry_filters_active_tokens(api, user, clock):
+    """The active registry filter excludes expired and revoked credentials before paging."""
+
+    def create(name: str, expires_in_seconds: int | None):
+        return api.post(
+            "/v1/api-tokens",
+            json={
+                "user_id": user["id"],
+                "name": name,
+                "scopes": ["read"],
+                "expires_in_seconds": expires_in_seconds,
+            },
+        )
+
+    live = await create("Live", 3600)
+    unlimited = await create("Unlimited", None)
+    extra = [await create(f"Extra {index}", 3600) for index in range(10)]
+    expiring = await create("Expiring", 60)
+    revoked = await create("Revoked", 3600)
+    assert all(
+        response.status_code == 201 for response in [live, unlimited, *extra, expiring, revoked]
+    )
+    assert (
+        await api.patch(f"/v1/access-tokens/{revoked.json()['id']}", json={"revoke": True})
+    ).status_code == 200
+    clock.now += timedelta(seconds=120)
+
+    all_rows = await api.get("/v1/api-tokens", params={"user_id": user["id"]})
+    pages = [
+        await api.get(
+            "/v1/api-tokens",
+            params={"user_id": user["id"], "status": "active", "limit": 5, "offset": offset},
+        )
+        for offset in (0, 5, 10)
+    ]
+    active_ids = [row["id"] for page in pages for row in page.json()]
+    assert all_rows.headers["x-total-count"] == "14"
+    assert all(page.headers["x-total-count"] == "12" for page in pages)
+    assert len(active_ids) == len(set(active_ids)) == 12
+    assert {live.json()["id"], unlimited.json()["id"]} <= set(active_ids)
+    assert expiring.json()["id"] not in active_ids
+    assert revoked.json()["id"] not in active_ids
+    assert (await api.get("/v1/api-tokens", params={"status": "invalid"})).status_code == 422
+
+
 async def test_registry_paginates_after_owner_authorization_and_excludes_login_tokens(
     api, other_api, user, other_user, company, client
 ):
@@ -235,6 +280,74 @@ async def test_cannot_escalate_scopes_or_create_as_company(
     assert (
         await api.get("/v1/api-tokens", params={"user_id": user["id"], "company_id": str(uuid4())})
     ).status_code == 422
+
+
+async def test_personal_api_token_cannot_issue_or_move_organization_credentials(
+    api, client, access_token, company, user
+):
+    """A SELF- credential cannot mint ORG- tokens or move ownership into a company."""
+    headers = {"Authorization": "Bearer " + access_token["token"]}
+    response = await client.post(
+        "/v1/api-tokens",
+        headers=headers,
+        json={
+            "company_id": company["id"],
+            "name": "Organization credential",
+            "scopes": ["manage"],
+        },
+    )
+    assert response.status_code == 403, response.text
+    response = await client.post(
+        "/v1/token-ownerships",
+        headers=headers,
+        json={"company_id": company["id"]},
+    )
+    assert response.status_code == 403, response.text
+    owner = await api.post("/v1/token-ownerships", json={"company_id": company["id"]})
+    assert owner.status_code == 201, owner.text
+    response = await client.post(
+        "/v1/access-tokens",
+        headers=headers,
+        json={
+            "ownership_id": owner.json()["id"],
+            "name": "Organization credential",
+            "scopes": ["manage"],
+        },
+    )
+    assert response.status_code == 403, response.text
+    owner = await api.post("/v1/token-ownerships", json={"user_id": user["id"]})
+    assert owner.status_code == 201, owner.text
+    response = await client.patch(
+        f"/v1/token-ownerships/{owner.json()['id']}",
+        headers=headers,
+        json={"company_id": company["id"]},
+    )
+    assert response.status_code == 403, response.text
+    response = await client.post(
+        "/v1/api-tokens",
+        headers=headers,
+        json={"user_id": user["id"], "name": "Personal credential", "scopes": ["read"]},
+    )
+    assert response.status_code == 201, response.text
+
+
+async def test_legacy_personal_credentials_keep_company_token_authority(
+    api, client, app, access_token, company, user
+):
+    """Historical personal credentials retain authority beyond the execution-only change."""
+    async with app.state.db.write() as session:
+        await move_to_legacy(session, access_token["id"])
+    response = await client.post(
+        "/v1/api-tokens",
+        headers={"Authorization": "Bearer " + access_token["token"]},
+        json={
+            "company_id": company["id"],
+            "name": "Historical organization credential",
+            "scopes": ["manage"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["token"].startswith("ORG-")
 
 
 async def test_legacy_purpose_is_preserved_without_guessing_from_names(
