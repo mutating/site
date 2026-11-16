@@ -107,7 +107,7 @@ class Authority:
         return (
             x509.CertificateBuilder()
             .subject_name(
-                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Power Cell {enrollment.id}")])
+                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Mutating Compute {enrollment.id}")])
             )
             .issuer_name(self.cert.subject)
             .public_key(csr.public_key())
@@ -150,7 +150,7 @@ def configure_authority(settings):
 
 def authority(request):
     if request.app.state.powercell_authority is None:
-        raise HTTPException(503, "Power Cell certificate authority is not configured")
+        raise HTTPException(503, "Mutating Compute certificate authority is not configured")
     return request.app.state.powercell_authority
 
 
@@ -251,10 +251,10 @@ async def profile(enrollment_id: UUID, request: Request):
             "PayloadVersion": 1,
             "PayloadIdentifier": prefix + ".identity",
             "PayloadUUID": str(uuid5(NAMESPACE_URL, prefix + ".identity")),
-            "PayloadDisplayName": "Power Cell device identity",
+            "PayloadDisplayName": "Mutating Compute device identity",
             "DirectoryURL": issuer.endpoint(row, "directory"),
             "ClientIdentifier": row.id,
-            "Subject": [[["CN", f"Power Cell {row.id}"]]],
+            "Subject": [[["CN", f"Mutating Compute {row.id}"]]],
             "KeyType": "ECSECPrimeRandom",
             "KeySize": 256,
             "HardwareBound": True,
@@ -269,7 +269,7 @@ async def profile(enrollment_id: UUID, request: Request):
             "PayloadVersion": 1,
             "PayloadIdentifier": prefix,
             "PayloadUUID": row.id,
-            "PayloadDisplayName": "Power Cell device verification",
+            "PayloadDisplayName": "Mutating Compute device verification",
             "PayloadScope": "User",
             "PayloadContent": [acme],
         }
@@ -282,7 +282,7 @@ async def profile(enrollment_id: UUID, request: Request):
                     "PayloadVersion": 1,
                     "PayloadIdentifier": prefix + ".relay",
                     "PayloadUUID": str(uuid5(NAMESPACE_URL, prefix + ".relay")),
-                    "PayloadDisplayName": "Power Cell authenticated API connection",
+                    "PayloadDisplayName": "Mutating Compute authenticated API connection",
                     "MatchDomains": [urlsplit(relay["api_origin"]).hostname],
                     "Relays": [
                         {

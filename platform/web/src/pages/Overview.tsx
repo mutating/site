@@ -20,13 +20,13 @@ export function Overview() {
         {t("overviewLead")}
       </Heading>
       <div className="product-grid">
-        <Link className="product-card power-product" to="/power-cells">
-          <span className="eyebrow">02 / {t("powerTag")}</span>
+        <Link className="product-card compute-product" to="/compute">
+          <span className="eyebrow">02 / {t("computeTag")}</span>
           <div className="product-card-title">
-            <h2>Power Cells</h2>
-            <Icon name="cells" size={50} />
+            <h2>{t("computeName")}</h2>
+            <Icon name="compute" size={50} />
           </div>
-          <p>{t("powerDescription")}</p>
+          <p>{t("computeDescription")}</p>
           <span className="product-arrow">
             <Icon name="arrow" />
           </span>

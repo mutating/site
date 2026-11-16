@@ -533,6 +533,121 @@ def test_compute_benchmark_explains_both_measurements(driver: DriverFactory) -> 
     expect(page.locator('[data-benchmark-output]')).to_have_text(["1.6 × pi", "4.2 × pi", "7.8 × pi"])
 
 
+@pytest.mark.parametrize(
+    ("language", "prefix", "index", "lines", "footer"),
+    [
+        (
+            "en",
+            "",
+            "01 / HOW IT WORKS",
+            [
+                "Install the agent on your computers.",
+                "Spare capacity goes to the network.",
+                "The command runs on a free machine.",
+                "Pay for devices, not minutes.",
+            ],
+            "1 agent",
+        ),
+        (
+            "ru",
+            "/ru",
+            "01 / КАК ЭТО РАБОТАЕТ",
+            [
+                "Установите агент на свои компьютеры.",
+                "Свободная мощность уходит в сеть.",
+                "Команда выполняется на свободной машине.",
+                "Платите за устройства, не за минуты.",
+            ],
+            "1 агент",
+        ),
+    ],
+)
+def test_compute_network_section_precedes_security_and_states_the_model(
+    driver: DriverFactory,
+    language: str,
+    prefix: str,
+    index: str,
+    lines: list[str],
+    footer: str,
+) -> None:
+    page = driver(
+        initial_path=f"{prefix}/products/compute/",
+        stored_language=language,
+        viewport=(1440, 900),
+        reduced_motion="reduce",
+    )
+    section_ids = page.locator(".compute > section").evaluate_all(
+        "elements => elements.map(element => element.id || 'hero')"
+    )
+    assert section_ids[:3] == ["hero", "network", "security"]
+    expect(page.locator("#network .section-index")).to_have_text(index)
+    expect(page.locator("#network .compute-network__line h2")).to_have_text(lines)
+    expect(page.locator("#network .compute-network__foot")).to_contain_text(footer)
+    expect(page.locator(".compute-actions .button--primary")).to_have_attribute(
+        "href", "#network"
+    )
+
+
+@pytest.mark.parametrize(
+    ("language", "prefix", "title", "text"),
+    [
+        (
+            "en",
+            "",
+            "Only your network",
+            "Nothing leaks to other machines",
+        ),
+        (
+            "ru",
+            "/ru",
+            "Только ваша сеть",
+            "Данные не уходят на чужие машины",
+        ),
+    ],
+)
+def test_compute_security_first_card_describes_the_private_network(
+    driver: DriverFactory, language: str, prefix: str, title: str, text: str,
+) -> None:
+    page = driver(
+        initial_path=f"{prefix}/products/compute/",
+        stored_language=language,
+        viewport=(1440, 900),
+        reduced_motion="reduce",
+    )
+    card = page.locator(".compute-security__card").first
+    expect(card.locator("h3")).to_have_text(title)
+    expect(card.locator("p")).to_contain_text(text)
+    expect(card.locator(".compute-security__card-meta")).to_have_text("network: private")
+
+
+def test_compute_benchmark_alternates_copy_chart_and_reference(driver: DriverFactory) -> None:
+    page = driver(
+        initial_path="/products/compute/",
+        viewport=(1440, 900),
+        reduced_motion="reduce",
+    )
+    layout = page.locator(".compute-benchmark-layout")
+    assert layout.evaluate(
+        "element => getComputedStyle(element).gridTemplateAreas"
+    ) == '"copy chart" "notes chart"'
+    copy_box = page.locator(".compute-benchmark-copy").bounding_box()
+    chart_box = page.locator(".compute-benchmark").bounding_box()
+    notes_box = page.locator(".compute-benchmark-notes").bounding_box()
+    assert copy_box and chart_box and notes_box
+    assert copy_box["x"] < chart_box["x"]
+    assert notes_box["x"] < chart_box["x"]
+    assert abs(copy_box["y"] - chart_box["y"]) <= 2
+    assert notes_box["y"] > copy_box["y"]
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.evaluate(
+        "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+    )
+    assert layout.evaluate(
+        "element => getComputedStyle(element).gridTemplateAreas"
+    ) == '"copy" "chart" "notes"'
+
+
 def test_compute_only_macos_agent_button_is_enabled_without_starting_downloads(
     driver: DriverFactory,
 ) -> None:

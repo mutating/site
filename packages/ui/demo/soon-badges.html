@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Products · 20 вариантов пометки «скоро»</title>
+    <link rel="stylesheet" href="/src/styles/index.css">
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--hot) 7%, transparent), transparent 34rem),
+          var(--bg);
+        color: var(--ink);
+        font-family: var(--font-geist-sans), system-ui, sans-serif;
+      }
+
+      .preview-header {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 54px clamp(22px, 4vw, 56px) 26px;
+      }
+
+      .preview-eyebrow {
+        margin: 0 0 14px;
+        color: var(--hot-soft);
+        font: 700 10px/1.2 var(--font-geist-mono), monospace;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .preview-title {
+        max-width: 860px;
+        margin: 0;
+        font-size: clamp(34px, 5vw, 64px);
+        font-weight: 780;
+        line-height: 0.98;
+        letter-spacing: -0.06em;
+      }
+
+      .preview-title em {
+        color: var(--hot);
+        font-style: normal;
+      }
+
+      .preview-lede {
+        max-width: 720px;
+        margin: 20px 0 0;
+        color: var(--ink-muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .preview-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 26px;
+      }
+
+      .preview-toggle {
+        min-height: 36px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--surface) 72%, transparent);
+        color: var(--ink);
+        font: 650 11px/1 var(--font-geist-mono), monospace;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+      }
+
+      .preview-toggle:hover,
+      .preview-toggle:focus-visible {
+        border-color: color-mix(in srgb, var(--hot) 55%, var(--line));
+        outline: none;
+      }
+
+      .preview-note {
+        margin: 16px 0 0;
+        color: var(--ink-muted);
+        font: 400 11px/1.6 var(--font-geist-mono), monospace;
+      }
+
+      .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(286px, 1fr));
+        gap: 18px;
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 18px clamp(22px, 4vw, 56px) 72px;
+      }
+
+      .preview-card {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--surface) 50%, transparent);
+      }
+
+      .preview-card__head {
+        display: flex;
+        min-height: 36px;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .preview-card__number {
+        display: grid;
+        width: 26px;
+        height: 26px;
+        flex: 0 0 26px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--hot-soft);
+        font: 700 10px/1 var(--font-geist-mono), monospace;
+      }
+
+      .preview-card__name {
+        padding-top: 3px;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+      }
+
+      .preview-card__hint {
+        margin: 2px 0 0;
+        color: var(--ink-muted);
+        font-size: 10.5px;
+        line-height: 1.45;
+      }
+
+      .preview-stage {
+        display: grid;
+        flex: 1;
+        place-items: center;
+        margin-top: 14px;
+        padding: 18px 10px;
+        border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+        border-radius: 14px;
+        background:
+          radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--hot) 8%, transparent), transparent 70%),
+          color-mix(in srgb, var(--bg) 66%, var(--surface));
+      }
+
+      .preview-stage .tmc-nav-menu__panel {
+        position: static;
+        width: 252px;
+        max-width: 100%;
+        box-shadow: 0 14px 34px color-mix(in srgb, #000 18%, transparent);
+      }
+
+      /* The badge always lives inside the Compute link, not beside it. */
+      .soon-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: 7px;
+        font-family: var(--font-geist-mono), monospace;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        vertical-align: 0.08em;
+        white-space: nowrap;
+      }
+
+      /* 01 · quiet caps */
+      .soon-badge--caps {
+        margin-left: 8px;
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.15em;
+        opacity: 0.78;
+      }
+
+      /* 02 · outline pill */
+      .soon-badge--outline {
+        padding: 3px 7px 2px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+      }
+
+      /* 03 · solid pill */
+      .soon-badge--solid {
+        padding: 4px 8px 3px;
+        border-radius: 999px;
+        background: var(--hot);
+        color: var(--inverse-ink);
+        font-size: 8px;
+        letter-spacing: 0.11em;
+        box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
+      }
+
+      /* 04 · pale pill */
+      .soon-badge--pale {
+        padding: 4px 8px 3px;
+        border-radius: 999px;
+        background: var(--hot-pale);
+        color: var(--hot-soft);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+      }
+
+      :root[data-theme="dark"] .soon-badge--pale {
+        color: var(--hot-bright);
+      }
+
+      /* 05 · dot + label */
+      .soon-badge--dot::before {
+        width: 5px;
+        height: 5px;
+        flex: 0 0 5px;
+        border-radius: 50%;
+        background: var(--hot);
+        content: "";
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--hot) 14%, transparent);
+      }
+
+      .soon-badge--dot {
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.13em;
+      }
+
+      /* 06 · mono brackets */
+      .soon-badge--brackets {
+        color: var(--ink-muted);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+      }
+
+      .soon-badge--brackets::before { content: "["; opacity: 0.48; }
+      .soon-badge--brackets::after { content: "]"; opacity: 0.48; }
+
+      /* 07 · pulsing outline */
+      .soon-badge--pulse {
+        padding: 4px 8px 3px;
+        border: 1px solid color-mix(in srgb, var(--hot) 38%, var(--line));
+        border-radius: 999px;
+        color: var(--hot-soft);
+        font-size: 8px;
+        letter-spacing: 0.11em;
+      }
+
+      .soon-badge--pulse::before {
+        width: 4px;
+        height: 4px;
+        flex: 0 0 4px;
+        border-radius: 50%;
+        background: var(--hot);
+        content: "";
+        animation: soon-pulse 1.8s ease-out infinite;
+      }
+
+      @keyframes soon-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--hot) 42%, transparent); }
+        55% { box-shadow: 0 0 0 5px transparent; }
+      }
+
+      /* 08 · leading rule */
+      .soon-badge--rule {
+        margin-left: 8px;
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.14em;
+      }
+
+      .soon-badge--rule::before {
+        width: 13px;
+        height: 1px;
+        flex: 0 0 13px;
+        background: color-mix(in srgb, var(--ink-muted) 48%, transparent);
+        content: "";
+      }
+
+      /* 09 · rotated stamp */
+      .soon-badge--stamp {
+        margin-left: 8px;
+        padding: 3px 6px 2px;
+        border: 1px dashed color-mix(in srgb, var(--hot-soft) 66%, transparent);
+        border-radius: 4px;
+        color: var(--hot-soft);
+        font-size: 7.5px;
+        letter-spacing: 0.13em;
+        transform: rotate(-3deg);
+      }
+
+      /* 10 · gradient outline */
+      .soon-badge--gradient {
+        padding: 4px 8px 3px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background:
+          linear-gradient(var(--surface), var(--surface)) padding-box,
+          linear-gradient(105deg, var(--hot), var(--hot-bright), var(--hot-soft)) border-box;
+        color: var(--hot-soft);
+        font-size: 8px;
+        letter-spacing: 0.11em;
+      }
+
+      /* 11 · glow */
+      .soon-badge--glow {
+        padding: 4px 8px 3px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--hot) 12%, var(--surface));
+        color: var(--hot-soft);
+        font-size: 8px;
+        letter-spacing: 0.11em;
+        box-shadow:
+          0 0 0 1px color-mix(in srgb, var(--hot) 34%, transparent),
+          0 0 13px color-mix(in srgb, var(--hot) 28%, transparent);
+      }
+
+      :root[data-theme="dark"] .soon-badge--glow {
+        color: var(--hot-bright);
+      }
+
+      /* 12 · frosted glass */
+      .soon-badge--glass {
+        padding: 4px 8px 3px;
+        border: 1px solid color-mix(in srgb, var(--ink) 13%, transparent);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--surface) 52%, transparent);
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.11em;
+        -webkit-backdrop-filter: blur(9px) saturate(1.25);
+        backdrop-filter: blur(9px) saturate(1.25);
+      }
+
+      /* 13 · ticket notches */
+      .soon-badge--ticket {
+        position: relative;
+        padding: 4px 9px 3px;
+        border: 1px dashed color-mix(in srgb, var(--ink-muted) 50%, transparent);
+        border-radius: 4px;
+        background: var(--surface-raised);
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+      }
+
+      .soon-badge--ticket::before,
+      .soon-badge--ticket::after {
+        position: absolute;
+        top: 50%;
+        width: 5px;
+        height: 5px;
+        border: 1px dashed color-mix(in srgb, var(--ink-muted) 50%, transparent);
+        border-radius: 50%;
+        background: var(--surface);
+        content: "";
+        transform: translateY(-50%);
+      }
+
+      .soon-badge--ticket::before { left: -3.5px; }
+      .soon-badge--ticket::after { right: -3.5px; }
+
+      /* 14 · diagonal hatching */
+      .soon-badge--stripes {
+        padding: 4px 8px 3px;
+        border: 1px solid color-mix(in srgb, var(--hot) 24%, var(--line));
+        border-radius: 5px;
+        background:
+          repeating-linear-gradient(
+            -45deg,
+            transparent 0 3px,
+            color-mix(in srgb, var(--hot) 10%, transparent) 3px 6px
+          ),
+          var(--surface);
+        color: var(--hot-soft);
+        font-size: 8px;
+        letter-spacing: 0.1em;
+      }
+
+      /* 15 · clock */
+      .soon-badge--clock {
+        margin-left: 7px;
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+      }
+
+      .soon-badge--clock svg {
+        width: 9px;
+        height: 9px;
+        flex: 0 0 9px;
+        fill: none;
+        stroke: var(--hot-soft);
+        stroke-width: 1.4;
+        stroke-linecap: round;
+      }
+
+      /* 16 · split capsule */
+      .soon-badge--split {
+        overflow: hidden;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.1em;
+      }
+
+      .soon-badge--split .soon-badge__dot {
+        display: grid;
+        width: 18px;
+        align-self: stretch;
+        place-items: center;
+        background: var(--surface-raised);
+      }
+
+      .soon-badge--split .soon-badge__dot::before {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--hot);
+        content: "";
+      }
+
+      .soon-badge--split .soon-word {
+        padding: 4px 8px 3px 6px;
+      }
+
+      /* 17 · accent underline */
+      .soon-badge--underline {
+        margin-left: 7px;
+        padding-bottom: 2px;
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+        text-decoration: underline;
+        text-decoration-color: var(--hot);
+        text-decoration-thickness: 2px;
+        text-underline-offset: 3px;
+      }
+
+      /* 18 · superscript note */
+      .soon-badge--superscript {
+        margin-left: 6px;
+        color: var(--hot-soft);
+        font-size: 6.5px;
+        letter-spacing: 0.11em;
+        transform: translateY(-3px);
+      }
+
+      /* 19 · double ring */
+      .soon-badge--ring {
+        padding: 4px 8px 3px;
+        border: 1px solid var(--hot);
+        border-radius: 999px;
+        color: var(--hot-soft);
+        font-size: 8px;
+        letter-spacing: 0.1em;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--hot) 11%, transparent);
+      }
+
+      /* 20 · full-width status bar */
+      .soon-badge--bar {
+        display: flex;
+        width: 100%;
+        margin: 8px 0 0;
+        padding: 7px 0 0;
+        border-top: 1px solid var(--line);
+        color: var(--ink-muted);
+        font-size: 8px;
+        letter-spacing: 0.12em;
+      }
+
+      .soon-badge--bar::before {
+        width: 5px;
+        height: 5px;
+        flex: 0 0 5px;
+        margin-right: 6px;
+        border-radius: 50%;
+        background: var(--hot);
+        content: "";
+      }
+
+      @media (max-width: 460px) {
+        .preview-stage { padding-inline: 2px; }
+        .preview-stage .tmc-nav-menu__panel { width: 244px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .soon-badge--pulse::before { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="preview-header">
+      <p class="preview-eyebrow">Products / Compute / статус</p>
+      <h1 class="preview-title">20 вариантов пометки <em>«скоро»</em></h1>
+      <p class="preview-lede">
+        Все варианты показаны в настоящей панели Products, на текущих токенах сайта.
+        Пометка остаётся частью ссылки Compute и не превращается в отдельный кликабельный элемент.
+      </p>
+      <div class="preview-controls">
+        <button class="preview-toggle" type="button" id="theme-toggle">Тёмная тема</button>
+        <button class="preview-toggle" type="button" id="language-toggle">EN</button>
+      </div>
+      <p class="preview-note">Подсказка: сравнивайте на одной ширине; в тёмной теме проверяются розовые акценты и контраст.</p>
+    </header>
+
+    <main class="preview-grid">
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">01</span>
+          <div>
+            <div class="preview-card__name">Тихий капс</div>
+            <p class="preview-card__hint">Минимальная пометка без рамки и фона.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--caps"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">02</span>
+          <div>
+            <div class="preview-card__name">Контур</div>
+            <p class="preview-card__hint">Нейтральная пилюля, не спорит с заголовком.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--outline"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">03</span>
+          <div>
+            <div class="preview-card__name">Заливка</div>
+            <p class="preview-card__hint">Самый заметный вариант, акцент бренда.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--solid"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">04</span>
+          <div>
+            <div class="preview-card__name">Пастель</div>
+            <p class="preview-card__hint">Мягкий розовый фон без лишнего шума.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--pale"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">05</span>
+          <div>
+            <div class="preview-card__name">Точка</div>
+            <p class="preview-card__hint">Статус считывается как индикатор, а не как кнопка.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--dot"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">06</span>
+          <div>
+            <div class="preview-card__name">Моноширинный</div>
+            <p class="preview-card__hint">Техничный вид, ближе к интерфейсам платформы.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--brackets"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">07</span>
+          <div>
+            <div class="preview-card__name">Пульс</div>
+            <p class="preview-card__hint">Живой статус, привлекает взгляд в списке.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--pulse"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">08</span>
+          <div>
+            <div class="preview-card__name">Линия</div>
+            <p class="preview-card__hint">Тонкая подводка отделяет статус от названия.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--rule"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">09</span>
+          <div>
+            <div class="preview-card__name">Штамп</div>
+            <p class="preview-card__hint">Лёгкий характер, как отметка на прототипе.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--stamp"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">10</span>
+          <div>
+            <div class="preview-card__name">Градиент</div>
+            <p class="preview-card__hint">Акцентная рамка без плотной заливки.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--gradient"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">11</span>
+          <div>
+            <div class="preview-card__name">Свечение</div>
+            <p class="preview-card__hint">Мягкий ореол, хорошо работает в тёмной теме.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--glow"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">12</span>
+          <div>
+            <div class="preview-card__name">Стекло</div>
+            <p class="preview-card__hint">Полупрозрачная плашка, близкая к языку панелей.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--glass"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">13</span>
+          <div>
+            <div class="preview-card__name">Билет</div>
+            <p class="preview-card__hint">Игровая деталь с вырезами по краям.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--ticket"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">14</span>
+          <div>
+            <div class="preview-card__name">Штриховка</div>
+            <p class="preview-card__hint">Текстура вместо сплошного цветового пятна.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--stripes"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">15</span>
+          <div>
+            <div class="preview-card__name">Часы</div>
+            <p class="preview-card__hint">Прямая метафора ожидания, без лишней рамки.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--clock"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.4"></circle><path d="M6 3.4V6l1.8 1.1"></path></svg><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">16</span>
+          <div>
+            <div class="preview-card__name">Разделитель</div>
+            <p class="preview-card__hint">Точка и слово в одной компактной капсуле.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--split"><span class="soon-badge__dot" aria-hidden="true"></span><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">17</span>
+          <div>
+            <div class="preview-card__name">Подчёркивание</div>
+            <p class="preview-card__hint">Самый лёгкий акцент, почти обычный текст.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--underline"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">18</span>
+          <div>
+            <div class="preview-card__name">Надстрочный</div>
+            <p class="preview-card__hint">Пометка-сноска, не меняет ритм строки.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--superscript"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">19</span>
+          <div>
+            <div class="preview-card__name">Двойное кольцо</div>
+            <p class="preview-card__hint">Плотный акцент с деликатным внешним контуром.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute <span class="soon-badge soon-badge--ring"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span></strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <article class="preview-card">
+        <div class="preview-card__head">
+          <span class="preview-card__number">20</span>
+          <div>
+            <div class="preview-card__name">Полоса</div>
+            <p class="preview-card__hint">Статус на всю ширину, как строка состояния.</p>
+          </div>
+        </div>
+        <div class="preview-stage">
+          <div class="tmc-nav-menu__panel">
+            <a class="tmc-nav-menu__item" href="#compute">
+              <span class="tmc-nav-menu__copy">
+                <strong>Compute</strong>
+                <small>Универсальная вычислительная платформа на ваших устройствах.</small>
+                <span class="soon-badge soon-badge--bar"><span class="soon-word" data-ru="скоро" data-en="soon">скоро</span></span>
+              </span>
+              <svg class="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+            </a>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <script>
+      (() => {
+        const params = new URLSearchParams(location.search);
+        const root = document.documentElement;
+        const themeButton = document.querySelector("#theme-toggle");
+        const languageButton = document.querySelector("#language-toggle");
+        const systemDark = matchMedia("(prefers-color-scheme: dark)");
+        let theme = params.get("theme") === "dark" || params.get("theme") === "light"
+          ? params.get("theme")
+          : (systemDark.matches ? "dark" : "light");
+        let language = params.get("lang") === "en" ? "en" : "ru";
+
+        const render = () => {
+          root.dataset.theme = theme;
+          themeButton.textContent = theme === "dark" ? "Светлая тема" : "Тёмная тема";
+          languageButton.textContent = language === "ru" ? "EN" : "RU";
+          for (const word of document.querySelectorAll(".soon-word")) {
+            word.textContent = word.dataset[language];
+          }
+        };
+
+        themeButton.addEventListener("click", () => {
+          theme = theme === "dark" ? "light" : "dark";
+          render();
+        });
+        languageButton.addEventListener("click", () => {
+          language = language === "ru" ? "en" : "ru";
+          render();
+        });
+        systemDark.addEventListener("change", (event) => {
+          if (!params.has("theme")) {
+            theme = event.matches ? "dark" : "light";
+            render();
+          }
+        });
+        render();
+      })();
+    </script>
+  </body>
+</html>

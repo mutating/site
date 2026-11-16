@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { allPages, api, json } from "../lib/api";
 import { useData } from "../lib/useData";
+import { COMPUTE_RUNTIME } from "../lib/runtime";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { catalogReturn, connectionLabel, runLabel, runReason } from "../lib/ci";
@@ -114,13 +115,13 @@ function BindingForm({ metadata, binding, companies, branch, onBranch, onSaved, 
   const [error, setError] = useState<unknown>(null);
   const inFlight = useRef(false);
   const canReadComputers = !company || !!companies.find(row => row.id === company)?.my_permissions.includes("resources.read");
-  const cells = useData(signal => canReadComputers ? allPages<Computer>(`computers?${company ? `company_id=${company}` : `user_id=${user!.id}`}`, signal) : Promise.resolve([]), `${user!.id}/${company}/${canReadComputers}/${refreshCount}`);
-  const options = cells.data?.filter(row => row.runtime === "powercell-ubuntu-arm64-v1") ?? [];
-  const inventoryUnavailable = !canReadComputers || cells.loading || !!cells.error;
+  const inventory = useData(signal => canReadComputers ? allPages<Computer>(`computers?${company ? `company_id=${company}` : `user_id=${user!.id}`}`, signal) : Promise.resolve([]), `${user!.id}/${company}/${canReadComputers}/${refreshCount}`);
+  const options = inventory.data?.filter(row => row.runtime === COMPUTE_RUNTIME) ?? [];
+  const inventoryUnavailable = !canReadComputers || inventory.loading || !!inventory.error;
   const unavailableComputers = inventoryUnavailable ? [] : [...computers, ...Object.values(profiles).flatMap(profile => profile.computer_ids ?? [])].filter(id => !options.some(row => row.id === id));
   const pools = companies.filter(row => row.my_permissions.includes("resources.manage") && row.my_permissions.includes("execution.run") && row.my_permissions.includes("execution.read"));
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (inFlight.current || readOnly || cells.loading || cells.error || unavailableComputers.length || (!allWorkflows && !paths.length)) return;
+    event.preventDefault(); if (inFlight.current || readOnly || inventory.loading || inventory.error || unavailableComputers.length || (!allWorkflows && !paths.length)) return;
     const focusTarget = document.activeElement;
     const form = new FormData(event.currentTarget);
     const legacy = binding?.workflow_paths == null && !allWorkflows && paths.length === 1 && paths[0] === binding?.workflow_path;
@@ -160,17 +161,17 @@ function BindingForm({ metadata, binding, companies, branch, onBranch, onSaved, 
         <label className="field">RAM · GiB<input name="memory" type="number" min="0.015625" max="1048576" step="any" defaultValue={(binding?.memory_bytes ?? 4 * GiB) / GiB} required /></label>
         <label className="field">{t("ciDisk")} · GiB<input name="disk" type="number" min="1" max="1024" step="any" defaultValue={(binding?.disk_bytes ?? 10 * GiB) / GiB} required /></label>
       </div>
-      <ErrorBox error={cells.error} retry={cells.reload} />
-      {!cells.loading && !cells.error && unavailableComputers.length > 0 && <p role="status" className="field-help">{t("bindingComputersChanged")}</p>}
+      <ErrorBox error={inventory.error} retry={inventory.reload} />
+      {!inventory.loading && !inventory.error && unavailableComputers.length > 0 && <p role="status" className="field-help">{t("bindingComputersChanged")}</p>}
       <details className="binding-advanced"><summary>{t("bindingAdvanced")}</summary>
         <label className="field">{t("ciComputers")}<Select aria-label={t("ciComputers")}  multiple value={computers} disabled={inventoryUnavailable || !options.length} onChange={event => setComputers(Array.from(event.target.selectedOptions, row => row.value))}>{options.map(row => <option value={row.id} key={row.id}>{row.name || row.id}</option>)}{computers.filter(id => !options.some(row => row.id === id)).map(id => <option key={id} value={id} disabled>{id} · {t(inventoryUnavailable ? "bindingComputerPreserved" : "bindingComputerUnavailable")}</option>)}</Select><small>{t("ciAnyComputer")}</small></label>
-        {canReadComputers && !cells.loading && !cells.error && !options.length && <p className="field-help">{t("ciNoComputers")}</p>}
+        {canReadComputers && !inventory.loading && !inventory.error && !options.length && <p className="field-help">{t("ciNoComputers")}</p>}
         {computers.length > 0 && <button type="button" className="text-button" onClick={() => setComputers([])}>{t("ciClearComputers")}</button>}
         <div className="binding-form-grid"><label className="field">{t("bindingPreparation")}<input aria-label={t("bindingPreparation")} name="wait" type="number" min="10" max="300" defaultValue={binding?.preparation_seconds ?? 300} required /><small>{t("bindingPreparationHelp")}</small></label><label className="field">{t("bindingDuration")}<input name="duration" type="number" min="1" max="360" step="any" defaultValue={(binding?.timeout_seconds ?? 3600) / 60} required /></label></div>
       </details><p className="field-help">{t("ciCapacityPolicy")}</p>
       <WorkflowProfiles profiles={profiles} onChange={setProfiles} defaults={{ ...defaults, computer_ids: computers }} workflows={metadata.workflows.filter(row => allWorkflows || paths.includes(row.path))} computers={options} inventoryReadable={canReadComputers} inventoryUnavailable={inventoryUnavailable} />
       <ErrorBox error={error} conflict="bindingConflict" />
-      <button className="button primary" disabled={busy || cells.loading || !!cells.error || !!unavailableComputers.length || (!allWorkflows && !paths.length)}>{t(busy ? "waiting" : binding ? "bindingSave" : "repositoryConnect")}</button>
+      <button className="button primary" disabled={busy || inventory.loading || !!inventory.error || !!unavailableComputers.length || (!allWorkflows && !paths.length)}>{t(busy ? "waiting" : binding ? "bindingSave" : "repositoryConnect")}</button>
     </fieldset>
   </form>;
 }

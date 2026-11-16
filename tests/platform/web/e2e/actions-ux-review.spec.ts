@@ -31,7 +31,7 @@ test("Actions distinguishes empty inventory from an inventory failure", async ({
   await expect(page.getByRole("button", { name: "Подключить", exact: true })).toBeEnabled();
   expect(peer.calls.filter(row => row.method === "POST" && row.path === "github/routes")).toHaveLength(0);
   await expect(page.getByLabel("Конкретные компьютеры", { exact: true })).toBeDisabled();
-  await expect(page.getByText(/В пуле пока нет Power Cells/)).toBeVisible();
+  await expect(page.getByText(/В пуле пока нет компьютеров/)).toBeVisible();
 });
 
 /** POST errors preserve the draft and must not manufacture an active connection or hide the error on refresh. */

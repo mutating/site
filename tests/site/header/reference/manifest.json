@@ -1,14 +1,24 @@
 {
-  "description": "Original static site before the header migrated to @mutating/ui, extended with the Products disclosure and the Cyrillic font stack that are now part of the shared header. SHA-256 guards the frozen renderer and its assets.",
+  "description": "Original static site before the header migrated to @mutating/ui, extended with the Products disclosure, its position before Sources, the Cyrillic font stack that is now part of the shared header, and the revised platform enter icon. SHA-256 guards the frozen renderer and its assets.",
   "commit": "69708a0cacf047f8fc9c01ce3bc67b9b47b1d0b1",
+  "revisions": [
+    {
+      "date": "2026-11-12",
+      "change": "Platform enter icon replaced with design variant 1: 28 px, 1.5 stroke; responsive size 26 px."
+    },
+    {
+      "date": "2026-11-13",
+      "change": "Products moved before Sources in the shared navigation."
+    }
+  ],
   "files": {
-    "en.html": "67d42dad03af2630e67672a03add23804e010182035f2c1f7c69bc9f03b4191f",
-    "site.css": "38134e736a645e2427dd8cb4eb7a67ddf5564e7f8cfd224fb39bbe14356f52e1",
+    "en.html": "3efd70f1637b93d8651311459c705939a5c588acb6a62aa9501cb2fdea2c9e26",
+    "site.css": "8baee1a414e8f04195afe2e7240ab54130e779316efd102cdaf1bf13c3cf3dd4",
     "assets/fonts/science-gothic-wordmark.woff2": "d58012a9fbfac1ea5f3d1fea005883c3b3753bb6e65abf9ece512982a26483d3",
     "assets/fonts/geist/geist-98bbbccb.woff2": "9b6f5ff45b278c744b5f379a2c4ecbaf858a842b8eaf82ac8d21b699ca16c608",
     "assets/fonts/geist-mono/geist-mono-013b2f2f.woff2": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b",
     "assets/muta-eye-surface-alpha-v1.webp": "a1f5cc4e1eacbba7c745ceeb8ef1184c824c57ee25c200a79d7362f8fc56cefb",
-    "ru.html": "59036da169f75041ddedee59abeb4ad51023a5755412aea90302624208805bd1",
+    "ru.html": "f6c01e7aa2e4d73fad4a6b3f69c35648d13f2dc85ee75e83200cf09f519e13ec",
     "site.js": "30bd1acd023efa1c0569b2bf005ce09683ba50d46e438dd9c6bde9b5e1cc6e9e"
   }
 }

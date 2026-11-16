@@ -136,7 +136,7 @@ export function PoolCard({
         </div>
         <Link
           className="text-link"
-          to={`/power-cells/computers?${pool.kind === "users" ? "user_id" : "company_id"}=${pool.id}`}
+          to={`/compute/computers?${pool.kind === "users" ? "user_id" : "company_id"}=${pool.id}`}
         >
           {t("viewComputers")} <Icon name="arrow" size={16} />
         </Link>

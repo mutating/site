@@ -16,7 +16,7 @@ import { Header, Layout } from "./components/Layout";
 import { Empty, ErrorBox, Loading } from "./components/UI";
 import { Auth } from "./pages/Auth";
 import { Overview } from "./pages/Overview";
-import { PowerCells } from "./pages/PowerCells";
+import { Compute } from "./pages/Compute";
 import { Computers } from "./pages/Computers";
 import { Computer } from "./pages/Computer";
 import { Organizations } from "./pages/Organizations";
@@ -54,6 +54,16 @@ function NotFound() {
         {t("home")}
       </Link>
     </>
+  );
+}
+function LegacyCompute() {
+  const location = useLocation();
+  const path = location.pathname.replace(/^\/power-cells/, "") || "";
+  return (
+    <Navigate
+      to={{ pathname: `/compute${path}`, search: location.search, hash: location.hash }}
+      replace
+    />
   );
 }
 function LegacyApiTokens() {
@@ -105,9 +115,11 @@ function App() {
           <Route element={<Guard />}>
             <Route element={<Layout />}>
               <Route index element={<Overview />} />
-              <Route path="power-cells" element={<PowerCells />} />
-              <Route path="power-cells/computers" element={<Computers />} />
-              <Route path="power-cells/computers/:computerId" element={<Computer interrupted={interrupted} />} />
+              <Route path="compute" element={<Compute />} />
+              <Route path="compute/computers" element={<Computers />} />
+              <Route path="compute/computers/:computerId" element={<Computer interrupted={interrupted} />} />
+              <Route path="power-cells" element={<LegacyCompute />} />
+              <Route path="power-cells/*" element={<LegacyCompute />} />
               <Route path="organizations" element={<Organizations />} />
               <Route path="organizations/:companyId" element={<Organization />} />
               <Route path="invitations/:token" element={<Invitation />} />

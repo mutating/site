@@ -211,7 +211,7 @@ class IsolateCreate(Input):
             self.image = IMAGE_ALIASES.get(self.image, self.image)
             if self.image != "ubuntu:24.04" and not RUNNER_IMAGE.fullmatch(self.image):
                 raise ValueError(
-                    "Power Cell supports bundled Ubuntu and official GitHub runner images"
+                    "Mutating Compute supports bundled Ubuntu and official GitHub runner images"
                 )
         return self
 
