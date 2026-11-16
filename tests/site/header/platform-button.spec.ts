@@ -93,7 +93,7 @@ test.describe("Chromium platform button behavior", () => {
         expect(Math.abs(box.y + box.height / 2 - controls.y - controls.height / 2)).toBeLessThanOrEqual(1);
         if (width > 1120) expect(box.x - header.x - header.width).toBe(10);
         const icon = (await button.locator("svg").boundingBox())!;
-        expect(icon.width).toBe(width <= 580 ? 32 : 36);
+        expect(icon.width).toBe(width <= 580 ? 26 : 28);
         expect(icon.height).toBe(icon.width);
         expect(icon.x + icon.width / 2).toBe(box.x + box.width / 2);
         expect(icon.y + icon.height / 2).toBe(box.y + box.height / 2);

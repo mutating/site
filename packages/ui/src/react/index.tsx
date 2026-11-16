@@ -290,8 +290,8 @@ export function Header({
       </div>
       {adjacent}
       {adjacentLink && <SquareButton className="tmc-platform-link" href={adjacentLink.href} aria-label={adjacentLink.label}>
-        {adjacentLink.children === undefined ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.05" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="m10 17 5-5-5-5" /><path d="M15 12H3" />
+        {adjacentLink.children === undefined ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M16 4.5h1.5a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5H16" /><path d="M4 12h12M11.5 7.5 16 12l-4.5 4.5" />
         </svg> : adjacentLink.children}
       </SquareButton>}
     </header>
