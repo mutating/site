@@ -547,14 +547,14 @@ def test_theme_control_preserves_original_screen_reader_semantics(
 
 
 @pytest.mark.parametrize(
-    ("language", "prefix", "label", "copy"),
+    ("language", "prefix", "label", "badge", "copy"),
     [
-        ("en", "", "Products", "A universal compute platform for your own devices."),
-        ("ru", "/ru", "Продукты", "Универсальная вычислительная платформа на ваших устройствах."),
+        ("en", "", "Products", "Soon", "A universal compute platform for your own devices."),
+        ("ru", "/ru", "Продукты", "Скоро", "Универсальная вычислительная платформа на ваших устройствах."),
     ],
 )
 def test_products_menu_is_a_localized_disclosure(
-    driver: DriverFactory, language: str, prefix: str, label: str, copy: str,
+    driver: DriverFactory, language: str, prefix: str, label: str, badge: str, copy: str,
 ) -> None:
     page = driver(
         viewport=(1440, 900), initial_path=prefix + "/", stored_language=language,
@@ -568,6 +568,7 @@ def test_products_menu_is_a_localized_disclosure(
     link = menu.locator(".tmc-nav-menu__item")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", prefix + "/products/compute/")
+    expect(menu.locator(".tmc-nav-menu__badge")).to_have_text(badge)
     expect(menu.locator(".tmc-nav-menu__copy small")).to_have_text(copy)
     page.keyboard.press("Escape")
     expect(menu).not_to_have_attribute("open", "")
@@ -657,14 +658,14 @@ def test_products_menu_works_without_javascript(browser: Browser, base_url: str)
 
 
 @pytest.mark.parametrize(
-    ("language", "prefix", "label", "copy"),
+    ("language", "prefix", "label", "badge", "copy"),
     [
-        ("en", "", "Products", "A universal compute platform for your own devices."),
-        ("ru", "/ru", "Продукты", "Универсальная вычислительная платформа на ваших устройствах."),
+        ("en", "", "Products", "Soon", "A universal compute platform for your own devices."),
+        ("ru", "/ru", "Продукты", "Скоро", "Универсальная вычислительная платформа на ваших устройствах."),
     ],
 )
 def test_products_menu_is_available_in_the_mobile_menu(
-    driver: DriverFactory, language: str, prefix: str, label: str, copy: str,
+    driver: DriverFactory, language: str, prefix: str, label: str, badge: str, copy: str,
 ) -> None:
     page = driver(
         viewport=(390, 780), initial_path=prefix + "/", stored_language=language,
@@ -683,6 +684,7 @@ def test_products_menu_is_available_in_the_mobile_menu(
     link = group.locator(".tmc-nav-menu__item")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", prefix + "/products/compute/")
+    expect(group.locator(".tmc-nav-menu__badge")).to_have_text(badge)
     expect(group.locator(".tmc-nav-menu__copy small")).to_have_text(copy)
     expect(group.locator(".tmc-nav-menu__arrow")).to_have_css("display", "none")
 

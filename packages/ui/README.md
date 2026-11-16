@@ -199,8 +199,9 @@ export function Example() {
 Для значения по умолчанию нужно опустить соответствующее поле.
 
 `children` превращает пункт в раскрывающееся меню на нативном `<details>`.
-Дочерний пункт — `{ id?, label, href, description?, active?, target?, rel? }`;
-`description` выводится под названием. В мобильном меню подменю раскрыто
+Дочерний пункт — `{ id?, label, href, description?, badge?, active?, target?, rel? }`;
+`description` выводится под названием, `badge` — короткая статусная пометка
+рядом с названием, например «Скоро». В мобильном меню подменю раскрыто
 постоянно, а шеврон не выводится: пункт работает как группа ссылок с доступным
 именем пункта. Меню закрывается по Escape, клику вне и выбору пункта, а на
 десктопе — при уходе фокуса. Поведение общее для React и Hugo.
@@ -215,6 +216,7 @@ const items = [{
     label: "Compute",
     href: "/products/compute/",
     description: "A universal compute platform for your own devices.",
+    badge: "Soon",
   }],
 }];
 ```
@@ -328,7 +330,7 @@ const home = createMutatingHomeHeader("ru"); // "en" по умолчанию
 <ThemeProvider><Header {...home} /></ThemeProvider>;
 ```
 
-Фабрика задаёт исходный порядок Sources / News / Blog / Contact, переводы,
+Фабрика задаёт исходный порядок Products / Sources / News / Blog / Contact, переводы,
 иконку GitHub, языковые ссылки, поведение логотипа и ссылку на платформу.
 Можно изменить любое поле возвращённого объекта, например заменить `items`
 на пункты кабинета. При сборке эти же данные записываются в

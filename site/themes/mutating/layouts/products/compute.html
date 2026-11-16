@@ -19,7 +19,7 @@
         <p class="compute-hero__purpose">{{ $c.hero.purpose }}</p>
         <p class="hero__lede compute-hero__lede">{{ $c.hero.description }}</p>
         <div class="compute-actions">
-          <a class="button button--primary" href="#resources">{{ $c.hero.primary }}<span aria-hidden="true">↓</span></a>
+          <a class="button button--primary" href="#network">{{ $c.hero.primary }}<span aria-hidden="true">↓</span></a>
           <a class="text-link compute-text-link" href="#applications">{{ $c.hero.secondary }}<span aria-hidden="true">↓</span></a>
         </div>
       </div>
@@ -69,6 +69,41 @@
     </div>
   </section>
 
+  <section class="compute-section section-shell compute-network" id="network" aria-label="{{ $c.network.label }}">
+    <p class="section-index">{{ $c.network.index }}</p>
+    <div class="compute-network__lines">
+      {{ range $c.network.lines }}
+      <div class="compute-network__line">
+        <span class="item-number" aria-hidden="true">{{ .number }}</span>
+        <h2>{{ .title }}</h2>
+        <p>{{ .text }}</p>
+      </div>
+      {{ end }}
+    </div>
+    <div class="compute-network__foot">
+      {{ range $c.network.footer }}<span>{{ . }}</span>{{ end }}
+    </div>
+  </section>
+
+  <section class="compute-section section-shell compute-security" id="security" aria-labelledby="security-title">
+    <div class="compute-security__intro">
+      <p class="section-index">{{ $c.security.index }}</p>
+      <h2 class="section-heading" id="security-title">{{ $c.security.heading }}<br><em>{{ $c.security.emphasis }}</em></h2>
+      <p class="section-lede">{{ $c.security.description }}</p>
+    </div>
+    <div class="compute-security__grid">
+      {{ range $c.security.points }}
+      <article class="compute-security__card">
+        <div class="compute-security__card-top"><span>{{ .number }} / {{ .label }}</span>{{ partial "compute/icon.html" .icon }}</div>
+        <h3>{{ .title }}</h3>
+        <p>{{ .text }}</p>
+        <div class="compute-security__card-meta">{{ .meta }}</div>
+      </article>
+      {{ end }}
+    </div>
+    <p class="compute-security__foot"><span class="status-dot" aria-hidden="true"></span>{{ $c.security.footer }}</p>
+  </section>
+
   <section class="compute-section section-shell compute-control" id="resources" aria-labelledby="control-title" data-resource-demo>
     <div class="compute-section__intro"><p class="section-index">{{ $c.control.index }}</p><h2 class="section-heading" id="control-title">{{ $c.control.heading }}<br><em>{{ $c.control.emphasis }}</em></h2><p class="section-lede">{{ $c.control.description }}</p></div>
     <div class="compute-control__layout">
@@ -91,39 +126,9 @@
     </div>
   </section>
 
-  <section class="compute-section section-shell compute-isolation" id="isolation" aria-labelledby="isolation-title">
-    <div class="compute-isolation__copy"><p class="section-index">{{ $c.isolation.index }}</p><h2 class="section-heading" id="isolation-title">{{ $c.isolation.heading }}<br><em>{{ $c.isolation.emphasis }}</em></h2><p class="section-lede">{{ $c.isolation.description }}</p><div class="compute-encryption">{{ partial "compute/icon.html" "shield" }}<div><h3 class="card-heading">{{ $c.isolation.encryption_title }}</h3><p>{{ $c.isolation.encryption_text }}</p></div></div></div>
-    <figure class="compute-vm-scene">
-      <figcaption class="eyebrow">{{ $c.isolation.host }}</figcaption>
-      <div class="compute-vm-scene__workspace">
-        <div class="compute-vm-scene__apps">
-          {{ partial "compute/icon.html" "laptop" }}
-          <div><strong class="card-heading">{{ $c.isolation.apps }}</strong><p>{{ $c.isolation.workspace }}</p></div>
-        </div>
-        <svg class="compute-vm-scene__workline" aria-hidden="true">
-          <defs><marker id="compute-work-arrow" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M1 1 6 4 1 7"/></marker></defs>
-          <line x1="0" y1="11" x2="100%" y2="11" marker-end="url(#compute-work-arrow)"/>
-        </svg>
-      </div>
-      <p class="eyebrow compute-vm-scene__job" id="compute-vm-job">{{ $c.isolation.job }}</p>
-      <ol class="compute-vm-scene__steps" aria-labelledby="compute-vm-job">
-        {{ range $i, $step := $c.isolation.lifecycle }}
-        <li class="compute-vm-step{{ if $step.isolated }} compute-vm-step--isolated{{ end }}">
-          <div class="compute-vm-step__marker">
-            <span class="item-number" aria-hidden="true">{{ printf "%02d" (add $i 1) }}</span>
-            {{ partial "compute/icon.html" $step.icon }}
-          </div>
-          <div><strong class="card-heading">{{ $step.title }}</strong><p>{{ $step.detail }}</p></div>
-          {{ if lt (add $i 1) (len $c.isolation.lifecycle) }}<span class="compute-vm-step__arrow" aria-hidden="true">→</span>{{ end }}
-        </li>
-        {{ end }}
-      </ol>
-    </figure>
-  </section>
-
   <section class="compute-section section-shell compute-benchmarks" id="benchmarks" aria-labelledby="benchmarks-title">
-    <div class="compute-section__intro"><p class="section-index">{{ $c.benchmarks.index }}</p><h2 class="section-heading" id="benchmarks-title">{{ $c.benchmarks.heading }}<br><em>{{ $c.benchmarks.emphasis }}</em></h2><p class="section-lede">{{ $c.benchmarks.description }}</p></div>
     <div class="compute-benchmark-layout">
+      <div class="compute-benchmark-copy"><p class="section-index">{{ $c.benchmarks.index }}</p><h2 class="section-heading" id="benchmarks-title">{{ $c.benchmarks.heading }}<br><em>{{ $c.benchmarks.emphasis }}</em></h2><p class="section-lede">{{ $c.benchmarks.description }}</p></div>
       <figure class="chart-panel compute-benchmark" data-benchmark>
         <div class="chart-panel__header compute-benchmark__header"><span class="chart-panel__label">{{ $c.benchmarks.chart_label }}</span><div class="compute-segment" role="group" aria-label="{{ $c.benchmarks.selector }}" data-benchmark-controls hidden><button type="button" data-benchmark-mode="single" aria-pressed="false">{{ $c.benchmarks.single }}</button><button type="button" data-benchmark-mode="multi" aria-pressed="true">{{ $c.benchmarks.multi }}</button></div></div>
         <h3 class="card-heading">{{ $c.benchmarks.chart_title }}</h3>
