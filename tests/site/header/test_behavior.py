@@ -574,6 +574,26 @@ def test_products_menu_is_a_localized_disclosure(
     expect(menu).not_to_have_attribute("open", "")
 
 
+@pytest.mark.parametrize(
+    ("language", "prefix", "labels"),
+    [
+        ("en", "", ["Products", "Sources", "News", "Blog", "Contact"]),
+        ("ru", "/ru", ["Продукты", "Исходники", "Новости", "Блог", "Контакты"]),
+    ],
+)
+def test_desktop_navigation_puts_products_before_sources(
+    driver: DriverFactory, language: str, prefix: str, labels: list[str],
+) -> None:
+    page = driver(
+        viewport=(1440, 900), initial_path=prefix + "/", stored_language=language,
+    )
+    actual = page.locator(".tmc-nav").evaluate(
+        "nav => [...nav.children].map(node => "
+        "node.matches('details') ? node.querySelector('summary').textContent.trim() : node.textContent.trim())"
+    )
+    assert actual == labels
+
+
 @pytest.mark.parametrize("width", [1440, 1240, 1121])
 @pytest.mark.parametrize(
     ("language", "prefix", "copy"),
