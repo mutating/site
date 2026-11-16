@@ -70,7 +70,7 @@ test("allocated limits minus actual reservations are correct in both pools and c
     ["4", "12"],
     "1",
   );
-  await page.goto("power-cells");
+  await page.goto("compute");
   const personal = page.getByRole("region", { name: "Личные компьютеры" });
   await metrics(personal, ["7,25", "7,5"], ["8,5", "9,5"], "2");
   await metrics(
@@ -107,7 +107,7 @@ test("allocated limits minus actual reservations are correct in both pools and c
       .filter({ hasText: "Рабочая станция" })
       .locator("td.numeric"),
   ).toHaveText(["6.75 / 8", "6 / 8 GiB"]);
-  await page.goto("power-cells");
+  await page.goto("compute");
   await metrics(
     page.getByRole("region", { name: "Personal computers" }),
     ["7.25", "7.5"],
@@ -125,7 +125,7 @@ test("seven-day history has exact values, independent CPU/RAM scales and four di
   await seedHistory(request, computer.id);
   await page.clock.setFixedTime(historyNow);
   await login(page, account);
-  await page.goto("power-cells");
+  await page.goto("compute");
   const pool = page.getByRole("region", { name: "Личные компьютеры" });
   const svg = pool.locator("svg.capacity-chart");
   await expect(svg.locator("path[data-series]")).toHaveCount(4);
@@ -192,7 +192,7 @@ test("empty capacity stays zero and the unknown part of history is disclosed", a
 }) => {
   await page.clock.setFixedTime(new Date("2026-01-04T00:00:00Z"));
   await login(page, account);
-  await page.goto("power-cells");
+  await page.goto("compute");
   const pool = page.getByRole("region", { name: "Личные компьютеры" });
   await metrics(pool, ["0", "0"], ["0", "0"], "0");
   await expect(pool.locator(".meter > span").first()).toHaveAttribute(

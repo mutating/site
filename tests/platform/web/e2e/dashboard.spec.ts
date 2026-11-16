@@ -36,9 +36,9 @@ test("root routes keep navigation and sessions while account URLs are absent", a
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
   );
-  await page.goto(`/power-cells/computers?user_id=${account.id}&page=1`);
+  await page.goto(`/compute/computers?user_id=${account.id}&page=1`);
   await expect(page).toHaveURL(
-    new RegExp(`/power-cells/computers\\?user_id=${account.id}&page=1$`),
+    new RegExp(`/compute/computers\\?user_id=${account.id}&page=1$`),
   );
   await page
     .getByRole("navigation")
@@ -144,7 +144,7 @@ test("computer pagination recovers when the last page disappears", async ({
   for (let i = 0; i < 11; i++)
     computers.push(await addComputer(request, account, `pagination-${i}`));
   await login(page, account);
-  await page.goto(`power-cells/computers?user_id=${account.id}&page=2`);
+  await page.goto(`compute/computers?user_id=${account.id}&page=2`);
   await expect(page.locator("tbody tr")).toHaveCount(1);
   // Reducing the total to ten removes page 2 regardless of which computer goes offline.
   expect(
@@ -184,8 +184,8 @@ test("all private pages require login; registration has optional fields and no p
 }) => {
   for (const path of [
     "",
-    "power-cells",
-    "power-cells/computers?page=2",
+    "compute",
+    "compute/computers?page=2",
     "cloud",
     "organizations",
     "profile",
@@ -292,7 +292,7 @@ test("mobile computer rows keep identity and both resources visible", async ({
 }) => {
   await addComputer(request, account, "Production workstation");
   await login(page, account);
-  await page.goto(`power-cells/computers?user_id=${account.id}`);
+  await page.goto(`compute/computers?user_id=${account.id}`);
   await expect(page.locator("tbody tr")).toHaveCount(1);
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
@@ -317,7 +317,7 @@ test("computer pagination starts at the first row of the new page", async ({
   for (let index = 0; index < 20; index++)
     await addComputer(request, account, `Workstation ${index + 1}`);
   await login(page, account);
-  await page.goto(`power-cells/computers?user_id=${account.id}`);
+  await page.goto(`compute/computers?user_id=${account.id}`);
   await expect(page.locator("tbody tr")).toHaveCount(10);
   await page.getByRole("button", { name: "Далее" }).click();
   await expect(page).toHaveURL(/page=2/);
@@ -354,7 +354,7 @@ test("personal and organization capacity stay separate, offline excluded, comput
   await expect(organization.getByTestId("computer-count")).toHaveText("1");
   await page
     .getByRole("navigation", { name: "Навигация кабинета" })
-    .getByRole("link", { name: "Power Cells", exact: true })
+    .getByRole("link", { name: "Compute", exact: true })
     .click();
   const personal = page.getByRole("region", { name: "Личные компьютеры" });
   await expect(personal.getByTestId("computer-count")).toHaveText("12");
@@ -377,7 +377,7 @@ test("personal and organization capacity stay separate, offline excluded, comput
   await expect(page.locator("tbody tr")).toHaveCount(2);
   await page.goBack();
   await expect(page.locator("tbody tr")).toHaveCount(10);
-  await page.goto(`power-cells/computers?company_id=${company.id}`);
+  await page.goto(`compute/computers?company_id=${company.id}`);
   await expect(page.getByText("company-only")).toBeVisible();
   await expect(page.locator("tbody tr")).toHaveCount(1);
 });
@@ -585,7 +585,7 @@ test("theme and language persist; cloud stays an empty product; layout has no ho
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   for (const route of [
     "",
-    "power-cells",
+    "compute",
     "profile",
     "organizations",
     "cloud",
@@ -598,14 +598,14 @@ test("theme and language persist; cloud stays an empty product; layout has no ho
       ),
     ).toBe(true);
   }
-  await page.goto("power-cells");
+  await page.goto("compute");
   await expect(
     page
       .getByRole("region", { name: "Personal computers" })
       .getByTestId("computer-count"),
   ).toHaveText("0");
   await page.screenshot({
-    path: info.outputPath("power-cells-light.png"),
+    path: info.outputPath("compute-light.png"),
     fullPage: true,
   });
 });
@@ -699,7 +699,7 @@ test("logout only revokes its session and a revoked active session returns to lo
   })).status()).toBe(200);
   await page
     .getByRole("navigation", { name: "Навигация кабинета" })
-    .getByRole("link", { name: "Power Cells", exact: true })
+    .getByRole("link", { name: "Compute", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "С возвращением." }),

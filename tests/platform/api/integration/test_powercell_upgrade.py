@@ -20,7 +20,7 @@ async def test_old_powercell_rows_cannot_keep_legacy_bearer_authentication(
         row.runtime = "powercell-ubuntu-arm64-v1"
     response = await agent_api.get("/agent/v1/session")
     assert response.status_code == 401
-    assert response.json()["detail"] == "Power Cell requires attested enrollment"
+    assert response.json()["detail"] == "Mutating Compute requires attested enrollment"
 
 
 async def test_optional_isolation_fields_preserve_preupgrade_idempotency(api, app, isolate_payload):

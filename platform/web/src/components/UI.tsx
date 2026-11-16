@@ -18,7 +18,7 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <rect x="14" y="14" width="7" height="7" rx="1.5" />
       </>
     ),
-    cells: (
+    compute: (
       <>
         <path d="m12 2 9 5v10l-9 5-9-5V7l9-5ZM3 7l9 5 9-5M12 12v10" />
         <path d="m7 4.8 10 5.5" />
@@ -220,7 +220,7 @@ export function ErrorBox({
   );
 }
 export function Empty({
-  icon = "cells",
+  icon = "compute",
   title,
   children,
 }: {

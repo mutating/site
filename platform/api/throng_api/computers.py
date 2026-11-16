@@ -70,7 +70,7 @@ async def create_computer(data: ComputerCreate, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         if data.runtime == "powercell-ubuntu-arm64-v1":
-            raise HTTPException(422, "Power Cell computers require attested enrollment")
+            raise HTTPException(422, "Computers require attested enrollment")
         owner = await owner_values(session, principal, data.company_id, admin=True)
         computer = Computer(
             **data.model_dump(exclude={"company_id", "cpu_millis", "memory_bytes"}),

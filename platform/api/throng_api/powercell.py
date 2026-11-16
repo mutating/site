@@ -300,7 +300,7 @@ async def diagnostic(diagnostic_id: UUID, request: Request):
     try:
         data = DiagnosticRecord.model_validate_json(content)
     except ValidationError as error:
-        raise HTTPException(422, "Expected a UTF-8 Power Cell diagnostic record") from error
+        raise HTTPException(422, "Expected a UTF-8 diagnostic record") from error
     if data.id != diagnostic_id:
         raise HTTPException(422, "Diagnostic ID does not match its URL")
     checksum = hashlib.sha256(content).hexdigest()

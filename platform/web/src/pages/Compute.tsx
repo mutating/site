@@ -6,7 +6,7 @@ import { useI18n } from "../lib/i18n";
 import type { Company } from "../lib/types";
 import { PoolCard, RestrictedPoolCard } from "../components/PoolCard";
 import { ErrorBox, Heading, Icon, Loading } from "../components/UI";
-export function PowerCells() {
+export function Compute() {
   const { user } = useSession();
   const { t } = useI18n();
   const [revision, setRevision] = useState(0);
@@ -17,8 +17,8 @@ export function PowerCells() {
   return (
     <>
       <Heading
-        index={`02 / ${t("powerTag")}`}
-        title="Power Cells"
+        index={`02 / ${t("computeTag")}`}
+        title={t("computeName")}
         action={
           <button
             className="button secondary compact"
@@ -29,7 +29,7 @@ export function PowerCells() {
           </button>
         }
       >
-        {t("powerLead")}
+        {t("computeLead")}
       </Heading>
       <p className="resource-intro">{t("resourcesNote")}</p>
       <div className="pool-list">

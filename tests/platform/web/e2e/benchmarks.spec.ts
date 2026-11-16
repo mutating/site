@@ -49,7 +49,7 @@ const latest = (page: Page) =>
   page.getByRole("region", { name: "Последние бенчмарки", exact: true });
 const history = (page: Page) =>
   page.getByRole("region", { name: /^История бенчмарка/ });
-const detailsPath = (id: string) => `power-cells/computers/${id}`;
+const detailsPath = (id: string) => `compute/computers/${id}`;
 
 function deferred() {
   let resolve!: () => void;
@@ -343,7 +343,7 @@ for (const pool of ["personal", "organization"] as const) {
       expect(response.status()).toBe(201);
     }
     await login(page, viewer);
-    await page.goto("power-cells");
+    await page.goto("compute");
     await page
       .getByRole("region", {
         name: organization?.name || "Личные компьютеры",
@@ -489,7 +489,7 @@ for (const pool of ["personal", "organization"] as const) {
     const [computer] = await response.json();
     await measurement(request, account, computer.id, "1.0.0");
     await login(page, account);
-    const path = `power-cells/computers?${ownerQuery}&page=2`;
+    const path = `compute/computers?${ownerQuery}&page=2`;
     await page.goto(path);
     await expect(page.locator("tbody tr")).toHaveCount(1);
     const link = page.getByRole("link", { name: computer.name, exact: true });
@@ -546,7 +546,7 @@ for (const pool of ["personal", "organization"] as const) {
       33,
     );
     await login(page, account);
-    await page.goto(`power-cells/computers?${query}`);
+    await page.goto(`compute/computers?${query}`);
     const summary = page.locator(".benchmark-summary");
     await expect(summary.locator("dd")).toHaveText(["33", "22"]);
     await page.getByRole("link", { name: computer.name, exact: true }).click();
@@ -1064,7 +1064,7 @@ test("late responses from a previous computer cannot populate the current comput
   await measurement(request, account, first.id, "1.0.0", "single_core", 111);
   await measurement(request, account, second.id, "2.0.0", "single_core", 222);
   await login(page, account);
-  await page.goto(`power-cells/computers?user_id=${account.id}`);
+  await page.goto(`compute/computers?user_id=${account.id}`);
   await expect(page.locator(".benchmark-summary dd")).toHaveCount(2);
   const held = await delayedResponse(
     page,
@@ -1167,7 +1167,7 @@ test("512 benchmarks and 201 history versions remain complete and share one hist
       requests.push(request.url());
   });
   await login(page, account);
-  await page.goto(`power-cells/computers?user_id=${account.id}`);
+  await page.goto(`compute/computers?user_id=${account.id}`);
   await expect(page.locator(".benchmark-summary dt")).toHaveText([
     name(0),
     name(1),
@@ -1230,7 +1230,7 @@ test("loading summaries preserve row positions and computer links", async ({
       await route.continue();
     },
   );
-  await page.goto(`power-cells/computers?user_id=${account.id}`);
+  await page.goto(`compute/computers?user_id=${account.id}`);
   const firstRow = page.getByRole("row").filter({ hasText: first.name });
   const link = page.getByRole("link", { name: second.name, exact: true });
   let before;
@@ -1258,7 +1258,7 @@ test("benchmark failures are isolated, show loading and recover with real update
   await login(page, account);
   const latestPath = `**/v1/computers/${computer.id}/benchmark-results?latest_only=true`;
   await page.route(latestPath, (route) => route.fulfill({ status: 503, json: { detail: "Unavailable" } }));
-  await page.goto(`power-cells/computers?user_id=${account.id}`);
+  await page.goto(`compute/computers?user_id=${account.id}`);
   const row = page.getByRole("row").filter({ hasText: "Устойчивый узел" });
   await expect(row.locator("td.numeric")).toHaveText(["8 / 8", "8 / 8 GiB"]);
   await expect(row.getByRole("alert")).toContainText(
@@ -1425,7 +1425,7 @@ test("organization permission revocation removes access to details and history",
   );
   await expect(latest(page)).toHaveCount(0);
   await expect(history(page)).toHaveCount(0);
-  await page.goto(`power-cells/computers?company_id=${organization.id}`);
+  await page.goto(`compute/computers?company_id=${organization.id}`);
   await expect(page.getByRole("alert")).toContainText(
     "У вас нет прав на это действие",
   );

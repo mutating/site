@@ -293,7 +293,7 @@ async def agent_auth(session, request, require_session=True):
     if not computer:
         raise HTTPException(401, "Invalid agent credential")
     if computer.runtime == "powercell-ubuntu-arm64-v1" and not computer.certificate_sha256:
-        raise HTTPException(401, "Power Cell requires attested enrollment")
+        raise HTTPException(401, "Mutating Compute requires attested enrollment")
     if computer.certificate_sha256:
         certificate = await session.get(DeviceCertificate, computer.certificate_sha256)
         if (

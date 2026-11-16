@@ -363,7 +363,7 @@ h3 {
   border-color: var(--hot-soft);
   transform: translateY(-3px);
 }
-.power-product {
+.compute-product {
   background:
     radial-gradient(
       ellipse at 100% 100%,
@@ -383,7 +383,7 @@ h3 {
   font-size: 32px;
   letter-spacing: -0.06em;
 }
-.power-product svg {
+.compute-product svg {
   color: var(--hot);
 }
 .product-card p {

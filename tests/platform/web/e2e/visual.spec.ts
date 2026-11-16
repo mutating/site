@@ -165,7 +165,7 @@ test("responsive computer benchmarks and focused run history", async ({ page, re
     await route.fulfill({ response, json: rows.map(row => ({ ...row, created_at: dates.get(row.id) })) });
   });
   await startSession(page, account);
-  await page.goto(`power-cells/computers/${computer.id}?user_id=${account.id}`);
+  await page.goto(`compute/computers/${computer.id}?user_id=${account.id}`);
   await expect(page.locator(".benchmark-card")).toHaveCount(2);
   await page.evaluate(async () => {
     await Promise.all(Array.from(document.fonts, face => face.load()));
@@ -278,8 +278,8 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   expect(response.status()).toBe(200);
   await page.goto("");
   await screenshot("overview-empty");
-  await page.goto("power-cells");
-  await screenshot("power-cells-empty");
+  await page.goto("compute");
+  await screenshot("compute-empty");
   const first = await addComputer(request, account, "fixture-node-01");
   const second = await addComputer(request, account, "fixture-node-02");
   // The API orders by UUID. Give the first returned node the same visible data
@@ -353,10 +353,10 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await seedHistory(request, shared.id);
   await page.goto("");
   await screenshot("overview");
-  await page.goto("power-cells");
+  await page.goto("compute");
   await expect(page.locator("[data-series]")).toHaveCount(8);
-  await screenshot("power-cells");
-  await page.goto(`power-cells/computers?user_id=${account.id}`);
+  await screenshot("compute");
+  await page.goto(`compute/computers?user_id=${account.id}`);
   await expect(page.locator("tbody tr")).toHaveCount(2);
   await screenshot("computers");
   await page.getByRole("link", { name: "workstation-01", exact: true }).click();
@@ -367,7 +367,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     4,
   );
   await screenshot("computer-benchmark-history");
-  await page.goto(`power-cells/computers/${mini.id}?user_id=${account.id}`);
+  await page.goto(`compute/computers/${mini.id}?user_id=${account.id}`);
   await screenshot("computer-benchmarks-empty");
   await page.goto("organizations");
   await expect(page.getByRole("heading", { name: company.name })).toBeVisible();

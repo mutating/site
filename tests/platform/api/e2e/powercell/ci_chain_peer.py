@@ -176,7 +176,7 @@ class WorkflowChain:
             "&& needs."
             + router_job
             + ".outputs.runs_on || '"
-            + "Re-run the routing job or all jobs to refresh Power Cell selection"
+            + "Re-run the routing job or all jobs to refresh Mutating Compute selection"
             + "' }}"
         )
         self.guard_step = next(

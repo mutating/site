@@ -40,7 +40,7 @@ for (const width of [320, 390]) {
 test("mobile editor actions and editable controls remain comfortable to use", async ({ page, account }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const peer = await actionsPeer(page);
-  peer.computers = [{ id: "cell", name: "Power Cell", runtime: "powercell-ubuntu-arm64-v1" }];
+  peer.computers = [{ id: "cell", name: "Compute node", runtime: "powercell-ubuntu-arm64-v1" }];
   peer.bindings = [{ ...binding, workflow_profiles: { [deploy]: { computer_ids: ["cell"] } } }];
   await login(page, account); await page.goto(repositoryURL);
   await expect(page.getByRole("group", { name: deploy, exact: true })).toBeVisible();

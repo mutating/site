@@ -132,7 +132,7 @@ def main():
                 with open(os.environ["GITHUB_OUTPUT"], "a") as output:
                     output.write("runs_on=" + json.dumps(runs_on, separators=(",", ":")) + "\n")
                 published = True
-                print("Power Cell runner ready:", runs_on[0])
+                print("Mutating Compute runner ready:", runs_on[0])
                 return
             if decision.get("status") == "failed":
                 raise RuntimeError(
@@ -149,7 +149,7 @@ def main():
                 time.sleep(pause)
         raise RuntimeError("CI preparation timed out")
     except (OSError, HTTPException, ValueError, KeyError):
-        raise RuntimeError("Power Cells routing unavailable") from None
+        raise RuntimeError("Mutating Compute routing unavailable") from None
     finally:
         if not watch and not published and endpoint and identity:
             try:

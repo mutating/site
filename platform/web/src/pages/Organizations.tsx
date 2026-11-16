@@ -245,7 +245,7 @@ export function Organizations() {
                       <Link
                         className="organization-metric organization-computers-metric"
                         aria-label={`${t("computers")}: ${number(entry.computerCount)}`}
-                        to={`/power-cells/computers?company_id=${entry.company.id}`}
+                        to={`/compute/computers?company_id=${entry.company.id}`}
                       >
                         <Icon name="computer" size={16} />
                         <span data-testid="organization-computer-count">

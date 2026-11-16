@@ -9,7 +9,7 @@ test("Actions has one execution policy and no hosted fallback controls", async (
   await login(page, account); await page.goto(repositoryURL);
   await expect(page.getByRole("textbox", { name: "Job ID", exact: true })).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Fallback", exact: true })).toHaveCount(0);
-  await expect(page.getByText(/Нет свободной Power Cell — запуск сразу завершится ошибкой/)).toBeVisible();
+  await expect(page.getByText(/Нет свободного компьютера — запуск сразу завершится ошибкой/)).toBeVisible();
   await page.getByRole("spinbutton", { name: "CPU", exact: true }).fill("3");
   await page.getByRole("spinbutton", { name: "RAM · GiB", exact: true }).fill("9");
   await page.getByRole("button", { name: "Подключить", exact: true }).click();
@@ -20,5 +20,5 @@ test("Actions has one execution policy and no hosted fallback controls", async (
   await expect(page.locator(".repository-yaml")).not.toContainText(/fallback/i);
   await selectLanguage(page);
   await expect(page.getByRole("combobox", { name: "Fallback", exact: true })).toHaveCount(0);
-  await expect(page.getByText(/No available Power Cell — the run fails immediately/)).toBeVisible();
+  await expect(page.getByText(/No available computer — the run fails immediately/)).toBeVisible();
 });

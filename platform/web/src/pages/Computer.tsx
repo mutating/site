@@ -7,6 +7,7 @@ import { GiB, number } from "../lib/chart";
 import type { Computer as ComputerData } from "../lib/types";
 import { Benchmarks } from "../components/Benchmarks";
 import { ErrorBox, Heading, Icon, Loading } from "../components/UI";
+import { runtimeLabel } from "../lib/runtime";
 
 export function Computer({ interrupted }: { interrupted: RefObject<boolean> }) {
   const { computerId } = useParams();
@@ -34,7 +35,7 @@ function ComputerView({ computerId, interrupted }: {
     <>
       <Link
         className="back-link"
-        to={`/power-cells/computers${back.size ? `?${back}` : ""}`}
+        to={`/compute/computers${back.size ? `?${back}` : ""}`}
       >
         ← {t("backComputers")}
       </Link>
@@ -46,7 +47,7 @@ function ComputerView({ computerId, interrupted }: {
         computer && (
           <>
             <Heading
-              index={`02 / POWER CELLS / ${t("computer")}`}
+              index={`02 / MUTATING COMPUTE / ${t("computer")}`}
               title={computer.name || computer.id.slice(0, 8)}
               action={
                 <button
@@ -59,7 +60,8 @@ function ComputerView({ computerId, interrupted }: {
                 </button>
               }
             >
-              {computer.os} · {computer.architecture} · {computer.runtime}
+              {computer.os} · {computer.architecture} ·{" "}
+              {runtimeLabel(computer.runtime)}
             </Heading>
             <section
               className="panel computer-details"

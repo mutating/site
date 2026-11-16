@@ -176,9 +176,9 @@ test("authenticated header changes preserve the route, draft and session", async
   await page.getByRole("button", { name: "Toggle color theme", exact: true }).click();
   await expect(page.getByLabel("First name", { exact: true })).toHaveValue("Unsaved header draft");
   expect(page.url()).toBe(originalURL);
-  await page.getByRole("navigation", { name: "Account navigation" }).getByRole("link", { name: "Power Cells", exact: true }).click();
-  await expect(page).toHaveURL("http://127.0.0.1:18101/power-cells");
-  await expect(page.getByRole("heading", { name: "Power Cells.", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Account navigation" }).getByRole("link", { name: "Compute", exact: true }).click();
+  await expect(page).toHaveURL("http://127.0.0.1:18101/compute");
+  await expect(page.getByRole("heading", { name: "Mutating Compute.", exact: true })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(originalURL);
   await expect(page.getByLabel("First name", { exact: true })).toHaveValue(account.first_name);

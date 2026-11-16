@@ -210,7 +210,7 @@ async def validate_computers(session, data, owner):
         if not computer or not ownership:
             raise HTTPException(404, "Computer unavailable in the selected pool")
         if computer.runtime != "powercell-ubuntu-arm64-v1":
-            raise HTTPException(422, "CI requires a Linux ARM64 Power Cell")
+            raise HTTPException(422, "CI requires a Linux ARM64 computer")
 
 
 @router.post("/routes", status_code=201)
