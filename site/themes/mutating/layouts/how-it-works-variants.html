@@ -1,0 +1,385 @@
+{{ define "page-head" }}
+  {{- $compute := resources.Get "css/compute.css" | minify | fingerprint -}}
+  <link rel="stylesheet" href="{{ $compute.RelPermalink }}" integrity="{{ $compute.Data.Integrity }}" crossorigin="anonymous">
+  {{- $variants := resources.Get "css/how-it-works-variants.css" | minify | fingerprint -}}
+  <link rel="stylesheet" href="{{ $variants.RelPermalink }}" integrity="{{ $variants.Data.Integrity }}" crossorigin="anonymous">
+{{ end }}
+
+{{ define "main" }}
+{{- $eyebrow := "01 / КАК ЭТО РАБОТАЕТ" -}}
+{{- $agent := "Агент на ваши компьютеры — или компьютеры организации." -}}
+{{- $idle := "В простое машины отдают сети свободную мощность." -}}
+{{- $route := "Команда уходит в сеть и выполняется на свободной машине. На какой — решает сеть." -}}
+{{- $cost := "Своё железо вместо аренды: первые два личных устройства бесплатно, дальше — за устройство." -}}
+{{- $variants := slice
+  (dict "n" "01" "name" "Команда без адреса")
+  (dict "n" "02" "name" "Частная сетка")
+  (dict "n" "03" "name" "Ночной резерв")
+  (dict "n" "04" "name" "Нулевой чек")
+  (dict "n" "05" "name" "Счётчик")
+  (dict "n" "06" "name" "Ночная сортировка")
+  (dict "n" "07" "name" "Накладная без адреса")
+  (dict "n" "08" "name" "Свободные места")
+  (dict "n" "09" "name" "Одна строка")
+  (dict "n" "10" "name" "Тихий жилец")
+  (dict "n" "11" "name" "Партитура")
+  (dict "n" "12" "name" "Розетка")
+  (dict "n" "13" "name" "Свободная мощность")
+  (dict "n" "14" "name" "Главный рубильник")
+  (dict "n" "15" "name" "0% облачности")
+  (dict "n" "16" "name" "Фигуры ваши")
+  (dict "n" "17" "name" "Лотерея")
+  (dict "n" "18" "name" "Уже в коробке")
+  (dict "n" "19" "name" "Журнал одного задания")
+  (dict "n" "20" "name" "Адрес неизвестен")
+-}}
+<div class="compute hiw-lab">
+  <section class="hiw-intro section-shell">
+    <p class="eyebrow">DESIGN EXPLORATION <span class="eyebrow__accent">— 20 финалистов</span></p>
+    <h1>Как это <em>работает.</em></h1>
+    <p class="hiw-intro__lede">60 идей от 20 независимых дизайн-агентов, отобранные по остроумию, ясности ценности и компактности. Ниже — 20 разных способов объяснить одну и ту же сеть: агент на ваших машинах, простой в общий пул, команда на свободную машину, своё вместо арендованного.</p>
+    <p class="hiw-intro__rank">Полный рейтинг 60 идей: docs/how-it-works-variants-ranking.md</p>
+    <nav class="hiw-index" aria-label="Варианты секции как это работает">
+      {{ range $variants }}<a href="#v{{ .n }}"><b>{{ .n }}</b>{{ .name }}</a>{{ end }}
+    </nav>
+  </section>
+
+  <article class="hiw-variant" id="v01">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">01</span><h2 class="hiw-bar__name">Команда без адреса</h2><p class="hiw-bar__hint">Схема маршрута: команда входит в сеть, веер возможных машин и одна выбранная.</p></header>
+    <div class="hiw-stage hiw-stage--tint">
+      <section class="hiw-sec compute-section section-shell">
+        <div class="hiw-copy">
+          <p class="section-index">{{ $eyebrow }}</p>
+          <h2 class="section-heading">Отправьте команду<br><em>в никуда.</em></h2>
+          <p class="section-lede">Она найдёт машину. Вы адресуете задачу сети, а не серверу.</p>
+        </div>
+        <div class="hiw01-band">
+          <div class="hiw-command"><div class="hiw-command__head"><span>Ваша команда</span><span>approved</span></div><div class="hiw-command__file">tests.yml</div><div class="hiw-command__meta"><span>адрес: —</span><span>сеть: ваша</span></div></div>
+          <div class="hiw01-mesh" aria-hidden="true">
+            <svg viewBox="0 0 500 230" preserveAspectRatio="none">
+              <path class="hiw01-ghost" d="M10 115 C100 60 160 40 250 70 S390 155 470 115"/>
+              <path class="hiw01-ghost" d="M10 115 C110 120 155 150 250 160 S410 115 470 70"/>
+              <path class="hiw01-ghost" d="M10 115 C120 170 170 190 250 195 S400 170 470 150"/>
+              <path class="hiw01-route" d="M10 115 C115 115 160 100 250 95 S405 85 470 95"/>
+            </svg>
+            <span class="hiw01-node hiw01-node--hit" style="left:70%;top:41%">?</span>
+            <span class="hiw01-node hiw01-node--ghost" style="left:44%;top:28%">●</span>
+            <span class="hiw01-node hiw01-node--ghost" style="left:55%;top:70%">●</span>
+            <span class="hiw01-node hiw01-node--busy" style="left:31%;top:58%">×</span>
+            <span class="hiw01-mesh__label">ваша сеть / 7 узлов</span>
+            <span class="hiw01-mesh__target">какая — решает сеть</span>
+          </div>
+          <div class="hiw01-dest"><small>исполнено на</small><strong>node-07 / somewhere</strong><span>готово · $0.00</span></div>
+        </div>
+        <div class="hiw01-ledger"><span>7 компьютеров</span><span>5 свободны</span><span>1 команда</span><span>0 арендованных минут</span></div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v02">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">02</span><h2 class="hiw-bar__name">Частная сетка</h2><p class="hiw-bar__hint">Две стороны одной экономики: арендованное облако со счётчиком и ваша сетка с $0 за минуты.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec compute-section section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Отключите счётчик.<br><em>Включите сеть.</em></h2><p class="section-lede">Свои машины уже оплачены. Осталось собрать их в сеть.</p></div>
+        <div class="hiw02">
+          <div class="hiw02-side hiw02-side--rented"><div class="hiw02-head"><span>Rented / cloud</span><span>чужое</span></div><div class="hiw02-meter"><strong>$50</strong><span>/ 10 000 минут</span></div><div class="hiw02-cloud"><span>CPU / MIN <b>$0.005</b></span><span>EGRESS / GB <b>$0.09</b></span><span>IDLE / MIN <b>$0.00</b></span></div><p class="hiw02-note">Чужие мощности, чужой счётчик, чужое железо.</p></div>
+          <div class="hiw02-seam"><span>выбирает сеть</span></div>
+          <div class="hiw02-side hiw02-side--owned"><div class="hiw02-head"><span>Yours / private</span><span>ваше</span></div><div class="hiw02-meter"><strong>$0</strong><span>/ минуты</span></div><div class="hiw02-fleet"><span>Mac mini</span><span>Mac Studio</span><span>Linux PC</span><span>MacBook</span></div><p class="hiw02-note">Агент на каждой машине. Простой — в общий пул. Одна команда — на свободную машину.</p></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v03">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">03</span><h2 class="hiw-bar__name">Ночной резерв</h2><p class="hiw-bar__hint">Свободные циклы стекаются в общий резерв, из которого команда забирает мощность.</p></header>
+    <div class="hiw-stage hiw-stage--dark">
+      <section class="hiw-sec compute-section section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Простой не исчезает.<br><em>Он собирается.</em></h2><p class="section-lede">Свободные такты всех машин становятся общим резервом вашей сети.</p></div>
+        <div class="hiw03">
+          <div class="hiw03-machines">
+            <div class="hiw03-machine"><strong>Mac mini</strong><span>свободна · 82%</span><i style="width:82%"></i></div>
+            <div class="hiw03-machine hiw03-machine--busy"><strong>MacBook Pro</strong><span>вы работаете</span><i style="width:22%"></i></div>
+            <div class="hiw03-machine"><strong>Mac Studio</strong><span>свободна · 94%</span><i style="width:94%"></i></div>
+            <div class="hiw03-machine"><strong>Linux PC</strong><span>свободен · 68%</span><i style="width:68%"></i></div>
+          </div>
+          <div class="hiw03-reservoir">
+            <div class="hiw03-reservoir__water"></div><div class="hiw03-reservoir__line"></div>
+            <div class="hiw03-reservoir__content"><div class="hiw03-reservoir__label">общий резерв<small>4 машины · 42 ядра · 128 ГБ</small></div><div class="hiw03-capsule"><span>ЗАДАЧА ↓</span>tests/01<br>→ результат</div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v04">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">04</span><h2 class="hiw-bar__name">Нулевой чек</h2><p class="hiw-bar__hint">Облачный счёт превращается в чек, где все строки уже оплачены вашим железом.</p></header>
+    <div class="hiw-stage hiw-stage--soft">
+      <section class="hiw-sec hiw04 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Счёт за чужие компьютеры.<br><em>Ваши уже оплачены.</em></h2><p class="section-lede">Один документ, в котором видно, откуда берётся мощность и почему за неё не нужно платить поминутно.</p><p class="hiw-note">Установка, простой, маршрут и аренда — четыре строки одного запуска.</p></div>
+        <div class="hiw04-receipt">
+          <div class="hiw04-receipt__head"><span>Mutating Compute · расчёт</span><span>№ 0000</span></div>
+          <h3>Ваш чек за вычисления</h3>
+          <div class="hiw04-row"><span>01</span><span>Агент · 6 компьютеров</span><span>0.00</span></div>
+          <div class="hiw04-row"><span>02</span><span>Простой · 312 часов в пуле</span><span>вкл.</span></div>
+          <div class="hiw04-row"><span>03</span><span>Команда → свободная машина</span><span>0.00</span></div>
+          <div class="hiw04-row"><span>04</span><span>Аренда · 10 000 минут</span><span><s>$50.00</s> 0.00</span></div>
+          <div class="hiw04-total"><span>к оплате</span><strong>$0.00</strong></div>
+          <div class="hiw04-stamp"><span>уже оплачено</span></div>
+          <div class="hiw04-receipt__foot">Два личных устройства — бесплатно. Дальше — $1/мес за устройство, не за минуту.</div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v05">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">05</span><h2 class="hiw-bar__name">Счётчик</h2><p class="hiw-bar__hint">Приборная панель: две цены на одной шкале, ваш парк и арендованные минуты.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec hiw05 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Счётчик тикает у них.<br><em>Компьютеры — у вас.</em></h2><p class="section-lede">Аренда считает минуты. Ваша сеть считает устройства — и только те, что вы подключили.</p></div>
+        <div class="hiw05-panel">
+          <div class="hiw05-panel__head"><span>Стоимость вычислений / месяц</span><span>пример · 10 000 мин</span></div>
+          <div class="hiw05-tariffs"><div class="hiw05-tariff"><span>Аренда · 10 000 мин</span><strong>$50.00</strong></div><div class="hiw05-tariff hiw05-tariff--own"><span>Своя сеть · 6 устройств</span><strong>$4.00</strong></div></div>
+          <div class="hiw05-scale"></div><div class="hiw05-scale-labels"><span>$0</span><span>$4 / вы здесь</span><span>$50</span></div>
+          <div class="hiw05-fleet"><span>Mac mini</span><span>Mac Studio</span><span>Linux PC</span><span>MacBook · занят</span><span>+ 2</span></div>
+          <div class="hiw05-route"><span class="hiw-dot"></span><b>простой → в пул</b><span>·</span><span>команда → свободная машина</span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v06">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">06</span><h2 class="hiw-bar__name">Ночная сортировка</h2><p class="hiw-bar__hint">Команда — посылка на сортировочной линии: диспетчер выбирает свободную машину, отправитель получает результат.</p></header>
+    <div class="hiw-stage hiw-stage--tint">
+      <section class="hiw-sec compute-section section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Команда уходит в сеть.<br><em>Куда именно — уже не ваша проблема.</em></h2><p class="section-lede">Одна посылка, пять свободных машин и диспетчер, который видит всю сеть.</p></div>
+        <div class="hiw06">
+          <div class="hiw06-board">
+            <div class="hiw06-ticket"><small>Отправлено</small><strong>tests / 01<br>адрес: —</strong></div>
+            <div class="hiw06-dispatch">диспетчер<br>сеть</div>
+            <div class="hiw06-bays"><span class="hiw06-bay hiw06-bay--busy">занят</span><span class="hiw06-bay hiw06-bay--free">свободен</span><span class="hiw06-bay hiw06-bay--free hiw06-bay--hit">→ tests</span><span class="hiw06-bay hiw06-bay--free">свободен</span><span class="hiw06-bay hiw06-bay--free">свободен</span></div>
+            <div class="hiw06-receipt"><span>Готово · $0.00</span><strong>host: —<br>результат: 128 passed</strong></div>
+          </div>
+          <div class="hiw06-rail"><div><span>01 / установка</span><p>Агент на каждом компьютере — своём или организации.</p></div><div><span>02 / простой</span><p>Свободные машины становятся полками сети.</p></div><div><span>03 / маршрут</span><p>Команда занимает свободную машину. Какую — решает сеть.</p></div><div><span>04 / счёт</span><p>Своё железо вместо аренды. Без платы за минуты.</p></div></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v07">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">07</span><h2 class="hiw-bar__name">Накладная без адреса</h2><p class="hiw-bar__hint">Секция как документ: отправитель — ваши машины, получатель — любая свободная, к оплате — ноль.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec hiw07 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Кому: неважно.<br><em>Что: ваша команда.</em></h2><p class="section-lede">Накладная, в которой адрес получателя сознательно оставлен пустым.</p><p class="hiw-note">Сеть заполнит его сама — в момент выполнения.</p></div>
+        <div class="hiw07-sheet">
+          <div class="hiw07-sheet__top"><span>Mutating Compute / consignment note</span><span>№ 000-∞</span></div>
+          <div class="hiw07-field"><small>Отправитель</small><strong>Ваши компьютеры и компьютеры организации</strong></div>
+          <div class="hiw07-field hiw07-field--big"><small>Получатель</small><strong>Любая свободная машина</strong><span>адрес выбирает сеть</span></div>
+          <div class="hiw07-field"><small>Содержимое</small><strong>Одна команда · tests.yml</strong></div>
+          <div class="hiw07-field"><small>К оплате</small><strong>$0.00</strong></div>
+          <div class="hiw07-stamps"><span class="hiw07-stamp">простой</span><span class="hiw07-stamp hiw07-stamp--ok">доставлено</span></div>
+          <div class="hiw07-barcode"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><span>6 машин · 1 выполняет</span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v08">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">08</span><h2 class="hiw-bar__name">Свободные места</h2><p class="hiw-bar__hint">План этажа: ваш офис или дом как дата-центр, где команда занимает свободное место.</p></header>
+    <div class="hiw-stage hiw-stage--soft">
+      <section class="hiw-sec hiw08 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Не арендуйте облако.<br><em>Включите своё.</em></h2><p class="section-lede">Команда садится за свободное место. За какое — не важно: результат вернётся сам.</p><div class="hiw08-ledger"><div><span>Арендованное облако</span><strong>счёт за минуты</strong></div><div><span>Своя сеть</span><strong>$0.00</strong></div><div><span>Свободных машин</span><strong>5 из 6</strong></div></div></div>
+        <div class="hiw08-plan" aria-hidden="true">
+          <div class="hiw08-zones">
+            <div class="hiw08-zone"><span>Офис</span><span class="hiw08-desk hiw08-desk--busy">занят</span><span class="hiw08-desk hiw08-desk--free">свободен</span><span class="hiw08-desk hiw08-desk--free">свободен</span><span class="hiw08-desk hiw08-desk--free">свободен</span></div>
+            <div class="hiw08-zone"><span>Студия</span><span class="hiw08-desk hiw08-desk--free">свободен</span><span class="hiw08-desk hiw08-desk--hit">→ задача</span><span class="hiw08-desk hiw08-desk--free">свободен</span><span class="hiw08-desk hiw08-desk--busy">занят</span></div>
+            <div class="hiw08-zone"><span>Дом</span><span class="hiw08-desk hiw08-desk--free">свободен</span><span class="hiw08-desk hiw08-desk--free">свободен</span><span class="hiw08-desk hiw08-desk--free">свободен</span><span class="hiw08-desk hiw08-desk--free">свободен</span></div>
+          </div>
+          <div class="hiw08-plan__caption"><span>6 машин · 5 свободны</span><span>граница вашей сети</span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v09">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">09</span><h2 class="hiw-bar__name">Одна строка</h2><p class="hiw-bar__hint">Установка как единственное действие: маленький агент, журнал подключения и сеть, которая уже работает.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec hiw09 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Одна строка.<br><em>И вы в сети.</em></h2><p class="section-lede">Крошечный агент на Mac, PC или сервере. Один раз — и машины становятся узлами.</p><div class="hiw09-foot"><span>macOS · PC · сервер · 12 МБ</span><span>2 личных устройства — бесплатно</span></div></div>
+        <div class="hiw09-terminal" aria-label="Пример установки и первого запуска">
+          <div class="hiw09-terminal__bar"><span>install / mutating-agent</span><span>12.4 MB</span></div>
+          <div class="hiw09-terminal__body"><div><span class="hiw-dim">$</span> install mutating-agent</div><div><span class="hiw-ok">✓</span> 4 компьютера · 3 свободны</div><div><span class="hiw-ok">✓</span> 78% мощности свободно</div><div><span class="hiw-ok">→</span> задача tests/01 принята</div><div class="hiw-question">? одна из 3 свободных · VM</div><div><span class="hiw-ok">✓</span> готово · $0.00<span class="hiw09-terminal__caret"></span></div></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v10">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">10</span><h2 class="hiw-bar__name">Тихий жилец</h2><p class="hiw-bar__hint">Агент как тихий жилец: на каждой машине, в фоне, оплачивает комнату свободной мощностью.</p></header>
+    <div class="hiw-stage hiw-stage--tint">
+      <section class="hiw-sec hiw10 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Поселите агента.<br><em>Он не помешает.</em></h2><p class="section-lede">12 МБ. Ноль окон. Работает в фоне на ваших машинах или технике организации.</p><p class="hiw-note">Пока компьютер свободен, его мощность уходит в общий пул. Команда садится на свободную машину — вы получаете результат.</p></div>
+        <div class="hiw10-scene" aria-hidden="true">
+          <div class="hiw10-bus">ваша сеть ← tests/01</div>
+          <div class="hiw10-devices">
+            <div class="hiw10-device">{{ partial "compute/icon.html" "desktop" }}<strong>Mac mini</strong><small>свободна · 82%</small><div class="hiw10-bar"><span style="width:82%"></span></div></div>
+            <div class="hiw10-device hiw10-device--busy">{{ partial "compute/icon.html" "laptop" }}<strong>MacBook</strong><small>занят · вы</small><div class="hiw10-bar"><span style="width:22%"></span></div></div>
+            <div class="hiw10-device">{{ partial "compute/icon.html" "server" }}<strong>Сервер</strong><small>свободен · 94%</small><div class="hiw10-bar"><span style="width:94%"></span></div></div>
+          </div>
+          <div class="hiw10-caption">12 МБ на каждой · 1 сеть · 0 поминутной оплаты</div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v11">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">11</span><h2 class="hiw-bar__name">Партитура</h2><p class="hiw-bar__hint">Машины как оркестр: свободные инструменты играют вашу команду, партитуру задаёт сеть.</p></header>
+    <div class="hiw-stage hiw-stage--dark">
+      <section class="hiw-sec compute-section section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Ваш оркестр уже собран.<br><em>Не хватает партитуры.</em></h2><p class="section-lede">Агент — на личные и офисные компьютеры. В простое они играют команду, которая приходит в сеть.</p></div>
+        <div class="hiw11-score">
+          <div class="hiw11-input"><span>$</span> mutating run tests/01 <span class="hiw-arrow">→</span> <span>любая свободная машина</span></div>
+          <div class="hiw11-staves">
+            <div class="hiw11-staff"><span>Mac mini</span><div class="hiw11-line"><i></i></div></div>
+            <div class="hiw11-staff"><span>MacBook Pro</span><div class="hiw11-line hiw11-line--busy"><i></i></div></div>
+            <div class="hiw11-staff"><span>Mac Studio</span><div class="hiw11-line"><i></i></div></div>
+            <div class="hiw11-staff"><span>Linux PC</span><div class="hiw11-line"><i></i></div></div>
+          </div>
+          <div class="hiw11-stamp"><span>аренда не нужна</span></div>
+          <div class="hiw11-foot"><span>1 партитура</span><span>0 счётчиков</span><span>готово · $0.00</span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v12">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">12</span><h2 class="hiw-bar__name">Розетка</h2><p class="hiw-bar__hint">Одна частная шина: агент подключает машины, свободные розетки питают сеть, облачный счётчик выдернут.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec compute-section section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Железо уже оплачено.<br><em>Осталось подключить.</em></h2><p class="section-lede">Агент превращает ваш компьютер в розетку сети. Свободные розетки принимают задачи.</p></div>
+        <div class="hiw12">
+          <div class="hiw12-rail"><span class="hiw12-plug">AGENT<br>подключён</span><span class="hiw12-socket">Mac mini<br>свободна</span><span class="hiw12-socket hiw12-socket--busy">MacBook<br>занят</span><span class="hiw12-socket">Studio<br>свободна</span><span class="hiw12-socket">Linux PC<br>свободен</span><span class="hiw12-job"><span class="hiw-dot"></span>tests/01 → ?</span></div>
+          <div class="hiw12-foot"><span>подключено 4</span><span>свободно 3</span><span class="hiw12-meter"><span class="hiw-dot"></span>аренда <strong>$0.00</strong></span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v13">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">13</span><h2 class="hiw-bar__name">Свободная мощность</h2><p class="hiw-bar__hint">Кривая нагрузки: всё, что ниже вашей работы, — свободная мощность, в которую падают задачи.</p></header>
+    <div class="hiw-stage hiw-stage--soft">
+      <section class="hiw-sec hiw13 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Простой —<br><em>это тоже мощность.</em></h2><p class="section-lede">Пока вы не работаете, машины отдают сети всё, что осталось ниже вашей нагрузки.</p><p class="hiw-note">Команда падает в свободную полосу и уходит на одну из доступных машин.</p></div>
+        <div class="hiw13-chart">
+          <div class="hiw13-chart__head"><span>Ваша сеть / 24 часа</span><strong>аренда / 0 мин</strong></div>
+          <div class="hiw13-plot"><div class="hiw13-loadline"><span>ваша нагрузка</span></div><span class="hiw13-token">build</span><span class="hiw13-token">tests</span><span class="hiw13-token">render</span></div>
+          <div class="hiw13-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+          <div class="hiw13-legend"><span>свободная мощность</span><span>задачи в пуле</span><span>0 поминутной оплаты</span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v14">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">14</span><h2 class="hiw-bar__name">Главный рубильник</h2><p class="hiw-bar__hint">Частный распределительный щит: свободные автоматы включены, облако выключено.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec hiw14 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Переключите питание<br><em>на себя.</em></h2><p class="section-lede">Облако — чужая электростанция. Ваши компьютеры — собственная подстанция.</p><p class="hiw-note">Агент на каждой машине. Свободные автоматы питают сеть. Задача зажигается на одном из них.</p></div>
+        <div class="hiw14-panel">
+          <div class="hiw14-lever"><span>CLOUD / выкл</span><i class="hiw14-switch"></i><span>СВОЯ СЕТЬ / вкл</span></div>
+          <div class="hiw14-circuits">
+            <div class="hiw14-circuit hiw14-circuit--on"><i></i><span>Mac mini · простой</span><span>в сети</span></div>
+            <div class="hiw14-circuit"><i></i><span>MacBook Pro · вы работаете</span><span>пропущен</span></div>
+            <div class="hiw14-circuit hiw14-circuit--on"><i></i><span>Mac Studio · простой</span><span>в сети</span></div>
+            <div class="hiw14-circuit hiw14-circuit--on"><i></i><span>Linux PC · простой</span><span>в сети</span></div>
+          </div>
+          <div class="hiw14-meter"><span>задача BUILD #128 → автомат 03</span><strong>аренда 0 мин</strong></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v15">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">15</span><h2 class="hiw-bar__name">0% облачности</h2><p class="hiw-bar__hint">Погодная консоль: 0% облачности, машинная станция и прогноз без счёта за минуты.</p></header>
+    <div class="hiw-stage hiw-stage--tint">
+      <section class="hiw-sec section-shell">
+        <div class="hiw15-head"><div><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">0% облачности.<br><em>Всё — на своей крыше.</em></h2><p class="section-lede">Каждая свободная машина сообщает: «ясно». Команда приземляется туда, где есть место.</p></div><div class="hiw15-number"><strong>0%</strong><span>облачность / чужие облака</span></div></div>
+        <div class="hiw15-rail"><div class="hiw15-ticket">tests/01 → ???</div><div class="hiw15-station hiw15-station--busy"><strong>MacBook</strong><span>занят · вы</span><i></i></div><div class="hiw15-station"><strong>Mac mini</strong><span>ясно · 96%</span><i></i></div><div class="hiw15-station"><strong>Mac Studio</strong><span>ясно · 88%</span><i></i></div><div class="hiw15-station"><strong>Linux PC</strong><span>ясно · 74%</span><i></i></div><div class="hiw15-station"><strong>Android TV</strong><span>ясно · 61%</span><i></i></div></div>
+        <div class="hiw15-forecast"><div><span>Аренда</span><strong>по минутам · переменная облачность</strong></div><div><span>Своя крыша</span><strong>от $0 · ясно</strong></div></div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v16">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">16</span><h2 class="hiw-bar__name">Фигуры ваши</h2><p class="hiw-bar__hint">Ваша сеть как доска: компьютеры — фигуры, команда — ход, свободные клетки — доступные машины.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec hiw16 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Фигуры ваши.<br><em>Ход — наш.</em></h2><p class="section-lede">Агент ставит каждую машину на доску. Свободная клетка играет за сеть, команда занимает любую свободную.</p><ul class="hiw-points"><li><span>01</span><div><strong>Все фигуры на доске</strong><p>{{ $agent }}</p></div></li><li><span>02</span><div><strong>Свободная клетка — в игре</strong><p>{{ $idle }}</p></div></li><li><span>03</span><div><strong>Ход выбирает сеть</strong><p>{{ $route }}</p></div></li></ul><div class="hiw16-caption"><span>● свободна</span><span>◐ занята</span><span><strong>→ команда</strong></span></div></div>
+        <div class="hiw16-board" aria-hidden="true">
+          <!-- 8x8 board: empty cells with a few tokens -->
+          {{ range seq 1 64 }}<div class="hiw16-cell{{ if or (eq . 10) (eq . 27) (eq . 41) (eq . 58) }} hiw16-cell--busy{{ end }}">{{ if eq . 6 }}<span class="hiw16-token">A</span>{{ else if eq . 15 }}<span class="hiw16-token hiw16-token--hit">?</span>{{ else if eq . 22 }}<span class="hiw16-token">B</span>{{ else if eq . 30 }}<span class="hiw16-token hiw16-token--busy">×</span>{{ else if eq . 34 }}<span class="hiw16-token">C</span>{{ else if eq . 45 }}<span class="hiw16-token hiw16-token--busy">×</span>{{ else if eq . 52 }}<span class="hiw16-token">D</span>{{ else if eq . 61 }}<span class="hiw16-token">E</span>{{ end }}</div>{{ end }}
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v17">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">17</span><h2 class="hiw-bar__name">Лотерея</h2><p class="hiw-bar__hint">Команда как билет в частной лотерее: приз — ваши машины, выигрыш — свободная.</p></header>
+    <div class="hiw-stage hiw-stage--soft">
+      <section class="hiw-sec hiw17 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Единственная лотерея,<br><em>где приз уже ваш.</em></h2><p class="section-lede">Команда — билет. Сеть вытягивает свободную машину. Вы получаете результат, а не необходимость выбирать.</p><p class="hiw-note">Это не случайность: планировщик видит всё поле, а занятые машины не участвуют.</p></div>
+        <div><div class="hiw17-drum" aria-hidden="true"><span class="hiw17-hub">сеть</span><span class="hiw17-token">Mac</span><span class="hiw17-token">PC</span><span class="hiw17-token hiw17-token--busy">×</span><span class="hiw17-token">TV</span><span class="hiw17-token">Linux</span><span class="hiw17-token hiw17-token--hit">?</span></div><div class="hiw17-stub"><span>БИЛЕТ / tests.yml</span><strong>HOST: ████ · $0.00</strong></div><div class="hiw17-notes"><span>01 / подключить</span><span>02 / оставить в простое</span><span>03 / отправить</span><span>04 / не платить за минуты</span></div></div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v18">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">18</span><h2 class="hiw-bar__name">Уже в коробке</h2><p class="hiw-bar__hint">Коробка настольной игры: внутри только ваши машины, агент и ноль облачных счетов.</p></header>
+    <div class="hiw-stage hiw-stage--tint">
+      <section class="hiw-sec hiw18 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Суперкомпьютер<br><em>уже в коробке.</em></h2><p class="section-lede">Нового железа внутри нет. Только ваше — плюс агент, который собирает его в сеть.</p><div class="hiw-points"><li><span>01</span><div><strong>Агент</strong><p>Одна установка на каждую личную или рабочую машину.</p></div></li><li><span>02</span><div><strong>Свободные часы</strong><p>В простое мощность уходит в общий пул.</p></div></li><li><span>03</span><div><strong>Задача</strong><p>Команда сама выбирает свободную фишку.</p></div></li></div><p class="hiw-note">Коробка уже ваша. Счёт за аренду — нет.</p></div>
+        <div class="hiw18-box">
+          <div class="hiw18-box__head"><span>Mutating Compute / box contents</span><span>no cloud required</span></div>
+          <div class="hiw18-tray"><div class="hiw18-slot hiw18-slot--agent">AGENT<br>12 MB</div><div class="hiw18-slot">Mac mini</div><div class="hiw18-slot">MacBook</div><div class="hiw18-slot hiw18-slot--hit">задача<br>на свободной</div><div class="hiw18-slot hiw18-slot--empty">0 облачных<br>счетов</div></div>
+          <div class="hiw18-spec"><div><span>1 × агент</span><strong>есть</strong></div><div><span>N × ваши компьютеры</span><strong>есть</strong></div><div><span>∞ × свободные часы</span><strong>есть</strong></div><div><span>0 × аренда</span><strong>$0.00</strong></div></div>
+          <div class="hiw18-stamp"><span class="hiw-stamp">no cloud required</span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v19">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">19</span><h2 class="hiw-bar__name">Журнал одного задания</h2><p class="hiw-bar__hint">Один запуск как аннотированный терминал: команда, выбор машины, результат и счёт.</p></header>
+    <div class="hiw-stage hiw-stage--plain">
+      <section class="hiw-sec hiw19 section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Одна команда.<br><em>Ваши машины.</em></h2><p class="section-lede">Вы отправляете задачу — сеть выбирает свободный компьютер. На какой — не ваша забота.</p><p class="hiw-note">Всё, что нужно знать: команда входит, результат выходит, счёт остаётся нулевым.</p></div>
+        <div class="hiw19-log" aria-label="Пример журнала одного задания">
+          <div class="hiw19-log__head"><span>mc://studio</span><span>4 hosts · 1 human</span><span>● live</span></div>
+          <div class="hiw19-log__body">
+            <div class="hiw19-row"><span>$</span><span>mc run pytest -q</span><small></small></div>
+            <div class="hiw19-row"><span>›</span><span>pool studio: scanning 4 hosts</span><small></small></div>
+            <div class="hiw19-row hiw19-row--hit"><span>●</span><span>mac-mini-3 · idle 96%</span><small>selected</small></div>
+            <div class="hiw19-row"><span>○</span><span>macbook-air · busy</span><small>skipped</small></div>
+            <div class="hiw19-row"><span>○</span><span>mac-studio · asleep</span><small>skipped</small></div>
+            <div class="hiw19-row"><span>✓</span><span>1 842 passed · 38 s</span><small>mac-mini-3</small></div>
+          </div>
+          <div class="hiw19-bill"><span>rented $0.005/min</span><span><strong>$0.00 / min</strong></span></div>
+        </div>
+      </section>
+    </div>
+  </article>
+
+  <article class="hiw-variant" id="v20">
+    <header class="hiw-bar section-shell"><span class="hiw-bar__num">20</span><h2 class="hiw-bar__name">Адрес неизвестен</h2><p class="hiw-bar__hint">До и после: раньше вы выбирали машину, теперь выбираете сеть.</p></header>
+    <div class="hiw-stage hiw-stage--grid">
+      <section class="hiw-sec compute-section section-shell">
+        <div class="hiw-copy"><p class="section-index">{{ $eyebrow }}</p><h2 class="section-heading">Не выбирайте машину.<br><em>Выбирайте сеть.</em></h2><p class="section-lede">Одна и та же команда: раньше — на конкретный сервер, теперь — в вашу сеть.</p></div>
+        <div class="hiw20">
+          <div class="hiw20-row"><span class="hiw20-label">до / вы выбираете машину</span><div class="hiw20-route hiw20-route--old"><span class="hiw20-cmd">$ run tests</span><i class="hiw20-path"><span>адрес: eu-west-1</span></i><span class="hiw20-vm">VM-04<br>чужое</span></div></div>
+          <div class="hiw20-row"><span class="hiw20-label">после / вы выбираете сеть</span><div class="hiw20-route hiw20-route--new"><span class="hiw20-cmd">$ run tests</span><i class="hiw20-path"><span>адрес: ???</span></i><span class="hiw20-fan"><span>?</span><span>○</span><span>○</span><span>○</span></span><span class="hiw20-vm">любая<br>свободная</span></div></div>
+        </div>
+        <p class="hiw-note" style="margin-top:19px">Слева — чужие минуты и чужая машина. Справа — ваши машины, свободный выбор сети и ноль поминутной оплаты.</p>
+      </section>
+    </div>
+  </article>
+</div>
+{{ end }}

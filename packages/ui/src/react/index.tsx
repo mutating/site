@@ -192,7 +192,10 @@ function NavMenuItems({ item, renderLink }: { item: HeaderItem; renderLink?: Hea
     const content = (
       <>
         <span className="tmc-nav-menu__copy">
-          <strong>{child.label}</strong>
+          <strong>
+            {child.label}
+            {child.badge && <>{' '}<span className="tmc-nav-menu__badge">{child.badge}</span></>}
+          </strong>
           {child.description && <small>{child.description}</small>}
         </span>
         <svg className="tmc-nav-menu__arrow" viewBox="0 0 16 16" aria-hidden="true">

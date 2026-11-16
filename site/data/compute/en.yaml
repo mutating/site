@@ -128,8 +128,29 @@ workflow:
     text: Select a repository, branch and jobs.
   - title: Add the configuration to your workflow
     text: Copy it from Mutating Compute.
+network:
+  index: 01 / HOW IT WORKS
+  label: How it works
+  lines:
+  - number: '01'
+    title: Install the agent on your computers.
+    text: Yours or your organization’s. One agent per machine.
+  - number: '02'
+    title: Spare capacity goes to the network.
+    text: When a computer is idle, it is available for jobs.
+  - number: '03'
+    title: The command runs on a free machine.
+    text: The network decides which one. You get the result.
+  - number: '04'
+    title: Pay for devices, not minutes.
+    text: Your own network replaces rented cloud.
+  footer:
+  - 1 agent
+  - N computers
+  - $0 per minute
+  - First 2 personal devices free
 control:
-  index: 01 / RESOURCE LIMITS
+  index: 03 / RESOURCE LIMITS
   heading: Resource limits
   emphasis: for active and idle time.
   description: Allow jobs only while idle, or set different limits for active and idle time.
@@ -151,31 +172,33 @@ control:
     title: Choose what happens when you return.
     text: The agent stops taking new jobs. It lets the current job finish or stops it immediately, as configured.
   chart_label: CPU limit for jobs
-isolation:
-  index: 02 / JOB ISOLATION
-  heading: A disposable virtual machine
-  emphasis: for every job.
-  description: A virtual machine (VM) is created on demand to isolate the job from your apps, then removed after
-    the job.
-  host: Your computer
-  apps: Your applications
-  workspace: Keep running during compute jobs
-  job: Compute job
-  lifecycle:
-  - icon: cube
-    title: Create a VM
-    detail: Clean environment
-  - icon: terminal
-    title: Run the job
-    detail: Inside the VM
-    isolated: true
-  - icon: trash
-    title: Remove the VM
-    detail: After the job finishes
-  encryption_title: Encrypted job transfer.
-  encryption_text: The agent interface shows no job commands or logs.
+security:
+  index: 02 / SECURITY
+  heading: Trusted commands.
+  emphasis: Untrusted execution.
+  description: We run only commands approved by you or your organization. Then we treat them as if they cannot be trusted.
+  points:
+  - number: '01'
+    label: SOURCE
+    title: Only your network
+    text: Your commands run only on your computers or your organization’s. Nothing leaks to other machines, and commands from other people’s machines never reach yours.
+    meta: 'network: private'
+    icon: shield
+  - number: '02'
+    label: BOUNDARY
+    title: Untrusted runtime
+    text: The code gets no access to your applications, files, or network.
+    meta: 'host: isolated'
+    icon: cube
+  - number: '03'
+    label: LIFETIME
+    title: Disposable VM
+    text: A clean environment for one job. Nothing remains after it.
+    meta: 'state: zero'
+    icon: trash
+  footer: Every job runs in an isolated disposable virtual machine.
 benchmarks:
-  index: 03 / PERFORMANCE
+  index: 04 / PERFORMANCE
   heading: Built-in benchmarks
   emphasis: for comparing CPU performance.
   description: Compare different computers on the same performance scale.
@@ -192,7 +215,7 @@ benchmarks:
   - Device B
   - Device C
 team:
-  index: 04 / ORGANIZATIONS
+  index: 05 / ORGANIZATIONS
   heading: Share compute resources
   emphasis: with colleagues.
   description: Create an organization in Mutating Compute, connect devices and invite colleagues.
@@ -204,7 +227,7 @@ team:
   - Dev
   - Ops
 download:
-  index: 06 / AGENTS
+  index: 07 / AGENTS
   heading: Install the agent
   emphasis: on your devices.
   description: A background app for running jobs. Connect your device to your account or organization.
@@ -228,7 +251,7 @@ download:
     detail: TV agent
     icon: tv
 pricing:
-  index: 07 / PRICING
+  index: 08 / PRICING
   heading: Device subscriptions.
   emphasis: No charge per minute.
   description: All personal plans include 2 free devices. Bundle sizes include them.
@@ -277,7 +300,7 @@ pricing:
   enterprise_price: On request
   enterprise_description: Tell us your tasks and device count for a custom quote.
 faq:
-  index: 08 / QUESTIONS & ANSWERS
+  index: 09 / QUESTIONS & ANSWERS
   heading: Frequently asked questions.
   items:
   - question: Whose machines run my jobs?
@@ -306,7 +329,7 @@ closing:
   line: Run compute jobs
   emphasis: on your own computers.
 applications:
-  index: 05 / USE CASE
+  index: 06 / USE CASE
   heading: CI with GitHub Actions.
   emphasis: On your own hardware.
   description: Run builds and tests on your own devices and spend less on rented CI runners.
