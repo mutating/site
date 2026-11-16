@@ -107,7 +107,9 @@ class Authority:
         return (
             x509.CertificateBuilder()
             .subject_name(
-                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Mutating Compute {enrollment.id}")])
+                x509.Name(
+                    [x509.NameAttribute(NameOID.COMMON_NAME, f"Mutating Compute {enrollment.id}")]
+                )
             )
             .issuer_name(self.cert.subject)
             .public_key(csr.public_key())
