@@ -9,13 +9,20 @@ from urllib.parse import urlencode, urlsplit
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, or_, select
 
 from throng_api.ci_policy import record_revision
 from throng_api.github_client import GitHubClient, GitHubError, GitHubToken
 from throng_api.github_oidc import ActionsOIDC
 from throng_api.models import CIRoute, GitHubAccount, GitHubOAuthFlow, utcnow
-from throng_api.security import access_token_scheme, authenticate, bearer, digest, personal
+from throng_api.security import (
+    access_token_scheme,
+    authenticate,
+    bearer,
+    digest,
+    modern_personal,
+    personal,
+)
 
 router = APIRouter(
     prefix="/v1/github", tags=["GitHub Actions"], dependencies=[Depends(access_token_scheme)]
@@ -423,7 +430,29 @@ async def repositories(
 @router.delete("/connection", status_code=204)
 async def disconnect(request: Request):
     async with request.app.state.db.write() as session:
-        user_id = personal(await authenticate(session, request, "manage"))
+        principal = await authenticate(session, request, "manage")
+        if modern_personal(principal):
+            company_route = await session.scalar(
+                select(CIRoute.id)
+                .where(
+                    CIRoute.enabled.is_(True),
+                    CIRoute.company_id.is_not(None),
+                    or_(
+                        CIRoute.authorized_by == principal.user_id,
+                        and_(
+                            CIRoute.authorized_by.is_(None),
+                            CIRoute.created_by == principal.user_id,
+                        ),
+                    ),
+                )
+                .limit(1)
+            )
+            if company_route:
+                raise HTTPException(
+                    403,
+                    "Personal API tokens cannot disconnect GitHub while company CI routes are enabled",
+                )
+        user_id = personal(principal)
         await disconnect_user(session, user_id)
 
 

@@ -307,7 +307,7 @@ def test_narrow_post_author_tooltip_matches_header_and_stays_in_viewport(
         presentation = page.evaluate(
             """
             () => {
-              const header = document.querySelector(".tmc-header");
+              const header = document.querySelector(".tmc-header-shell");
               const metadata = document.querySelector(".post__meta");
               const tooltip = document.querySelector(
                 ".post__meta .author-status__tooltip",

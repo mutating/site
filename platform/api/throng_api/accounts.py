@@ -42,6 +42,7 @@ from throng_api.security import (
     hash_password,
     issue_token,
     membership_role,
+    modern_personal,
     owned,
     owned_filter,
     owner_access,
@@ -70,6 +71,11 @@ async def validate_owner(session, principal, data):
         "user_id": str(data.user_id) if data.user_id else None,
         "company_id": str(data.company_id) if data.company_id else None,
     }
+
+
+def reject_personal_company_tokens(principal, company_id):
+    if company_id and modern_personal(principal):
+        raise HTTPException(403, "Personal API tokens cannot manage organization tokens")
 
 
 @public_router.post("/users", status_code=201, response_model=UserOut)
@@ -505,9 +511,9 @@ async def create_token_owner(data: OwnerInput, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         personal(principal)
-        return await saved(
-            session, TokenOwnership(**await validate_owner(session, principal, data))
-        )
+        values = await validate_owner(session, principal, data)
+        reject_personal_company_tokens(principal, values["company_id"])
+        return await saved(session, TokenOwnership(**values))
 
 
 @router.get("/token-ownerships", response_model=list[out.TokenOwnership])
@@ -542,7 +548,9 @@ async def update_token_owner(ownership_id: UUID, data: OwnerInput, request: Requ
         for model in (AccessToken, LegacyCredential):
             if await session.scalar(select(model.id).where(model.ownership_id == row.id).limit(1)):
                 raise HTTPException(409, "Delete attached tokens before changing their ownership")
-        for key, value in (await validate_owner(session, principal, data)).items():
+        updates = await validate_owner(session, principal, data)
+        reject_personal_company_tokens(principal, row.company_id or updates["company_id"])
+        for key, value in updates.items():
             setattr(row, key, value)
         return public(row)
 
@@ -564,6 +572,7 @@ async def create_token(data: TokenCreate, request: Request):
         principal = await authenticate(session, request, "manage")
         actor_id = personal(principal)
         owner = await owned(session, TokenOwnership, data.ownership_id, principal, admin=True)
+        reject_personal_company_tokens(principal, owner.company_id)
         if not set(data.scopes) <= principal.scopes:
             raise HTTPException(403, "Cannot issue scopes absent from the current token")
         token, raw = await issue_token(

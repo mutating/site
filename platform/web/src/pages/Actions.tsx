@@ -6,6 +6,7 @@ import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { GITHUB_DISCOVERY_TIMEOUT_MS, githubAuthorizationURL, type CatalogRepository, type GitHubStatus } from "../lib/github";
 import { Empty, ErrorBox, Heading, Loading } from "../components/UI";
+import { Select } from "../components/Select";
 import { connectionLabel, runLabel } from "../lib/ci";
 
 type Catalog = { repositories: CatalogRepository[]; total_count: number; owners: string[] };
@@ -69,11 +70,11 @@ export function Actions() {
           <summary>{t("repositoryFilters")}</summary>
         <div className="repository-filters">
           <label className="field repository-search">{t("repositorySearch")}<input type="search" value={params.get("search") ?? ""} onChange={event => update("search", event.target.value)} /></label>
-          <label className="field">{t("repositoryType")}<select aria-label={t("repositoryType")} value={params.get("owner_type") ?? "all"} onChange={event => update("owner_type", event.target.value)}><option value="all">{t("repositoryAll")}</option><option value="personal">{t("repositoryPersonal")}</option><option value="organization">{t("repositoryOrganizations")}</option></select></label>
-          <label className="field">{t("githubRepositoryOwner")}<select aria-label={t("githubRepositoryOwner")} value={owner} onChange={event => update("owner", event.target.value)}><option value="">{t("repositoryAllOwners")}</option>{owners.map(owner => <option key={owner}>{owner}</option>)}</select></label>
-          <label className="field">{t("repositoryState")}<select aria-label={t("repositoryState")} value={params.get("state") ?? "all"} onChange={event => update("state", event.target.value)}><option value="all">{t("repositoryAllStates")}</option>{(["unconfigured", "pending", "connected", "disabled"] as const).map(state => <option key={state} value={state}>{t(state === "pending" ? "repositoryPendingFilter" : connectionLabel[state])}</option>)}</select></label>
-          <label className="field">{t("repositorySort")}<select aria-label={t("repositorySort")} value={params.get("sort") ?? "name"} onChange={event => update("sort", event.target.value)}><option value="name">{t("repositoryNameAsc")}</option><option value="name_desc">{t("repositoryNameDesc")}</option><option value="last_run">{t("repositoryLastRun")}</option><option value="updated">{t("repositoryUpdated")}</option></select></label>
-          <label className="field">{t("repositoryPageSize")}<select aria-label={t("repositoryPageSize")} value={size} onChange={event => update("per_page", event.target.value)}>{[20, 50, 100].map(value => <option key={value}>{value}</option>)}</select></label>
+          <label className="field">{t("repositoryType")}<Select aria-label={t("repositoryType")} value={params.get("owner_type") ?? "all"} onChange={event => update("owner_type", event.target.value)}><option value="all">{t("repositoryAll")}</option><option value="personal">{t("repositoryPersonal")}</option><option value="organization">{t("repositoryOrganizations")}</option></Select></label>
+          <label className="field">{t("githubRepositoryOwner")}<Select aria-label={t("githubRepositoryOwner")} value={owner} onChange={event => update("owner", event.target.value)}><option value="">{t("repositoryAllOwners")}</option>{owners.map(owner => <option key={owner}>{owner}</option>)}</Select></label>
+          <label className="field">{t("repositoryState")}<Select aria-label={t("repositoryState")} value={params.get("state") ?? "all"} onChange={event => update("state", event.target.value)}><option value="all">{t("repositoryAllStates")}</option>{(["unconfigured", "pending", "connected", "disabled"] as const).map(state => <option key={state} value={state}>{t(state === "pending" ? "repositoryPendingFilter" : connectionLabel[state])}</option>)}</Select></label>
+          <label className="field">{t("repositorySort")}<Select aria-label={t("repositorySort")} value={params.get("sort") ?? "name"} onChange={event => update("sort", event.target.value)}><option value="name">{t("repositoryNameAsc")}</option><option value="name_desc">{t("repositoryNameDesc")}</option><option value="last_run">{t("repositoryLastRun")}</option><option value="updated">{t("repositoryUpdated")}</option></Select></label>
+          <label className="field">{t("repositoryPageSize")}<Select aria-label={t("repositoryPageSize")} value={size} onChange={event => update("per_page", event.target.value)}>{[20, 50, 100].map(value => <option key={value}>{value}</option>)}</Select></label>
         </div>
         </details>
         <ErrorBox error={catalog.error} retry={reload} />

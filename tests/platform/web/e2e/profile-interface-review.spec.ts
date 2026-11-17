@@ -113,11 +113,11 @@ test("pagination puts keyboard focus on the newly loaded token page", async ({ p
   await expect(page.locator(".token-registry-row")).toHaveCount(10);
   await page.getByRole("button", { name: "Далее →", exact: true }).press("Enter");
   await expect(page.locator(".token-registry-row")).toHaveCount(1);
-  const heading = page.getByRole("heading", { name: "Доступные токены.", exact: true });
-  await expect(heading).toBeFocused();
+  const toolbar = page.getByRole("group", { name: "Доступные токены", exact: true });
+  await expect(toolbar).toBeFocused();
   await page.getByRole("button", { name: "← Назад", exact: true }).press("Enter");
   await expect(page.locator(".token-registry-row")).toHaveCount(10);
-  await expect(heading).toBeFocused();
+  await expect(toolbar).toBeFocused();
 });
 
 test("a successful revoke returns focus to the token instead of a disabled button", async ({ page, account, request }) => {

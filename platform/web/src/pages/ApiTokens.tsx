@@ -7,6 +7,7 @@ import { useI18n } from "../lib/i18n";
 import { memberName } from "../lib/permissions";
 import type { ApiToken, Company } from "../lib/types";
 import { CreateTokenDialog } from "../components/CreateTokenDialog";
+import { Select } from "../components/Select";
 import {
   ConfirmDialog,
   Empty,
@@ -20,12 +21,13 @@ export function ApiTokens() {
   const { t, locale } = useI18n();
   const [params, setParams] = useSearchParams();
   const owner = params.get("owner") || "all";
+  const filterStatus = params.get("status") === "active" ? "active" : "all";
   const page = Math.max(
     1,
     Math.min(1_000_000, Number.parseInt(params.get("page") || "1", 10) || 1),
   );
-  const key = `${user!.id}/${owner}/${page}`;
-  const registryTitle = useRef<HTMLHeadingElement>(null);
+  const key = `${user!.id}/${owner}/${filterStatus}/${page}`;
+  const registryFocus = useRef<HTMLDivElement>(null);
   const registry = useRef<HTMLDivElement>(null);
   const pendingFocus = useRef<{ key: string; tokenId?: string } | null>(null);
   const [owners, setOwners] = useState<{ userId: string; items: Pick<Company, "id" | "name" | "my_permissions">[] } | null>(null);
@@ -48,6 +50,7 @@ export function ApiTokens() {
       });
       if (owner === "personal") query.set("user_id", user!.id);
       else if (company) query.set("company_id", company.id);
+      if (filterStatus === "active") query.set("status", "active");
       const result = canRead
         ? await request<ApiToken[]>(`api-tokens?${query}`, { signal })
         : { data: [], total: 0 };
@@ -102,7 +105,7 @@ export function ApiTokens() {
   };
   const pages = Math.max(1, Math.ceil((data?.total || 0) / 10));
   const updatePage = (value: number, replace = false, focusResult = false) => {
-    if (focusResult) pendingFocus.current = { key: `${user!.id}/${owner}/${value}` };
+    if (focusResult) pendingFocus.current = { key: `${user!.id}/${owner}/${filterStatus}/${value}` };
     const next = new URLSearchParams(params);
     if (value === 1) next.delete("page");
     else next.set("page", String(value));
@@ -127,7 +130,7 @@ export function ApiTokens() {
     const row = pending.tokenId && Array.from(registry.current?.querySelectorAll<HTMLElement>(".token-registry-row") || [])
       .find(element => element.dataset.tokenId === pending.tokenId);
     if (row) row.focus({ preventScroll: true });
-    else registryTitle.current?.focus();
+    else registryFocus.current?.focus();
   }, [key, data, state.loading, state.error]);
   const personalName =
     [user!.first_name, user!.last_name].filter(Boolean).join(" ") ||
@@ -144,22 +147,35 @@ export function ApiTokens() {
       : token.expires_at !== null && Date.parse(token.expires_at) <= Date.now()
         ? "tokenExpired"
         : "tokenActive";
+  const createToken = (
+    <button
+      className="button primary token-create-button"
+      disabled={!data || !canManage}
+      onClick={(event) => {
+        event.currentTarget.focus({ preventScroll: true });
+        setCreating(true);
+      }}
+    >
+      <Icon name="plus" size={17} />
+      {t("createToken")}
+    </button>
+  );
   return (
     <div className="api-tokens-page">
-      <header className="page-heading">
-        <div>
-          <h2 ref={registryTitle} className="token-registry-title" tabIndex={-1}>{t("availableTokens")}<span className="hot">.</span></h2>
-          <p className="lede">{t("tokensLead")}</p>
-        </div>
-      </header>
-      <div className="token-registry-toolbar">
+      <div
+        ref={registryFocus}
+        className="token-registry-toolbar"
+        role="group"
+        aria-label={t("availableTokens")}
+        tabIndex={-1}
+      >
+        <div className="token-create-compact">{createToken}</div>
         <div className="token-registry-filter">
-          <label className="field">
-            {t("tokenOwnerFilter")}
-            <select
+          <div className="field token-owner-filter">
+            <Select
               aria-label={t("tokenOwnerFilter")}
               value={owner}
-              disabled={!data && state.loading}
+              disabled={!owners && state.loading}
               onChange={(event) => {
                 const next = new URLSearchParams(params);
                 next.set("owner", event.target.value);
@@ -177,8 +193,24 @@ export function ApiTokens() {
                   {t("tokenCompany")} · {company.name}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </div>
+          <div className="field token-status-filter">
+            <Select
+              aria-label={t("tokenStatusFilter")}
+              value={filterStatus}
+              onChange={(event) => {
+                const next = new URLSearchParams(params);
+                if (event.target.value === "active") next.set("status", "active");
+                else next.delete("status");
+                next.delete("page");
+                setParams(next);
+              }}
+            >
+              <option value="all">{t("tokenAllStatuses")}</option>
+              <option value="active">{t("tokenActiveOnly")}</option>
+            </Select>
+          </div>
           <button
             className="button secondary token-refresh"
             aria-label={t("refresh")}
@@ -189,17 +221,7 @@ export function ApiTokens() {
             <Icon name="refresh" size={15} />
           </button>
         </div>
-        <button
-          className="button primary"
-          disabled={!data || !canManage}
-          onClick={(event) => {
-            event.currentTarget.focus({ preventScroll: true });
-            setCreating(true);
-          }}
-        >
-          <Icon name="plus" size={17} />
-          {t("createToken")}
-        </button>
+        <div className="token-create-wide">{createToken}</div>
       </div>
       {selected &&
         (!selected.my_permissions.includes("tokens.manage") ||
@@ -214,8 +236,11 @@ export function ApiTokens() {
           <Loading />
         ) : null
       ) : !data.canRead ? null : !data.tokens.length ? (
-        <Empty icon="key" title={t("noApiTokens")}>
-          {canManage && t("noApiTokensLead")}
+        <Empty
+          icon="key"
+          title={t(filterStatus === "active" ? "noActiveApiTokens" : "noApiTokens")}
+        >
+          {canManage && t(filterStatus === "active" ? "noActiveApiTokensLead" : "noApiTokensLead")}
         </Empty>
       ) : (
         <>
@@ -339,16 +364,6 @@ export function ApiTokens() {
           )}
         </>
       )}
-      <div className="token-owner-legend">
-        <span>
-          <Icon name="user" size={16} />
-          {t("tokenPersonalLegend")}
-        </span>
-        <span>
-          <Icon name="building" size={16} />
-          {t("tokenCompanyLegend")}
-        </span>
-      </div>
       {creating && (
         <CreateTokenDialog
           companies={ownerChoices}

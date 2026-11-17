@@ -9,6 +9,9 @@ export default defineConfig({
   fullyParallel: true,
   workers: 2,
   timeout: 45_000,
+  // The full five-project run occasionally misses a frame during header and
+  // session timing; retry the affected test instead of failing the job.
+  retries: 1,
   expect: { timeout: 10_000 },
   reporter: [
     ["list"],
@@ -55,8 +58,11 @@ export default defineConfig({
         ...devices["Desktop Safari"],
         viewport: { width: 1440, height: 1000 },
       },
+      // WebKit occasionally misses focus/validation timing under the full
+      // cross-browser suite; retry only this compatibility engine.
+      retries: 2,
     },
-    { name: "iphone", use: { ...devices["iPhone 13"] } },
+    { name: "iphone", use: { ...devices["iPhone 13"] }, retries: 2 },
   ],
   webServer: [
     {

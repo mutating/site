@@ -85,9 +85,9 @@ export function Layout() {
     (signal) => api<GitHubStatus>("github/status", { signal }),
     user!.id,
   );
-  const links: [string, MessageKey | "Power Cells", string][] = [
+  const links: [string, MessageKey, string][] = [
     ["/", "home", "grid"],
-    ["/power-cells", "Power Cells", "cells"],
+    ["/compute", "compute", "compute"],
     ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
   ];
@@ -108,7 +108,7 @@ export function Layout() {
                 }
               >
                 <Icon name={icon} />
-                <span>{label === "Power Cells" ? label : t(label)}</span>
+                <span>{t(label)}</span>
                 {label === "cloud" && <span className="soon-dot" />}
               </NavLink>
             ))}

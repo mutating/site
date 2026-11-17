@@ -1,6 +1,6 @@
-{{- if .children -}}
+{{- if and (isset . "children") (gt (len .children) 0) -}}
   {{- if .mobile -}}
-    <div class="tmc-nav-menu tmc-nav-menu--expanded">
+    <div class="tmc-nav-menu tmc-nav-menu--expanded" role="group" aria-label="{{ .label }}">
       <div class="tmc-nav-menu__label">{{ .label }}</div>
       {{ partial "tmc-ui/menu-panel.html" (dict "children" .children) }}
     </div>

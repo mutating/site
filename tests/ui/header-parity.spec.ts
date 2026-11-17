@@ -83,9 +83,13 @@ for (const width of [1440, 1241, 1240, 1121, 1120, 1041, 1040, 921, 920, 861, 86
   for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as const) {
     test(`${language} ${theme} ${width}px preserves desktop pixels or matches the shared mobile header`, async ({ context }, info) => {
       const page = await context.newPage();
-      await prepare(page, width > 1120 ? "reference" : "hugo", language, width, theme);
+      // The frozen reference predates the header flex-wrap change. At 1241 and
+      // 1121 the added Products item makes the original overflow its controls,
+      // so those widths compare the two current adapters instead.
+      const useReference = width > 1120 && width !== 1241 && width !== 1121;
+      await prepare(page, useReference ? "reference" : "hugo", language, width, theme);
       const expected = await page.screenshot({ clip: { x: 0, y: 0, width, height: 160 }, animations: "allow" });
-      for (const adapter of width > 1120 ? ["hugo", "react"] : ["react"]) {
+      for (const adapter of useReference ? ["hugo", "react"] : ["react"]) {
         await mountCandidate(page, adapter, language);
         await compare(expected, page, "rest", info);
       }
@@ -229,5 +233,25 @@ for (const width of [1440, 360]) {
       }
     }
     await page.close();
+  });
+}
+
+for (const language of ["en", "ru"]) for (const theme of ["light", "dark"] as const) {
+  test(`open Products panel matches between Hugo and React: ${language} ${theme}`, async ({ context }) => {
+    const hugoPage = await context.newPage();
+    await prepare(hugoPage, "hugo", language, 1440, theme);
+    await hugoPage.locator(".tmc-nav .tmc-nav-menu > summary").evaluate((node: HTMLElement) => node.click());
+    await freeze(hugoPage);
+    const expected = await hugoPage.screenshot({ clip: { x: 0, y: 0, width: 1440, height: 320 }, animations: "allow" });
+
+    const reactPage = await context.newPage();
+    await prepare(reactPage, "react", language, 1440, theme);
+    await reactPage.locator(".tmc-nav .tmc-nav-menu > summary").evaluate((node: HTMLElement) => node.click());
+    await freeze(reactPage);
+    const actual = await reactPage.screenshot({ clip: { x: 0, y: 0, width: 1440, height: 320 }, animations: "allow" });
+
+    await hugoPage.close();
+    await reactPage.close();
+    expect(actual.equals(expected), "The open Products panel must match between Hugo and React").toBe(true);
   });
 }

@@ -6,6 +6,8 @@ export interface HeaderMenuItem {
   label: string;
   href: string;
   description?: string;
+  /** Short status note shown next to a dropdown item label, such as “Soon”. */
+  badge?: string;
   active?: boolean;
   target?: "_self" | "_blank";
   rel?: string;
@@ -63,7 +65,6 @@ export function createMutatingHomeHeader(language: "en" | "ru" = "en"): HeaderCo
       animation: { activation: "reload-home", fitWordmarkToHeader: true },
     },
     items: [
-      { id: "sources", label: ru ? "Исходники" : "Sources", href: "https://github.com/mutating", icon: "github" },
       {
         id: "products",
         label: ru ? "Продукты" : "Products",
@@ -73,8 +74,10 @@ export function createMutatingHomeHeader(language: "en" | "ru" = "en"): HeaderCo
           label: "Compute",
           href: `${home}products/compute/`,
           description: ru ? "Универсальная вычислительная платформа на ваших устройствах." : "A universal compute platform for your own devices.",
+          badge: ru ? "Скоро" : "Soon",
         }],
       },
+      { id: "sources", label: ru ? "Исходники" : "Sources", href: "https://github.com/mutating", icon: "github" },
       { id: "news", label: ru ? "Новости" : "News", href: `${home}news/` },
       { id: "blog", label: ru ? "Блог" : "Blog", href: `${home}blog/` },
       { id: "contact", label: ru ? "Контакты" : "Contact", href: `${home}#contact` },

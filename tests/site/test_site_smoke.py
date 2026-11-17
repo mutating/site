@@ -3560,15 +3560,17 @@ def test_animated_header_wordmark_preserves_the_eye_and_header_geometry(
     )
 
 
+# 1121 is the first desktop width. The Products item leaves too little room
+# for the expanded wordmark there, so hover expansion is covered from 1280 up
+# and the unavailable state is asserted in the fit-gating test below.
 @pytest.mark.parametrize(
     "viewport_width",
-    [861, 920, 921, 1120, 1121, 1280],
+    [861, 920, 921, 1120, 1280],
     ids=[
         "measured-tablet",
         "below-js-breakpoint",
         "above-js-breakpoint",
         "below-css-breakpoint",
-        "above-css-breakpoint",
         "desktop",
     ],
 )
@@ -3822,7 +3824,7 @@ def test_desktop_language_list_opens_on_hover(
             backgroundColor: style.backgroundColor,
             color: style.color,
             navigationColor: getComputedStyle(
-              document.querySelector(".tmc-nav a:last-child"),
+              document.querySelector(".tmc-nav > a:last-of-type"),
             ).color,
             fontFamily: style.fontFamily,
             fontSize: style.fontSize,
@@ -3905,7 +3907,7 @@ def test_desktop_language_list_opens_on_hover(
         """
         (element) => {
           const lastNavigationLink = element.querySelector(
-            ".tmc-nav a:last-child",
+            ".tmc-nav > a:last-of-type",
           );
           const navigationText = document.createRange();
           navigationText.selectNodeContents(lastNavigationLink);
@@ -4485,10 +4487,10 @@ def test_language_switcher_closes_the_hidden_variant_after_breakpoint_change(
     mobile = page.locator(".tmc-language-switcher--mobile")
     desktop.evaluate("element => element.open = true")
 
-    page.set_viewport_size({"width": 1040, "height": 720})
+    page.set_viewport_size({"width": 1120, "height": 720})
     expect(desktop).not_to_have_attribute("open", "")
     mobile.evaluate("element => element.open = true")
-    page.set_viewport_size({"width": 1041, "height": 720})
+    page.set_viewport_size({"width": 1121, "height": 720})
     expect(mobile).not_to_have_attribute("open", "")
     expect(desktop).not_to_have_attribute("open", "")
 
@@ -5354,9 +5356,11 @@ def test_tmc_wordmark_letter_size_is_fixed_across_header_widths(
         (460, False),
         (580, False),
         (720, False),
-        (860, False),
+        (860, True),
         (861, True),
         (920, True),
+        (1120, True),
+        (1121, False),
     ],
 )
 def test_tmc_expands_only_when_the_reserved_wordmark_fits(
@@ -5415,6 +5419,7 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
           const brand = stage.closest(".tmc-brand");
           const header = stage.closest(".tmc-header");
           const actions = header.querySelector(".tmc-header-actions");
+          const navigation = header.querySelector(".tmc-nav");
           const eye = brand.querySelector(".tmc-brand__mark--eye");
           const brandStyle = getComputedStyle(brand);
           const headerStyle = getComputedStyle(header);
@@ -5422,6 +5427,11 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
           const stageStyle = getComputedStyle(stage);
           const headerRect = header.getBoundingClientRect();
           const actionsRect = actions.getBoundingClientRect();
+          const navigationRect = navigation?.getBoundingClientRect();
+          const navigationWidth = navigationRect?.width
+            ? navigationRect.width +
+              (Number.parseFloat(getComputedStyle(navigation).marginRight) || 0)
+            : 0;
           const eyeRect = eye.getBoundingClientRect();
           const gap = Number.parseFloat(brandStyle.columnGap) || 0;
           const eyeMargins =
@@ -5436,7 +5446,8 @@ def test_tmc_expands_only_when_the_reserved_wordmark_fits(
             headerRect.width -
             (Number.parseFloat(headerStyle.paddingLeft) || 0) -
             (Number.parseFloat(headerStyle.paddingRight) || 0) -
-            actionsRect.width;
+            Math.max(actionsRect.width, actions.scrollWidth) -
+            navigationWidth;
 
           return {
             canExpand: stage.dataset.canExpand,

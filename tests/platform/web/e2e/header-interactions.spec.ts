@@ -95,7 +95,7 @@ test("header controls work through every cabinet section and logout", async ({ p
   const navigation = page.getByRole("navigation", { name: /^(Навигация кабинета|Account navigation)$/ });
   const header = page.getByRole("banner");
   const theme = header.getByRole("button", { name: /^(Переключить тему|Toggle color theme)$/ });
-  for (const [path, label] of [["/power-cells", "Power Cells"], ["/actions", "Actions"], ["/cloud", "Облако"], ["/organizations", "Организации"], ["/", "Обзор"]]) {
+  for (const [path, label] of [["/compute", "Compute"], ["/actions", "Actions"], ["/cloud", "Облако"], ["/organizations", "Организации"], ["/", "Обзор"]]) {
     await navigation.getByRole("link", { name: label, exact: true }).click();
     await expect(page).toHaveURL(`http://127.0.0.1:18101${path}`);
     await expect(page.locator("main h1")).toBeVisible();

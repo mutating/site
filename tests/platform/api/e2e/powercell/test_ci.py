@@ -21,9 +21,16 @@ from tests.platform.api.e2e.test_github import (
 from tests.platform.api.e2e.test_github import (
     github as github_fixture,
 )
+from tests.platform.api.token_helpers import move_to_legacy
 from throng_api import ci_controller
 from throng_api.execution import tick
-from throng_api.models import CIReservation, CIRoute, Command, ComputerOwnership, Isolate
+from throng_api.models import (
+    CIReservation,
+    CIRoute,
+    Command,
+    ComputerOwnership,
+    Isolate,
+)
 
 from .conftest import proof_headers
 
@@ -613,6 +620,176 @@ async def test_new_attempt_does_not_reuse_previous_reservation(client, route, ci
     first = (await reserve(client, route, ci_peer)).json()
     second = (await reserve(client, route, ci_peer, run_attempt="2")).json()
     assert second["id"] != first["id"] and second["reason"] == "concurrency_limit"
+
+
+async def test_personal_api_token_cannot_manage_company_ci(
+    api, client, access_token, company, ci_peer
+):
+    """A SELF- token cannot create, edit or disable execution for an organization."""
+    payload = {
+        "installation_id": 456,
+        "repository_id": 42,
+        "workflow_path": ".github/workflows/ci.yml",
+        "job_key": "test",
+        "company_id": company["id"],
+    }
+    response = await api.post("/v1/github/routes", json=payload)
+    assert response.status_code == 201, response.text
+    route = response.json()
+    headers = {"Authorization": "Bearer " + access_token["token"]}
+    response = await client.post("/v1/github/routes", headers=headers, json=payload)
+    assert response.status_code == 403, response.text
+    response = await client.patch(
+        f"/v1/github/routes/{route['id']}",
+        headers=headers,
+        json={"revision": route["revision"], "enabled": False},
+    )
+    assert response.status_code == 403, response.text
+    response = await client.delete(f"/v1/github/routes/{route['id']}", headers=headers)
+    assert response.status_code == 403, response.text
+    response = await client.delete("/v1/github/connection", headers=headers)
+    assert response.status_code == 403, response.text
+    response = await api.get(f"/v1/github/routes/{route['id']}")
+    assert response.status_code == 200 and response.json()["enabled"] is True
+
+
+async def test_legacy_personal_token_retains_company_ci_management(
+    api, client, access_token, company, ci_peer, app
+):
+    """Historical personal credentials keep company CI authority; only execution policy changed."""
+    response = await api.post(
+        "/v1/github/routes",
+        json={
+            "installation_id": 456,
+            "repository_id": 42,
+            "workflow_path": ".github/workflows/ci.yml",
+            "job_key": "test",
+            "company_id": company["id"],
+        },
+    )
+    route = response.json()
+    assert response.status_code == 201, response.text
+    async with app.state.db.write() as session:
+        await move_to_legacy(session, access_token["id"])
+    response = await client.patch(
+        f"/v1/github/routes/{route['id']}",
+        headers={"Authorization": "Bearer " + access_token["token"]},
+        json={"revision": route["revision"], "enabled": False},
+    )
+    assert response.status_code == 200, response.text
+    assert (await api.get(f"/v1/github/routes/{route['id']}")).json()["enabled"] is False
+
+
+async def test_personal_api_token_cannot_move_route_into_company(
+    api, client, access_token, route, company, ci_peer
+):
+    """A SELF- token cannot transfer an existing personal binding into a company pool."""
+    response = await client.patch(
+        f"/v1/github/routes/{route['id']}",
+        headers={"Authorization": "Bearer " + access_token["token"]},
+        json={
+            "revision": route["revision"],
+            "configuration": {
+                "installation_id": 456,
+                "repository_id": 42,
+                "workflow_path": ".github/workflows/ci.yml",
+                "job_key": "test",
+                "company_id": company["id"],
+            },
+        },
+    )
+    assert response.status_code == 403, response.text
+    saved = (await api.get(f"/v1/github/routes/{route['id']}")).json()
+    assert saved["company_id"] is None and saved["revision"] == route["revision"]
+
+
+async def test_personal_api_token_cannot_disconnect_legacy_company_route(
+    api, client, access_token, company, ci_peer, app
+):
+    """A legacy company route without authorized_by is still protected for its creator."""
+    response = await api.post(
+        "/v1/github/routes",
+        json={
+            "installation_id": 456,
+            "repository_id": 42,
+            "workflow_path": ".github/workflows/ci.yml",
+            "job_key": "test",
+            "company_id": company["id"],
+        },
+    )
+    route = response.json()
+    assert response.status_code == 201, response.text
+    async with app.state.db.write() as session:
+        saved = await session.get(CIRoute, route["id"])
+        saved.authorized_by = None
+    response = await client.delete(
+        "/v1/github/connection",
+        headers={"Authorization": "Bearer " + access_token["token"]},
+    )
+    assert response.status_code == 403, response.text
+    assert (await api.get(f"/v1/github/routes/{route['id']}")).json()["enabled"] is True
+    assert (await api.delete("/v1/github/connection")).status_code == 204
+    assert (await api.get(f"/v1/github/routes/{route['id']}")).json()["enabled"] is False
+
+
+async def test_personal_api_token_can_disconnect_without_company_ci(
+    client, access_token, route, ci_peer
+):
+    """A personal token remains able to clean up its own GitHub connection."""
+    response = await client.delete(
+        "/v1/github/connection",
+        headers={"Authorization": "Bearer " + access_token["token"]},
+    )
+    assert response.status_code == 204, response.text
+
+
+async def test_personal_api_token_can_disconnect_with_disabled_company_ci(
+    api, client, access_token, company, ci_peer
+):
+    """A disabled company route no longer prevents personal-token cleanup."""
+    response = await api.post(
+        "/v1/github/routes",
+        json={
+            "installation_id": 456,
+            "repository_id": 42,
+            "workflow_path": ".github/workflows/ci.yml",
+            "job_key": "test",
+            "company_id": company["id"],
+        },
+    )
+    route = response.json()
+    assert response.status_code == 201, response.text
+    assert (
+        await api.patch(
+            f"/v1/github/routes/{route['id']}",
+            json={"revision": route["revision"], "enabled": False},
+        )
+    ).status_code == 200
+    response = await client.delete(
+        "/v1/github/connection",
+        headers={"Authorization": "Bearer " + access_token["token"]},
+    )
+    assert response.status_code == 204, response.text
+
+
+async def test_session_can_disconnect_with_enabled_company_ci(api, company, ci_peer):
+    """A browser session may disable a company route through GitHub disconnect."""
+    response = await api.post(
+        "/v1/github/routes",
+        json={
+            "installation_id": 456,
+            "repository_id": 42,
+            "workflow_path": ".github/workflows/ci.yml",
+            "job_key": "test",
+            "company_id": company["id"],
+        },
+    )
+    route = response.json()
+    assert response.status_code == 201, response.text
+    assert (await api.delete("/v1/github/connection")).status_code == 204
+    response = await api.get(f"/v1/github/routes/{route['id']}")
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
 
 
 async def test_company_route_requires_pool_management(api, other_api, company, membership, ci_peer):

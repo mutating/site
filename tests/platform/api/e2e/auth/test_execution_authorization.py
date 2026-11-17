@@ -4,6 +4,8 @@ from uuid import uuid4
 
 import pytest
 
+from tests.platform.api.token_helpers import move_to_legacy
+
 pytestmark = pytest.mark.anyio
 
 
@@ -118,6 +120,96 @@ async def test_outsider_cannot_submit_or_replay_commands_in_foreign_isolate(
         "/agent/v1/tasks/claim", headers=worker["headers"], json={"wait_seconds": 0.05}
     )
     assert response.status_code == 200 and response.json()["tasks"] == []
+
+
+async def test_personal_api_token_executes_only_in_personal_pool(
+    client, access_token, isolate, company_isolate, company_isolate_payload
+):
+    """A SELF- token can command its owner's isolate, but never company-owned execution."""
+    headers = {"Authorization": "Bearer " + access_token["token"]}
+    response = await client.post(
+        f"/v1/isolates/{isolate['id']}/commands",
+        headers={**headers, "Idempotency-Key": str(uuid4())},
+        json={"command": "pytest -q"},
+    )
+    assert response.status_code == 202, response.text
+    for method, suffix, kwargs in [
+        ("POST", "/commands", {"json": {"command": "pytest -q"}}),
+        ("POST", "/renew", {}),
+        ("POST", "/snapshots", {}),
+        ("DELETE", "", {}),
+    ]:
+        response = await client.request(
+            method,
+            f"/v1/isolates/{company_isolate['id']}{suffix}",
+            headers={**headers, "Idempotency-Key": str(uuid4())},
+            **kwargs,
+        )
+        assert response.status_code == 404, (method, suffix, response.text)
+    response = await client.post(
+        "/v1/isolates",
+        headers={**headers, "Idempotency-Key": str(uuid4())},
+        json=company_isolate_payload,
+    )
+    assert response.status_code == 403, response.text
+
+
+async def test_legacy_personal_credential_follows_personal_execution_policy(
+    app, client, access_token, company_isolate, company_isolate_payload
+):
+    """Historical personal credentials cannot bypass the personal-pool execution rule."""
+    async with app.state.db.write() as session:
+        await move_to_legacy(session, access_token["id"])
+    headers = {"Authorization": "Bearer " + access_token["token"]}
+    response = await client.post(
+        f"/v1/isolates/{company_isolate['id']}/commands",
+        headers={**headers, "Idempotency-Key": str(uuid4())},
+        json={"command": "pytest -q"},
+    )
+    assert response.status_code == 404, response.text
+    response = await client.post(
+        "/v1/isolates",
+        headers={**headers, "Idempotency-Key": str(uuid4())},
+        json=company_isolate_payload,
+    )
+    assert response.status_code == 403, response.text
+
+
+async def test_personal_api_token_hides_company_isolate_without_execution_permission(
+    api, other_api, client, company, other_user, company_isolate
+):
+    """A read-only member's SELF- token gets the same 404 as an unknown isolate."""
+    response = await api.post(
+        "/v1/memberships",
+        json={
+            "company_id": company["id"],
+            "user_id": other_user["id"],
+            "role": "user",
+            "permissions": ["execution.read"],
+        },
+    )
+    assert response.status_code == 201, response.text
+    owner = await other_api.post("/v1/token-ownerships", json={"user_id": other_user["id"]})
+    assert owner.status_code == 201, owner.text
+    token = await other_api.post(
+        "/v1/access-tokens",
+        json={
+            "ownership_id": owner.json()["id"],
+            "name": "Self",
+            "scopes": ["execute"],
+        },
+    )
+    assert token.status_code == 201, token.text
+    response = await client.post(
+        f"/v1/isolates/{company_isolate['id']}/commands",
+        headers={
+            "Authorization": "Bearer " + token.json()["token"],
+            "Idempotency-Key": str(uuid4()),
+        },
+        json={"command": "pytest -q"},
+    )
+    assert response.status_code == 404, response.text
+    assert response.json() == {"detail": "Resource not found"}
 
 
 @pytest.mark.parametrize("membership", ["user", "admin", "creator"], indirect=True)

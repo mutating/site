@@ -2616,7 +2616,7 @@ html:lang(ru) .hero h1 {
   padding-bottom: 0;
 }
 
-.blog-index + .site-footer {
+main:has(> .blog-index) + .site-footer {
   margin-top: clamp(48px, 7vw, 90px);
 }
 
@@ -2624,7 +2624,7 @@ html:lang(ru) .hero h1 {
   padding-bottom: 0;
 }
 
-.post + .site-footer {
+main:has(> .post) + .site-footer {
   margin-top: 36px;
 }
 
@@ -3366,7 +3366,7 @@ a.signal-tag:focus-visible .signal-tag__label {
   padding-bottom: 0;
 }
 
-.author-profile + .site-footer {
+main:has(> .author-profile) + .site-footer {
   margin-top: 0;
 }
 

@@ -31,6 +31,7 @@ from throng_api.security import (
     access_token_scheme,
     authenticate,
     company_access,
+    modern_personal,
     owned,
     owner_values,
     personal,
@@ -48,6 +49,11 @@ class RoutePatch(Input):
     revision: int = Field(ge=1)
     configuration: RouteCreate | None = None
     enabled: bool | None = None
+
+
+def reject_personal_company_ci(principal, company_id):
+    if company_id and modern_personal(principal):
+        raise HTTPException(403, "Personal API tokens cannot manage organization CI")
 
 
 async def read_binding(session, request, route_id):
@@ -71,6 +77,9 @@ async def edit_binding(route_id: UUID, data: RoutePatch, request: Request):
         await authenticate(session, request, "execute")
         actor = personal(principal)
         route = await owned(session, CIRoute, route_id, principal)
+        reject_personal_company_ci(principal, route.company_id)
+        if data.configuration:
+            reject_personal_company_ci(principal, data.configuration.company_id)
         await pool_permission(session, principal, route.company_id)
         installation_id, repository_id = route.installation_id, route.repository_id
     configuration = data.configuration
@@ -96,6 +105,9 @@ async def edit_binding(route_id: UUID, data: RoutePatch, request: Request):
         principal = await authenticate(session, request, "manage")
         await authenticate(session, request, "execute")
         route = await owned(session, CIRoute, route_id, principal)
+        reject_personal_company_ci(principal, route.company_id)
+        if data.configuration:
+            reject_personal_company_ci(principal, data.configuration.company_id)
         await pool_permission(session, principal, route.company_id)
         if route.revision != data.revision:
             raise HTTPException(409, "Binding changed; reload before saving")

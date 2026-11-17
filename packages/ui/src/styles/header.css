@@ -185,6 +185,34 @@
   letter-spacing: -0.01em;
 }
 
+.tmc-nav-menu__badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 7px;
+  padding: 4px 8px 3px;
+  border-radius: 999px;
+  background: var(--hot-pale);
+  color: var(--hot-soft);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  vertical-align: 0.08em;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .tmc-nav-menu__badge {
+  color: var(--hot-bright);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .tmc-nav-menu__badge {
+    color: var(--hot-bright);
+  }
+}
+
 .tmc-nav-menu__copy small {
   display: block;
   margin-top: 3px;

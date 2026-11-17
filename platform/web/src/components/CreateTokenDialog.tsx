@@ -5,6 +5,7 @@ import { useSession } from "../lib/session";
 import { memberName } from "../lib/permissions";
 import type { Company, IssuedApiToken, TokenScope } from "../lib/types";
 import { ErrorBox, Icon } from "./UI";
+import { Select } from "./Select";
 
 export function CreateTokenDialog({
   companies,
@@ -55,8 +56,17 @@ export function CreateTokenDialog({
     dialog.showModal();
     return () => {
       dialog.close();
-      if (trigger instanceof HTMLElement && trigger.isConnected)
-        trigger.focus({ preventScroll: true });
+      const visible = (element: HTMLElement) =>
+        element.isConnected && element.getClientRects().length > 0;
+      const fallback = Array.from(
+        document.querySelectorAll<HTMLElement>(".token-create-button"),
+      ).find(visible);
+      const target =
+        trigger instanceof HTMLElement &&
+        visible(trigger)
+          ? trigger
+          : fallback;
+      target?.focus({ preventScroll: true });
     };
   }, []);
   useEffect(() => {
@@ -277,7 +287,7 @@ export function CreateTokenDialog({
           {kind === "company" && manageable.length > 1 && (
             <label className="field">
               {t("tokenOrganization")}
-              <select
+              <Select
                 value={companyId}
                 disabled={busy}
                 onChange={(event) => setCompanyId(event.target.value)}
@@ -294,7 +304,7 @@ export function CreateTokenDialog({
                       : ""}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
           <div className="token-owner-context">
@@ -315,16 +325,7 @@ export function CreateTokenDialog({
                 kind === "personal" ? "tokenPersonalHelp" : "tokenCompanyHelp",
               )}
             </p>
-            <small>
-              {t(
-                kind === "personal" ? "tokenIssuingYou" : "tokenIssuingMember",
-              )}{" "}
-              · {personalName}
-            </small>
           </div>
-          {!manageable.length && (
-            <p className="field-help">{t("tokenNoManageCompanies")}</p>
-          )}
           <label className="field">
             {t("tokenName")}
             <input
@@ -340,7 +341,7 @@ export function CreateTokenDialog({
           </label>
           <label className="field">
             {t("tokenLifetime")}
-            <select
+            <Select
               value={days}
               disabled={busy}
               onChange={(event) => setDays(event.target.value)}
@@ -351,7 +352,7 @@ export function CreateTokenDialog({
                 </option>
               ))}
               <option value="unlimited">{t("tokenNoExpiry")}</option>
-            </select>
+            </Select>
           </label>
           <fieldset className="token-scope-choices" disabled={busy}>
             <legend>{t("tokenScopes")}</legend>

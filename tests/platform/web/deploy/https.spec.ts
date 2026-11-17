@@ -49,7 +49,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
     )
       failures.push(response.url());
   });
-  await page.goto("power-cells");
+  await page.goto("compute");
   await expect(
     page.getByRole("heading", { name: "Welcome back." }),
   ).toBeVisible();
@@ -66,7 +66,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   const body = await (await sessionResponse).json();
   expect(body.email).toBe(email);
   expect(body).not.toHaveProperty("access_token");
-  await expect(page).toHaveURL(`${origin}/power-cells`);
+  await expect(page).toHaveURL(`${origin}/compute`);
   await expect(page.getByTestId("computer-count")).toHaveText("0");
   await page.evaluate(() => document.fonts.ready);
   const cookie = (await page.context().cookies()).find(

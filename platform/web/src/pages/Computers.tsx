@@ -8,6 +8,7 @@ import { GiB, number } from "../lib/chart";
 import type { Computer, Company } from "../lib/types";
 import { Empty, ErrorBox, Heading, Loading } from "../components/UI";
 import { BenchmarkSummary } from "../components/Benchmarks";
+import { runtimeLabel } from "../lib/runtime";
 export function Computers() {
   const { user } = useSession();
   const { t, locale } = useI18n();
@@ -68,10 +69,10 @@ export function Computers() {
     : t("personal");
   return (
     <>
-      <Link className="back-link" to="/power-cells">
-        ← {t("backPower")}
+      <Link className="back-link" to="/compute">
+        ← {t("backCompute")}
       </Link>
-      <Heading index={`02 / POWER CELLS / ${label}`} title={t("computers")}>
+      <Heading index={`02 / MUTATING COMPUTE / ${label}`} title={t("computers")}>
         {t("onlineOnly")}
       </Heading>
       {state.loading || outsidePages || (!state.error && !data) ? (
@@ -99,7 +100,7 @@ export function Computers() {
                   </thead>
                   <tbody>
                     {data.data.map((computer, index) => {
-                      const to = `/power-cells/computers/${computer.id}?${params}`;
+                      const to = `/compute/computers/${computer.id}?${params}`;
                       return (
                         <tr
                           key={computer.id}
@@ -129,7 +130,7 @@ export function Computers() {
                             </div>
                             <small>
                               {computer.os} · {computer.architecture} ·{" "}
-                              {computer.runtime}
+                              {runtimeLabel(computer.runtime)}
                             </small>
                           </td>
                           <td>

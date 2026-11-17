@@ -24,7 +24,7 @@ def render(route, origin, *, workflow_path=None, job_key=None):
         router_job += "_" + instance
         anchor += "_" + instance
     identity = f'          POWERCELL_INSTANCE: "{instance}"\n' if modern else ""
-    rerun = "Re-run the routing job or all jobs to refresh Power Cell selection"
+    rerun = "Re-run the routing job or all jobs to refresh Mutating Compute selection"
     selection = (
         f"needs.{router_job}.outputs.run_attempt == github.run_attempt "
         f"&& needs.{router_job}.outputs.runs_on || '{rerun}'"
@@ -34,7 +34,7 @@ def render(route, origin, *, workflow_path=None, job_key=None):
 # No available Mac: preparation fails and the dependent job is skipped.
 # Require routing, workload and queue guard checks for branch protection.
 # Rerun routing or all jobs.
-name: Power Cells CI
+name: Mutating Compute CI
 on:
   push:
     branches: [{json.dumps(branch)}]
@@ -86,7 +86,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Watch Power Cell assignment
+      - name: Watch Mutating Compute assignment
         if: matrix.role == 'queue_guard'
         shell: python
         working-directory: ${{{{ runner.temp }}}}

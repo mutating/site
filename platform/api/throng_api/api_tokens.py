@@ -1,10 +1,11 @@
 """Owner-aware API-token registry; login sessions never become API-token entries."""
 
 from datetime import timedelta
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from throng_api import outputs as out
 from throng_api.models import AccessToken, TokenOwnership, User
@@ -14,6 +15,7 @@ from throng_api.security import (
     authenticate,
     company_access,
     issue_token,
+    modern_personal,
     owned_filter,
     owner_access,
     personal,
@@ -40,6 +42,7 @@ async def registry(
     response: Response,
     user_id: UUID | None = None,
     company_id: UUID | None = None,
+    status: Literal["all", "active"] = "all",
     limit: int = Query(10, ge=1, le=200),
     offset: PaginationOffset = 0,
 ):
@@ -66,6 +69,12 @@ async def registry(
             base = base.where(TokenOwnership.user_id == str(user_id))
         if company_id:
             base = base.where(TokenOwnership.company_id == str(company_id))
+        if status == "active":
+            now = request.app.state.clock()
+            base = base.where(
+                AccessToken.revoked_at.is_(None),
+                or_(AccessToken.expires_at.is_(None), AccessToken.expires_at > now),
+            )
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Total-Count"] = str(
             await session.scalar(select(func.count()).select_from(base.subquery()))
@@ -84,6 +93,8 @@ async def create(data: ApiTokenCreate, request: Request, response: Response):
         principal = await authenticate(session, request, "manage")
         actor = personal(principal)
         await owner_access(session, principal, data, admin=True)
+        if data.company_id and modern_personal(principal):
+            raise HTTPException(403, "Personal API tokens cannot issue organization tokens")
         if not set(data.scopes) <= principal.scopes:
             raise HTTPException(403, "Cannot issue scopes absent from the current token")
         owner = TokenOwnership(

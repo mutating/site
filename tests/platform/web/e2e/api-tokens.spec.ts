@@ -53,12 +53,6 @@ test("registry identifies owners and issuers, filters on the server, and exclude
   await page.goto("/profile");
   await page.getByRole("tab", { name: "API-токены", exact: true }).click();
   await expect(page.locator(".token-registry-row")).toHaveCount(2);
-  await expect(
-    page.getByText("Личный — от вашего имени", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Организация — от имени компании", { exact: true }),
-  ).toBeVisible();
   await expect(page.locator(".pagination")).toHaveCount(0);
   const corporate = page.getByRole("article", {
     name: "Командный CI",
@@ -207,9 +201,7 @@ for (const kind of ["personal", "company"] as const) {
     ).toBeChecked();
     await expect(dialog.getByLabel("Организация-владелец")).toHaveCount(0);
     await expect(dialog.locator(".token-owner-context")).toContainText(
-      kind === "company"
-        ? "Выпускает участник · Алиса"
-        : "Выпускаете вы · Алиса",
+      kind === "company" ? "Лаборатория" : "Алиса",
     );
     const name = kind === "company" ? "CI лаборатории" : "Мой терминал";
     await dialog.getByLabel("Название токена", { exact: true }).fill(name);
@@ -319,6 +311,47 @@ for (const kind of ["personal", "company"] as const) {
     ).toBe(401);
   });
 }
+
+test("the active filter hides revoked credentials and stays in the URL", async ({
+  page,
+  request,
+  account,
+}) => {
+  await token(request, account, { user_id: account.id }, "Рабочий");
+  const revoked = await token(
+    request,
+    account,
+    { user_id: account.id },
+    "Отозванный",
+  );
+  const response = await request.patch(
+    `${API}/access-tokens/${revoked.id}`,
+    { headers: headers(account), data: { revoke: true } },
+  );
+  expect(response.status()).toBe(200);
+  await login(page, account);
+  await page.goto("/profile?section=api-tokens&owner=personal");
+  await expect(page.locator(".token-registry-row")).toHaveCount(2);
+  const status = page.getByLabel("Состояние токенов", { exact: true });
+  await status.selectOption("active");
+  await expect(
+    page.locator(".token-status-filter .tmc-select__value"),
+  ).toHaveText("Только рабочие");
+  await expect(page).toHaveURL(/status=active/);
+  await expect(page.locator(".token-registry-row")).toHaveCount(1);
+  await expect(
+    page.getByRole("article", { name: "Рабочий", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: "Отозванный", exact: true }),
+  ).toHaveCount(0);
+  await status.selectOption("all");
+  await expect(
+    page.locator(".token-status-filter .tmc-select__value"),
+  ).toHaveText("Все токены");
+  await expect(page).not.toHaveURL(/status=active/);
+  await expect(page.locator(".token-registry-row")).toHaveCount(2);
+});
 
 /**
  * Replacing the submitted form used to leave focus on BODY without announcing the
@@ -711,9 +744,7 @@ test("multiple organizations have an explicit selector and the dialog preserves 
   await expect(
     dialog.getByRole("radio", { name: "Организация Студия", exact: true }),
   ).toBeChecked();
-  await expect(dialog.locator(".token-owner-context")).toContainText(
-    "Выпускает участник · Алиса",
-  );
+  await expect(dialog.locator(".token-owner-context")).toContainText("Студия");
   await dialog.getByRole("radio", { name: /Личный/ }).check();
   await expect(dialog.getByLabel("Организация-владелец")).toHaveCount(0);
   await dialog.getByRole("radio", { name: /Организация/ }).check();
@@ -780,4 +811,351 @@ test("pagination remains scoped to the selected owner and resets after a filter 
     "Командный токен",
   ]);
   await expect(page).not.toHaveURL(/page=/);
+});
+
+test("re-selecting the current custom filter option keeps the token page", async ({
+  page,
+  request,
+  account,
+}) => {
+  for (let i = 0; i < 11; i++)
+    await token(request, account, { user_id: account.id }, `Токен ${i}`);
+  await login(page, account);
+  await page.goto("/profile?section=api-tokens&owner=personal");
+  await page.getByRole("button", { name: "Далее →", exact: true }).click();
+  await expect(page.locator(".token-registry-row")).toHaveCount(1);
+  await expect(page).toHaveURL(/page=2/);
+  await page.locator(".token-owner-filter .tmc-select__face").click();
+  await page
+    .locator(".token-owner-filter .tmc-select__option")
+    .filter({ hasText: "Личный" })
+    .click();
+  await expect(page.locator(".tmc-select__panel")).toHaveCount(0);
+  await expect(page).toHaveURL(/page=2/);
+  await expect(page.locator(".token-registry-row")).toHaveCount(1);
+});
+
+test("choosing another custom filter option updates the token page", async ({
+  page,
+  request,
+  account,
+}) => {
+  const lab = await company(request, account, "Лаборатория");
+  for (let i = 0; i < 11; i++)
+    await token(request, account, { user_id: account.id }, `Токен ${i}`);
+  await token(request, account, { company_id: lab.id }, "Командный токен");
+  await login(page, account);
+  await page.goto("/profile?section=api-tokens&owner=personal");
+  await page.getByRole("button", { name: "Далее →", exact: true }).click();
+  await expect(page.locator(".token-registry-row")).toHaveCount(1);
+  await expect(page).toHaveURL(/page=2/);
+  await page.locator(".token-owner-filter .tmc-select__face").click();
+  await page
+    .locator(".token-owner-filter .tmc-select__option")
+    .filter({ hasText: "Лаборатория" })
+    .click();
+  await expect(page.locator(".tmc-select__panel")).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`owner=${lab.id}$`));
+  await expect(page.locator(".token-registry-row h2")).toHaveText([
+    "Командный токен",
+  ]);
+  await expect(
+    page.locator(".token-owner-filter .tmc-select__value"),
+  ).toHaveText("Организация · Лаборатория");
+  await expect(
+    page.getByLabel("Владелец токенов", { exact: true }),
+  ).toHaveValue(lab.id);
+  await expect(
+    page.getByLabel("Владелец токенов", { exact: true }),
+  ).toBeFocused();
+});
+
+test("browser history navigation closes an open custom filter panel", async ({
+  page,
+  request,
+  account,
+}) => {
+  await token(request, account, { user_id: account.id }, "Личный токен");
+  await login(page, account);
+  await page.goto("/profile?section=api-tokens");
+  await page.locator(".token-owner-filter .tmc-select__face").click();
+  await page
+    .locator(".token-owner-filter .tmc-select__option")
+    .filter({ hasText: "Личный" })
+    .click();
+  await expect(page).toHaveURL(/owner=personal/);
+  await page.locator(".token-owner-filter .tmc-select__face").click();
+  await expect(page.locator(".tmc-select__panel")).toBeVisible();
+  await page.goBack();
+  await expect(page.locator(".tmc-select__panel")).toHaveCount(0);
+  await expect(
+    page.getByLabel("Владелец токенов", { exact: true }),
+  ).toHaveValue("all");
+  await expect(
+    page.locator(".token-owner-filter .tmc-select__value"),
+  ).toHaveText("Все владельцы");
+});
+
+test("custom select keeps its scrollbar draggable while preserving option focus", async ({
+  page,
+  request,
+  account,
+}) => {
+  for (let index = 0; index < 10; index++)
+    await company(request, account, `Организация ${index}`);
+  await login(page, account);
+  await page.goto("/profile?section=api-tokens");
+  const select = page.getByLabel("Владелец токенов", { exact: true });
+  await page.locator(".token-owner-filter .tmc-select__face").click();
+  const panel = page.locator(".tmc-select__panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.locator(".tmc-select__option")).toHaveCount(12);
+  expect(
+    await panel.evaluate(
+      (element) => element.scrollHeight > element.clientHeight,
+    ),
+  ).toBe(true);
+  const metrics = await panel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return {
+      border:
+        parseFloat(style.borderLeftWidth) +
+        parseFloat(style.borderRightWidth),
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      clientWidth: element.clientWidth,
+    };
+  });
+  // Overlay-scrollbar platforms report zero width; simulate the classic
+  // scrollbar width to exercise the handler's scrollbar branch.
+  await panel.evaluate((element, width) => {
+    Object.defineProperty(element, "offsetWidth", {
+      configurable: true,
+      value: width,
+    });
+  }, metrics.clientWidth + metrics.border + 12);
+  expect(
+    await panel.evaluate((element) => {
+      const event = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        clientX: element.getBoundingClientRect().left + 2,
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(true);
+  expect(
+    await panel.evaluate((element) => {
+      const event = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        clientX: element.getBoundingClientRect().right - 0.5,
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(false);
+  expect(
+    await panel.locator(".tmc-select__option").first().evaluate((element) => {
+      const event = new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(true);
+  await page.mouse.click(metrics.left + 2, metrics.top + 40);
+  await expect(select).toBeFocused();
+});
+
+test("browser history navigation closes an open panel even when its value is unchanged", async ({
+  page,
+  request,
+  account,
+}) => {
+  for (let index = 0; index < 11; index++)
+    await token(request, account, { user_id: account.id }, `Токен ${index}`);
+  await login(page, account);
+  await page.goto("/profile?section=api-tokens&owner=personal");
+  await page.getByRole("button", { name: "Далее →", exact: true }).click();
+  await expect(page).toHaveURL(/page=2/);
+  await page.locator(".token-owner-filter .tmc-select__face").click();
+  const panel = page.locator(".tmc-select__panel");
+  await expect(panel).toBeVisible();
+  await page.goBack();
+  await expect(page).not.toHaveURL(/page=2/);
+  await expect(panel).toHaveCount(0);
+});
+
+test("scroll during the open guard repositions the custom panel", async ({
+  page,
+  request,
+  account,
+}) => {
+  for (let index = 0; index < 11; index++)
+    await token(request, account, { user_id: account.id }, `Токен ${index}`);
+  await login(page, account);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/profile?section=api-tokens");
+  await page.locator(".token-owner-filter .tmc-select__face").click();
+  const panel = page.locator(".tmc-select__panel");
+  await expect(panel).toBeVisible();
+  const before = (await panel.boundingBox())!;
+  await page.evaluate(() => window.scrollBy(0, 120));
+  await expect
+    .poll(async () => (await panel.boundingBox())?.y)
+    .toBeLessThan(before.y - 80);
+  await expect(panel).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.scrollBy(0, 10));
+  await expect(panel).toHaveCount(0);
+});
+
+test("custom select scrolls a wrapped selected option fully into view", async ({
+  page,
+  request,
+  account,
+}) => {
+  for (let index = 0; index < 11; index++)
+    await company(request, account, `Организация ${index}`);
+  const longName =
+    "Очень длинное название исследовательской лаборатории для проверки переноса";
+  const selectedCompany = await company(request, account, longName);
+  await login(page, account);
+  for (const [width, height] of [
+    [1440, 600],
+    [568, 320],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto(
+      `/profile?section=api-tokens&owner=${selectedCompany.id}`,
+    );
+    await page.locator(".token-owner-filter .tmc-select__face").click();
+    const panel = page.locator(".tmc-select__panel");
+    await expect(panel).toBeVisible();
+    const selected = panel.locator('[data-selected="true"]');
+    await expect(selected).toContainText(longName);
+    const viewport = page.viewportSize()!;
+    const panelBox = (await panel.boundingBox())!;
+    expect(panelBox.y).toBeGreaterThanOrEqual(0);
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(
+      viewport.height + 1,
+    );
+    expect(panelBox.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(
+      viewport.width + 1,
+    );
+    const optionBox = (await selected.boundingBox())!;
+    expect(optionBox.y).toBeGreaterThanOrEqual(panelBox.y - 1);
+    expect(optionBox.y + optionBox.height).toBeLessThanOrEqual(
+      panelBox.y + panelBox.height + 1,
+    );
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+  }
+});
+
+test("short custom select panel does not introduce a scrollbar", async ({
+  page,
+  account,
+}) => {
+  await login(page, account);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/profile?section=api-tokens");
+  await page.locator(".token-status-filter .tmc-select__face").click();
+  const panel = page.locator(".tmc-select__panel");
+  await expect(panel).toBeVisible();
+  expect(
+    await panel.evaluate(
+      (element) => element.scrollHeight <= element.clientHeight + 1,
+    ),
+  ).toBe(true);
+});
+
+test("closing the token dialog after crossing the toolbar breakpoint restores visible focus", async ({
+  page,
+  account,
+}) => {
+  await login(page, account);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/profile?section=api-tokens");
+  const create = page.getByRole("button", {
+    name: "Создать токен",
+    exact: true,
+  });
+  await expect(create).toBeEnabled();
+  await create.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect(create).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(create).toBeFocused();
+});
+
+test("compact token toolbar puts the create action before filters in keyboard order", async ({
+  page,
+  request,
+  account,
+}) => {
+  await login(page, account);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/profile?section=api-tokens");
+  const create = page.getByRole("button", {
+    name: "Создать токен",
+    exact: true,
+  });
+  await expect(create).toBeVisible();
+  await expect(create).toBeEnabled();
+  await create.focus();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByLabel("Владелец токенов", { exact: true }),
+  ).toBeFocused();
+});
+
+test("wide token toolbar keeps filters before the create action in keyboard order", async ({
+  page,
+  request,
+  account,
+}) => {
+  await login(page, account);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/profile?section=api-tokens");
+  const create = page.getByRole("button", {
+    name: "Создать токен",
+    exact: true,
+  });
+  const refresh = page.getByRole("button", {
+    name: "Обновить",
+    exact: true,
+  });
+  await expect(create).toBeEnabled();
+  await expect(refresh).toBeEnabled();
+  expect(
+    await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".token-registry-toolbar select, .token-registry-toolbar button",
+        ),
+      )
+        .filter(
+          (element) =>
+            element.getClientRects().length > 0 && !element.matches(":disabled"),
+        )
+        .map(
+          (element) =>
+            element.getAttribute("aria-label") ?? element.textContent?.trim(),
+        ),
+    ),
+  ).toEqual([
+    "Владелец токенов",
+    "Состояние токенов",
+    "Обновить",
+    "Создать токен",
+  ]);
 });

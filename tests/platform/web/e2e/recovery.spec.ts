@@ -143,7 +143,7 @@ for (const endpoint of ["summary", "availability-history"]) {
       ++attempts;
       return route.abort("failed");
     });
-    await page.goto("power-cells");
+    await page.goto("compute");
     const pool = page.getByRole("region", { name: "Личные компьютеры" });
     await expect.poll(() => attempts).toBeGreaterThan(0);
     await expect(pool.getByRole("alert")).toHaveCount(0);
@@ -163,7 +163,7 @@ test("refresh shows newly available capacity and recovery does not discard the s
   account,
 }) => {
   await login(page, account);
-  await page.goto("power-cells");
+  await page.goto("compute");
   const pool = page.getByRole("region", { name: "Личные компьютеры" });
   await expect(pool.getByTestId("computer-count")).toHaveText("0");
   await addComputer(request, account, "Появился после открытия страницы");

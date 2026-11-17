@@ -82,174 +82,173 @@ export function Auth({ register = false }: { register?: boolean }) {
               .map((line, index) => (
                 <span key={line} className={index ? "hot" : ""}>
                   {line}
+                  {index === 0 ? " " : null}
                 </span>
               ))}
           </h1>
           <p>{t("authDescription")}</p>
+        </section>
+        <div className="auth-stage">
           <div className="network-art" aria-hidden="true">
             <svg
-              viewBox="13.5 0 572 300"
-              preserveAspectRatio="xMinYMid meet"
+              viewBox="0 0 1600 430"
+              preserveAspectRatio="none"
               focusable="false"
             >
               <g fill="none" strokeLinecap="round">
                 <path
                   className="network-route-ink"
-                  strokeWidth="7"
-                  d="M17 74H179q31 0 53 22l80 80q22 22 53 22h217"
+                  strokeWidth="8"
+                  d="M0 150H420q40 0 70 30l120 90q30 24 70 24H1600"
                 />
                 <path
                   className="network-route-hot"
-                  strokeWidth="7"
-                  d="M17 228h120q32 0 55-23l112-112q23-23 55-23h223"
+                  strokeWidth="8"
+                  d="M0 360H300q45 0 78-33l170-170q32-31 78-31H1600"
                 />
                 <path
                   className="network-route-muted"
-                  strokeWidth="5"
-                  d="M91 18v128q0 29 29 29h389q29 0 29 29v72"
+                  strokeWidth="6"
+                  d="M300 0V190q0 35 35 35H1230q35 0 35 35V430"
                 />
-              </g>
-              <g className="network-stations" strokeWidth="2.5">
-                {[
-                  [91, 74, "ink"],
-                  [175, 74, "ink"],
-                  [170, 175, "muted"],
-                  [244, 153, "hot"],
-                  [365, 198, "ink"],
-                  [404, 70, "hot"],
-                  [485, 198, "ink"],
-                  [538, 70, "hot"],
-                ].map(([cx, cy, color]) => (
-                  <circle
-                    key={`${cx}-${cy}`}
-                    cx={cx}
-                    cy={cy}
-                    r="8"
-                    className={`network-route-${color}`}
-                  />
-                ))}
-              </g>
-              <g className="network-labels">
-                <text x="15" y="48">
-                  {t("authDevices")}
-                </text>
-                <text x="582" y="251" textAnchor="end">
-                  {t("authCapacity")}
-                </text>
               </g>
             </svg>
-          </div>
-          <div className="auth-signal">
-            <span className="signal-dot" />
-            {t("authSignal")}
-          </div>
-        </section>
-        <section className="auth-panel" aria-labelledby="auth-title">
-          <p className="eyebrow">{register ? "01 / START" : "01 / WELCOME"}</p>
-          <h2 id="auth-title">
-            {t(register ? "registerTitle" : "welcome")}
-            <span className="hot">.</span>
-          </h2>
-          <p className="muted">{t(register ? "registerLead" : "loginLead")}</p>
-          {!register && location.state?.accountCreated && (
-            <p className="success-message" role="status">
-              {t("accountCreatedSignIn")}
-            </p>
-          )}
-          <form onSubmit={submit}>
-            {register && (
-              <>
-                <div className="field-row">
-                  <label className="field">
-                    {t("firstName")} <small>{t("optional")}</small>
-                    <input
-                      name="first_name"
-                      autoComplete="given-name"
-                      maxLength={100}
-                    />
-                  </label>
-                  <label className="field">
-                    {t("lastName")} <small>{t("optional")}</small>
-                    <input
-                      name="last_name"
-                      autoComplete="family-name"
-                      maxLength={100}
-                    />
-                  </label>
-                </div>
-                <label className="field">
-                  {t("nickname")} <small>{t("optional")}</small>
-                  <input
-                    aria-label={t("nickname")}
-                    name="nickname"
-                    autoComplete="username"
-                    maxLength={64}
-                    pattern="[A-Za-z0-9_][A-Za-z0-9_.\-]*"
-                    aria-describedby="nickname-help"
-                  />
-                  <span id="nickname-help" className="field-help">
-                    {t("nicknameHelp")}
-                  </span>
-                </label>
-              </>
-            )}
-            <label className="field">
-              {t(register ? "email" : "identifier")}
-              <input
-                name={register ? "email" : "login"}
-                type={register ? "email" : "text"}
-                autoComplete={register ? "email" : "username"}
-                defaultValue={
-                  !register && typeof location.state?.login === "string"
-                    ? location.state.login
-                    : ""
-                }
-                required
-                maxLength={320}
-                autoCapitalize="none"
-                spellCheck={false}
+            {[
+              [18.75, 34.8837, "ink"],
+              [30.625, 41.8605, "ink"],
+              [42.5, 68.3721, "ink"],
+              [81.25, 68.3721, "ink"],
+              [12.5, 83.7209, "hot"],
+              [28.75, 56.9767, "hot"],
+              [39.125, 29.3023, "hot"],
+              [75, 29.3023, "hot"],
+              [90.625, 29.3023, "hot"],
+              [18.75, 44.186, "muted"],
+              [50, 52.3256, "muted"],
+              [79.0625, 60.4651, "muted"],
+            ].map(([left, top, color]) => (
+              <span
+                key={`${left}-${top}`}
+                className={`network-node network-node--${color}`}
+                style={{ left: `${left}%`, top: `${top}%` }}
               />
-            </label>
-            <label className="field">
-              {t("password")}
-              <span className="password-field">
-                <input
-                  aria-label={t("password")}
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete={register ? "new-password" : "current-password"}
-                  minLength={register ? 12 : undefined}
-                  maxLength={1024}
-                  required
-                  aria-describedby={register ? "password-help" : undefined}
-                />
-                <button
-                  type="button"
-                  aria-label={t(showPassword ? "hidePassword" : "showPassword")}
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  <Icon name="eye" />
-                </button>
+            ))}
+            <div className="network-labels">
+              <span className="network-label network-label--devices">
+                {t("authDevices")}
               </span>
+              <span className="network-label network-label--capacity">
+                {t("authCapacity")}
+              </span>
+            </div>
+          </div>
+          <section className="auth-panel" aria-labelledby="auth-title">
+            <p className="eyebrow">{register ? "01 / START" : "01 / WELCOME"}</p>
+            <h2 id="auth-title">
+              {t(register ? "registerTitle" : "welcome")}
+              <span className="hot">.</span>
+            </h2>
+            <p className="muted">{t(register ? "registerLead" : "loginLead")}</p>
+            {!register && location.state?.accountCreated && (
+              <p className="success-message" role="status">
+                {t("accountCreatedSignIn")}
+              </p>
+            )}
+            <form onSubmit={submit}>
               {register && (
-                <span id="password-help" className="field-help">
-                  {t("passwordHelp")}
-                </span>
+                <>
+                  <div className="field-row">
+                    <label className="field">
+                      {t("firstName")} <small>{t("optional")}</small>
+                      <input
+                        name="first_name"
+                        autoComplete="given-name"
+                        maxLength={100}
+                      />
+                    </label>
+                    <label className="field">
+                      {t("lastName")} <small>{t("optional")}</small>
+                      <input
+                        name="last_name"
+                        autoComplete="family-name"
+                        maxLength={100}
+                      />
+                    </label>
+                  </div>
+                  <label className="field">
+                    {t("nickname")} <small>{t("optional")}</small>
+                    <input
+                      aria-label={t("nickname")}
+                      name="nickname"
+                      autoComplete="username"
+                      maxLength={64}
+                      pattern="[A-Za-z0-9_][A-Za-z0-9_.\-]*"
+                      aria-describedby="nickname-help"
+                    />
+                    <span id="nickname-help" className="field-help">
+                      {t("nicknameHelp")}
+                    </span>
+                  </label>
+                </>
               )}
-            </label>
-            <ErrorBox error={error} />
-            <button className="button primary full-width" disabled={busy}>
-              {t(busy ? "waiting" : register ? "register" : "login")}
-              <Icon name="arrow" />
-            </button>
-          </form>
-          <p className="auth-switch">
-            {t(register ? "existingUser" : "newUser")}{" "}
-            <Link to={register ? "/login" : "/register"} state={{ from }}>
-              {t(register ? "login" : "register")} ↗
-            </Link>
-          </p>
-        </section>
+              <label className="field">
+                {t(register ? "email" : "identifier")}
+                <input
+                  name={register ? "email" : "login"}
+                  type={register ? "email" : "text"}
+                  autoComplete={register ? "email" : "username"}
+                  defaultValue={
+                    !register && typeof location.state?.login === "string"
+                      ? location.state.login
+                      : ""
+                  }
+                  required
+                  maxLength={320}
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+              </label>
+              <label className="field">
+                {t("password")}
+                <span className="password-field">
+                  <input
+                    aria-label={t("password")}
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete={register ? "new-password" : "current-password"}
+                    minLength={register ? 12 : undefined}
+                    maxLength={1024}
+                    required
+                    aria-describedby={register ? "password-help" : undefined}
+                  />
+                  <button
+                    type="button"
+                    aria-label={t(showPassword ? "hidePassword" : "showPassword")}
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    <Icon name="eye" />
+                  </button>
+                </span>
+                {register && (
+                  <span id="password-help" className="field-help">
+                    {t("passwordHelp")}
+                  </span>
+                )}
+              </label>
+              <ErrorBox error={error} />
+              <button className="button primary full-width" disabled={busy}>
+                {t(busy ? "waiting" : register ? "register" : "login")}
+                <Icon name="arrow" />
+              </button>
+            </form>
+            <p className="auth-switch">
+              {t(register ? "existingUser" : "newUser")}{" "}
+              <Link to={register ? "/login" : "/register"} state={{ from }}>
+                {t(register ? "login" : "register")} ↗
+              </Link>
+            </p>
+          </section>
+        </div>
       </main>
     </>
   );

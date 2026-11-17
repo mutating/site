@@ -329,11 +329,10 @@ test("header children render as a disclosure and close with Escape", async ({ pa
   const mobile = testInfo.project.name === "mobile";
   if (mobile) {
     await page.locator(".tmc-mobile-menu > summary").click();
-    const menu = page.locator(".tmc-mobile-menu__links .tmc-nav-menu");
-    await expect(menu).toHaveCount(1);
-    await expect(menu.locator(".tmc-nav-menu__label")).toHaveText("Products");
-    await expect(menu.locator(".tmc-nav-menu__chevron")).toHaveCount(0);
-    const link = menu.locator(".tmc-nav-menu__item");
+    const group = page.getByRole("group", { name: "Products", exact: true });
+    await expect(group).toBeVisible();
+    await expect(group.locator(".tmc-nav-menu__chevron")).toHaveCount(0);
+    const link = group.locator(".tmc-nav-menu__item").first();
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute("href", "/products/compute/");
     await page.keyboard.press("Escape");
@@ -346,10 +345,33 @@ test("header children render as a disclosure and close with Escape", async ({ pa
   await expect(summary).toContainText("Products");
   await summary.click();
   await expect(menu).toHaveAttribute("open", "");
-  const link = menu.locator(".tmc-nav-menu__item");
-  await expect(link).toBeVisible();
-  await expect(link).toHaveAttribute("href", "/products/compute/");
+  const links = menu.locator(".tmc-nav-menu__item");
+  await expect(links).toHaveCount(2);
+  await expect(links.first()).toHaveAttribute("href", "/products/compute/");
+  await expect(links.nth(1)).toHaveAttribute("href", "/docs/");
+  await expect(links.nth(1)).toHaveAttribute("aria-current", "page");
+  await expect(links.nth(1)).toHaveAttribute("rel", "noopener noreferrer");
   await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open", "");
+});
+
+test("header disclosure supports keyboard and outside click", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/.runtime/hugo/nav-menu/");
+  const menu = page.locator(".tmc-nav .tmc-nav-menu");
+  const summary = menu.locator(":scope > summary");
+  const link = menu.locator(".tmc-nav-menu__item").first();
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(menu).toHaveAttribute("open", "");
+  await page.keyboard.press("Tab");
+  await expect(link).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open", "");
+  await expect(summary).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(menu).toHaveAttribute("open", "");
+  await page.mouse.click(10, 500);
   await expect(menu).not.toHaveAttribute("open", "");
 });
 
@@ -358,11 +380,10 @@ test("React header children open a disclosure and close with Escape", async ({ p
   const mobile = testInfo.project.name === "mobile";
   if (mobile) {
     await page.locator(".tmc-mobile-menu > summary").click();
-    const menu = page.locator(".tmc-mobile-menu__links .tmc-nav-menu");
-    await expect(menu).toHaveCount(1);
-    await expect(menu.locator(".tmc-nav-menu__label")).toHaveText("Продукты");
-    await expect(menu.locator(".tmc-nav-menu__chevron")).toHaveCount(0);
-    const link = menu.locator(".tmc-nav-menu__item");
+    const group = page.getByRole("group", { name: "Продукты", exact: true });
+    await expect(group).toBeVisible();
+    await expect(group.locator(".tmc-nav-menu__chevron")).toHaveCount(0);
+    const link = group.locator(".tmc-nav-menu__item").first();
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute("href", "#compute");
     await page.keyboard.press("Escape");
@@ -375,9 +396,57 @@ test("React header children open a disclosure and close with Escape", async ({ p
   await expect(summary).toContainText("Продукты");
   await summary.click();
   await expect(menu).toHaveAttribute("open", "");
-  const link = menu.locator(".tmc-nav-menu__item");
+  const link = menu.locator(".tmc-nav-menu__item").first();
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", "#compute");
   await page.keyboard.press("Escape");
   await expect(menu).not.toHaveAttribute("open", "");
+});
+
+test("React child links use the supplied renderer", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/react.html?nav-menu");
+  await page.getByRole("button", { name: "Другие ссылки", exact: true }).click();
+  await page.locator(".tmc-nav .tmc-nav-menu > summary").click();
+  await expect(page.locator(".tmc-nav .tmc-nav-menu__item").first()).toHaveAttribute("data-demo-router-link", "");
+});
+
+test("Products menu survives a header remount", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/react.html?nav-menu");
+  const remount = page.getByRole("button", { name: "Пересоздать хэдер", exact: true });
+  await remount.click();
+  await expect(page.locator("header")).toHaveCount(0);
+  await remount.click();
+  await expect(page.locator("header")).toHaveCount(1);
+  const menu = page.locator(".tmc-nav .tmc-nav-menu");
+  await menu.locator(":scope > summary").click();
+  await expect(menu).toHaveAttribute("open", "");
+  await expect(menu.locator(".tmc-nav-menu__item").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open", "");
+  await expect(menu.locator(":scope > summary")).toBeFocused();
+});
+
+test.describe("header children without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("native disclosures and the mobile group stay usable", async ({ page }, testInfo) => {
+    await page.goto("/.runtime/hugo/nav-menu/");
+    if (testInfo.project.name === "mobile") {
+      await page.locator(".tmc-mobile-menu > summary").click();
+      const group = page.getByRole("group", { name: "Products", exact: true });
+      await expect(group).toBeVisible();
+      await expect(group.locator(".tmc-nav-menu__item").first()).toBeVisible();
+      return;
+    }
+    const menu = page.locator(".tmc-nav .tmc-nav-menu");
+    const panel = menu.locator(".tmc-nav-menu__panel");
+    expect(await menu.evaluate(element => element.tagName)).toBe("DETAILS");
+    await expect(panel).toBeHidden();
+    await menu.locator(":scope > summary").click();
+    await expect(menu).toHaveAttribute("open", "");
+    await expect(panel).toBeVisible();
+    await expect(menu.locator(".tmc-nav-menu__item").first()).toBeVisible();
+  });
 });
