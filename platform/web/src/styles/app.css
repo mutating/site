@@ -1195,6 +1195,24 @@ td small {
   color: var(--ink);
   box-shadow: 0 2px 7px color-mix(in srgb, var(--ink) 6%, transparent);
 }
+/* On the dark canvas the flat surface disappears into the track, so the
+   selected tab needs to be raised instead of recessed. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .profile-tabs > button[aria-selected="true"] {
+    background: color-mix(in srgb, var(--hot) 16%, var(--surface-raised));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--hot) 34%, var(--line)),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 4px 16px rgba(0, 0, 0, 0.45);
+  }
+}
+:root[data-theme="dark"] .profile-tabs > button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--hot) 16%, var(--surface-raised));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--hot) 34%, var(--line)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 16px rgba(0, 0, 0, 0.45);
+}
 .profile-personal-panel,
 .profile-account-panel {
   width: 100%;
