@@ -280,15 +280,8 @@ h3 {
   background: var(--hot-pale);
   color: var(--active-ink);
 }
-.nav-link:nth-child(4) {
+.nav-link:last-child {
   margin-top: 26px;
-}
-.soon-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ink-muted);
-  margin-left: auto;
 }
 .avatar {
   display: grid;
@@ -1708,15 +1701,12 @@ td small {
     padding: 10px;
     min-height: 40px;
   }
-  .nav-link:nth-child(4) {
+  .nav-link:last-child {
     margin: 0;
   }
   .nav-link svg {
     width: 16px;
     height: 16px;
-  }
-  .soon-dot {
-    display: none;
   }
   .page-heading {
     margin-top: 5px;

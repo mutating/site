@@ -88,7 +88,6 @@ export function Layout() {
   const links: [string, MessageKey, string][] = [
     ["/", "home", "grid"],
     ["/compute", "compute", "compute"],
-    ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
   ];
   if (github.data?.enabled) links.splice(2, 0, ["/actions", "actions", "play"]);
@@ -109,7 +108,6 @@ export function Layout() {
               >
                 <Icon name={icon} />
                 <span>{t(label)}</span>
-                {label === "cloud" && <span className="soon-dot" />}
               </NavLink>
             ))}
           </nav>
