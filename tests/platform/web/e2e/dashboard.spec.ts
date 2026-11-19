@@ -610,6 +610,34 @@ test("theme and language persist; cloud stays an empty product; layout has no ho
   });
 });
 
+test("sidebar omits the cloud entry while the overview card still opens the cloud page", async ({
+  page,
+  account,
+}) => {
+  await login(page, account);
+  const navigation = page.getByRole("navigation", { name: "Навигация кабинета" });
+  for (const label of ["Обзор", "Compute", "Организации"]) {
+    await expect(
+      navigation.getByRole("link", { name: label, exact: true }),
+    ).toBeVisible();
+  }
+  await expect(
+    navigation.getByRole("link", { name: "Облако", exact: true }),
+  ).toHaveCount(0);
+  // The last entry keeps the desktop group gap, but a wrapped mobile row must
+  // not inherit it above its own line.
+  const width = page.viewportSize()?.width ?? 0;
+  await expect(navigation.getByRole("link").last()).toHaveCSS(
+    "margin-top",
+    width <= 800 ? "0px" : "26px",
+  );
+  await page.locator(".cloud-product").click();
+  await expect(page).toHaveURL(/\/cloud$/);
+  await expect(
+    page.getByRole("heading", { name: "Облако — впереди" }),
+  ).toBeVisible();
+});
+
 test("wrong password, expired session and cross-origin mutation are rejected", async ({
   page,
   request,

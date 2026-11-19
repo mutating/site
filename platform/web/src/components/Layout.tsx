@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
@@ -79,16 +79,90 @@ export function Header() {
   );
 }
 export function Layout() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { user } = useSession();
   const github = useData(
     (signal) => api<GitHubStatus>("github/status", { signal }),
     user!.id,
   );
+  const navRef = useRef<HTMLElement>(null);
+  const [navOverflow, setNavOverflow] = useState({
+    scrollable: false,
+    atEnd: false,
+  });
+  useLayoutEffect(() => {
+    const nav = navRef.current!;
+    const view = nav.ownerDocument.defaultView!;
+    let active = true;
+    let frame = 0;
+    const sync = () => {
+      frame = 0;
+      const limit = nav.scrollWidth - nav.clientWidth;
+      const scrollable = limit > 1;
+      const atEnd = !scrollable || nav.scrollLeft >= limit - 1;
+      setNavOverflow(current =>
+        current.scrollable === scrollable && current.atEnd === atEnd
+          ? current
+          : { scrollable, atEnd },
+      );
+    };
+    const schedule = () => {
+      if (!frame) frame = view.requestAnimationFrame(sync);
+    };
+    const resize = new view.ResizeObserver(schedule);
+    const observeLinks = () => {
+      for (const link of Array.from(nav.children)) resize.observe(link);
+    };
+    resize.observe(nav);
+    observeLinks();
+    const mutations = new view.MutationObserver(() => {
+      observeLinks();
+      schedule();
+    });
+    mutations.observe(nav, { childList: true });
+    nav.addEventListener("scroll", schedule, { passive: true });
+    view.addEventListener("resize", schedule);
+    void nav.ownerDocument.fonts?.ready.then(() => {
+      if (active) schedule();
+    });
+    sync();
+    return () => {
+      active = false;
+      view.cancelAnimationFrame(frame);
+      resize.disconnect();
+      mutations.disconnect();
+      nav.removeEventListener("scroll", schedule);
+      view.removeEventListener("resize", schedule);
+    };
+  }, [language]);
+  useLayoutEffect(() => {
+    const nav = navRef.current!;
+    const onWheel = (event: WheelEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+      // Leave horizontal gestures and shift-wheel to the native scroller.
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const limit = nav.scrollWidth - nav.clientWidth;
+      if (limit <= 0) return;
+      const unit =
+        event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? nav.clientWidth
+            : 1;
+      const next = Math.max(
+        0,
+        Math.min(limit, nav.scrollLeft + event.deltaY * unit),
+      );
+      if (next === nav.scrollLeft) return;
+      event.preventDefault();
+      nav.scrollLeft = next;
+    };
+    nav.addEventListener("wheel", onWheel, { passive: false });
+    return () => nav.removeEventListener("wheel", onWheel);
+  }, []);
   const links: [string, MessageKey, string][] = [
     ["/", "home", "grid"],
     ["/compute", "compute", "compute"],
-    ["/cloud", "cloud", "cloud"],
     ["/organizations", "organizations", "users"],
   ];
   if (github.data?.enabled) links.splice(2, 0, ["/actions", "actions", "play"]);
@@ -97,22 +171,28 @@ export function Layout() {
       <div className="app-shell">
         <aside className="sidebar">
           <p className="eyebrow sidebar-label">{t("account")}</p>
-          <nav aria-label={t("navigation")}>
-            {links.map(([path, label, icon]) => (
-              <NavLink
-                key={path}
-                to={path}
-                end={path === "/"}
-                className={({ isActive }) =>
-                  isActive ? "nav-link active" : "nav-link"
-                }
-              >
-                <Icon name={icon} />
-                <span>{t(label)}</span>
-                {label === "cloud" && <span className="soon-dot" />}
-              </NavLink>
-            ))}
-          </nav>
+          <div
+            className="sidebar-nav"
+            data-scrollable={navOverflow.scrollable ? "true" : "false"}
+            data-at-end={navOverflow.atEnd ? "true" : "false"}
+          >
+            <nav aria-label={t("navigation")} ref={navRef}>
+              {links.map(([path, label, icon]) => (
+                <NavLink
+                  key={path}
+                  to={path}
+                  end={path === "/"}
+                  className={({ isActive }) =>
+                    isActive ? "nav-link active" : "nav-link"
+                  }
+                >
+                  <Icon name={icon} />
+                  <span>{t(label)}</span>
+                </NavLink>
+              ))}
+            </nav>
+            <span className="nav-scroll-hint" aria-hidden="true" />
+          </div>
         </aside>
         <main id="main" className="main-content">
           <Outlet />

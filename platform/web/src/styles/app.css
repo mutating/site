@@ -255,6 +255,9 @@ h3 {
 .sidebar-label {
   padding: 0 14px 18px;
 }
+.sidebar-nav {
+  display: contents;
+}
 .sidebar nav {
   display: flex;
   flex-direction: column;
@@ -280,15 +283,11 @@ h3 {
   background: var(--hot-pale);
   color: var(--active-ink);
 }
-.nav-link:nth-child(4) {
+.nav-link:last-child {
   margin-top: 26px;
 }
-.soon-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ink-muted);
-  margin-left: auto;
+.nav-scroll-hint {
+  display: none;
 }
 .avatar {
   display: grid;
@@ -1202,6 +1201,24 @@ td small {
   color: var(--ink);
   box-shadow: 0 2px 7px color-mix(in srgb, var(--ink) 6%, transparent);
 }
+/* On the dark canvas the flat surface disappears into the track, so the
+   selected tab needs to be raised instead of recessed. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .profile-tabs > button[aria-selected="true"] {
+    background: color-mix(in srgb, var(--hot) 16%, var(--surface-raised));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--hot) 34%, var(--line)),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 4px 16px rgba(0, 0, 0, 0.45);
+  }
+}
+:root[data-theme="dark"] .profile-tabs > button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--hot) 16%, var(--surface-raised));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--hot) 34%, var(--line)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 16px rgba(0, 0, 0, 0.45);
+}
 .profile-personal-panel,
 .profile-account-panel {
   width: 100%;
@@ -1696,27 +1713,70 @@ td small {
   .sidebar-label {
     display: none;
   }
+  .sidebar-nav {
+    display: block;
+    position: relative;
+    min-width: 0;
+  }
   .sidebar nav {
     flex-direction: row;
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sidebar nav::-webkit-scrollbar {
+    display: none;
   }
   .nav-link {
-    flex: 1;
+    flex: 1 0 auto;
     justify-content: center;
     font-size: 11px;
     padding: 10px;
     min-height: 40px;
   }
-  .nav-link:nth-child(4) {
+  .nav-link:focus-visible {
+    outline-offset: -2px;
+  }
+  .nav-link:last-child {
     margin: 0;
   }
   .nav-link svg {
     width: 16px;
     height: 16px;
   }
-  .soon-dot {
-    display: none;
+  .nav-scroll-hint {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 24px;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--bg) 72%);
+    transition: opacity 0.16s ease;
+  }
+  .nav-scroll-hint::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid var(--hot);
+    transform: translateY(-50%);
+  }
+  .sidebar-nav[data-scrollable="true"]:not([data-at-end="true"])
+    .nav-scroll-hint {
+    visibility: visible;
+    opacity: 1;
   }
   .page-heading {
     margin-top: 5px;
@@ -1762,8 +1822,8 @@ td small {
     width: calc(100% - 28px);
   }
   .nav-link {
-    min-width: calc(50% - 4px);
-    flex: 1;
+    min-width: 0;
+    flex: 1 0 auto;
     font-size: 11px;
   }
   .sidebar nav {
