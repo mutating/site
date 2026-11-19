@@ -568,121 +568,6 @@ h3 {
   color: var(--ink-muted);
   margin-top: 18px;
 }
-.chart-panel {
-  position: relative;
-  margin-top: 30px;
-  padding: 15px 17px 12px;
-  border: 1px solid var(--line);
-  border-radius: 17px;
-  background:
-    linear-gradient(
-      color-mix(in srgb, var(--hot) 2%, transparent),
-      color-mix(in srgb, var(--hot) 2%, transparent)
-    ),
-    var(--surface);
-}
-.chart-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: linear-gradient(
-    90deg,
-    transparent 49.8%,
-    color-mix(in srgb, var(--line) 35%, transparent) 50%,
-    transparent 50.2%
-  );
-  background-size: 18px 100%;
-  opacity: 0.35;
-}
-.chart-panel > * {
-  position: relative;
-}
-.chart-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 13px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink-muted);
-  font: 9px var(--font-geist-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.chart-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 18px;
-  margin: 16px 0 13px;
-}
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: none;
-  border: none;
-  min-height: 40px;
-  padding: 8px;
-  border-radius: 8px;
-  font-size: 11px;
-  color: var(--ink-muted);
-}
-.legend-item:hover {
-  background: var(--surface-raised);
-}
-.legend-item > span {
-  width: 17px;
-  border-top-width: 2px;
-}
-.legend-item.dimmed {
-  opacity: 0.35;
-}
-.capacity-chart {
-  display: block;
-  width: 100%;
-  height: auto;
-  min-height: 180px;
-  overflow: visible;
-}
-.chart-grid {
-  stroke: var(--line);
-  stroke-dasharray: 3 5;
-  stroke-width: 1;
-}
-.tick {
-  fill: var(--ink-muted);
-  font: 10px var(--font-geist-mono);
-}
-.axis-label {
-  fill: var(--ink-muted);
-  font: 11px var(--font-geist-mono);
-}
-.chart-note {
-  font-size: 10px;
-  color: var(--ink-muted);
-  margin-top: 5px;
-}
-.chart-empty {
-  padding: 80px 20px;
-  text-align: center;
-  color: var(--ink-muted);
-}
-.chart-data {
-  font-size: 11px;
-  color: var(--ink-muted);
-  margin-top: 14px;
-}
-.chart-data summary {
-  cursor: pointer;
-  display: list-item;
-}
-.chart-data table {
-  font-size: 10px;
-}
-.chart-data .table-scroll {
-  max-height: 280px;
-  margin-top: 12px;
-}
 .small-empty {
   display: flex;
   gap: 16px;
@@ -1796,9 +1681,6 @@ td small {
   .product-grid {
     gap: 16px;
   }
-  .chart-panel {
-    padding: 14px;
-  }
 }
 @media (max-width: 640px) {
   .profile-tabs { gap: 4px; padding: 4px; }
@@ -1939,36 +1821,6 @@ td small {
   }
   .metric-value > .metric-total {
     font-size: 21px;
-  }
-  .chart-panel {
-    margin-top: 22px;
-    padding: 12px 9px;
-  }
-  .chart-header {
-    font-size: 8px;
-  }
-  .chart-legend {
-    gap: 4px;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .legend-item {
-    min-height: 44px;
-    padding: 7px 3px;
-    text-align: left;
-    font-size: 11px;
-  }
-  .legend-item > span {
-    flex-shrink: 0;
-  }
-  .capacity-chart {
-    min-height: 160px;
-  }
-  .chart-note {
-    font-size: 9px;
-  }
-  .chart-data {
-    font-size: 10px;
   }
   .pagination {
     padding: 16px 14px;

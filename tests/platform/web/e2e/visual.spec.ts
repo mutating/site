@@ -395,7 +395,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     { cpu_millis: 4000, memory_bytes: 12 * GiB },
   );
   await seedHistory(request, personal.id);
-  await seedHistory(request, shared.id);
+  await seedHistory(request, shared.id, "sparse");
   await page.goto("");
   await screenshot("overview");
   await page.goto("compute");

@@ -3,6 +3,7 @@ export function useData<T>(
   load: (signal: AbortSignal) => Promise<T>,
   key: string,
   retainData = false,
+  refreshKey?: number,
 ) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -26,7 +27,7 @@ export function useData<T>(
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [key, revision, retainData]);
+  }, [key, revision, retainData, refreshKey]);
   return {
     data,
     error,

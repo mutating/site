@@ -484,16 +484,14 @@ const messages = {
     "Includes enabled computers that are online. Free capacity excludes task reservations.",
   ],
   history: ["Мощности и загрузка", "Capacity & utilization"],
-  sevenDays: ["Последние 7 дней", "Last 7 days"],
+  chartCapacity: ["Мощность", "Capacity"],
+  chartReserved: ["Занято", "Reserved"],
+  chartLinesHidden: ["Все линии скрыты", "All lines are hidden"],
+  chartAggregated: ["Среднее и диапазон по интервалам", "Average and range per interval"],
   cpuCapacity: ["CPU · мощность", "CPU · capacity"],
   memoryCapacity: ["Память · мощность", "Memory · capacity"],
   cpuUsage: ["CPU · занято", "CPU · reserved"],
   memoryUsage: ["Память · занято", "Memory · reserved"],
-  chartNote: [
-    "Сплошные линии — выделенная мощность; пунктир — занято задачами.",
-    "Solid lines show allocated capacity; dashed lines show task reservations.",
-  ],
-  chartTable: ["Данные графика", "Chart data"],
   time: ["Время", "Time"],
   noMeasurements: [
     "Измерений загрузки пока нет.",
@@ -501,6 +499,10 @@ const messages = {
   ],
   historyFrom: ["История доступна с", "History is available from"],
   noHistory: ["История ещё не накоплена.", "No history has been recorded yet."],
+  noCapacityHistory: [
+    "За этот период не было доступных мощностей.",
+    "No capacity was available during this period.",
+  ],
   noComputers: [
     "Пока нет подключённых компьютеров",
     "No computers connected yet",
