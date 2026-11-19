@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -14,6 +15,8 @@ from throng_api.models import (
     LegacyCredential,
     LoginSession,
     Membership,
+    PaymentAccount,
+    PaymentLedgerEntry,
     TokenOwnership,
     User,
 )
@@ -207,6 +210,17 @@ async def update_user(user_id: UUID, data: UserUpdate, request: Request):
         return await saved(session, user)
 
 
+async def delete_empty_payment_accounts(session, owner):
+    ledger_history = (
+        select(PaymentLedgerEntry.id)
+        .where(PaymentLedgerEntry.payment_account_id == PaymentAccount.id)
+        .exists()
+    )
+    await session.execute(
+        delete(PaymentAccount).where(owner, PaymentAccount.balance == Decimal(0), ~ledger_history)
+    )
+
+
 @router.delete("/users/{user_id}", status_code=204)
 async def delete_user(user_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
@@ -226,6 +240,7 @@ async def delete_user(user_id: UUID, request: Request):
         for model in (AccessToken, LegacyCredential):
             await session.execute(delete(model).where(model.ownership_id.in_(owners)))
         await session.execute(delete(TokenOwnership).where(TokenOwnership.user_id == str(user_id)))
+        await delete_empty_payment_accounts(session, PaymentAccount.user_id == str(user_id))
         await session.delete(await session.get(User, str(user_id)))
 
 
@@ -349,6 +364,7 @@ async def delete_company(company_id: UUID, request: Request):
                 Membership.company_id == str(company_id), Membership.user_id == principal.user_id
             )
         )
+        await delete_empty_payment_accounts(session, PaymentAccount.company_id == str(company_id))
         await session.delete(await session.get(Company, str(company_id)))
         await session.execute(
             update(CompanyInvitation)
