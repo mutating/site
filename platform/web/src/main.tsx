@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@mutating/ui/react";
 import {
@@ -74,6 +74,7 @@ function LegacyApiTokens() {
 }
 function App() {
   const { user, loading, error, reload } = useSession();
+  const memberSearchDrafts = useMemo(() => new Map<string, string>(), [user?.id]);
   const { t } = useI18n();
   const location = useLocation();
   const interrupted = useRef(false);
@@ -121,7 +122,9 @@ function App() {
               <Route path="power-cells" element={<LegacyCompute />} />
               <Route path="power-cells/*" element={<LegacyCompute />} />
               <Route path="organizations" element={<Organizations />} />
-              <Route path="organizations/:companyId" element={<Organization />} />
+              <Route path="organizations/:companyId" element={<Organization memberSearchDrafts={memberSearchDrafts} />}>
+                <Route path="members" element={null} />
+              </Route>
               <Route path="invitations/:token" element={<Invitation />} />
               <Route path="profile" element={<Profile key={user?.id} />} />
               <Route path="api-tokens" element={<LegacyApiTokens />} />

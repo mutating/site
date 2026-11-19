@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { allPages } from "../lib/api";
 import { useData } from "../lib/useData";
+import { useReloadOnOrganizationChange } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import type { Company } from "../lib/types";
@@ -13,6 +14,7 @@ export function Overview() {
     (signal) => allPages<Company>("companies", signal),
     user!.id,
   );
+  useReloadOnOrganizationChange(user!.id, "all", companies.reload);
   const name = user!.first_name || user!.nickname || user!.email;
   return (
     <>

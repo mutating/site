@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { request, allPages } from "../lib/api";
+import { request, allPages, ApiError, withDeadline } from "../lib/api";
+import { computerAvailability } from "../lib/computerAvailability";
 import { useData } from "../lib/useData";
+import { useReloadOnOrganizationChange } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import { GiB, number } from "../lib/chart";
@@ -10,34 +12,49 @@ import { Empty, ErrorBox, Heading, Loading } from "../components/UI";
 import { BenchmarkSummary } from "../components/Benchmarks";
 import { runtimeLabel } from "../lib/runtime";
 export function Computers() {
-  const { user } = useSession();
+  const viewer = useSession().user!.id;
   const { t, locale } = useI18n();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const companyId = params.get("company_id");
-  const userId = params.get("user_id") || user!.id;
+  const showAll = Boolean(companyId) && params.get("only_available") === "false";
+  const directoryParam = params.get("directory_search");
+  const directorySearch = directoryParam?.startsWith("?") ? directoryParam : "";
+  const organizationPage = params.get("organization_page");
+  const memberQuery = params.get("organization_q");
+  const organizationQuery = new URLSearchParams(organizationPage ? { page: organizationPage } : {});
+  if (memberQuery) organizationQuery.set("q", memberQuery);
+  const organizationPath = `/organizations/${encodeURIComponent(companyId ?? "")}${organizationQuery.size ? `?${organizationQuery}` : ""}`;
+  const userId = params.get("user_id") || viewer;
   const page = Math.max(
     1,
     Math.min(1_000_000, Number.parseInt(params.get("page") || "1", 10) || 1),
   );
   const company = useData(
     (signal) => allPages<Company>("companies", signal),
-    user!.id,
+    viewer,
   );
   const query = new URLSearchParams({
     ...(companyId ? { company_id: companyId } : { user_id: userId }),
-    only_available: "true",
+    only_available: String(!showAll),
     limit: "10",
     offset: String((page - 1) * 10),
   });
   const queryKey = query.toString();
   const state = useData(
-    async (signal) => ({
-      ...(await request<Computer[]>(`computers?${queryKey}`, { signal })),
-      queryKey,
-    }),
+    async (signal) => {
+      const read = (listSignal: AbortSignal) => request<Computer[]>(
+        `computers?${queryKey}`, { signal: listSignal },
+      );
+      const result = companyId ? await withDeadline(signal, read) : await read(signal);
+      return { ...result, queryKey };
+    },
     queryKey,
   );
+  useReloadOnOrganizationChange(viewer, companyId, (change) => {
+    if (change.type === "renamed") company.reload();
+    else state.reload();
+  });
   // A response from the preceding page must not correct a newer URL.
   const data = state.data?.queryKey === queryKey ? state.data : null;
   const updatePage = (value: number) => {
@@ -64,16 +81,23 @@ export function Computers() {
     });
     return () => cancelAnimationFrame(frame);
   }, [page, data, outsidePages]);
+  const lostCompany = state.error instanceof ApiError && state.error.status === 404;
   const label = companyId
-    ? company.data?.find((c) => c.id === companyId)?.name || t("organizations")
+    ? (!lostCompany && company.data?.find((c) => c.id === companyId)?.name) || t("organizations")
     : t("personal");
+  const backPath = lostCompany ? `/organizations${directorySearch}` : organizationPath;
+  const backLabel = lostCompany ? "backOrganizations" : "backOrganization";
   return (
     <>
-      <Link className="back-link" to="/compute">
-        ← {t("backCompute")}
+      <Link
+        className="back-link"
+        to={showAll ? backPath : "/compute"}
+        state={showAll && !lostCompany ? { directorySearch } : undefined}
+      >
+        ← {t(showAll ? backLabel : "backCompute")}
       </Link>
       <Heading index={`02 / MUTATING COMPUTE / ${label}`} title={t("computers")}>
-        {t("onlineOnly")}
+        {t(showAll ? "allOrganizationComputers" : "onlineOnly")}
       </Heading>
       {state.loading || outsidePages || (!state.error && !data) ? (
         <Loading />
@@ -101,6 +125,15 @@ export function Computers() {
                   <tbody>
                     {data.data.map((computer, index) => {
                       const to = `/compute/computers/${computer.id}?${params}`;
+                      const { status, available } = computerAvailability(computer);
+                      const statusContent = (
+                        <>
+                          <span
+                            className={status === "online" ? "signal-dot" : "signal-dot inactive"}
+                          />
+                          {t(status)}
+                        </>
+                      );
                       return (
                         <tr
                           key={computer.id}
@@ -124,8 +157,7 @@ export function Computers() {
                                 </strong>
                               </Link>
                               <span className="status-badge mobile-status">
-                                <span className="signal-dot" />
-                                {t("online")}
+                                {statusContent}
                               </span>
                             </div>
                             <small>
@@ -135,21 +167,16 @@ export function Computers() {
                           </td>
                           <td>
                             <span className="status-badge">
-                              <span className="signal-dot" />
-                              {t("online")}
+                              {statusContent}
                             </span>
                           </td>
                           <td
                             className="numeric"
                             data-label={`CPU · ${t("free")} / ${t("total")}`}
                           >
-                            {number(
-                              Math.max(
-                                0,
-                                computer.cpu_millis - computer.reserved_cpu,
-                              ) / 1000,
-                              locale,
-                            )}{" "}
+                            {available
+                              ? number(computer.free_cpu / 1000, locale)
+                              : "—"}{" "}
                             <span>
                               / {number(computer.cpu_millis / 1000, locale)}
                             </span>
@@ -158,14 +185,9 @@ export function Computers() {
                             className="numeric"
                             data-label={`${t("memory")} · ${t("free")} / ${t("total")}`}
                           >
-                            {number(
-                              Math.max(
-                                0,
-                                computer.memory_bytes -
-                                  computer.reserved_memory,
-                              ) / GiB,
-                              locale,
-                            )}{" "}
+                            {available
+                              ? number(computer.free_memory / GiB, locale)
+                              : "—"}{" "}
                             <span>
                               / {number(computer.memory_bytes / GiB, locale)}{" "}
                               GiB
@@ -187,8 +209,11 @@ export function Computers() {
                 </table>
               </div>
               {!data.data.length && (
-                <Empty icon="computer" title={t("noComputers")}>
-                  {t("noComputersLead")}
+                <Empty
+                  icon="computer"
+                  title={t(showAll ? "noOrganizationComputers" : "noComputers")}
+                >
+                  {!showAll && t("noComputersLead")}
                 </Empty>
               )}
               <nav className="pagination" aria-label={t("page")}>
@@ -213,7 +238,7 @@ export function Computers() {
                 </div>
               </nav>
             </section>
-            <p className="footnote">{t("resourcesNote")}</p>
+            {!showAll && <p className="footnote">{t("resourcesNote")}</p>}
           </>
         )
       )}

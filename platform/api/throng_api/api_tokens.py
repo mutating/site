@@ -5,9 +5,11 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, literal, or_, select
+from sqlalchemy.orm import defer, load_only
 
 from throng_api import outputs as out
+from throng_api.database import company_query_id
 from throng_api.models import AccessToken, TokenOwnership, User
 from throng_api.schemas import ApiTokenCreate, PaginationOffset
 from throng_api.security import (
@@ -21,6 +23,7 @@ from throng_api.security import (
     personal,
 )
 from throng_api.serialization import public
+from throng_api.sharing import MEMBER_PROFILE_COLUMNS, member_profile
 
 router = APIRouter(
     prefix="/v1/api-tokens", tags=["accounts"], dependencies=[Depends(access_token_scheme)]
@@ -32,7 +35,7 @@ def token_view(token, owner, issuer):
         **public(token),
         "user_id": owner.user_id,
         "company_id": owner.company_id,
-        "issuer": out.MemberProfile(**public(issuer)),
+        "issuer": member_profile(issuer),
     }
 
 
@@ -54,12 +57,12 @@ async def registry(
             raise HTTPException(404, "Resource not found")
         if company_id:
             await company_access(session, principal, company_id)
+        company_key = company_query_id(session, company_id) if company_id else None
         base = (
-            select(AccessToken, TokenOwnership, User)
+            select(AccessToken.id, AccessToken.created_at)
             .join(TokenOwnership, AccessToken.ownership_id == TokenOwnership.id)
-            .join(User, AccessToken.created_by_user_id == User.id)
             .where(
-                owned_filter(TokenOwnership, principal),
+                owned_filter(TokenOwnership, principal, company_id=company_key),
                 # Legacy credentials may be logins; only explicit API issuance
                 # proves a token belongs in this registry, regardless of its name.
                 AccessToken.purpose == "api",
@@ -67,8 +70,6 @@ async def registry(
         )
         if user_id:
             base = base.where(TokenOwnership.user_id == str(user_id))
-        if company_id:
-            base = base.where(TokenOwnership.company_id == str(company_id))
         if status == "active":
             now = request.app.state.clock()
             base = base.where(
@@ -79,10 +80,22 @@ async def registry(
         response.headers["X-Total-Count"] = str(
             await session.scalar(select(func.count()).select_from(base.subquery()))
         )
-        rows = await session.execute(
+        page = (
             base.order_by(AccessToken.created_at.desc(), AccessToken.id.desc())
-            .limit(limit)
+            .limit(literal(limit, literal_execute=True))
             .offset(offset)
+            .subquery()
+        )
+        rows = await session.execute(
+            select(AccessToken, TokenOwnership, User)
+            .join(page, AccessToken.id == page.c.id)
+            .join(TokenOwnership, AccessToken.ownership_id == TokenOwnership.id)
+            .join(User, AccessToken.created_by_user_id == User.id)
+            .options(
+                defer(AccessToken.token_hash, raiseload=True),
+                load_only(*MEMBER_PROFILE_COLUMNS, raiseload=True),
+            )
+            .order_by(page.c.created_at.desc(), page.c.id.desc())
         )
         return [token_view(token, owner, issuer) for token, owner, issuer in rows]
 

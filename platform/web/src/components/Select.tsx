@@ -82,11 +82,11 @@ export function Select({
   const selected = options.find((option) => option.value === String(value));
   const scrolledOpen = useRef(false);
 
-  const positionPanel = useCallback(() => {
+  const positionPanel = useCallback((anchor?: DOMRect) => {
     const root = rootRef.current;
     const panel = panelRef.current;
     if (!root || !panel) return;
-    const rect = root.getBoundingClientRect();
+    const rect = anchor ?? root.getBoundingClientRect();
     const width = Math.min(Math.max(rect.width, 240), 320, window.innerWidth - 24);
     // The first layout uses shrink-to-fit width; apply the final width before
     // measuring wrapping-dependent height and flip position.
@@ -94,10 +94,13 @@ export function Select({
     const style = getComputedStyle(panel);
     const borderY =
       parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-    const cssCap = Math.min(300, window.innerHeight * 0.45);
+    const viewportHeight = window.innerHeight;
+    const cssCap = Math.min(300, viewportHeight * 0.45);
     const contentHeight = Math.min(panel.scrollHeight + borderY, cssCap);
-    const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const spaceAbove = rect.top - 12;
+    const anchorTop = Math.max(0, Math.min(rect.top, viewportHeight));
+    const anchorBottom = Math.max(0, Math.min(rect.bottom, viewportHeight));
+    const spaceBelow = viewportHeight - anchorBottom - 12;
+    const spaceAbove = anchorTop - 12;
     const above = spaceBelow < contentHeight && spaceAbove > spaceBelow;
     const maxHeight = Math.max(
       0,
@@ -105,8 +108,8 @@ export function Select({
     );
     const alignRight = rect.left + 240 > window.innerWidth - 12;
     setPosition({
-      top: above ? undefined : rect.bottom + 6,
-      bottom: above ? window.innerHeight - rect.top + 6 : undefined,
+      top: above ? undefined : anchorBottom + 6,
+      bottom: above ? viewportHeight - anchorTop + 6 : undefined,
       left: alignRight ? undefined : rect.left,
       right: alignRight ? window.innerWidth - rect.right : undefined,
       width,
@@ -119,8 +122,21 @@ export function Select({
       scrolledOpen.current = false;
       return;
     }
-    positionPanel();
-  }, [open, options.length, positionPanel]);
+    const root = rootRef.current;
+    if (!root) return;
+    let anchor = root.getBoundingClientRect();
+    positionPanel(anchor);
+    const followAnchor = () => {
+      const rect = root.getBoundingClientRect();
+      if (rect.left !== anchor.left || rect.right !== anchor.right || rect.top !== anchor.top || rect.bottom !== anchor.bottom) {
+        anchor = rect;
+        positionPanel(rect);
+      }
+      frame = window.requestAnimationFrame(followAnchor);
+    };
+    let frame = window.requestAnimationFrame(followAnchor);
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, options.length, multiple, size, positionPanel]);
 
   useLayoutEffect(() => {
     if (!open || !position || scrolledOpen.current) return;

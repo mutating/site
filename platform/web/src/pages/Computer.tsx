@@ -1,7 +1,10 @@
 import type { RefObject } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, withDeadline } from "../lib/api";
+import { computerAvailability } from "../lib/computerAvailability";
 import { useData } from "../lib/useData";
+import { useReloadOnOrganizationChange } from "../lib/useOrganizationDirectory";
+import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import { GiB, number } from "../lib/chart";
 import type { Computer as ComputerData } from "../lib/types";
@@ -19,18 +22,26 @@ function ComputerView({ computerId, interrupted }: {
   interrupted: RefObject<boolean>;
 }) {
   const { t, locale } = useI18n();
+  const viewer = useSession().user!.id;
   const [params] = useSearchParams();
+  const companyId = params.get("company_id");
   const back = new URLSearchParams(params);
   back.delete("benchmark");
   const state = useData(
-    (signal) =>
-      api<ComputerData>(`computers/${encodeURIComponent(computerId)}`, {
-        signal,
-      }),
+    (signal) => {
+      const read = (detailSignal: AbortSignal) => api<ComputerData>(
+        `computers/${encodeURIComponent(computerId)}`, { signal: detailSignal },
+      );
+      return companyId ? withDeadline(signal, read) : read(signal);
+    },
     computerId,
   );
+  useReloadOnOrganizationChange(viewer, companyId, (change) => {
+    if (change.type !== "renamed") state.reload();
+  });
   const reload = () => { interrupted.current = false; state.reload(); };
   const computer = state.data;
+  const availability = computer && computerAvailability(computer);
   return (
     <>
       <Link
@@ -44,7 +55,7 @@ function ComputerView({ computerId, interrupted }: {
       ) : state.error ? (
         <ErrorBox error={state.error} retry={reload} />
       ) : (
-        computer && (
+        computer && availability && (
           <>
             <Heading
               index={`02 / MUTATING COMPUTE / ${t("computer")}`}
@@ -75,24 +86,14 @@ function ComputerView({ computerId, interrupted }: {
                 </div>
                 <div>
                   <dt>{t("status")}</dt>
-                  <dd>
-                    {!computer.enabled
-                      ? t("disabled")
-                      : computer.online
-                        ? t("online")
-                        : t("offline")}
-                  </dd>
+                  <dd>{t(availability.status)}</dd>
                 </div>
                 <div>
                   <dt>
                     CPU · {t("free")} / {t("total")}
                   </dt>
                   <dd>
-                    {number(
-                      Math.max(0, computer.cpu_millis - computer.reserved_cpu) /
-                        1000,
-                      locale,
-                    )}{" "}
+                    {availability.available ? number(computer.free_cpu / 1000, locale) : "—"}{" "}
                     / {number(computer.cpu_millis / 1000, locale)}
                   </dd>
                 </div>
@@ -101,13 +102,7 @@ function ComputerView({ computerId, interrupted }: {
                     {t("memory")} · {t("free")} / {t("total")}
                   </dt>
                   <dd>
-                    {number(
-                      Math.max(
-                        0,
-                        computer.memory_bytes - computer.reserved_memory,
-                      ) / GiB,
-                      locale,
-                    )}{" "}
+                    {availability.available ? number(computer.free_memory / GiB, locale) : "—"}{" "}
                     / {number(computer.memory_bytes / GiB, locale)} GiB
                   </dd>
                 </div>

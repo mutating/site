@@ -244,11 +244,12 @@ async def paused_company_read(company, monkeypatch):
 
     async def pause_after_access(*args, **kwargs):
         """Keep the real permission query and suspend only its first successful result."""
-        await original(*args, **kwargs)
+        membership = await original(*args, **kwargs)
         if state["armed"]:
             state["armed"] = False
             state["entered"].set()
             await state["resume"].wait()
+        return membership
 
     monkeypatch.setattr(accounts, "company_access", pause_after_access)
     try:

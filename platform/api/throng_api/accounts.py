@@ -2,9 +2,11 @@ from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import delete, func, or_, select, union_all, update
+from sqlalchemy import String, and_, cast, delete, func, or_, select, true, union_all, update
+from sqlalchemy.orm import aliased, load_only
 
 from throng_api import outputs as out
+from throng_api.database import company_query_id
 from throng_api.models import (
     AccessToken,
     Company,
@@ -17,7 +19,8 @@ from throng_api.models import (
     TokenOwnership,
     User,
 )
-from throng_api.organization_counts import organization_counts
+from throng_api.organization_counts import organization_count_columns, organization_counts
+from throng_api.organization_names import normalize_name
 from throng_api.permissions import PERMISSIONS, effective_permissions
 from throng_api.schemas import (
     CompanyInput,
@@ -51,7 +54,13 @@ from throng_api.security import (
     verify_password,
 )
 from throng_api.serialization import public
-from throng_api.sharing import grant_allowed, member_view, resolve_user
+from throng_api.sharing import (
+    MEMBER_PROFILE_COLUMNS,
+    check_grant,
+    member_view,
+    member_with_profile,
+    resolve_user,
+)
 from throng_api.transport import ProtocolError
 
 public_router = APIRouter(prefix="/v1", tags=["accounts"])
@@ -289,21 +298,21 @@ async def list_companies(
 
 @router.get("/companies/{company_id}", response_model=out.Company)
 async def get_company(company_id: UUID, request: Request):
-    async with request.app.state.db.read() as session:
+    async with request.app.state.db.read(snapshot=True) as session:
         principal = await authenticate(session, request)
-        await company_access(session, principal, str(company_id))
-        company = await session.get(Company, str(company_id))
-        if not company:
-            raise HTTPException(404, "Company not found")
-        member = await session.scalar(
-            select(Membership).where(
-                Membership.company_id == company.id,
-                Membership.user_id == (principal.user_id or principal.actor_id),
+        member = await company_access(session, principal, str(company_id))
+        company_key = company_query_id(session, company_id)
+        result = await session.execute(
+            select(Company, *organization_count_columns(company_key)).where(
+                Company.id == company_key
             )
         )
+        # The authorized membership references this company in the same snapshot.
+        company, computers, members = result.one()
         return {
             **public(company),
-            **(await organization_counts(session, [company.id]))[company.id],
+            "computer_count": computers,
+            "member_count": members,
             "my_role": member.role,
             "my_permissions": sorted(effective_permissions(member.role, member.permissions)),
             "my_membership_id": member.id,
@@ -361,9 +370,11 @@ async def delete_company(company_id: UUID, request: Request):
 
 
 async def membership_change_allowed(session, principal, company_id, old_role, new_role):
-    await company_access(session, principal, company_id, permission="members.manage")
-    role = await membership_role(session, personal(principal), company_id)
-    if (old_role in {"creator", "admin"} or new_role in {"creator", "admin"}) and role != "creator":
+    member = await company_access(session, principal, company_id, permission="members.manage")
+    personal(principal)
+    if (
+        old_role in {"creator", "admin"} or new_role in {"creator", "admin"}
+    ) and member.role != "creator":
         raise HTTPException(403, "Only a creator may manage privileged memberships")
     if old_role == "creator" and new_role != "creator":
         count = await session.scalar(
@@ -373,14 +384,17 @@ async def membership_change_allowed(session, principal, company_id, old_role, ne
         )
         if count <= 1:
             raise HTTPException(409, "A company must retain at least one creator")
+    return member
 
 
 @router.post("/memberships", status_code=201, response_model=out.Membership)
 async def create_membership(data: MembershipCreate, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
-        await membership_change_allowed(session, principal, str(data.company_id), None, data.role)
-        await grant_allowed(session, principal, str(data.company_id), data.role, data.permissions)
+        issuer = await membership_change_allowed(
+            session, principal, str(data.company_id), None, data.role
+        )
+        check_grant(issuer, data.role, data.permissions)
         user = (
             await resolve_user(session, data.identifier)
             if data.identifier
@@ -396,7 +410,44 @@ async def create_membership(data: MembershipCreate, request: Request):
         )
         session.add(row)
         await session.flush()
-        return await member_view(session, row)
+        return member_with_profile(row, user)
+
+
+def membership_search_cte(matches, dialect):
+    matching_members = matches.cte("matching_members")
+    if dialect.name == "sqlite" and dialect.server_version_info >= (3, 35):
+        # SQLite can otherwise evaluate the CTE separately for each consumer.
+        return matching_members.prefix_with("MATERIALIZED")
+    return matching_members
+
+
+def membership_page_statement(page, counts, dialect):
+    if dialect.name == "postgresql":
+        # Bound profile reads to the selected IDs even with a generic plan and unknown offset.
+        profiles = (
+            select(Membership, *MEMBER_PROFILE_COLUMNS)
+            .join(User, User.id == Membership.user_id)
+            .where(Membership.id == page.c.id)
+            .correlate(page)
+            .limit(1)
+            .lateral("page_profile")
+        )
+        return (
+            select(aliased(Membership, profiles), aliased(User, profiles), counts)
+            .select_from(counts)
+            .outerjoin(page, true())
+            .outerjoin(profiles, true())
+            .order_by(page.c.id)
+        )
+    return (
+        select(Membership, User, counts)
+        .select_from(counts)
+        .outerjoin(page, true())
+        .outerjoin(Membership, Membership.id == page.c.id)
+        .outerjoin(User, User.id == Membership.user_id)
+        .options(load_only(*MEMBER_PROFILE_COLUMNS, raiseload=True))
+        .order_by(page.c.id)
+    )
 
 
 @router.get("/memberships", response_model=list[out.Membership])
@@ -407,35 +458,67 @@ async def list_memberships(
     limit: int = Query(100, ge=1, le=200),
     offset: PaginationOffset = 0,
     user_id: UUID | None = None,
+    q: str = Query("", max_length=201, pattern=r"^[^\x00]*$"),
 ):
-    async with request.app.state.db.read() as session:
+    async with request.app.state.db.read(snapshot=True) as session:
         principal = await authenticate(session, request)
         await company_access(session, principal, str(company_id))
-        conditions = [
-            Membership.company_id == str(company_id),
-            Membership.user_id == str(user_id) if user_id else True,
+        conditions = [Membership.company_id == company_query_id(session, company_id)]
+        if user_id:
+            conditions.append(Membership.user_id == str(user_id))
+        matches = select(Membership.id).where(*conditions)
+        unfiltered = (
+            select(func.count()).select_from(Membership).where(*conditions).scalar_subquery()
+        )
+        total = unfiltered
+        query = normalize_name(" ".join(q.split()))
+        if query:
+            matching_profile = (
+                select(User.id)
+                .where(
+                    User.id == Membership.user_id,
+                    or_(
+                        User.name_search.contains(query, autoescape=True),
+                        User.nickname.contains(query.removeprefix("@") or query, autoescape=True),
+                        and_(
+                            User.name_search == "",
+                            User.nickname.is_(None),
+                            func.substr(cast(User.id, String), 1, 8).contains(
+                                query, autoescape=True
+                            ),
+                        ),
+                    ),
+                )
+                .correlate(Membership)
+                .scalar_subquery()
+            )
+            # Search only profiles of this company's members, then reuse the ID
+            # set for the exact total and page, even for a common search term.
+            matching_members = membership_search_cte(
+                matches.where(matching_profile.is_not(None)), session.bind.dialect
+            )
+            total = select(func.count()).select_from(matching_members).scalar_subquery()
+            matches = select(matching_members.c.id)
+        page = matches.order_by(matches.selected_columns.id).limit(limit).offset(offset).subquery()
+        # Anchor the response on the totals so even an empty/out-of-range page has counts.
+        counts = select(
+            total.label("total"), *([unfiltered.label("unfiltered")] if query else [])
+        ).subquery()
+        rows = (
+            await session.execute(membership_page_statement(page, counts, session.bind.dialect))
+        ).all()
+        response.headers["X-Total-Count"] = str(rows[0].total)
+        if query:
+            response.headers["X-Total-Unfiltered-Count"] = str(rows[0].unfiltered)
+        return [
+            member_with_profile(member, user) for member, user, *_ in rows if member is not None
         ]
-        rows = await session.scalars(
-            select(Membership)
-            .where(*conditions)
-            .order_by(Membership.id)
-            .limit(limit)
-            .offset(offset)
-        )
-        response.headers["X-Total-Count"] = str(
-            await session.scalar(select(func.count()).select_from(Membership).where(*conditions))
-        )
-        return [await member_view(session, row) for row in rows]
 
 
-async def get_membership(session, principal, membership_id, *, access_only=False):
+async def get_membership(session, membership_id):
     row = await session.get(Membership, str(membership_id))
     if not row:
         raise HTTPException(404, "Membership not found")
-    if access_only:
-        await company_access(session, principal, row.company_id, permission=None)
-    else:
-        await company_access(session, principal, row.company_id)
     return row
 
 
@@ -466,22 +549,24 @@ async def revoke_membership_tokens(session, membership, now):
 async def read_membership(membership_id: UUID, request: Request):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request)
-        return await member_view(session, await get_membership(session, principal, membership_id))
+        row = await get_membership(session, membership_id)
+        await company_access(session, principal, row.company_id)
+        return await member_view(session, row)
 
 
 @router.patch("/memberships/{membership_id}", response_model=out.Membership)
 async def update_membership(membership_id: UUID, data: MembershipUpdate, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
-        row = await get_membership(session, principal, membership_id, access_only=True)
+        row = await get_membership(session, membership_id)
         role = data.role or row.role
         permissions = (
             data.permissions
             if "permissions" in data.model_fields_set
             else (row.permissions if role == row.role else None)
         )
-        await membership_change_allowed(session, principal, row.company_id, row.role, role)
-        await grant_allowed(session, principal, row.company_id, role, permissions)
+        issuer = await membership_change_allowed(session, principal, row.company_id, row.role, role)
+        check_grant(issuer, role, permissions)
         before = effective_permissions(row.role, row.permissions)
         after = effective_permissions(role, permissions)
         if (
@@ -499,8 +584,12 @@ async def update_membership(membership_id: UUID, data: MembershipUpdate, request
 async def delete_membership(membership_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
-        row = await get_membership(session, principal, membership_id, access_only=True)
-        if row.user_id != personal(principal) or row.role == "creator":
+        row = await get_membership(session, membership_id)
+        if not principal.user_id or (row.user_id == principal.user_id and row.role != "creator"):
+            # A non-creator can leave with no grants. Check visibility before rejecting company credentials.
+            await company_access(session, principal, row.company_id, permission=None)
+            personal(principal)
+        else:
             await membership_change_allowed(session, principal, row.company_id, row.role, None)
         await revoke_membership_tokens(session, row, request.app.state.clock())
         await session.delete(row)

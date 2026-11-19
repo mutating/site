@@ -6,7 +6,11 @@ export interface User {
   nickname: string | null;
   avatar_version: string | null;
 }
-export interface Company {
+export interface CompanyAppearance {
+  avatar_version: string | null;
+  background_version: string | null;
+}
+export interface Company extends Partial<CompanyAppearance> {
   id: string;
   name: string;
   name_key?: string;
@@ -100,6 +104,19 @@ export interface CapacityHistory {
   available_from: string;
   points: CapacityPoint[];
 }
+export interface PoolHistoryPoint {
+  at: string;
+  cpu_total_millis: number;
+  cpu_free_millis: number;
+  memory_total_bytes: number;
+  memory_free_bytes: number;
+}
+export interface PoolHistory {
+  from_time: string;
+  to_time: string;
+  points: PoolHistoryPoint[];
+  sampled: boolean;
+}
 export interface Computer {
   id: string;
   name: string | null;
@@ -110,8 +127,12 @@ export interface Computer {
   memory_bytes: number;
   reserved_cpu: number;
   reserved_memory: number;
+  free_cpu: number;
+  free_memory: number;
+  accepting_work: boolean;
   enabled: boolean;
   online: boolean;
+  session_active?: boolean;
   session_id: string | null;
   lease_expires_at: string | null;
 }

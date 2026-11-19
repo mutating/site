@@ -22,6 +22,16 @@ async def computer_owner(session, computer_id):
     return (owner.user_id, owner.company_id) if owner else (None, None)
 
 
+async def resource_time(session, now):
+    if "resource_time" not in session.info:
+        last_time = await session.scalar(select(func.max(ComputerResourceChange.created_at)))
+        session.info["resource_time"] = max(now, last_time) if last_time else now
+        session.info["resource_revision"] = await session.scalar(
+            select(Coordination.revision).where(Coordination.id == 1)
+        )
+    return session.info["resource_time"]
+
+
 async def change_resource(
     session,
     row,
@@ -61,13 +71,7 @@ async def change_resource(
     after = (0 if next_deleted else next_total, 0 if next_deleted else next_occupied, *after_owner)
     if not new and before == after and was_deleted == next_deleted:
         return row
-    if "resource_time" not in session.info:
-        last_time = await session.scalar(select(func.max(ComputerResourceChange.created_at)))
-        session.info["resource_time"] = max(now, last_time) if last_time else now
-        session.info["resource_revision"] = await session.scalar(
-            select(Coordination.revision).where(Coordination.id == 1)
-        )
-    timestamp = session.info["resource_time"]
+    timestamp = await resource_time(session, now)
     row.total, row.occupied = next_total, next_occupied
     row.deleted_at = timestamp if next_deleted else None
     row.version = 1 if new else row.version + 1

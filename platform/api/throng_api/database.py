@@ -2,12 +2,23 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from sqlalchemy import event, select, update
+from sqlalchemy import Uuid, event, literal, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from throng_api.models import Coordination
 from throng_api.transport import db_wait
+
+
+def company_query_id(session, company_id):
+    """Let PostgreSQL plan a collection query for this company's actual cardinality."""
+    # A generic plan can otherwise reuse a global scan warmed by a large company.
+    # SQLAlchemy renders the UUID safely and keeps a cached compilation template.
+    return literal(
+        str(company_id),
+        type_=Uuid(as_uuid=False),
+        literal_execute=session.bind.dialect.name == "postgresql",
+    )
 
 
 class Database:
@@ -28,8 +39,16 @@ class Database:
                 cursor.close()
 
     @asynccontextmanager
-    async def read(self):
+    async def read(self, *, snapshot=False):
         async with self.sessions() as session:
+            if snapshot:
+                if self.engine.dialect.name == "sqlite":
+                    # SQLite's default driver mode does not begin a transaction for SELECTs.
+                    await session.execute(text("BEGIN"))
+                else:
+                    await session.connection(
+                        execution_options={"isolation_level": "REPEATABLE READ"}
+                    )
             yield session
 
     @asynccontextmanager

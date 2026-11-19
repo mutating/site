@@ -1,8 +1,10 @@
+import { openOrganizationMember, openOrganizationSettings, switchOrganizationPeople } from "./organization-controls";
 import { openUserMenu, selectLanguage } from "./header-controls";
 import {
   test,
   expect,
   login,
+  startSession,
   API,
   headers,
   addComputer,
@@ -382,13 +384,379 @@ test("personal and organization capacity stay separate, offline excluded, comput
   await expect(page.locator("tbody tr")).toHaveCount(1);
 });
 
+test("organization computers include offline and disabled machines while Compute stays filtered", async ({
+  page,
+  request,
+  account,
+}) => {
+  const name = "Компьютеры команды";
+  const response = await request.post(`${API}/companies`, {
+    headers: headers(account),
+    data: { name },
+  });
+  expect(response.status()).toBe(201);
+  const { id } = await response.json();
+  const online = await addComputer(request, account, "online-node", id);
+  await addComputer(request, account, "offline-node", id, false);
+  const expired = await addComputer(request, account, "expired-lease-node", id, false);
+  const disabledComputer = await addComputer(request, account, "disabled-node", id, false);
+  const update = await request.patch(`${API}/computers/${disabledComputer.id}`, {
+    headers: headers(account),
+    data: { enabled: false },
+  });
+  expect(update.status()).toBe(200);
+  await page.route("**/v1/computers?*", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("only_available") !== "false") return route.continue();
+    const response = await route.fetch();
+    const rows = await response.json();
+    await route.fulfill({
+      response,
+      json: rows.map((computer: { id: string }) => {
+        if (computer.id === expired.id) {
+          return {
+            ...computer,
+            online: true,
+            accepting_work: true,
+            session_id: expired.id,
+            lease_expires_at: "2020-01-01T00:00:00Z",
+            session_active: false,
+          };
+        }
+        if (computer.id === online.id) {
+          return { ...computer, free_cpu: 2000, free_memory: 2 * 1024 ** 3 };
+        }
+        return computer;
+      }),
+    });
+  });
+  await startSession(page, account);
+  await page.goto(`organizations?q=${encodeURIComponent(name)}`);
+  const organization = page.getByRole("article", { name, exact: true });
+  await expect(organization.getByTestId("organization-computer-count")).toHaveText("4");
+  await organization.getByRole("link").click();
+  await page.getByRole("link", { name: /Список компьютеров/ }).click();
+  const offline = page.locator(".computer-row").filter({ hasText: "offline-node" });
+  await expect(offline).toBeVisible();
+  await expect(offline.locator(".status-badge:visible")).toHaveText("Офлайн");
+  const expiredRow = page.locator(".computer-row").filter({ hasText: "expired-lease-node" });
+  await expect.soft(expiredRow.locator(".status-badge:visible")).toHaveText("Офлайн");
+  await expect.soft(expiredRow.locator(".numeric")).toHaveText(["— / 8", "— / 8 GiB"]);
+  const onlineRow = page.locator(".computer-row").filter({ hasText: "online-node" });
+  await expect.soft(onlineRow.locator(".numeric")).toHaveText(["2 / 8", "2 / 8 GiB"]);
+  const disabled = page.locator(".computer-row").filter({ hasText: "disabled-node" });
+  await expect(disabled.locator(".status-badge:visible")).toHaveText("Отключён");
+  await offline.getByRole("link", { name: "offline-node", exact: true }).click();
+  const details = page.locator(".computer-details dd");
+  await expect.soft(details.nth(2)).toHaveText("— / 8");
+  await expect.soft(details.nth(3)).toHaveText("— / 8 GiB");
+  await page.getByRole("link", { name: "← К списку компьютеров", exact: true }).click();
+  await expect(offline).toBeVisible();
+  await page.getByRole("link", { name: "← К организации", exact: true }).click();
+  await page.getByRole("link", { name: "← К организациям", exact: true }).click();
+  await expect(page.getByRole("searchbox")).toHaveValue(name);
+
+  await page.getByRole("link", { name: "Compute", exact: true }).click();
+  await page.getByRole("region", { name, exact: true })
+    .getByRole("link", { name: /Список компьютеров/ }).click();
+  await expect(page.locator(".computer-row")).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "online-node", exact: true })).toBeVisible();
+});
+
+test("organization settings actions work while the team panels are loading", async ({
+  page,
+  request,
+  account,
+}) => {
+  const response = await request.post(`${API}/companies`, {
+    headers: headers(account),
+    data: { name: "Команда с медленной загрузкой" },
+  });
+  expect(response.status()).toBe(201);
+  const { id } = await response.json();
+  let releaseMembers!: () => void;
+  let releaseInvitations!: () => void;
+  const members = new Promise<void>((resolve) => {
+    releaseMembers = resolve;
+  });
+  const invitations = new Promise<void>((resolve) => {
+    releaseInvitations = resolve;
+  });
+  await page.route(`${API}/memberships?company_id=${id}&*`, async (route) => {
+    await members;
+    await route.continue();
+  });
+  await page.route(`${API}/invitations?company_id=${id}&*`, async (route) => {
+    await invitations;
+    await route.continue();
+  });
+  await startSession(page, account);
+  try {
+    await page.goto(`organizations/${id}`);
+    await openOrganizationSettings(page);
+    const leave = page.getByRole("button", {
+      name: "Выйти из организации",
+      exact: true,
+    });
+    const remove = page.getByRole("button", {
+      name: "Удалить организацию",
+      exact: true,
+    });
+    await expect(leave).toBeEnabled();
+    await expect(remove).toBeEnabled();
+    await leave.click();
+    const leaveDialog = page.getByRole("dialog", { name: "Подтвердите выход" });
+    await expect(leaveDialog).toBeVisible();
+    await leaveDialog.getByRole("button", { name: "Отмена", exact: true }).click();
+    await remove.click();
+    const dialog = page.getByRole("dialog", { name: "Удалить организацию" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Отмена", exact: true }).click();
+    await expect(remove).toBeFocused();
+  } finally {
+    releaseMembers();
+    releaseInvitations();
+  }
+});
+
+for (const endpoint of ["memberships", "invitations"]) {
+  test(`organization deletion stays reachable when ${endpoint} cannot load`, async ({
+    page,
+    request,
+    account,
+  }) => {
+    const name = "Команда при сбое загрузки";
+    const created = await request.post(`${API}/companies`, {
+      headers: headers(account),
+      data: { name },
+    });
+    expect(created.status()).toBe(201);
+    const { id } = await created.json();
+    let attempts = 0;
+    await page.route(`**/v1/${endpoint}?company_id=${id}&*`, (route) => {
+      attempts++;
+      return route.abort("failed");
+    });
+    await page.clock.install();
+    await startSession(page, account);
+    await page.goto(`organizations/${id}`);
+    if (endpoint === "invitations") await switchOrganizationPeople(page, "Приглашения");
+    await openOrganizationSettings(page);
+    const remove = page.getByRole("button", { name: "Удалить организацию", exact: true });
+    await expect(remove).toBeEnabled();
+    await expect.poll(() => attempts).toBeGreaterThan(1);
+    await page.clock.fastForward(21_000);
+    await expect(remove).toBeEnabled();
+    if (endpoint === "memberships") {
+      await expect(page.getByRole("button", { name: "Выйти из организации" })).toBeEnabled();
+    }
+    await page.keyboard.press("Escape");
+    const panel = page.getByRole("region", { name: endpoint === "invitations" ? "Приглашения" : "Участники", exact: true });
+    await expect(panel.getByRole("alert")).toContainText("Не удалось связаться");
+    await openOrganizationSettings(page);
+    await remove.click();
+    const dialog = page.getByRole("dialog", { name: "Удалить организацию" });
+    await dialog.getByRole("textbox").fill(name);
+    await dialog.getByRole("button", { name: "Подтвердить", exact: true }).click();
+    await expect(page).toHaveURL(/\/organizations$/);
+  });
+}
+
+test("organization actions recover after the organization lookup stops responding", async ({
+  page,
+  request,
+  account,
+}) => {
+  const name = "Команда при сбое страницы";
+  const created = await request.post(`${API}/companies`, {
+    headers: headers(account),
+    data: { name },
+  });
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  let attempts = 0;
+  let disconnected = true;
+  await page.route(`${API}/companies/${id}`, (route) => {
+    if (disconnected && route.request().method() === "GET") {
+      attempts++;
+      return route.abort("failed");
+    }
+    return route.continue();
+  });
+  await page.clock.install();
+  await startSession(page, account);
+  await page.goto("organizations");
+  await page.getByRole("link", { name: `Открыть организацию: ${name}` }).click();
+  await expect.poll(() => attempts).toBeGreaterThan(1);
+  await page.clock.fastForward(21_000);
+  await expect(page.getByRole("alert")).toContainText("Не удалось связаться");
+  await expect(page.getByRole("button", { name: "Удалить организацию" })).toHaveCount(0);
+  disconnected = false;
+  await page.getByRole("button", { name: "Попробовать снова" }).click();
+  await expect(page.getByRole("heading", { name: `${name}.`, exact: true })).toBeVisible();
+  await openOrganizationSettings(page);
+  await expect(page.getByRole("button", { name: "Выйти из организации" })).toBeEnabled();
+  await page.getByRole("button", { name: "Удалить организацию" }).click();
+  const dialog = page.getByRole("dialog", { name: "Удалить организацию" });
+  await dialog.getByRole("textbox").fill(name);
+  await dialog.getByRole("button", { name: "Подтвердить", exact: true }).click();
+  await expect(page).toHaveURL(/\/organizations$/);
+});
+
+test("organization deletion requires the saved name while the details reload", async ({
+  page,
+  request,
+  account,
+}) => {
+  const oldName = "Прежнее имя команды";
+  const name = "Новое имя команды";
+  const created = await request.post(`${API}/companies`, {
+    headers: headers(account),
+    data: { name: oldName },
+  });
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  await startSession(page, account);
+  await page.goto(`organizations/${id}`);
+  await openOrganizationSettings(page);
+  const remove = page.getByRole("button", { name: "Удалить организацию" });
+  await expect(remove).toBeEnabled();
+
+  let release!: () => void;
+  let startRefresh!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const refreshing = new Promise<void>((resolve) => { startRefresh = resolve; });
+  await page.route(`${API}/companies/${id}`, async (route) => {
+    if (route.request().method() === "GET") {
+      startRefresh();
+      await gate;
+    }
+    await route.continue();
+  });
+  try {
+    await page.getByLabel("Название организации").fill(name);
+    await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+    await expect(page.getByText("Изменения сохранены.")).toBeVisible();
+    await refreshing;
+    await remove.click();
+    const dialog = page.getByRole("dialog", { name: "Удалить организацию" });
+    const input = dialog.getByRole("textbox");
+    const confirm = dialog.getByRole("button", { name: "Подтвердить", exact: true });
+    await input.fill(oldName);
+    await expect(confirm).toBeDisabled();
+    await input.fill(name);
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await expect(page).toHaveURL(/\/organizations$/);
+  } finally {
+    release();
+  }
+});
+
+test("organization deletion is unavailable as soon as a creator changes their role", async ({
+  page,
+  request,
+  account,
+}) => {
+  const coCreator = await makeAccount(request, "Боб");
+  const created = await request.post(`${API}/companies`, {
+    headers: headers(account),
+    data: { name: "Команда с двумя создателями" },
+  });
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  expect((await request.post(`${API}/memberships`, {
+    headers: headers(account),
+    data: { company_id: id, user_id: coCreator.id, role: "creator" },
+  })).status()).toBe(201);
+  await startSession(page, account);
+  await page.goto(`organizations/${id}`);
+  await openOrganizationSettings(page);
+  const remove = page.getByRole("button", { name: "Удалить организацию" });
+  await expect(remove).toBeEnabled();
+
+  let release!: () => void;
+  let startRefresh!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const refreshing = new Promise<void>((resolve) => { startRefresh = resolve; });
+  await page.route(`${API}/companies/${id}`, async (route) => {
+    startRefresh();
+    await gate;
+    await route.continue();
+  });
+  try {
+    await page.keyboard.press("Escape");
+    const self = page.getByRole("article", { name: account.first_name, exact: true });
+    await openOrganizationMember(self);
+    await self.getByRole("button", { name: "Изменить права" }).click();
+    const editor = page.getByRole("dialog", { name: "Изменить права" });
+    await editor.getByLabel("Роль", { exact: true }).selectOption("admin");
+    await editor.getByRole("button", { name: "Сохранить изменения", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await refreshing;
+    await expect(self).toContainText("Администратор");
+    await openOrganizationSettings(page);
+    await expect(remove).toHaveCount(0);
+    await expect(page.getByLabel("Название организации")).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
+for (const action of ["leave", "delete"] as const) {
+  test(`organization actions support exact multiline confirmation to ${action}`, async ({
+    page,
+    request,
+    account,
+  }) => {
+    const confirmation = "Первая строка\nВторая строка";
+    const leaving = action === "leave";
+    const owner = leaving ? await makeAccount(request) : account;
+    const created = await request.post(`${API}/companies`, {
+      headers: headers(owner),
+      data: { name: leaving ? "Общая команда" : confirmation },
+    });
+    expect(created.status()).toBe(201);
+    const { id } = await created.json();
+    if (leaving) {
+      const renamed = await request.patch(`${API}/users/${account.id}`, {
+        headers: headers(account),
+        data: { first_name: confirmation },
+      });
+      expect(renamed.status()).toBe(200);
+      expect((await renamed.json()).first_name).toBe(confirmation);
+      const joined = await request.post(`${API}/memberships`, {
+        headers: headers(owner),
+        data: { company_id: id, user_id: account.id },
+      });
+      expect(joined.status()).toBe(201);
+    }
+    await startSession(page, account);
+    await page.goto(`organizations/${id}`);
+    await openOrganizationSettings(page);
+    const button = leaving ? "Выйти из организации" : "Удалить организацию";
+    await page.getByRole("button", { name: button, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: leaving ? "Подтвердите выход" : button });
+    const input = dialog.getByRole("textbox");
+    const confirm = dialog.getByRole("button", { name: "Подтвердить", exact: true });
+    await input.fill(confirmation.replace("\n", " "));
+    await expect(confirm).toBeDisabled();
+    await input.fill(confirmation);
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await expect(page).toHaveURL(/\/organizations$/);
+    expect((await request.get(`${API}/companies/${id}`, {
+      headers: headers(account),
+    })).status()).toBe(404);
+  });
+}
+
 test("organization creation, creator restrictions and safe deletion errors", async ({
   page,
   request,
   account,
-  browserName,
 }) => {
-  await login(page, account);
+  await startSession(page, account);
   await page.goto("organizations");
   await page
     .getByRole("button", { name: "Создать организацию", exact: true })
@@ -398,41 +766,42 @@ test("organization creation, creator restrictions and safe deletion errors", asy
     .getByRole("dialog")
     .getByRole("button", { name: "Создать организацию" })
     .click();
-  await expect(
-    page.getByRole("heading", { name: "Новая команда" }),
-  ).toBeVisible();
+  const row = page.getByRole("article", { name: "Новая команда", exact: true });
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button")).toHaveCount(0);
+  await row
+    .getByRole("link", { name: "Открыть организацию: Новая команда" })
+    .press("Enter");
+  await expect(page).toHaveURL(/\/organizations\/[^/]+$/);
+  await openOrganizationSettings(page);
   const deleteButton = page.getByRole("button", {
     name: "Удалить организацию",
   });
-  await deleteButton.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog").getByRole("textbox")).toBeFocused();
+  const dialog = page.getByRole("dialog", { name: "Удалить организацию" });
+  await expect(deleteButton).toBeEnabled();
+  await deleteButton.press("Enter");
+  await expect(dialog.getByRole("textbox")).toBeFocused();
+  await expect(dialog).toContainText("Это действие нельзя отменить.");
   await page.keyboard.press("Escape");
   await expect(deleteButton).toBeFocused();
-  // Safari on macOS uses Option-Tab to include buttons in sequential navigation.
-  await page.keyboard.press(
-    browserName === "webkit" && process.platform === "darwin"
-      ? "Alt+Tab"
-      : "Tab",
-  );
-  await expect(
-    page.getByRole("button", { name: "Выйти из организации" }),
-  ).toBeFocused();
   await deleteButton.click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Отмена" })
-    .click();
+  await dialog.getByRole("button", { name: "Отмена" }).click();
   await expect(deleteButton).toBeFocused();
   await page.keyboard.press("Enter");
-  await page.getByRole("dialog").getByRole("textbox").fill("Новая команда");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Подтвердить", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Новая команда" }),
-  ).toHaveCount(0);
+  const confirm = dialog.getByRole("button", {
+    name: "Подтвердить",
+    exact: true,
+  });
+  await dialog.getByRole("textbox").fill("Новая");
+  await expect(confirm).toBeDisabled();
+  await dialog.getByRole("textbox").fill("Новая команда");
+  await confirm.click();
+  await expect(page).toHaveURL(/\/organizations$/);
+  await expect(page.locator(".organization-directory")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(row).toHaveCount(0);
   const owner = await makeAccount(request, "Боб");
   const company = await (
     await request.post(`${API}/companies`, {
@@ -440,14 +809,19 @@ test("organization creation, creator restrictions and safe deletion errors", asy
       data: { name: "Команда Боба" },
     })
   ).json();
-  await request.post(`${API}/memberships`, {
+  const membership = await request.post(`${API}/memberships`, {
     headers: headers(owner),
-    data: { company_id: company.id, user_id: account.id, role: "user" },
+    data: {
+      company_id: company.id,
+      user_id: account.id,
+      role: "admin",
+      permissions: ["company.manage"],
+    },
   });
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Команда Боба" }),
-  ).toBeVisible();
+  expect(membership.status()).toBe(201);
+  await page.goto(`organizations/${company.id}`);
+  await openOrganizationSettings(page);
+  await expect(page.getByLabel("Название организации")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Удалить организацию" }),
   ).toHaveCount(0);
@@ -463,19 +837,26 @@ test("organization creation, creator restrictions and safe deletion errors", asy
     .click();
   await expect(page.getByRole("alert")).toContainText("Удаление заблокировано");
   await page.getByRole("button", { name: "Отмена", exact: true }).click();
-  await page.goto("organizations");
+  await page.goto(`organizations/${company.id}`);
+  await expect(page.locator(".member-row")).toHaveCount(0);
+  await openOrganizationSettings(page);
   await page.getByRole("button", { name: "Выйти из организации" }).click();
-  await page.getByRole("dialog").getByRole("textbox").fill("Команда Боба");
+  await page.getByRole("dialog", { name: "Подтвердите выход" }).getByRole("textbox").fill(account.first_name);
   await page
-    .getByRole("dialog")
+    .getByRole("dialog", { name: "Подтвердите выход" })
     .getByRole("button", { name: "Подтвердить", exact: true })
     .click();
+  await expect(page).toHaveURL(/\/organizations$/);
+  await expect(page.locator(".organization-directory")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
   await expect(page.getByRole("heading", { name: "Команда Боба" })).toHaveCount(
     0,
   );
 });
 
-test("organization deletion preserves members and tokens until dependencies are explicitly removed", async ({
+test("organization deletion preserves members, tokens and computers until dependencies are explicitly removed", async ({
   page,
   request,
   account,
@@ -493,10 +874,24 @@ test("organization deletion preserves members and tokens until dependencies are 
       data: { company_id: company.id, user_id: member.id, role: "user" },
     })
   ).json();
-  await login(page, account);
+  const computer = await addComputer(
+    request,
+    account,
+    "lab-node",
+    company.id,
+    false,
+  );
+  await startSession(page, account);
   await page.goto("organizations");
+  await page
+    .getByRole("link", { name: `Открыть организацию: ${company.name}` })
+    .click();
+  await expect(
+    page.getByRole("link", { name: /Список компьютеров/ }),
+  ).toHaveAttribute("href", `/compute/computers?company_id=${company.id}&only_available=false`);
+  await openOrganizationSettings(page);
   await page.getByRole("button", { name: "Удалить организацию" }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", { name: "Удалить организацию" });
   await dialog.getByRole("textbox").fill(company.name);
   await dialog
     .getByRole("button", { name: "Подтвердить", exact: true })
@@ -560,7 +955,25 @@ test("organization deletion preserves members and tokens until dependencies are 
   await dialog
     .getByRole("button", { name: "Подтвердить", exact: true })
     .click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Удаление заблокировано связанными ресурсами",
+  );
+  expect(
+    (
+      await request.delete(`${API}/computers/${computer.id}`, {
+        headers: headers(account),
+      })
+    ).status(),
+  ).toBe(204);
+  await dialog
+    .getByRole("button", { name: "Подтвердить", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/organizations$/);
   await expect(dialog).not.toBeVisible();
+  await expect(page.locator(".organization-directory")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
   await expect(page.getByRole("heading", { name: company.name })).toHaveCount(
     0,
   );

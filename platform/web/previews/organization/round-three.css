@@ -1,0 +1,247 @@
+.edition-cover {
+  --title-size: clamp(33px, 6.05cqi, 87px);
+  --art-start: 30%;
+  --art-opacity: .47;
+  --atlas-crop: 70% 45%;
+  display: grid;
+  align-items: center;
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+  min-height: 290px;
+  padding: clamp(20px, 3.35cqi, 46px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(112deg, var(--card) 25%, var(--raised));
+}
+.edition-art { overflow: hidden; min-width: 0; }
+.edition-art img { width: 100%; height: 100%; object-fit: cover; object-position: var(--atlas-crop, 56% 43%); filter: var(--atlas-filter, none); }
+.edition-cover .edition-art { position: absolute; z-index: -1; inset: 0 0 0 var(--art-start); opacity: var(--art-opacity); mask-image: linear-gradient(90deg, transparent 2%, #000 68%); }
+.edition-cover .edition-art img { filter: var(--atlas-filter, grayscale(.47) saturate(.62)); }
+[data-theme="dark"] .edition-cover .edition-art { opacity: calc(var(--art-opacity) * .68); }
+.edition-cover > .organization-mark { position: absolute; top: 17px; right: 17px; width: 56px; height: 56px; border-radius: 12px; background: var(--card); }
+.edition-identity { position: relative; min-width: 0; }
+.edition-identity .shortcuts { margin-top: 16px; }
+.edition-identity > div:first-child > .work-status { margin-bottom: 10px; }
+.edition-identity-inline { display: flex; align-items: end; justify-content: space-between; gap: 13px 21px; }
+.edition-identity-inline > .shortcuts { flex: 0 0 auto; justify-content: end; margin-top: 0; }
+
+.edition-summary { gap: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.edition-summary .work-metric { border: 0; border-radius: 0; padding-inline: 15px; }
+.edition-summary .work-metric:first-child { border-start-start-radius: inherit; border-end-start-radius: inherit; }
+.edition-summary .work-metric:last-child { border-start-end-radius: inherit; border-end-end-radius: inherit; }
+.edition-summary .work-metric + .work-metric { border-inline-start: 1px solid var(--border); }
+.edition-summary .work-metric strong { color: var(--accent); }
+.edition-desk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.24fr); gap: var(--section-gap); }
+.edition-team-first { grid-template-columns: minmax(0, 1.47fr) minmax(0, 1fr); }
+@container (width > 510px) {
+  :is(.design-atlas-clear, .design-mural-caption, .design-pink-metrics, .design-pink-relief) .work-columns .computer-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 136px), 1fr)); }
+}
+
+/* 41 — Чистый атлас */
+.design-atlas-clear .edition-cover { --art-opacity: .54; --atlas-crop: 63% 48%; border-radius: 19px; min-height: 322px; }
+.design-atlas-clear .edition-cover .edition-art { inset-inline-start: 27%; background: radial-gradient(ellipse at 57% 70%, var(--soft), transparent 72%); }
+.design-atlas-clear .edition-summary .work-metric strong { font-size: clamp(32px, 4.1cqi, 54px); }
+.design-atlas-clear .computer-cards .machine { border-top-color: var(--accent); }
+
+/* 42 — Фарфор */
+.design-atlas-porcelain .edition-cover { --title-size: clamp(35px, 5.7cqi, 82px); justify-items: center; text-align: center; min-height: 315px; border-radius: 24px; background: radial-gradient(ellipse at 50% 100%, var(--raised), var(--card) 71%); }
+.design-atlas-porcelain .edition-cover .edition-art { inset: 27% 0 0; opacity: .36; mask-image: linear-gradient(0deg, #000, transparent 97%); }
+.design-atlas-porcelain .edition-cover .edition-art img { object-position: 50% 46%; filter: saturate(.42) grayscale(.37); }
+.design-atlas-porcelain .edition-cover :is(.title-meta, .shortcuts) { justify-content: center; }
+.design-atlas-porcelain .edition-desk .work-panel { border-radius: 19px; }
+.design-atlas-porcelain .edition-desk .capacity-meter { background: color-mix(in srgb, var(--card) 88%, var(--soft)); }
+.design-atlas-porcelain .load-bars i { background: linear-gradient(180deg, #bb6594, color-mix(in srgb, #dd8bb5 24%, var(--card))); }
+
+/* 43 — Светлый пульт */
+.design-atlas-dashboard .edition-cover { --title-size: clamp(31px, 4.9cqi, 68px); --art-start: 39%; --art-opacity: .31; --atlas-crop: 62% 62%; min-height: 164px; padding: clamp(17px, 2.6cqi, 33px); border-radius: 10px; }
+.design-atlas-dashboard .edition-desk .work-panel { border-radius: 10px; }
+.design-atlas-dashboard .capacity-meter { background: linear-gradient(156deg, var(--raised), var(--card) 79%); }
+.design-atlas-dashboard .load-bars { height: 125px; }
+.design-atlas-dashboard .load-bars i { background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 20%, var(--card))); }
+
+/* 44 — Машины на обложке */
+.edition-overlap { display: grid; min-width: 0; }
+.edition-overlap .edition-cover { --art-start: 33%; --art-opacity: .54; --atlas-crop: 63% 37%; min-height: 336px; padding-block-end: clamp(84px, 9cqi, 111px); }
+.edition-overlap .edition-cover .edition-art img { filter: grayscale(.15) saturate(.62); }
+.edition-overlap .device-panel { position: relative; z-index: 1; margin: -62px clamp(8px, 2.5cqi, 30px) 0; padding: clamp(11px, 1.8cqi, 20px); border-radius: 16px; box-shadow: 0 9px 33px #8a2a5e16; }
+.edition-overlap .device-tile { background: var(--raised); }
+.edition-overlap .device-tile:hover { background: var(--active); }
+
+/* 45 — Линии */
+.design-atlas-lines { --section-gap: 0px; }
+.design-atlas-lines .edition-cover { --title-size: clamp(32px, 5.2cqi, 76px); --art-start: 45%; --art-opacity: .31; --atlas-crop: 82% 59%; min-height: 211px; border: 0; border-top: 3px solid #ff4b9e; border-radius: 0; padding: 27px 5px 20px; background: repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 56px), var(--canvas); }
+.design-atlas-lines .edition-cover > .organization-mark { width: 39px; height: 39px; top: 11px; right: 5px; font-size: 14px; border-radius: 7px; }
+.design-atlas-lines .edition-cover .edition-identity-inline { padding-block-start: 17px; }
+.design-atlas-lines .edition-summary { border-radius: 0; border-inline-start: 0; }
+.design-atlas-lines .edition-summary .work-metric { padding-block: 17px; }
+.design-atlas-lines .edition-summary strong { font-size: clamp(35px, 6.7cqi, 82px); font-weight: 700; }
+.design-atlas-lines .work-columns { gap: 24px; }
+.design-atlas-lines .work-panel { padding-inline: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
+
+/* 46 — Светлый каталог */
+.design-atlas-index { --section-gap: 0px; }
+.design-atlas-index .edition-cover { --title-size: clamp(29px, 4.7cqi, 66px); --art-start: 40%; --art-opacity: .31; min-height: 153px; padding: 19px clamp(11px, 2.5cqi, 31px); border-radius: 13px 13px 0 0; border-bottom: 0; }
+.design-atlas-index .section-navigation { padding-inline: 9px; border: 1px solid var(--border); background: var(--card); }
+.design-atlas-index .section-navigation button { border-radius: 0; }
+.design-atlas-index .work-panel { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; }
+.design-atlas-index .work-columns { gap: 12px; }
+.design-atlas-index > .machines-panel { border-inline: 1px solid var(--border); }
+.design-atlas-index .member-table-labels { background: var(--raised); }
+
+/* 47 — Машины в ряд */
+.design-atlas-racks .edition-cover { --title-size: clamp(30px, 4.85cqi, 70px); --art-start: 37%; --art-opacity: .37; --atlas-crop: 57% 59%; min-height: 172px; border-radius: 12px; }
+.design-atlas-racks .edition-cover .edition-art img { filter: saturate(.67); }
+.design-atlas-racks > .device-panel { padding-inline: 0; border: 0; background: transparent; box-shadow: none; }
+.design-atlas-racks .device-tile { min-height: 204px; padding: clamp(11px, 1.6cqi, 18px); border-top: 3px solid var(--accent); background: var(--card); }
+.design-atlas-racks .device-tile:hover { background: var(--active); }
+.design-atlas-racks .device-top .machine-icon { width: 43px; height: 43px; }
+
+/* 48 — Сводка команды */
+.design-atlas-members .edition-cover { --title-size: clamp(32px, 5.85cqi, 83px); --art-start: 37%; --art-opacity: .38; min-height: 280px; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.design-atlas-members .edition-cover > .avatar-stack { padding: 9px 11px; border: 1px solid var(--border); background: var(--card); }
+.design-atlas-members .team-panel { border-top: 2px solid var(--accent); }
+.design-atlas-members .team-panel .member-table-labels { padding-inline: 5px; background: var(--raised); }
+
+/* Full-width artwork for variations of the mural. */
+.mural-cover { display: grid; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.mural-art { height: var(--mural-height, clamp(146px, 19cqi, 233px)); background: var(--raised); }
+.mural-cover > .edition-identity { --title-size: clamp(31px, 5.05cqi, 75px); padding: clamp(16px, 2.8cqi, 35px); }
+
+/* 49 — Широкий кадр */
+.design-mural-wide .mural-cover { --mural-height: clamp(165px, 22cqi, 255px); --atlas-crop: 45% 42%; --atlas-filter: saturate(.84); }
+.design-mural-wide .mural-cover > .edition-identity { border-top: 1px solid var(--border); background: linear-gradient(107deg, var(--card), var(--raised)); }
+.design-mural-wide .capacity-meter { background: var(--raised); }
+.design-mural-wide .machines-panel { border-radius: 8px; }
+
+/* 50 — Узкая лента */
+.design-mural-strip .mural-cover { --mural-height: clamp(76px, 9.5cqi, 123px); --atlas-crop: 64% 60%; --atlas-filter: saturate(.73); border-radius: 7px; }
+.design-mural-strip .mural-cover > .edition-identity { --title-size: clamp(30px, 4.85cqi, 69px); padding-block: clamp(15px, 2.05cqi, 24px); }
+.mural-directories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mural-directories .work-panel { border-radius: 4px; box-shadow: none; }
+.mural-directories .panel-heading h2 { letter-spacing: -.035em; }
+
+/* 51 — Подпись на панно */
+.design-mural-caption .mural-cover { --mural-height: clamp(164px, 23cqi, 253px); --atlas-crop: 50% 43%; display: grid; overflow: visible; border: 0; background: transparent; }
+.design-mural-caption .mural-art { border-radius: 20px; border: 1px solid var(--border); }
+.design-mural-caption .mural-cover > .edition-identity { position: relative; width: auto; margin: -54px clamp(9px, 3cqi, 35px) 0; border: 1px solid var(--border); border-radius: 13px; background: var(--card); box-shadow: var(--panel-shadow); }
+
+/* 52 — Панно внутри */
+.design-mural-inset .mural-cover { --mural-height: clamp(138px, 17.5cqi, 205px); --atlas-crop: 59% 53%; --atlas-filter: saturate(.9); }
+.design-mural-inset .mural-cover > .edition-identity { --title-size: clamp(31px, 4.9cqi, 72px); padding-bottom: 15px; }
+.design-mural-inset .mural-art { margin: 0 clamp(10px, 1.7cqi, 22px); border-radius: 8px; border: 1px solid var(--border); }
+.design-mural-inset .mural-cover > .edition-summary { margin: 10px clamp(10px, 1.7cqi, 22px); background: var(--raised); }
+.design-mural-inset .mural-cover > .edition-summary .work-metric { border-top-color: transparent; background: transparent; }
+.design-mural-inset .mural-cover > .edition-summary .work-metric:hover { background: var(--active); }
+.design-mural-inset .edition-summary strong { font-size: 30px; }
+
+/* 53 — Панно с вкладками */
+.design-mural-tabs { --section-gap: 0px; }
+.design-mural-tabs .mural-cover { --mural-height: clamp(72px, 8.1cqi, 108px); --atlas-crop: 60% 52%; --atlas-filter: saturate(.63) contrast(.9); border-radius: 13px 13px 0 0; border-bottom: 0; }
+.design-mural-tabs .mural-cover > .edition-identity { --title-size: clamp(30px, 4.5cqi, 65px); padding-block: 16px; }
+.design-mural-tabs .section-navigation { padding-inline: 9px; border: 1px solid var(--border); background: var(--card); }
+.design-mural-tabs .tab-content > .work-panel { border-top: 0; border-radius: 0 0 13px 13px; }
+
+/* 54 — Триптих */
+.design-mural-triptych .mural-cover { padding: 9px; background: var(--card); }
+.mural-triptych { display: grid; grid-template-columns: minmax(0, .88fr) minmax(0, 1.23fr) minmax(0, 1fr); gap: 6px; }
+.mural-triptych .edition-art { height: clamp(100px, 17.5cqi, 215px); border-radius: 8px; background: var(--raised); }
+.mural-triptych img { width: 156%; max-width: none; }
+.mural-triptych .edition-art:first-child img { object-position: 50% 43%; transform: translateX(-4%); }
+.mural-triptych .edition-art:nth-child(2) img { object-position: 50% 62%; transform: translateX(-20%); }
+.mural-triptych .edition-art:nth-child(3) img { object-position: 50% 25%; transform: translateX(-34%); }
+.design-mural-triptych .mural-cover > .edition-identity { --title-size: clamp(32px, 4.9cqi, 72px); padding-inline: clamp(7px, 1.7cqi, 21px); }
+
+/* 55 — Сводка на панно */
+.design-mural-metrics .mural-cover { --mural-height: clamp(182px, 20cqi, 260px); --atlas-crop: 48% 49%; --atlas-filter: saturate(.67); }
+.mural-metric-plate { display: grid; }
+.mural-metric-plate .edition-summary { position: relative; margin: -58px clamp(9px, 3cqi, 36px) 0; box-shadow: 0 8px 21px #7d2d581a; }
+.mural-metric-plate .edition-summary .work-metric { padding-block: 11px; }
+.design-mural-metrics .mural-cover > .edition-identity { padding-block: clamp(15px, 2.15cqi, 25px); }
+
+/* 56 — Нижнее панно */
+.design-mural-lower .mural-cover { border-radius: 10px; }
+.design-mural-lower .mural-cover > .edition-identity { --title-size: clamp(32px, 4.95cqi, 71px); border-inline-start: 3px solid var(--accent); padding-block: 19px; }
+.design-mural-lower > .mural-art { --mural-height: clamp(106px, 15cqi, 182px); --atlas-crop: 57% 65%; border: 1px solid var(--border); border-radius: 11px; }
+.mural-pool-first { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: stretch; }
+.mural-pool-first > .column > .work-panel { height: 100%; }
+.mural-pool-first .capacity-meter { background: var(--raised); }
+
+/* The saturated pink sampled from the Malinovy Atlas cover. */
+:is(.design-pink-trim, .design-pink-metrics, .design-pink-relief, .design-pink-capacity) { --edition-pink: #ff4b9e; }
+.pink-surface {
+  --text: #260819;
+  --muted: #47122e;
+  --border: #b92e6f;
+  --accent: #660d40;
+  --focus: #3d0728;
+  --active: #ff9ccd;
+  --card: var(--edition-pink);
+  background: var(--edition-pink);
+  color: var(--text);
+}
+
+/* 57 — Малиновая кромка */
+.design-pink-trim .mural-cover { --mural-height: clamp(142px, 18.5cqi, 225px); --atlas-crop: 55% 49%; border-radius: 12px; border-top: clamp(9px, 1.45cqi, 19px) solid var(--edition-pink); }
+.design-pink-trim .mural-cover > .edition-identity { box-shadow: inset 4px 0 var(--edition-pink); }
+.design-pink-trim .title-dot { color: var(--edition-pink); }
+.design-pink-trim .work-metric { border-top: 2px solid var(--edition-pink); }
+
+/* 58 — Розовые показатели */
+.design-pink-metrics .edition-cover { --art-opacity: .44; --atlas-crop: 74% 56%; min-height: 281px; }
+.design-pink-metrics > .edition-summary { border-radius: 13px; }
+.design-pink-metrics .edition-summary .work-metric { background: transparent; }
+.design-pink-metrics .edition-summary .work-metric:hover { background: var(--active); }
+.design-pink-metrics .edition-summary .work-metric:focus-visible { outline-offset: -3px; }
+.design-pink-metrics .edition-summary strong { color: var(--text); font-size: clamp(34px, 5cqi, 58px); }
+
+/* 59 — Розовый рельеф */
+.design-pink-relief .mural-cover { --mural-height: clamp(152px, 20.3cqi, 238px); --atlas-crop: 56% 47%; }
+.design-pink-relief .mural-art { background: linear-gradient(112deg, #ff9dca, var(--edition-pink) 78%); }
+.design-pink-relief .mural-art img { opacity: .83; filter: saturate(.45) contrast(.87); mix-blend-mode: multiply; }
+.design-pink-relief .mural-cover > .edition-identity { border-top: 1px solid var(--border); }
+.design-pink-relief .team-panel { border-top: 2px solid var(--edition-pink); }
+
+/* 60 — Розовые мощности */
+.design-pink-capacity .edition-cover { --title-size: clamp(31px, 4.85cqi, 71px); --art-start: 33%; --art-opacity: .38; --atlas-crop: 67% 55%; min-height: 203px; }
+.pink-capacity-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+.pink-capacity-meter { border: 1px solid var(--border); border-radius: 14px; }
+.pink-capacity-meter .capacity-meter { padding: clamp(16px, 2.6cqi, 33px); border: 0; background: transparent; box-shadow: none; }
+.pink-capacity-meter .capacity-amount strong { color: var(--text); }
+.pink-capacity-meter .meter-track { background: #ffadd3; }
+.pink-capacity-meter .meter-track i { background: #42102e; }
+.pink-capacity-meter .meter-memory i { background: #6a184b; }
+
+@container (max-width: 890px) {
+  .edition-identity-inline { align-items: start; flex-direction: column; }
+  .edition-identity-inline > .shortcuts { justify-content: start; }
+  .edition-summary .work-metric { padding-inline: 11px; }
+}
+
+@container (max-width: 690px) {
+  .edition-desk, .edition-team-first, .mural-directories, .mural-pool-first, .pink-capacity-grid { grid-template-columns: minmax(0, 1fr); }
+  .design-atlas-members .edition-cover { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  .design-atlas-members .edition-cover .avatar-stack { padding: 5px 7px; }
+  .design-atlas-lines .work-columns { gap: 0; }
+  .design-mural-caption .mural-cover > .edition-identity { margin-top: -43px; }
+  .mural-metric-plate .edition-summary { margin-top: -36px; }
+}
+
+@container (max-width: 525px) {
+  .edition-cover { min-height: 220px; border-radius: 13px; padding: 17px; }
+  .edition-cover .edition-art { inset-inline-start: 6%; opacity: calc(var(--art-opacity) * .72); }
+  .edition-cover > .organization-mark { top: 10px; right: 10px; width: 37px; height: 37px; border-radius: 7px; font-size: 13px; }
+  .design-atlas-clear .edition-cover, .design-atlas-members .edition-cover, .design-pink-metrics .edition-cover { min-height: 225px; }
+  .design-atlas-porcelain .edition-cover { min-height: 238px; }
+  .edition-overlap .edition-cover { min-height: 272px; padding-bottom: 64px; }
+  .edition-overlap .device-panel { margin-top: -38px; }
+  .edition-summary { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .edition-summary .work-metric { padding: 9px; }
+  .edition-summary .work-metric:nth-child(n + 3) { border-top: 1px solid var(--border); }
+  .edition-summary .work-metric:nth-child(odd) { border-inline-start: 0; }
+  .edition-summary .work-metric:first-child { border-radius: 9px 0 0 0; }
+  .edition-summary .work-metric:last-child { border-radius: 0 0 9px 0; }
+  .design-atlas-racks .device-tile { min-height: 0; }
+  .design-mural-caption .mural-cover > .edition-identity { margin-top: -36px; }
+  .mural-triptych { gap: 4px; }
+}

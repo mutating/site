@@ -302,6 +302,9 @@ def api_requests(
                 {"params": {"identifier": "alice"}},
             ),
             ("GET", "/v1/memberships/{membership_id}/avatar", "read", {}),
+            ("GET", "/v1/companies/{company_id}/images/{kind}", "read", {}),
+            ("PUT", "/v1/companies/{company_id}/images/{kind}", "manage", {"content": b"image"}),
+            ("DELETE", "/v1/companies/{company_id}/images/{kind}", "manage", {}),
             ("POST", "/v1/invitations", "manage", {"json": {"company_id": company["id"]}}),
             ("GET", "/v1/invitations", "read", {}),
             ("GET", "/v1/invitations/link/{token}", "read", {}),
@@ -406,6 +409,8 @@ def api_requests(
                 {"params": period},
             ),
             ("GET", "/v1/companies/{company_id}/resources/summary", "read", {}),
+            ("GET", "/v1/companies/{company_id}/resources/pool-summary", "read", {}),
+            ("GET", "/v1/companies/{company_id}/resources/pool-history", "read", {}),
             ("GET", "/v1/companies/{company_id}/resources/history", "read", {"params": period}),
             (
                 "GET",
@@ -416,6 +421,7 @@ def api_requests(
         ]
     )
     identifiers["company_id"] = company["id"]
+    identifiers["kind"] = "avatar"
     identifiers["membership_id"] = membership["id"]
     identifiers["invitation_id"] = str(uuid4())
     identifiers["token"] = "inv_" + "x" * 43
