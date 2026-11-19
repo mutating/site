@@ -490,10 +490,10 @@ with most of the remaining time spent in ordinary one-off Ansible modules over
 the approximately 240-ms SSH round trip.
 
 The regular GitHub deployment deliberately uses the unprivileged `user`
-account and cannot change nginx, certificates, or systemd units. Re-run this
-playbook with an administrative account whenever the playbook changes. The
-deployment workflow checks the live server contract before `rsync`, so stale
-server configuration fails without partially publishing the new build.
+account and cannot change nginx, certificates, or systemd units. Apply server
+configuration changes with the playbook and an administrative account. The
+deployment workflow checks live HTTPS, redirects, and response headers before
+`rsync` and stops before upload if a check fails.
 
 #### 1. Clone the repository locally
 
@@ -746,7 +746,7 @@ server {
     index index.html;
     charset utf-8;
     server_tokens off;
-    http2 on;
+    http2 off;
     sendfile on;
     tcp_nopush on;
 
@@ -1016,15 +1016,16 @@ together.
 
 #### 8. Run and verify the first deployment
 
-Either push a commit to `main`, or open **Actions → Deploy production → Run
-workflow**. The workflow performs these operations in order:
+Merge `develop` into `main` through a pull request, or open **Actions → Deploy
+production → Run workflow** and select `main`. The workflow performs these
+operations in order:
 
 1. validates every required secret;
 2. installs Hugo Extended and the deployment tooling on the disposable runner;
-3. builds a clean, minified production site into `site/public/` and builds the platform UI;
-4. verifies redirects, TLS hostname coverage, HTTP/2, HSTS, and HTML caching
-   before touching the production files;
-5. checks that the SSH destination exists, is writable, and has `rsync`;
+3. builds a clean, minified production site into `site/public/`;
+4. verifies redirects, trusted TLS certificates for both hostnames, HSTS, and HTML
+   caching over HTTP/1.1 before touching the production files;
+5. builds the platform UI and checks that the SSH destination exists, is writable, and has `rsync`;
 6. uploads one release as `user`, backs up SQLite, applies migrations, starts the common service, and publishes the static build;
 7. removes files that are no longer present in the Hugo build after a successful
    transfer.
