@@ -255,6 +255,9 @@ h3 {
 .sidebar-label {
   padding: 0 14px 18px;
 }
+.sidebar-nav {
+  display: contents;
+}
 .sidebar nav {
   display: flex;
   flex-direction: column;
@@ -289,6 +292,9 @@ h3 {
   border-radius: 50%;
   background: var(--ink-muted);
   margin-left: auto;
+}
+.nav-scroll-hint {
+  display: none;
 }
 .avatar {
   display: grid;
@@ -1696,17 +1702,33 @@ td small {
   .sidebar-label {
     display: none;
   }
+  .sidebar-nav {
+    display: block;
+    position: relative;
+    min-width: 0;
+  }
   .sidebar nav {
     flex-direction: row;
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sidebar nav::-webkit-scrollbar {
+    display: none;
   }
   .nav-link {
-    flex: 1;
+    flex: 1 0 auto;
     justify-content: center;
     font-size: 11px;
     padding: 10px;
     min-height: 40px;
+  }
+  .nav-link:focus-visible {
+    outline-offset: -2px;
   }
   .nav-link:nth-child(4) {
     margin: 0;
@@ -1714,6 +1736,36 @@ td small {
   .nav-link svg {
     width: 16px;
     height: 16px;
+  }
+  .nav-scroll-hint {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 24px;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--bg) 72%);
+    transition: opacity 0.16s ease;
+  }
+  .nav-scroll-hint::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid var(--hot);
+    transform: translateY(-50%);
+  }
+  .sidebar-nav[data-scrollable="true"]:not([data-at-end="true"])
+    .nav-scroll-hint {
+    visibility: visible;
+    opacity: 1;
   }
   .soon-dot {
     display: none;
@@ -1762,8 +1814,8 @@ td small {
     width: calc(100% - 28px);
   }
   .nav-link {
-    min-width: calc(50% - 4px);
-    flex: 1;
+    min-width: 0;
+    flex: 1 0 auto;
     font-size: 11px;
   }
   .sidebar nav {
