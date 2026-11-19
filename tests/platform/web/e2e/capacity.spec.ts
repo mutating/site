@@ -258,6 +258,10 @@ test("backward tabbing reveals the plot below the sticky header on a narrow phon
   const pool = page.getByRole("region", { name: "Личные компьютеры" });
   const header = page.getByRole("banner");
   const plot = pool.getByRole("slider", { name: "Мощности и загрузка" });
+  const chartGap = async () => {
+    const [chart, bar] = await Promise.all([plot.boundingBox(), header.boundingBox()]);
+    return chart!.y - bar!.y - bar!.height;
+  };
   await expect(header).toHaveCSS("position", "sticky");
   const nextPool = page.getByRole("region", { name: "Другой пул" });
   await nextPool.getByRole("link").evaluate((link) => link.focus({ preventScroll: true }));
@@ -265,13 +269,10 @@ test("backward tabbing reveals the plot below the sticky header on a narrow phon
     // Move the plot under the header while focus is on the following control.
     window.scrollBy(0, element.getBoundingClientRect().top - 10);
   });
-  expect((await plot.boundingBox())!.y).toBeLessThan((await header.boundingBox())!.height);
+  await expect.poll(chartGap).toBeLessThan(0);
   await page.keyboard.press("Shift+Tab");
   await expect(plot).toBeFocused();
-  await expect.poll(async () => {
-    const [chart, bar] = await Promise.all([plot.boundingBox(), header.boundingBox()]);
-    return chart!.y - bar!.y - bar!.height;
-  }).toBeGreaterThanOrEqual(0);
+  await expect.poll(chartGap).toBeGreaterThanOrEqual(0);
 });
 
 test("empty capacity stays zero and the unknown part of history is disclosed", async ({

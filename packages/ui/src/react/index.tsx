@@ -9,6 +9,7 @@ import { GITHUB_PATH } from "../icons";
 export type { HeaderConfig, HeaderItem, HeaderMenuItem, HeaderBrand, HeaderLanguage, HeaderLink, LanguageOption } from "../header-config";
 import { mountHeaderLayout, mountLanguageSwitcher, mountMobileMenu } from "../header";
 import { createThemeController, mountThemeToggle, type Theme, type ThemeController, type ThemeOptions } from "../theme";
+export { WidgetLayout, type WidgetLayoutProps } from "./widget-layout";
 
 const classes = (...values: (string | undefined)[]) => values.filter(Boolean).join(" ");
 

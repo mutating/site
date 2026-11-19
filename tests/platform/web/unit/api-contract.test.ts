@@ -89,7 +89,7 @@ it("preserves collection metadata, pagination and empty responses", async () => 
   await expect(request("companies")).resolves.toEqual({ data: [{ id: 1 }], total: 3 });
   await expect(request("companies/one", { method: "DELETE" })).resolves.toEqual({ data: undefined, total: null });
   const controller = new AbortController();
-  await expect(allPages("computers?user_id=one", controller.signal, 2)).resolves.toEqual([1, 2, 3]);
+  await expect(allPages("computers?user_id=one", controller.signal, { pageSize: 2 })).resolves.toEqual([1, 2, 3]);
   expect(fetchMock.mock.calls.slice(2).map(([input]) => new Request(input).url)).toEqual([
     "https://api.example/v1/computers?user_id=one&limit=2&offset=0",
     "https://api.example/v1/computers?user_id=one&limit=2&offset=2",

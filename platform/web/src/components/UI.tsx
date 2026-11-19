@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react";
 import { ApiError } from "../lib/api";
 import { useI18n, type MessageKey } from "../lib/i18n";
 
@@ -10,6 +10,13 @@ import { useI18n, type MessageKey } from "../lib/i18n";
  */
 const POWER_CELL_PATH =
   "M 12 1.467 C 14.693 1.467 16.693 3.427 16.467 6.067 C 16.187 9.147 16.573 10.693 19.093 12.16 C 22.187 13.707 23.08 16.44 21.6 18.973 C 20.173 21.427 17.213 22.08 14.92 20.107 C 12.813 18.293 11.2 18.227 8.96 19.947 C 6.64 21.733 3.733 21.173 2.36 18.707 C 0.92 16.12 1.853 13.507 5 11.973 C 7.627 10.507 7.787 8.867 7.533 6.067 C 7.307 3.427 9.307 1.467 12 1.467 Z";
+
+export function useRestoreFocusOnRemoval(control: RefObject<HTMLElement | null>, restore: () => void) {
+  useLayoutEffect(() => () => {
+    if (control.current?.contains(document.activeElement)) requestAnimationFrame(restore);
+  }, [control, restore]);
+}
+
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const shapes: Record<string, ReactNode> = {
     play: (
@@ -261,6 +268,8 @@ export function ConfirmDialog({
   warning,
   onConfirm,
   onClose,
+  restoreFocus,
+  check,
   conflict = "blockedDelete",
 }: {
   title: string;
@@ -268,6 +277,8 @@ export function ConfirmDialog({
   warning: string;
   onConfirm: () => Promise<void>;
   onClose: () => void;
+  restoreFocus?: () => void;
+  check?: { error: unknown; retry: () => void };
   conflict?: MessageKey;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -275,6 +286,17 @@ export function ConfirmDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const { t } = useI18n();
+  const expected = value.replace(/\r\n?/g, "\n");
+  const matches = text === expected;
+  const field = {
+    value: text,
+    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setText(event.currentTarget.value),
+    autoComplete: "off",
+    autoFocus: true,
+    readOnly: busy,
+    "aria-disabled": busy || undefined,
+  };
   useEffect(() => {
     const dialog = ref.current;
     const trigger = document.activeElement;
@@ -284,8 +306,12 @@ export function ConfirmDialog({
       // WebKit applies modal removal after the cleanup callback, so restoring
       // focus immediately can be undone when the dialog node is detached.
       window.requestAnimationFrame(() => {
-        if (trigger instanceof HTMLElement && trigger.isConnected)
+        if (trigger instanceof HTMLElement && trigger.isConnected &&
+            !(trigger instanceof HTMLButtonElement && trigger.disabled)) {
           trigger.focus({ preventScroll: true });
+        } else {
+          restoreFocus?.();
+        }
       });
     };
   }, []);
@@ -302,7 +328,7 @@ export function ConfirmDialog({
       <form
         onSubmit={async (e) => {
           e.preventDefault();
-          if (text !== value || busy) return;
+          if (!matches || busy || check) return;
           setBusy(true);
           setError(null);
           try {
@@ -319,16 +345,11 @@ export function ConfirmDialog({
         <p className="muted">{warning}</p>
         <label className="field">
           {t("typeToConfirm")}{" "}
-          <strong className="confirm-value">{value}</strong>
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            autoComplete="off"
-            autoFocus
-            disabled={busy}
-          />
+          <strong className="confirm-value">{expected}</strong>
+          {expected.includes("\n") ? <textarea {...field} rows={3} /> : <input {...field} />}
         </label>
         <ErrorBox error={error} conflict={conflict} />
+        <ErrorBox error={check?.error} retry={check?.retry} />
         <div className="form-actions">
           <button
             type="button"
@@ -338,8 +359,8 @@ export function ConfirmDialog({
           >
             {t("cancel")}
           </button>
-          <button className="button danger" disabled={text !== value || busy}>
-            {busy ? t("waiting") : t("confirm")}
+          <button className="button danger" aria-disabled={!matches || busy || !!check}>
+            {busy || check ? t("waiting") : t("confirm")}
           </button>
         </div>
       </form>

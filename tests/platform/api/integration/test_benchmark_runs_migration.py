@@ -142,7 +142,7 @@ async def test_existing_results_survive_run_migration(
 
 
 async def test_billing_upgrade_and_downgrade_preserve_existing_pi_metadata(
-    computer, http_server, migration_database, alembic_config
+    computer, http_server, migration_database, alembic_config, migration_head
 ):
     """Keep the benchmark records of an existing 0019 database through the billing revisions."""
     http_server.server.should_exit = True
@@ -164,7 +164,7 @@ async def test_billing_upgrade_and_downgrade_preserve_existing_pi_metadata(
     invalidation_id = (invalidation.computer_id, invalidation.run_id)
 
     for operation, target, revision in (
-        (alembic.upgrade, "head", "0023"),
+        (alembic.upgrade, "head", migration_head),
         (alembic.downgrade, "0019", "0019"),
     ):
         await migration_database.close()

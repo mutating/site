@@ -45,17 +45,20 @@ async def test_unknown_task_completion_cannot_destroy_an_isolate_or_finish_a_com
         )
 
 
-async def test_company_deleted_between_access_check_and_read_returns_hidden_404(
+async def test_company_deleted_between_access_check_and_read_uses_the_authorized_snapshot(
     api, company, paused_company_read
 ):
-    """Concurrent company deletion after authorization returns the same 404 as an unknown resource instead of a server error."""
+    """An authorized in-flight snapshot remains consistent and a fresh read hides a deleted company."""
+    path = f"/v1/companies/{company['id']}"
     async with asyncio.TaskGroup() as group:
-        read = group.create_task(api.get(f"/v1/companies/{company['id']}"))
+        read = group.create_task(api.get(path))
         await asyncio.wait_for(paused_company_read["entered"].wait(), timeout=3)
-        assert (await api.delete(f"/v1/companies/{company['id']}")).status_code == 204
+        assert (await api.delete(path)).status_code == 204
         paused_company_read["resume"].set()
-    assert read.result().status_code == 404
-    assert read.result().json() == {"detail": "Resource not found"}
+    assert read.result().status_code == 200
+    assert read.result().json() == company
+    missing = await api.get(path)
+    assert missing.status_code == 404 and missing.json() == {"detail": "Resource not found"}
 
 
 async def test_concurrent_token_ownership_deletion_fails_authentication(
@@ -104,7 +107,7 @@ async def test_concurrent_issuer_demotion_rechecks_membership_after_token_read(
     async with asyncio.TaskGroup() as group:
         read = group.create_task(
             client.get(
-                f"/v1/companies/{company['id']}",
+                f"/v1/companies/{company['id']}/resources/summary",
                 headers={"Authorization": "Bearer " + company_token["token"]},
             )
         )

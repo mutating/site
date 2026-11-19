@@ -10,7 +10,7 @@ from throng_api import outputs as out
 from throng_api.availability import capacity_history
 from throng_api.computers import computer_for_user
 from throng_api.models import Computer, ComputerOwnership, ComputerResource, ResourceType
-from throng_api.resource_history import history, report_owner, summary
+from throng_api.resource_history import history, pool_history, pool_summary, report_owner, summary
 from throng_api.resource_ledger import add_resource, change_resource, computer_owner
 from throng_api.schemas import (
     ComputerResourceCreate,
@@ -279,6 +279,24 @@ async def company_resource_summary(
         principal = await authenticate(session, request)
         owner = await report_owner(session, principal, company_id=company_id)
         return await summary(session, owner, request.app.state.clock(), only_available)
+
+
+@router.get("/companies/{company_id}/resources/pool-summary", response_model=out.PoolSummary)
+async def company_pool_summary(company_id: UUID, request: Request):
+    """Полный и доступный пулы организации из одного снимка."""
+    async with request.app.state.db.read(snapshot=True) as session:
+        principal = await authenticate(session, request)
+        _, company = await report_owner(session, principal, company_id=company_id)
+        return await pool_summary(session, company, request.app.state.clock())
+
+
+@router.get("/companies/{company_id}/resources/pool-history", response_model=out.PoolHistory)
+async def company_pool_history(company_id: UUID, request: Request):
+    """Общие и свободные CPU и память организации за последние семь дней."""
+    async with request.app.state.db.read(snapshot=True) as session:
+        principal = await authenticate(session, request)
+        _, company = await report_owner(session, principal, company_id=company_id)
+        return await pool_history(session, company, request.app.state.clock())
 
 
 @router.get("/users/{user_id}/resources/history", response_model=out.ResourceHistory)

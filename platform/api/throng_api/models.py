@@ -27,6 +27,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    and_,
     event,
     false,
     inspect,
@@ -200,10 +201,18 @@ class User(OwnerIdentity, Base):
     password_hash: Mapped[str] = mapped_column(Text)
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
+    name_search: Mapped[str] = mapped_column(Text, server_default="", deferred=True)
     nickname: Mapped[str | None] = mapped_column(String(64), unique=True)
     avatar_data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     avatar_version: Mapped[str | None] = mapped_column(String(64))
     is_system_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+    @validates("first_name", "last_name")
+    def prepare_name(self, key, value):
+        first_name = value if key == "first_name" else self.first_name
+        last_name = value if key == "last_name" else self.last_name
+        self.name_search = normalize_name(" ".join(f"{first_name or ''} {last_name or ''}".split()))
+        return value
 
 
 class Company(OwnerIdentity, Base):
@@ -212,6 +221,10 @@ class Company(OwnerIdentity, Base):
     name_search: Mapped[str] = mapped_column(Text, server_default="")
     name_key: Mapped[str] = mapped_column(Text, server_default="")
     created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    avatar_data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    background_data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    avatar_version: Mapped[str | None] = mapped_column(String(64))
+    background_version: Mapped[str | None] = mapped_column(String(64))
 
     @validates("name")
     def prepare_name(self, _, value):
@@ -225,9 +238,10 @@ class Membership(Identity, Base):
     __table_args__ = (
         UniqueConstraint("user_id", "company_id"),
         CheckConstraint("role IN ('creator', 'admin', 'user')", name="valid_role"),
+        Index("ix_memberships_company_order", "company_id", "id"),
     )
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"))
     role: Mapped[str] = mapped_column(String(16))
     permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
@@ -242,7 +256,7 @@ class CompanyInvitation(Identity, Base):
             "status IN ('pending', 'accepted', 'declined', 'revoked')", name="valid_status"
         ),
     )
-    company_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), index=True)
+    company_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
     company_name: Mapped[str] = mapped_column(String(200))
     created_by_user_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
     invitee_user_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), index=True)
@@ -253,6 +267,14 @@ class CompanyInvitation(Identity, Base):
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
     status: Mapped[str] = mapped_column(String(16), default="pending")
     accepted_by_user_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))
+
+
+Index(
+    "ix_company_invitations_company_order",
+    CompanyInvitation.company_id,
+    CompanyInvitation.created_at.desc(),
+    CompanyInvitation.id,
+)
 
 
 class TokenOwnership(Identity, Ownership, Base):
@@ -480,9 +502,38 @@ class ComputerResourceChange(Identity, Base):
     reason: Mapped[str] = mapped_column(String(32))
 
 
+COMPANY_OWNERSHIP_CHANGED = ComputerResourceChange.before_company_id.is_distinct_from(
+    ComputerResourceChange.after_company_id
+)
+USER_OWNERSHIP_CHANGED = ComputerResourceChange.before_user_id.is_distinct_from(
+    ComputerResourceChange.after_user_id
+)
+INVENTORY_CHANGED = or_(
+    ComputerResourceChange.before_total != ComputerResourceChange.after_total,
+    USER_OWNERSHIP_CHANGED,
+    COMPANY_OWNERSHIP_CHANGED,
+)
+for side, owner, changed in (
+    ("before", ComputerResourceChange.before_company_id, INVENTORY_CHANGED),
+    ("after", ComputerResourceChange.after_company_id, COMPANY_OWNERSHIP_CHANGED),
+):
+    predicate = and_(owner.is_not(None), changed)
+    Index(
+        f"ix_inventory_history_{side}_company_time",
+        owner,
+        ComputerResourceChange.created_at,
+        sqlite_where=predicate,
+        postgresql_where=predicate,
+    )
+
+
 class ComputerOwnership(Identity, Ownership, Base):
     __tablename__ = "computer_ownerships"
-    __table_args__ = (owner_check(),)
+    __table_args__ = (
+        owner_check(),
+        Index("ix_computer_ownerships_company_order", "company_id", "computer_id"),
+    )
+    company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"))
     computer_id: Mapped[str] = mapped_column(ForeignKey("computers.id"), unique=True)
 
 

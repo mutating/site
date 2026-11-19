@@ -27,6 +27,31 @@ LOCK_VERSION_SCHEMA = """
         'schema', ARRAY[version.nspname::text], ARRAY[]::text[]
     ) AS locked
 """
+PAYMENT_OWNER_SCHEMA = text("""
+    WITH owner AS MATERIALIZED (
+        SELECT owner_schema.nspname AS schema_name,
+               owner_schema.oid AS schema_oid,
+               owner_table.relname AS table_name,
+               owner_table.oid AS table_oid
+        FROM pg_catalog.pg_constraint AS fk
+        JOIN pg_catalog.pg_attribute AS owner_key ON owner_key.attrelid = fk.conrelid
+        JOIN pg_catalog.pg_class AS owner_table ON owner_table.oid = fk.confrelid
+        JOIN pg_catalog.pg_namespace AS owner_schema ON owner_schema.oid = owner_table.relnamespace
+        WHERE fk.conrelid = pg_catalog.to_regclass(:table_name)
+          AND fk.contype = 'f'
+          AND fk.conkey = ARRAY[owner_key.attnum]
+          AND owner_key.attname = :owner_column
+    )
+    SELECT owner.schema_name
+    FROM owner
+    CROSS JOIN LATERAL pg_catalog.pg_get_object_address(
+        'schema', ARRAY[owner.schema_name::text], ARRAY[]::text[]
+    ) AS locked_schema
+    CROSS JOIN LATERAL pg_catalog.pg_get_object_address(
+        'table', ARRAY[owner.schema_name::text, owner.table_name::text], ARRAY[]::text[]
+    ) AS locked_table
+    WHERE locked_schema.objid = owner.schema_oid AND locked_table.objid = owner.table_oid
+""")
 
 
 def checked_version_schema(location):
@@ -67,6 +92,23 @@ def constrain_billing_version_update(connection, statement, multiparams, params,
         statement = statement.where(cast(func.pg_catalog.to_regclass(relation), OID) == target[2])
         connection.info.pop(BILLING_VERSION_RELATION)
     return statement, multiparams, params
+
+
+def payment_owner_schema(connection, billing_schema, owner_column):
+    """Lock the original owner table and its schema before qualifying organization DDL."""
+    if billing_schema is None:
+        return None
+    quoted = connection.dialect.identifier_preparer.quote_schema(billing_schema)
+    catalogue = f"{quoted}.payment_accounts"
+    # Keep the foreign key stable while locking the objects it refers to.
+    connection.exec_driver_sql(f"LOCK TABLE {catalogue} IN ACCESS SHARE MODE NOWAIT")
+    schema = connection.execute(
+        PAYMENT_OWNER_SCHEMA,
+        {"table_name": catalogue, "owner_column": owner_column},
+    ).scalar_one_or_none()
+    if schema is None:
+        raise CommandError("The billing owner table changed while Alembic was selecting it")
+    return schema
 
 
 @contextmanager

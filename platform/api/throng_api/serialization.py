@@ -7,6 +7,7 @@ HIDDEN = {
     "token_hash",
     "storage_key",
     "avatar_data",
+    "background_data",
     "name_search",
     "credentials",
     "tokens",

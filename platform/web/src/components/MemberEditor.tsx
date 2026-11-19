@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, json } from "../lib/api";
+import { api, ApiError, json } from "../lib/api";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import { memberName, rolePermissions } from "../lib/permissions";
@@ -12,11 +12,15 @@ export function MemberEditor({
   company,
   onClose,
   onSaved,
+  onAccessError,
+  restoreFocus,
 }: {
   member: Membership;
   company: Company;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (member: Membership) => void;
+  onAccessError: (status: 403 | 404) => void;
+  restoreFocus: () => void;
 }) {
   const { t } = useI18n();
   const { user } = useSession();
@@ -34,8 +38,11 @@ export function MemberEditor({
     dialog?.showModal();
     return () => {
       dialog?.close();
-      if (trigger instanceof HTMLElement && trigger.isConnected)
-        trigger.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        if (document.activeElement !== document.body && document.activeElement !== trigger) return;
+        if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true });
+        else restoreFocus();
+      });
     };
   }, []);
   return (
@@ -55,16 +62,23 @@ export function MemberEditor({
           setBusy(true);
           setError(null);
           try {
-            await api(
+            const saved = await api<Membership>(
               `memberships/${member.id}`,
               json("PATCH", {
                 role,
                 permissions: role === "creator" || !custom ? null : selected,
               }),
             );
-            onSaved();
+            onSaved(saved);
             onClose();
           } catch (e) {
+            if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+              onAccessError(e.status);
+              if (e.status === 404) {
+                onClose();
+                return;
+              }
+            }
             setError(e);
             setBusy(false);
           }

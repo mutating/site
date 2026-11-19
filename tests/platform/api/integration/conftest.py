@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
+from alembic.script import ScriptDirectory
 
 from throng_api import controller
 from throng_api.cli import migration_config
@@ -43,6 +44,12 @@ async def dashboard_downgrade_collision(client, monkeypatch):
 def alembic_config(settings):
     """Expose the real migration configuration for upgrade and downgrade checks."""
     return migration_config(settings)
+
+
+@pytest.fixture
+def migration_head(alembic_config):
+    """Return the project's current single Alembic head."""
+    return ScriptDirectory.from_config(alembic_config).get_current_head()
 
 
 @pytest.fixture
@@ -244,11 +251,12 @@ async def paused_company_read(company, monkeypatch):
 
     async def pause_after_access(*args, **kwargs):
         """Keep the real permission query and suspend only its first successful result."""
-        await original(*args, **kwargs)
+        membership = await original(*args, **kwargs)
         if state["armed"]:
             state["armed"] = False
             state["entered"].set()
             await state["resume"].wait()
+        return membership
 
     monkeypatch.setattr(accounts, "company_access", pause_after_access)
     try:

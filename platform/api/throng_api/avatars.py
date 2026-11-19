@@ -3,24 +3,31 @@
 import hashlib
 import io
 import warnings
+from typing import Literal
+from uuid import UUID
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import select
 
-from throng_api.models import User
+from throng_api.models import Company, User
+from throng_api.outputs import CompanyAppearance
 from throng_api.schemas import UserOut
-from throng_api.security import access_token_scheme, authenticate, personal
+from throng_api.security import access_token_scheme, authenticate, company_access, personal
 
 router = APIRouter(
     prefix="/v1/users/me/avatar", tags=["accounts"], dependencies=[Depends(access_token_scheme)]
 )
 MAX_BYTES = 2 * 1024 * 1024
 MAX_PIXELS = 16_000_000
+CompanyImage = Literal["avatar", "background"]
+company_router = APIRouter(
+    prefix="/v1", tags=["organizations"], dependencies=[Depends(access_token_scheme)]
+)
 
 
-def normalize_avatar(data):
+def normalize_image(data, kind: CompanyImage = "avatar"):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -33,7 +40,11 @@ def normalize_avatar(data):
                 if source.width * source.height > MAX_PIXELS:
                     raise ValueError("Image dimensions are too large")
                 source.load()
-                picture = ImageOps.fit(ImageOps.exif_transpose(source).convert("RGBA"), (512, 512))
+                picture = ImageOps.exif_transpose(source).convert("RGBA")
+                if kind == "avatar":
+                    picture = ImageOps.fit(picture, (512, 512))
+                else:
+                    picture.thumbnail((1600, 900), Image.Resampling.LANCZOS)
                 output = io.BytesIO()
                 # Encoding a new image also removes EXIF and other uploaded metadata.
                 picture.save(output, format="WEBP", quality=85, exif=b"")
@@ -50,17 +61,31 @@ def normalize_avatar(data):
         ) from error
 
 
+async def read_image(request: Request, label="Image"):
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_BYTES:
+            raise HTTPException(413, f"{label} must not exceed 2 MiB")
+        body.extend(chunk)
+    return bytes(body)
+
+
+def image_response(data, label="Image"):
+    if data is None:
+        raise HTTPException(404, f"{label} not found")
+    return Response(
+        data,
+        media_type="image/webp",
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.put("", response_model=UserOut)
 async def upload_avatar(request: Request):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request, "manage")
         personal(principal)
-    body = bytearray()
-    async for chunk in request.stream():
-        body.extend(chunk)
-        if len(body) > MAX_BYTES:
-            raise HTTPException(413, "Avatar must not exceed 2 MiB")
-    data = await anyio.to_thread.run_sync(normalize_avatar, bytes(body))
+    data = await anyio.to_thread.run_sync(normalize_image, await read_image(request, "Avatar"))
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         user = await session.get(User, personal(principal))
@@ -74,13 +99,7 @@ async def get_avatar(request: Request):
     async with request.app.state.db.read() as session:
         principal = await authenticate(session, request)
         data = await session.scalar(select(User.avatar_data).where(User.id == personal(principal)))
-        if data is None:
-            raise HTTPException(404, "Avatar not found")
-        return Response(
-            data,
-            media_type="image/webp",
-            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
-        )
+        return image_response(data, "Avatar")
 
 
 @router.delete("", status_code=204)
@@ -90,3 +109,48 @@ async def delete_avatar(request: Request):
         user = await session.get(User, personal(principal))
         user.avatar_data = None
         user.avatar_version = None
+
+
+async def authorize_company_image(session, request, company_id, write=False):
+    principal = await authenticate(session, request, "manage" if write else "read")
+    await company_access(
+        session, principal, company_id, permission="company.manage" if write else None
+    )
+
+
+@company_router.get(
+    "/companies/{company_id}/images/{kind}",
+    response_class=Response,
+    responses={200: {"content": {"image/webp": {}}}},
+)
+async def company_image(company_id: UUID, kind: CompanyImage, request: Request):
+    async with request.app.state.db.read(snapshot=True) as session:
+        await authorize_company_image(session, request, company_id)
+        data = await session.scalar(
+            select(getattr(Company, f"{kind}_data")).where(Company.id == str(company_id))
+        )
+        return image_response(data)
+
+
+async def save_company_image(company_id, kind, request, data):
+    async with request.app.state.db.write() as session:
+        await authorize_company_image(session, request, company_id, write=True)
+        company = await session.get(Company, str(company_id))
+        setattr(company, f"{kind}_data", data)
+        setattr(company, f"{kind}_version", hashlib.sha256(data).hexdigest() if data else None)
+        return CompanyAppearance(
+            avatar_version=company.avatar_version, background_version=company.background_version
+        )
+
+
+@company_router.put("/companies/{company_id}/images/{kind}", response_model=CompanyAppearance)
+async def upload_company_image(company_id: UUID, kind: CompanyImage, request: Request):
+    async with request.app.state.db.read() as session:
+        await authorize_company_image(session, request, company_id, write=True)
+    data = await anyio.to_thread.run_sync(normalize_image, await read_image(request), kind)
+    return await save_company_image(company_id, kind, request, data)
+
+
+@company_router.delete("/companies/{company_id}/images/{kind}", response_model=CompanyAppearance)
+async def delete_company_image(company_id: UUID, kind: CompanyImage, request: Request):
+    return await save_company_image(company_id, kind, request, None)

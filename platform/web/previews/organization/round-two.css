@@ -1,0 +1,362 @@
+.gallery-topline { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 9px 16px; flex-wrap: wrap; }
+.round-switcher { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid #62344c; border-radius: 9px; background: #170e16; }
+.round-switcher a { display: block; padding: 6px 10px; border-radius: 6px; color: #e0c1d4; font: 560 11px/1.3 var(--mono); text-decoration: none; }
+.round-switcher a:hover { background: #412339; }
+.round-switcher a[aria-current="page"] { background: #ff63aa; color: #260919; }
+.gallery-page:is([data-round="2"], [data-round="3"]) .gallery-intro { padding-block: clamp(24px, 3.2vw, 47px) 28px; }
+.gallery-page:is([data-round="2"], [data-round="3"]) .gallery-intro h1 { font-size: clamp(49px, 7.35vw, 109px); }
+.gallery-family { max-width: var(--shell-width); margin: 0 auto; }
+.gallery-family + .gallery-family { margin-top: 38px; }
+.gallery-family > header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 13px 2px 14px; border-top: 1px solid #533247; }
+.gallery-family h2 { margin: 0; font-size: 23px; font-weight: 730; letter-spacing: -.04em; line-height: 1.1; }
+.gallery-family header a { display: inline-flex; align-items: center; gap: 7px; border-radius: 4px; color: #ff98c8; font: 560 11px/1.25 var(--mono); text-decoration: none; }
+.gallery-family header a:hover { color: #fff5fa; }
+.variant-picker label { width: clamp(130px, 25vw, 226px); }
+.stage-crumb-start, .stage-crumb-start > span { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.stage-crumb-start > a { margin-inline-start: 8px; border-inline-start: 1px solid var(--border); padding-inline-start: 10px; color: var(--accent); text-decoration: none; }
+.stage-crumb-start > a:hover { text-decoration: underline; }
+
+/* Shared header treatment for the Atlas, pink, and panorama variations. */
+.study-heading {
+  --study-pad: clamp(20px, 3.3cqi, 47px);
+  --title-size: clamp(34px, 6cqi, 88px);
+  --art-background: #21101e;
+  display: grid;
+  align-items: end;
+  min-height: 270px;
+  padding: var(--study-pad);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--text);
+}
+.study-on-dark {
+  --text: #fff4fa;
+  --muted: #f1c4d8;
+  --card: #2a1424;
+  --border: #713b57;
+  --accent: #ff89c1;
+  --hero-accent: #ff72b7;
+  --soft: #52243e;
+  --active: #492039;
+  --focus: #ff91c8;
+  --positive: #84eec0;
+  background: var(--art-background, #21101e);
+  color: var(--text);
+}
+.study-pink {
+  --text: #260818;
+  --muted: #542039;
+  --card: #ffbbdb;
+  --border: #9c245e;
+  --accent: #5c0837;
+  --hero-accent: #45102e;
+  --focus: #3e0c2b;
+  --soft: #ffb5d7;
+  --active: #ffd6e8;
+  --positive: #234a3a;
+  background: radial-gradient(ellipse at 95% 0%, #ffc3e0 0%, transparent 65%), #ff489f;
+  color: var(--text);
+}
+.study-pink .action-primary { border-color: #240818; background: #240818; color: #fff3f9; }
+.study-pink .action-primary:not(:disabled):hover { border-color: #592442; background: #592442; }
+.study-identity { width: min(100%, 710px); position: relative; }
+.study-identity .shortcuts { margin-top: 18px; }
+.study-identity > .work-status { margin-bottom: 13px; }
+.study-art { position: absolute; z-index: -1; inset: 0 0 0 36%; overflow: hidden; }
+.study-art img { width: 100%; height: 100%; object-fit: cover; object-position: var(--art-position, 62% 49%); }
+.study-art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, var(--art-background), transparent 56%); pointer-events: none; }
+.study-art-field img { object-fit: contain; }
+.study-split { grid-template-columns: minmax(0, 1.09fr) minmax(0, 1fr); align-items: stretch; padding: 0; }
+.study-split .study-identity { align-self: center; width: 100%; padding: var(--study-pad); }
+.study-split > .study-art { position: relative; z-index: 0; inset: auto; min-height: 238px; background: var(--art-background); }
+.study-split > .study-art img { position: absolute; inset: 0; }
+.study-split > .study-art::after { background: linear-gradient(135deg, transparent 72%, #29041b50); }
+
+.device-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.device-tile { min-width: 0; display: grid; align-content: start; gap: 11px; padding: 13px; border: 1px solid var(--border); border-radius: 11px; background: var(--canvas); color: var(--text); text-align: start; }
+.device-tile:hover { border-color: var(--accent); background: var(--active); }
+.device-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px 7px; }
+.device-name { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.device-name strong { font-size: 15px; font-weight: 710; line-height: 1.15; letter-spacing: -.02em; }
+.device-name small { color: var(--muted); font: 530 10px/1.35 var(--mono); }
+.device-details { display: grid; gap: 9px; border-block-start: 1px solid var(--border); padding-top: 8px; }
+.device-resource { display: grid; grid-template-columns: minmax(0, 1fr) auto; justify-content: space-between; align-items: baseline; gap: 4px; color: var(--muted); font-size: 10px; line-height: 1.3; }
+.device-resource b { color: var(--text); font: 570 10px/1.25 var(--mono); white-space: nowrap; }
+.device-meter { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 3px; background: var(--border); }
+.device-meter > i { display: block; height: 100%; background: var(--pink); }
+.device-resource + .device-resource .device-meter > i { background: color-mix(in srgb, var(--accent) 38%, #a785c9); }
+.device-feature { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .95fr); gap: 9px; }
+.device-feature > div { display: grid; gap: 9px; }
+.device-feature > .device-tile { align-content: center; min-height: 208px; background: radial-gradient(ellipse at 0% 0%, var(--soft), transparent 68%), var(--raised); }
+.device-feature > .device-tile strong { font-size: 24px; }
+.device-feature .device-compact { grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); align-items: center; gap: 8px 16px; }
+.device-feature .device-compact .device-top { grid-column: 1 / -1; }
+.device-feature .device-compact .device-details { border: 0; padding: 0; }
+@container (width > 510px) {
+  :is(.design-atlas-light, .design-atlas-pink) .work-columns .computer-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 136px), 1fr)); }
+}
+
+/* 21 — Пул в фокусе */
+.atlas-focus-frame { border: 1px solid var(--border); border-radius: 20px; overflow: hidden; background: var(--card); }
+.atlas-focus-frame > .study-heading { --art-background: #291222; --art-position: 72% 44%; min-height: 301px; border: 0; border-radius: 0; }
+.atlas-focus-frame .study-art { inset-inline-start: 33%; }
+.atlas-focus-frame .study-art::after { background: linear-gradient(90deg, var(--art-background) 3%, transparent 49%), linear-gradient(0deg, #2b0e24b0, transparent 25%); }
+.atlas-focus-frame .device-panel { border: 0; border-radius: 0; box-shadow: none; }
+.atlas-focus-frame .device-tile { border-top-color: var(--accent); }
+
+/* 22 — Разворот */
+.design-atlas-spread .study-heading { --title-size: clamp(33px, 5.8cqi, 89px); --art-position: 58% 49%; min-height: 316px; background: linear-gradient(128deg, var(--raised), var(--card)); }
+.design-atlas-spread .study-identity { border-inline-start: 4px solid var(--pink); }
+.design-atlas-spread .study-art { border-inline-start: 1px solid var(--border); }
+.study-spread-body { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
+.study-spread-body .machines-panel { border-radius: 4px; border-inline-start: 2px solid var(--accent); }
+.study-spread-body .capacity-meter { background: var(--raised); }
+
+/* 23 — Вертикальный атлас */
+.study-rail { display: grid; grid-template-columns: minmax(0, 33%) minmax(0, 1fr); align-items: start; gap: var(--section-gap); }
+.study-rail .study-heading { --title-size: clamp(29px, 4cqi, 48px); align-content: end; gap: 14px; min-height: 440px; padding: clamp(16px, 2.6cqi, 30px); }
+.design-atlas-rail .study-heading { --art-position: 65% 28%; min-height: 520px; }
+.design-atlas-rail .study-art { inset: 0; }
+.design-atlas-rail .study-art::after { background: linear-gradient(0deg, #210d1c 10%, #210d1cf2 30%, transparent 72%); }
+.design-atlas-rail .study-heading .organization-mark { width: 46px; height: 46px; border-radius: 9px; font-size: 15px; }
+.design-atlas-rail .work-metric { border-top-color: var(--accent); }
+
+/* 24 — Витрина */
+.atlas-display-frame { display: grid; min-width: 0; }
+.atlas-display-frame .study-heading { --art-background: #1b0a16; --art-position: 64% 35%; min-height: 435px; align-items: start; padding-bottom: 139px; border-radius: 22px; }
+.atlas-display-frame .study-art { inset-inline-start: 18%; }
+.atlas-display-frame .study-art::after { background: linear-gradient(96deg, #1b0a16 8%, #1b0a16b0 37%, transparent 69%), linear-gradient(0deg, #140911db, transparent 54%); }
+.atlas-display-frame .device-panel { position: relative; z-index: 1; margin: -119px clamp(10px, 2.5cqi, 32px) 0; box-shadow: 0 10px 37px #11041038; }
+.atlas-display-frame .device-tile { background: color-mix(in srgb, var(--card) 85%, var(--soft)); }
+
+/* 25 — Диспетчерский атлас */
+.study-console { display: grid; grid-template-columns: minmax(0, 1.16fr) minmax(0, 1fr); gap: var(--section-gap); }
+.study-console .study-heading { --title-size: clamp(32px, 4.5cqi, 60px); --art-position: 68% 37%; --art-background: #2b1427; min-height: 278px; border-radius: 11px; }
+.study-console .study-art { inset-inline-start: 22%; }
+.study-console .study-art::after { background: linear-gradient(90deg, var(--art-background), #2b14279c 60%, transparent); }
+.study-console .load-panel { border-radius: 11px; background: linear-gradient(146deg, var(--soft), var(--card) 62%); }
+.study-console .load-bars { height: 128px; }
+.study-console .load-bars i { background: linear-gradient(180deg, #ec71a9, color-mix(in srgb, #ae5367 23%, var(--card))); }
+
+/* 26 — Светлый атлас */
+.design-atlas-light .study-heading { --art-background: var(--raised); min-height: 290px; align-items: center; border-radius: 14px; background: linear-gradient(105deg, var(--card), var(--raised)); }
+.design-atlas-light .study-art { inset-inline-start: 34%; }
+.design-atlas-light .study-art img { object-position: 70% 42%; opacity: .51; filter: grayscale(.53) saturate(.56); }
+.design-atlas-light[data-theme="dark"] .study-art img { opacity: .27; }
+.design-atlas-light .study-art::after { background: linear-gradient(90deg, var(--card) 2%, transparent 80%); }
+.design-atlas-light .study-heading > .organization-mark { position: absolute; top: 17px; right: 17px; border-radius: 12px; border-color: var(--border); background: var(--card); }
+.design-atlas-light > .work-metrics { gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card); }
+.design-atlas-light > .work-metrics .work-metric { border: 0; border-radius: 0; padding-inline: 14px; }
+.design-atlas-light > .work-metrics .work-metric + .work-metric { border-inline-start: 1px solid var(--border); }
+.design-atlas-light > .work-metrics strong { color: var(--accent); }
+
+/* 27 — Карточки машин */
+.design-atlas-devices > .study-heading { --art-background: var(--card); --art-position: 62% 69%; --title-size: clamp(31px, 4.72cqi, 67px); min-height: 184px; padding-block: 20px; border-radius: 13px; }
+.design-atlas-devices .study-art { inset-inline-start: 46%; }
+.design-atlas-devices .study-art img { opacity: .44; }
+.design-atlas-devices[data-theme="light"] .study-art img { opacity: .25; }
+.design-atlas-devices .device-panel { border: 0; background: transparent; padding-inline: 0; box-shadow: none; }
+.design-atlas-devices .device-tile { min-height: 206px; background: var(--card); border-top: 2px solid var(--accent); }
+.design-atlas-devices .device-top .machine-icon { width: 45px; height: 45px; border-radius: 8px; background: var(--soft); }
+
+/* 28 — Узлы */
+.design-atlas-nodes .study-heading { grid-template-columns: minmax(0, 1.19fr) minmax(0, 1fr); --title-size: clamp(31px, 5.75cqi, 84px); }
+.study-node-map { position: relative; isolation: isolate; display: grid; min-height: 298px; align-items: center; border-inline-start: 1px solid #713b57; }
+.study-node-map .study-art { inset: 0; }
+.study-node-map .study-art img { opacity: .67; object-position: 61% 42%; }
+.study-node-map .study-art::after { background: linear-gradient(140deg, #36132a28, #210d1cd1); }
+.study-node-list { display: grid; justify-items: start; gap: 13px; padding: 22px clamp(10px, 3cqi, 34px); }
+.study-node-list button { display: flex; position: relative; align-items: center; gap: 7px; width: min(100%, 225px); min-height: 39px; padding: 8px; border: 1px solid #b76c94; border-radius: 7px; background: #23101eea; color: #fff0f8; text-align: start; }
+.study-node-list button:nth-child(2) { justify-self: end; }
+.study-node-list button:hover { border-color: #ff9fcb; background: #522341; }
+.study-node-list button > svg { color: #ff9ac8; }
+.study-node-list button strong { min-width: 0; overflow-wrap: anywhere; font: 600 10px/1.3 var(--mono); }
+.study-node-list button .work-status { margin-inline-start: auto; }
+
+/* 29 — Малиновый атлас */
+.design-atlas-pink .study-heading { --title-size: clamp(32px, 6.1cqi, 92px); --art-position: 57% 41%; min-height: 323px; border-radius: 18px; background: #ff4b9e; }
+.design-atlas-pink .study-art { margin: 9px 9px 9px 0; border: 1px solid #812451; border-radius: 12px; }
+.design-atlas-pink .study-art img { filter: saturate(1.13); }
+.study-ribbon { gap: 0; margin: 0; border: 1px solid var(--border); border-radius: 9px; background: var(--card); }
+.study-ribbon .work-metric { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; align-items: center; justify-content: stretch; gap: 4px 9px; padding: 12px 15px; border: 0; border-radius: 0; }
+.study-ribbon .work-metric + .work-metric { border-inline-start: 1px solid var(--border); }
+.study-ribbon strong { grid-column: 2; grid-row: 1 / 3; justify-self: end; color: var(--accent); }
+
+/* 30 — Атлас с вкладками */
+.design-atlas-tabs { --section-gap: 0px; }
+.design-atlas-tabs > .study-heading { --title-size: clamp(31px, 4.9cqi, 68px); --art-background: #210e20; --art-position: 67% 48%; min-height: 223px; border-radius: 14px 14px 0 0; }
+.design-atlas-tabs .study-art { inset-inline-start: 30%; }
+.design-atlas-tabs .study-art img { opacity: .63; }
+.design-atlas-tabs .study-art::after { background: linear-gradient(90deg, #210e20, #210e20a3 41%, transparent 89%); }
+.design-atlas-tabs .section-navigation { padding: 0 10px; border-inline: 1px solid var(--border); background: var(--raised); }
+.design-atlas-tabs .tab-content .work-panel { border-radius: 0 0 14px 14px; border-block-start: 0; }
+
+/* 31 — Активный пул */
+.design-atlas-active .study-heading { --title-size: clamp(31px, 4.55cqi, 65px); --art-background: #281222; --art-position: 86% 59%; min-height: 200px; border-radius: 16px; }
+.design-atlas-active .study-art { inset-inline-start: 53%; border-radius: 44% 0 0 44%; }
+.design-atlas-active .study-art::after { background: linear-gradient(90deg, #281222, transparent 51%), linear-gradient(0deg, #41112f66, transparent 50%); }
+.design-atlas-active .device-panel { background: transparent; border: 0; padding-inline: 0; box-shadow: none; }
+.design-atlas-active .device-feature > .device-tile { border-color: var(--accent); }
+
+/* 32 — Панно */
+.design-atlas-mural .study-heading { --title-size: clamp(31px, 5cqi, 74px); --art-position: 64% 39%; display: grid; gap: 0; min-height: 0; padding: 0; border-radius: 10px; }
+.design-atlas-mural .study-art { position: relative; z-index: 0; inset: auto; grid-row: 1; height: clamp(102px, 19cqi, 224px); }
+.design-atlas-mural .study-art img { opacity: .9; }
+.design-atlas-mural .study-art::after { background: linear-gradient(100deg, #7827423b, transparent 58%); }
+.design-atlas-mural .study-identity { display: flex; width: 100%; align-items: end; justify-content: space-between; gap: 14px; padding: clamp(16px, 2.8cqi, 32px); background: linear-gradient(112deg, var(--card), var(--raised)); }
+.design-atlas-mural .study-identity .shortcuts { flex-shrink: 0; margin: 0; }
+.mural-body .machines-panel { border-radius: 6px; }
+
+/* 33 — Розовая сводка */
+.design-pink-summary > .study-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(205px, .52fr); gap: 20px; align-items: center; min-height: 327px; border-radius: 23px; background: radial-gradient(ellipse at 100% -5%, #ffbbdd, transparent 69%), #ff409d; }
+.design-pink-summary > .study-heading > .work-metrics { grid-auto-flow: row; gap: 0; border: 1px solid #601435; border-radius: 11px; background: #3b0e29; }
+.design-pink-summary > .study-heading > .work-metrics .work-metric { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 4px 8px; justify-content: stretch; border: 0; border-radius: 0; padding: 10px 12px; background: transparent; }
+.design-pink-summary > .study-heading > .work-metrics .work-metric + .work-metric { border-top: 1px solid #7b3159; }
+.design-pink-summary > .study-heading > .work-metrics .work-metric:hover { background: #59143e; }
+.design-pink-summary > .study-heading > .work-metrics .work-metric:focus-visible { outline: 2px solid #ff9bcf; outline-offset: -2px; }
+.design-pink-summary > .study-heading > .work-metrics strong { grid-column: 2; grid-row: 1 / 3; align-self: center; justify-self: end; color: #ffb9da; }
+.design-pink-summary > .study-heading > .work-metrics :is(.metric-caption, .metric-caption svg, small) { color: #ffe8f4; }
+
+/* 34 — Контраст */
+.study-contrast { display: grid; grid-template-columns: minmax(0, 1.37fr) minmax(0, 1fr); gap: var(--section-gap); }
+.study-contrast .study-heading { --title-size: clamp(33px, 5.35cqi, 77px); min-height: 301px; background: radial-gradient(ellipse at 100% 0%, #5b2143, transparent 60%), repeating-linear-gradient(90deg, #3a1a30 0 1px, transparent 1px 43px), #1e101e; }
+.study-contrast > .study-pink { border: 1px solid var(--border); border-radius: 18px; display: grid; align-content: end; }
+.study-contrast .capacity-meter { padding: clamp(18px, 3cqi, 41px); border: 0; background: transparent; box-shadow: none; }
+.study-contrast .capacity-amount strong { color: var(--text); }
+.study-contrast .meter-track { background: #ffc4e383; }
+.study-contrast .meter-track i { background: #3e1030; }
+.study-contrast .meter-memory i { background: #772052; }
+
+/* 35 — Розовый профиль */
+.design-pink-profile .study-heading { justify-items: start; isolation: isolate; min-height: 420px; background: linear-gradient(152deg, #ff8cbf, #f63592 84%); }
+.design-pink-profile .study-heading::before { content: ""; position: absolute; z-index: -1; inset: auto -50% 53% 4%; aspect-ratio: 1; border: 1px solid #7b184c5e; border-radius: 50%; box-shadow: 0 0 0 13px #fb9ecc54, 0 0 0 28px #ffb4d445; }
+.design-pink-profile .organization-mark { width: 79px; height: 79px; border: 1px solid #952258; background: #ffb4d9; border-radius: 12px; box-shadow: 4px 5px 0 #a7206340; font-size: 29px; }
+.design-pink-profile .avatar-stack { padding: 8px 9px; border: 1px solid #9c2f65; background: #ffb4d979; }
+
+/* 36 — Каскад */
+.study-cascade .study-heading { --title-size: clamp(34px, 6.8cqi, 97px); min-height: 337px; padding-block-end: clamp(83px, 8cqi, 103px); background: radial-gradient(ellipse at 94% 2%, #ffd1e7, transparent 62%), #ff4d9d; }
+.study-cascade .study-heading .study-identity { width: min(76%, 700px); }
+.study-cascade .organization-mark { position: absolute; z-index: -1; right: 35px; top: 22px; width: clamp(62px, 17cqi, 207px); height: auto; aspect-ratio: 1; border-radius: 23%; border-color: #8a21577f; box-shadow: inset 0 0 0 8px #ff8fbe67; background: #ffc6e150; color: #661039; font-size: clamp(24px, 8cqi, 96px); transform: rotate(-9deg); }
+.study-cascade > .work-columns { position: relative; margin: -67px clamp(7px, 2.6cqi, 35px) 0; padding: 8px; align-items: stretch; border: 1px solid var(--border); border-radius: 15px; gap: 8px; background: var(--card); box-shadow: var(--panel-shadow); }
+.study-cascade > .work-columns > .column { display: flex; }
+.study-cascade > .work-columns .work-panel { flex: 1; border: 0; background: var(--raised); box-shadow: none; border-radius: 9px; }
+
+/* 37 — Поле */
+.design-field-center > .study-heading { --title-size: clamp(36px, 6.4cqi, 96px); min-height: 349px; justify-items: center; align-items: center; text-align: center; border-radius: 21px 21px 6px 6px; background: radial-gradient(ellipse at center, #592144, #1a0e1a 78%); }
+.design-field-center .study-identity { width: min(100%, 820px); }
+.design-field-center .workspace-title h1 { text-shadow: 0 3px 25px #1a0e1a; }
+.design-field-center .study-identity :is(.shortcuts, .title-meta) { justify-content: center; }
+.design-field-center .study-art { inset: 0; }
+.design-field-center .study-art img { width: 100%; scale: 2.2; transform: rotate(66deg); opacity: .92; object-position: 50% 50%; }
+.design-field-center .study-art::after { background: radial-gradient(ellipse at center, #1a0e1ac7 5%, #1a0e1a4f 42%, transparent 63%); }
+
+/* 38 — Горизонт */
+.design-field-horizon > .study-heading { --title-size: clamp(30px, 4.8cqi, 70px); --art-background: #221122; align-items: center; min-height: 184px; padding-block: 20px; border-radius: 13px 13px 6px 6px; background: radial-gradient(ellipse at 95% 70%, #6a204e, #221122 72%); }
+.design-field-horizon .study-art { inset-inline-start: 39%; mask-image: linear-gradient(90deg, transparent, #000 35%); }
+.design-field-horizon .study-art img { position: absolute; right: 0; top: 52%; width: 102%; max-width: none; height: auto; transform: translateY(-50%) rotate(13deg); }
+.design-field-horizon .study-art::after, .design-field-pulse .study-art::after { background: none; }
+.design-field-horizon .load-panel { border-radius: 9px; }
+
+/* 39 — Пульс */
+.design-field-pulse > .study-heading { --title-size: clamp(34px, 5.55cqi, 84px); --art-background: #231121; min-height: 281px; border-radius: 17px; background: radial-gradient(ellipse at 85% 60%, #6b2855, #231121 68%); }
+.design-field-pulse .study-art { inset-inline-start: 53%; mask-image: linear-gradient(90deg, transparent, #000 35%); }
+.design-field-pulse .study-art img { scale: 1.37; object-position: 59% 50%; }
+.field-pulse-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr); }
+.field-pulse-body .activity-panel { background: linear-gradient(155deg, var(--raised), var(--card) 63%); }
+.field-pulse-body .machines-panel { border-top: 2px solid var(--accent); }
+
+/* 40 — Светлая панорама */
+.design-field-light .study-heading { --title-size: clamp(32px, 5.72cqi, 86px); --art-background: #52233e; min-height: 314px; background: linear-gradient(130deg, var(--card), var(--raised)); }
+.design-field-light .study-art { margin: 10px 10px 10px 0; min-height: 0; border-radius: 12px; background: radial-gradient(ellipse at center, #b24b7d, #421b37 72%); }
+.design-field-light .study-art img { scale: 1.27; transform: rotate(16deg); }
+.design-field-light .study-art::after { background: radial-gradient(ellipse at 70% 20%, #ffcfe834, transparent 52%); }
+.field-light-card { padding: 7px; border: 1px solid var(--border); border-radius: 12px; background: var(--raised); }
+.field-light-card .work-metric { border-radius: 7px; }
+.field-light-card strong { color: var(--accent); }
+
+@container (max-width: 890px) {
+  .study-identity .shortcuts { margin-top: 14px; }
+  .study-heading { --study-pad: clamp(17px, 2.9cqi, 34px); }
+  .study-heading.study-split > .study-art { min-height: 220px; }
+  .device-grid { gap: 7px; }
+  .device-tile { padding: 10px; }
+  .device-name strong { font-size: 13px; }
+  .device-resource { gap: 3px; overflow-wrap: anywhere; }
+  .study-rail .study-heading { min-height: 355px; }
+  .design-atlas-mural .study-identity .shortcuts { flex-shrink: 1; }
+}
+
+@container (max-width: 690px) {
+  .study-console, .study-contrast, .study-rail, .study-spread-body, .field-pulse-body { grid-template-columns: minmax(0, 1fr); }
+  .study-rail .study-heading { --title-size: clamp(30px, 6cqi, 59px); min-height: 260px; }
+  .design-atlas-rail .study-art { inset-inline-start: 16%; }
+  .design-atlas-rail .study-art::after { background: linear-gradient(93deg, #210d1c, #210d1c9c 67%, transparent); }
+  .design-pink-summary > .study-heading { grid-template-columns: minmax(0, 1fr); min-height: 0; gap: 14px; align-items: start; }
+  .design-pink-summary > .study-heading > .work-metrics { grid-auto-flow: column; }
+  .design-pink-summary > .study-heading > .work-metrics .work-metric + .work-metric { border-top: 0; border-inline-start: 1px solid #7b3159; }
+  .design-atlas-mural .study-identity { flex-direction: column; align-items: start; }
+  .study-cascade > .work-columns > .column { display: block; }
+  .atlas-display-frame .study-heading { min-height: 375px; }
+  .design-atlas-nodes .study-heading { grid-template-columns: minmax(0, 1fr); }
+  .study-node-map { min-height: 193px; border-inline-start: 0; border-block-start: 1px solid #713b57; }
+  .study-node-list { gap: 7px; }
+  .study-node-list button { width: min(100%, 295px); }
+}
+
+@container (max-width: 525px) {
+  .study-heading { --study-pad: 17px; --title-size: clamp(31px, 7.8cqi, 58px); min-height: 217px; border-radius: 14px; }
+  .study-heading.study-split { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .study-heading.study-split > .study-art { min-height: 145px; max-height: 163px; }
+  .study-identity > .work-status { margin-bottom: 9px; }
+  .device-grid, .device-feature { grid-template-columns: minmax(0, 1fr); }
+  .device-tile { grid-template-columns: minmax(0, 1fr) minmax(85px, 1fr); align-items: center; gap: 6px 9px; }
+  .device-tile .device-top { grid-column: 1 / -1; }
+  .device-tile .device-details { border: 0; padding: 0; }
+  .device-feature > .device-tile { min-height: 134px; }
+  .device-feature > .device-tile strong { font-size: 17px; }
+  .atlas-focus-frame > .study-heading { min-height: 242px; }
+  .atlas-focus-frame .study-art { inset-inline-start: 16%; }
+  .atlas-focus-frame .study-art img { opacity: .45; }
+  .atlas-focus-frame .study-art::after { background: linear-gradient(90deg, #291222, transparent 95%); }
+  .design-atlas-spread .study-art { border-inline-start: 0; border-block-start: 1px solid var(--border); }
+  .design-atlas-rail .study-heading { min-height: 268px; }
+  .atlas-display-frame .study-heading { min-height: 299px; padding-bottom: 80px; }
+  .atlas-display-frame .study-art img { opacity: .52; }
+  .atlas-display-frame .device-panel { margin-top: -47px; }
+  .study-console .study-heading, .study-contrast .study-heading { min-height: 211px; }
+  .design-atlas-light .study-heading { min-height: 234px; }
+  .design-atlas-light .study-art img { opacity: .24; }
+  .design-atlas-light .study-heading > .organization-mark { top: 11px; right: 11px; width: 34px; height: 34px; border-radius: 6px; font-size: 12px; }
+  .design-atlas-light > .work-metrics, .design-field-horizon > .panorama-metrics, .field-light-card > .work-metrics { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .design-atlas-light > .work-metrics .work-metric:nth-child(n + 3), .design-field-horizon > .panorama-metrics .work-metric:nth-child(n + 3) { border-block-start: 1px solid var(--border); }
+  .design-atlas-devices .study-art { inset-inline-start: 25%; }
+  .design-atlas-devices .device-tile { min-height: 0; }
+  .design-atlas-pink .study-art, .design-field-light .study-art { margin: 0 8px 8px; }
+  .study-ribbon .work-metric { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; padding: 7px 6px; }
+  .study-ribbon strong { grid-row: 2; grid-column: 1; justify-self: start; }
+  .design-atlas-tabs .study-art, .design-atlas-active .study-art { inset-inline-start: 20%; }
+  .design-atlas-active .study-art img { opacity: .46; }
+  .design-pink-summary > .study-heading > .work-metrics .work-metric { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; padding: 6px; }
+  .design-pink-summary > .study-heading > .work-metrics strong { grid-column: 1; grid-row: 2; justify-self: start; }
+  .design-pink-summary > .study-heading > .work-metrics .metric-caption svg { display: none; }
+  .design-pink-profile .organization-mark { width: 56px; height: 56px; font-size: 23px; }
+  .study-cascade .study-heading { min-height: 286px; padding-block-end: 65px; }
+  .study-cascade .study-heading .study-identity { width: 100%; }
+  .study-cascade .organization-mark { width: 43px; right: 12px; top: 11px; font-size: 16px; }
+  .study-cascade > .work-columns { margin-top: -39px; }
+  .design-field-center > .study-heading { min-height: 265px; }
+  .design-field-pulse > .study-heading { min-height: 229px; }
+  .design-field-pulse .study-art, .design-field-horizon .study-art { inset-inline-start: 27%; opacity: .66; }
+}
+
+@media (max-width: 470px) {
+  .gallery-page:is([data-round="2"], [data-round="3"]) .gallery-intro h1 { font-size: clamp(36px, 12.25vw, 58px); }
+  .gallery-family + .gallery-family { margin-top: 27px; }
+  .variant-picker label { width: auto; }
+  .stage-crumb-start { gap: 4px; }
+  .stage-crumb-start > a { margin-inline-start: 4px; padding-inline-start: 6px; }
+}

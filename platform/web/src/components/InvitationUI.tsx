@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { api, allPages, json } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useI18n } from "../lib/i18n";
@@ -18,26 +18,33 @@ export function PermissionSummary({ values }: { values: Permission[] }) {
     <p className="field-help">{t("noPermissions")}</p>
   );
 }
-export function InvitationFacts({ invitation }: { invitation: Invitation }) {
+export function InvitationExpiry({ expiresAt }: { expiresAt: string }) {
   const { t, locale } = useI18n();
+  return (
+    <>
+      {t("expiresOn")}{" "}
+      <time dateTime={expiresAt}>{new Date(expiresAt).toLocaleDateString(locale)}</time>
+    </>
+  );
+}
+export function InvitationFacts({ invitation }: { invitation: Invitation }) {
+  const { t } = useI18n();
   return (
     <>
       <p className="muted">
         {t("memberRole")}: <strong>{t(invitation.role)}</strong>
       </p>
       <p className="muted invitation-expiry">
-        {t("expiresOn")}{" "}
-        <time dateTime={invitation.expires_at}>
-          {new Date(invitation.expires_at).toLocaleDateString(locale)}
-        </time>
+        <InvitationExpiry expiresAt={invitation.expires_at} />
       </p>
       <PermissionSummary values={invitation.effective_permissions} />
     </>
   );
 }
-export function ShareLink({ token }: { token: string }) {
+export function ShareLink({ token, inputRef }: { token: string; inputRef?: RefObject<HTMLInputElement | null> }) {
   const { t } = useI18n();
-  const ref = useRef<HTMLInputElement>(null);
+  const fallbackRef = useRef<HTMLInputElement>(null);
+  const ref = inputRef ?? fallbackRef;
   const [copied, setCopied] = useState(false);
   const [selected, setSelected] = useState(false);
   const value = `${window.location.origin}/invitations/${encodeURIComponent(token)}`;

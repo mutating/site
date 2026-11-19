@@ -2802,7 +2802,7 @@ async def test_concurrent_debits_cannot_overdraw(migration_database, payment_acc
 
 
 async def test_billing_migration_round_trip_preserves_existing_owners(
-    migration_database, alembic_config, billing_owners
+    migration_database, alembic_config, migration_head, billing_owners
 ):
     """Upgrade from 0019, check ORM/schema parity, and downgrade the empty billing tables."""
     alice, bob, company = billing_owners
@@ -2813,7 +2813,10 @@ async def test_billing_migration_round_trip_preserves_existing_owners(
     async with migration_database.engine.connect() as connection:
         tables = await connection.run_sync(lambda sync: set(inspect(sync).get_table_names()))
         assert BILLING_TABLES <= tables
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0023"
+        assert (
+            await connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == migration_head
+        )
     await migration_database.close()
     await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0019")
     async with migration_database.engine.connect() as connection:
@@ -2922,7 +2925,7 @@ async def test_billing_downgrade_locks_out_writes_after_its_empty_check(
 
 
 async def test_postgres_billing_downgrade_does_not_wait_holding_ledger_lock(
-    migration_database, alembic_config, payment_accounts
+    migration_database, alembic_config, migration_head, payment_accounts
 ):
     """Refuse an online downgrade while another transaction holds a payment-account write lock."""
     if migration_database.engine.dialect.name != "postgresql":
@@ -2956,12 +2959,14 @@ async def test_postgres_billing_downgrade_does_not_wait_holding_ledger_lock(
         )
     async with migration_database.read() as session:
         assert (await session.get(PaymentAccount, personal.id)).balance == Decimal("1")
-        assert await session.scalar(text("SELECT version_num FROM alembic_version")) == "0023"
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version")) == migration_head
+        )
 
 
 @pytest.mark.parametrize("parent", [User, Company])
 async def test_postgres_downgrade_does_not_wait_for_billing_fk_parents(
-    migration_database, alembic_config, parent
+    migration_database, alembic_config, migration_head, parent
 ):
     """Preserve billing data when PostgreSQL cannot promptly remove foreign keys."""
     if migration_database.engine.dialect.name != "postgresql":
@@ -2975,11 +2980,14 @@ async def test_postgres_downgrade_does_not_wait_for_billing_fk_parents(
     async with migration_database.engine.connect() as connection:
         tables = await connection.run_sync(lambda sync: set(inspect(sync).get_table_names()))
         assert BILLING_TABLES <= tables
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0023"
+        assert (
+            await connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == migration_head
+        )
 
 
 async def test_downgrade_sees_concurrent_data_even_with_repeatable_read_default(
-    migration_database, alembic_config
+    migration_database, alembic_config, migration_head
 ):
     """Check the database after locking it, even if its default snapshots are repeatable."""
     if migration_database.engine.dialect.name != "postgresql":
@@ -3015,4 +3023,6 @@ async def test_downgrade_sees_concurrent_data_even_with_repeatable_read_default(
     async with migration_database.read() as session:
         assert len(inserted) == 1
         assert (await session.scalars(select(TariffPlanType.id))).one() == inserted[0]
-        assert await session.scalar(text("SELECT version_num FROM alembic_version")) == "0023"
+        assert (
+            await session.scalar(text("SELECT version_num FROM alembic_version")) == migration_head
+        )

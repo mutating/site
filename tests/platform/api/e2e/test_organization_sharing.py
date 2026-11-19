@@ -3,12 +3,13 @@
 import asyncio
 import io
 from datetime import timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from PIL import Image
 
-from throng_api.models import CompanyInvitation
+from throng_api import invitations
+from throng_api.models import CompanyInvitation, Membership, User
 
 pytestmark = pytest.mark.anyio
 
@@ -67,7 +68,8 @@ async def test_member_profiles_pagination_avatar_and_access_boundaries(
     first = response.json()[0]
     second = (
         await api.get(
-            "/v1/memberships", params={"company_id": company["id"], "limit": 1, "offset": 1}
+            "/v1/memberships",
+            params={"company_id": company["id"], "limit": 1, "offset": 1},
         )
     ).json()[0]
     assert first["id"] != second["id"] and "email" not in first["user"]
@@ -86,6 +88,101 @@ async def test_member_profiles_pagination_avatar_and_access_boundaries(
     assert (
         await other_api.get("/v1/memberships", params={"company_id": unrelated["id"]})
     ).status_code == 404
+
+
+async def test_member_search_filters_before_pagination_and_keeps_the_company_boundary(
+    api, other_api, app, company, membership, other_user
+):
+    """Match a large roster inside the authorized company and count filtered and unfiltered rows."""
+    path = "/v1/memberships"
+    scope = {"company_id": company["id"]}
+    profile = await other_api.patch(
+        f"/v1/users/{other_user['id']}",
+        json={
+            "first_name": "СЕ\u0308МЁН",
+            "last_name": "Straße_100%",
+            "nickname": "Member_0000",
+        },
+    )
+    assert profile.status_code == 200
+    async with app.state.db.write() as session:
+        people = [
+            User(
+                id=str(uuid4()),
+                first_name=f"Участник {index:04d}",
+                last_name="Команды",
+                nickname=f"member_{index:04d}",
+                email=f"member_{index:04d}@example.com",
+                password_hash="unused",
+            )
+            for index in range(1, 1999)
+        ]
+        session.add_all(people)
+        await session.flush()
+        session.add_all(
+            Membership(
+                id=str(UUID(int=index + 1)),
+                company_id=company["id"],
+                user_id=user.id,
+                role="user",
+            )
+            for index, user in enumerate(people)
+        )
+
+    preview = await api.get(path, params={**scope, "limit": 5})
+    assert len(preview.json()) == 5 and preview.headers["x-total-count"] == "2000"
+    assert all(row["id"] != membership["id"] for row in preview.json())
+    last_page = await api.get(path, params={**scope, "limit": 20, "offset": 1980})
+    assert len(last_page.json()) == 20 and last_page.headers["x-total-count"] == "2000"
+    assert membership["id"] in {row["id"] for row in last_page.json()}
+    for query in ("  сёмён  STRASSE_100% ", "@MEMBER_0000", "100%", "member_0000"):
+        found = await api.get(path, params={**scope, "q": query, "limit": 1})
+        assert found.status_code == 200 and found.headers["x-total-count"] == "1"
+        assert found.headers["x-total-unfiltered-count"] == "2000"
+        assert [row["id"] for row in found.json()] == [membership["id"]]
+        assert "email" not in found.json()[0]["user"]
+    assert (await api.get(path, params={**scope, "q": "@"})).json() == []
+    assert (await api.get(path, params={**scope, "q": "member%"})).json() == []
+    assert (await api.get(path, params={**scope, "q": "_9999"})).json() == []
+    partial = await api.get(path, params={**scope, "q": "участник", "offset": 1997, "limit": 20})
+    assert partial.headers["x-total-count"] == "1998" and len(partial.json()) == 1
+    outside = await api.get(path, params={**scope, "q": "STRASSE", "offset": 1})
+    assert outside.headers["x-total-count"] == "1" and outside.json() == []
+    identity = await api.get(path, params={**scope, "q": "STRASSE", "user_id": other_user["id"]})
+    assert identity.headers["x-total-unfiltered-count"] == "1"
+    assert [row["id"] for row in identity.json()] == [membership["id"]]
+    assert (await api.get(path, params={**scope, "q": "a\0b"})).status_code == 422
+
+    renamed = await other_api.patch(
+        f"/v1/users/{other_user['id']}",
+        json={
+            "first_name": "@СЕ\u0308МЁН",
+            "last_name": "Петров",
+            "nickname": None,
+        },
+    )
+    assert renamed.status_code == 200
+    assert (await api.get(path, params={**scope, "q": "STRASSE"})).json() == []
+    assert (await api.get(path, params={**scope, "q": "@MEMBER_0000"})).json() == []
+    assert (await api.get(path, params={**scope, "q": "сёмён петров"})).headers[
+        "x-total-count"
+    ] == "1"
+    assert (await api.get(path, params={**scope, "q": "@сёмён петров"})).headers[
+        "x-total-count"
+    ] == "1"
+    unrelated = (await api.post("/v1/companies", json={"name": "Unrelated team"})).json()
+    assert (await api.get(path, params={"company_id": unrelated["id"], "q": "Петров"})).json() == []
+    assert (
+        await other_api.get(path, params={"company_id": unrelated["id"], "q": "Петров"})
+    ).status_code == 404
+    unnamed = await other_api.patch(
+        f"/v1/users/{other_user['id']}", json={"first_name": "", "last_name": ""}
+    )
+    assert unnamed.status_code == 200
+    found = await api.get(path, params={**scope, "q": other_user["id"][:8]})
+    assert [row["id"] for row in found.json()] == [membership["id"]]
+    await change(api, membership, permissions=[])
+    assert (await other_api.get(path, params={**scope, "q": "Петров"})).status_code == 403
 
 
 async def test_custom_rights_filter_collections_and_block_details_but_leave_personal_access(
@@ -124,7 +221,9 @@ async def test_delegate_specific_management_rights_and_reset_role_defaults(
 ):
     """Individual grants allow their corresponding actions without permitting unrelated management."""
     granted = await change(
-        api, membership, permissions=["resources.read", "resources.manage", "company.manage"]
+        api,
+        membership,
+        permissions=["resources.read", "resources.manage", "company.manage"],
     )
     assert granted["effective_permissions"] == [
         "company.manage",
@@ -133,7 +232,8 @@ async def test_delegate_specific_management_rights_and_reset_role_defaults(
     ]
     assert (
         await other_api.patch(
-            f"/v1/computers/{company_agent['computer']['id']}", json={"name": "Delegated"}
+            f"/v1/computers/{company_agent['computer']['id']}",
+            json={"name": "Delegated"},
         )
     ).status_code == 200
     assert (
@@ -170,7 +270,8 @@ async def test_grant_ceiling_creator_guards_and_permission_validation(
     assert allowed["effective_permissions"] == ["members.read"]
     assert (
         await other_api.patch(
-            f"/v1/memberships/{membership['id']}", json={"permissions": ["tokens.manage"]}
+            f"/v1/memberships/{membership['id']}",
+            json={"permissions": ["tokens.manage"]},
         )
     ).status_code == 403
     creator = next(
@@ -296,6 +397,96 @@ async def test_addressed_invitations_accept_by_inbox_and_hide_tokens(
         assert saved.token_hash != row["token"] and len(saved.token_hash) == 64
 
 
+async def test_invitation_badge_and_rows_can_be_fetched_independently(
+    api, other_api, company, membership
+):
+    """Count-only and compact invitation reads share authorization, scope and the existing order."""
+    opened = [await invite(api, company) for _ in range(3)]
+    revoked = await api.delete(f"/v1/invitations/{opened[1]['id']}")
+    assert revoked.status_code == 204
+    path = "/v1/invitations"
+    scope = {"company_id": company["id"]}
+    counted = await api.get(path, params={**scope, "limit": 0})
+    assert counted.status_code == 200 and counted.json() == []
+    assert counted.headers["x-total-count"] == "3"
+    ordinary = await api.get(path, params={**scope, "limit": 2, "offset": 1})
+    compact = await api.get(
+        path, params={**scope, "limit": 2, "offset": 1, "include_counts": False}
+    )
+    assert ordinary.status_code == compact.status_code == 200
+    assert ordinary.headers["x-total-count"] == "3"
+    assert "x-total-count" not in compact.headers
+    assert all(row["member_count"] == 2 for row in ordinary.json())
+    assert compact.json() == [
+        dict(row, member_count=0, computer_count=0) for row in ordinary.json()
+    ]
+    assert (await other_api.get(path, params={**scope, "limit": 0})).status_code == 403
+
+
+async def test_team_reads_stay_in_the_authorized_snapshot(
+    api, other_api, client, company, membership, other_user, monkeypatch
+):
+    """An in-flight team read cannot see data created after its access was removed."""
+    await change(api, membership, role="admin")
+    company_id = company["id"]
+    creator_id = company["my_membership_id"]
+    avatar_path = f"/v1/memberships/{creator_id}/avatar"
+    lookup_path = f"/v1/companies/{company_id}/users/lookup"
+    email = "after-removal@example.com"
+    scope = {"company_id": company_id}
+
+    def png(color):
+        image = io.BytesIO()
+        Image.new("RGB", (2, 2), color).save(image, format="PNG")
+        return image.getvalue()
+
+    upload_path = "/v1/users/me/avatar"
+    assert (await api.put(upload_path, content=png("red"))).status_code == 200
+    previous = (await other_api.get(avatar_path)).content
+    checks = asyncio.Queue()
+    release = asyncio.Event()
+    authorize = invitations.company_access
+
+    async def paused(session, principal, *args, **kwargs):
+        member = await authorize(session, principal, *args, **kwargs)
+        if principal.user_id == other_user["id"]:
+            checks.put_nowait(None)
+            await release.wait()
+        return member
+
+    monkeypatch.setattr(invitations, "company_access", paused)
+    reads = asyncio.gather(
+        other_api.get(avatar_path),
+        other_api.get("/v1/invitations", params={**scope, "limit": 0}),
+        other_api.get("/v1/invitations", params={**scope, "include_counts": False}),
+        other_api.get(lookup_path, params={"identifier": email}),
+    )
+    try:
+        for _ in range(4):
+            await asyncio.wait_for(checks.get(), timeout=5)
+        assert (await api.delete(f"/v1/memberships/{membership['id']}")).status_code == 204
+        assert (await api.put(upload_path, content=png("blue"))).status_code == 200
+        await invite(api, company)
+        created = await client.post(
+            "/v1/users", json={"email": email, "password": "long invitation password"}
+        )
+        assert created.status_code == 201
+    finally:
+        release.set()
+        avatar, badge, rows, lookup = await reads
+
+    assert avatar.status_code == 200 and avatar.content == previous
+    assert badge.status_code == 200 and badge.headers["x-total-count"] == "0"
+    assert rows.status_code == 200 and rows.json() == []
+    assert lookup.status_code == 404
+    current = await api.get(lookup_path, params={"identifier": email})
+    assert current.status_code == 200 and current.json()["id"] == created.json()["id"]
+    assert (await other_api.get(avatar_path)).status_code == 404
+    assert (await other_api.get("/v1/invitations", params=scope)).status_code == 404
+    denied = await other_api.get(lookup_path, params={"identifier": email})
+    assert denied.status_code == 404
+
+
 async def test_future_email_invitation_survives_registration(api, client, company):
     """An invitation created before account registration is found by the normalized email."""
     row = await invite(api, company, identifier="FUTURE@example.com", permissions=["members.read"])
@@ -307,7 +498,10 @@ async def test_future_email_invitation_survives_registration(api, client, compan
     login = (
         await client.post(
             "/v1/auth/login",
-            json={"login": "future@example.com", "password": "long invitation password"},
+            json={
+                "login": "future@example.com",
+                "password": "long invitation password",
+            },
         )
     ).json()
     headers = {"Authorization": "Bearer " + login["access_token"]}
@@ -401,13 +595,34 @@ async def test_invitation_validation_unknown_ids_existing_members_and_organizati
     assert (await other_api.get(f"/v1/invitations/link/{row['token']}")).status_code == 410
 
 
+async def test_creator_only_deletion_and_privileged_invitation_roles(
+    api, other_api, company, membership
+):
+    """An administrator can invite participants but cannot grant privileged roles or delete the company."""
+    await change(api, membership, role="admin")
+    path = f"/v1/companies/{company['id']}"
+    assert (await other_api.delete(path)).status_code == 403
+    for role in ("admin", "creator"):
+        assert (
+            await other_api.post(
+                "/v1/invitations", json={"company_id": company["id"], "role": role}
+            )
+        ).status_code == 403
+        assert (await invite(api, company, role=role))["role"] == role
+    assert (await invite(other_api, company, role="user"))["role"] == "user"
+    assert (await api.delete(path)).status_code == 409
+    assert (await other_api.delete(f"/v1/memberships/{membership['id']}")).status_code == 204
+    assert (await api.delete(path)).status_code == 204
+
+
 async def test_pending_invitation_cannot_overwrite_an_existing_membership(
     api, other_api, company, other_user
 ):
     """Accepting a previously issued invite never upgrades a membership created by another path."""
     row = await invite(api, company, identifier="bob", role="admin")
     member = await api.post(
-        "/v1/memberships", json={"company_id": company["id"], "user_id": other_user["id"]}
+        "/v1/memberships",
+        json={"company_id": company["id"], "user_id": other_user["id"]},
     )
     assert member.status_code == 201
     assert (await other_api.post(f"/v1/invitations/{row['id']}/accept")).status_code == 409
@@ -425,7 +640,11 @@ async def test_scoped_company_token_cannot_bypass_custom_resource_permissions(
     token = (
         await other_api.post(
             "/v1/access-tokens",
-            json={"ownership_id": owner["id"], "name": "Restricted", "scopes": ["read"]},
+            json={
+                "ownership_id": owner["id"],
+                "name": "Restricted",
+                "scopes": ["read", "manage"],
+            },
         )
     ).json()
     headers = {"Authorization": "Bearer " + token["token"]}
@@ -433,3 +652,12 @@ async def test_scoped_company_token_cannot_bypass_custom_resource_permissions(
     assert (
         await client.get(f"/v1/computers/{company_agent['computer']['id']}", headers=headers)
     ).status_code == 403
+    path = f"/v1/memberships/{membership['id']}"
+    leaving = await client.delete(path, headers=headers)
+    assert leaving.status_code == 403
+    assert leaving.json()["detail"] == "A personal token is required"
+    assert (await api.get(path)).status_code == 200
+    await change(api, membership, permissions=["tokens.manage", "tokens.read", "resources.read"])
+    owned = await client.get("/v1/computers", headers=headers, params={"company_id": company["id"]})
+    assert owned.status_code == 200, owned.text
+    assert [row["id"] for row in owned.json()] == [company_agent["computer"]["id"]]

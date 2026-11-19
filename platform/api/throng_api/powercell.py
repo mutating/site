@@ -37,7 +37,7 @@ from throng_api.powercell_schemas import (
     Disconnect,
     Eviction,
 )
-from throng_api.resource_ledger import change_resource, transfer_resources
+from throng_api.resource_ledger import change_resource, resource_time, transfer_resources
 from throng_api.security import (
     access_token_scheme,
     agent_auth,
@@ -196,6 +196,7 @@ async def settle(session, computer, now, reason):
 
 
 async def detach_computer(session, computer, now, actor_id=None):
+    await resource_time(session, now)
     await settle(session, computer, now, "logout")
     owner = await session.scalar(
         select(ComputerOwnership).where(ComputerOwnership.computer_id == computer.id)

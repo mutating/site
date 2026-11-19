@@ -1,9 +1,13 @@
+import { openUserMenu } from "./header-controls";
+import { openOrganizationSettings, openOrganizationTokens } from "./organization-controls";
 import {
   API,
   expect,
   headers,
   login,
   makeAccount,
+  pauseMutation,
+  startSession,
   test,
   type Account,
 } from "./fixtures";
@@ -33,6 +37,94 @@ async function token(
   });
   expect(response.status()).toBe(201);
   return response.json();
+}
+
+for (const scope of ["all owners", "organization owner", "the last page"]) {
+  test(`a late organization leave preserves a personal token issued under ${scope}`, async ({
+    page,
+    request,
+    account,
+  }) => {
+    const owner = await makeAccount(request, "Боб");
+    const companyName = "Команда для проверки токена";
+    const { id } = await company(request, owner, companyName);
+    if (scope === "the last page") {
+      for (let index = 1; index <= 10; index++) {
+        await token(request, account, { user_id: account.id }, `Личный токен ${index}`);
+      }
+      await token(request, owner, { company_id: id }, "Токен команды");
+    }
+    const joined = await request.post(`${API}/memberships`, {
+      headers: headers(owner),
+      data: { company_id: id, user_id: account.id, role: "admin" },
+    });
+    expect(joined.status()).toBe(201);
+    const endpoint = `${API}/memberships/${(await joined.json()).id}`;
+    const removal = await pauseMutation(page, endpoint);
+    const issuance = await pauseMutation(page, `${API}/api-tokens`, { method: "POST" });
+    await startSession(page, account);
+    await page.goto("organizations");
+    const link = page.getByRole("link", { name: `Открыть организацию: ${companyName}` });
+
+    try {
+      await link.click();
+      await openOrganizationSettings(page);
+      await page.getByRole("button", { name: "Выйти из организации" }).click();
+      const leave = page.getByRole("dialog", { name: "Подтвердите выход" });
+      await leave.getByRole("textbox").fill(account.first_name);
+      await leave.getByRole("button", { name: "Подтвердить", exact: true }).click();
+      await removal.pending;
+      await page.goBack();
+      await link.click();
+      await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+      await page.getByRole("tab", { name: "API-токены", exact: true }).click();
+      await page.getByLabel("Владелец токенов", { exact: true }).selectOption(scope === "organization owner" ? id : "all");
+      if (scope === "the last page") {
+        await page.getByRole("button", { name: /Далее/ }).click();
+        await expect(page).toHaveURL(/page=2/);
+      }
+      await page.getByRole("button", { name: "Создать токен", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Создать токен" });
+      await dialog.getByRole("radio", { name: /^Личный/ }).check();
+      const name = "Личный токен после выхода";
+      await dialog.getByLabel("Название токена").fill(name);
+      await dialog.getByRole("button", { name: "Создать личный токен", exact: true }).click();
+      await issuance.pending;
+
+      const refreshed = page.waitForResponse((response) =>
+        response.url().startsWith(`${API}/companies?`) && response.request().method() === "GET",
+      );
+      removal.release();
+      expect((await refreshed).status()).toBe(200);
+      if (scope === "the last page") {
+        await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBeNull();
+      }
+      if (scope === "organization owner") {
+        await expect(page.locator(".error-box").getByText("Страница не найдена", { exact: true })).toBeVisible();
+      }
+      const issued = page.waitForResponse((response) =>
+        response.url() === `${API}/api-tokens` && response.request().method() === "POST",
+      );
+      issuance.release();
+      expect((await issued).status()).toBe(201);
+      const secret = page.getByLabel("API-токен", { exact: true });
+      await expect(secret).toBeVisible();
+      expect(await secret.inputValue()).not.toBe("");
+      await page.getByRole("dialog").getByRole("button", { name: "Готово", exact: true }).click();
+      await page.getByLabel("Владелец токенов", { exact: true }).selectOption("personal");
+      if (scope === "the last page") {
+        const total = await request.get(`${API}/api-tokens?user_id=${account.id}`, {
+          headers: headers(account),
+        });
+        expect((await total.json()).some((row: { name: string }) => row.name === name)).toBe(true);
+      } else {
+        await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+      }
+    } finally {
+      removal.release();
+      issuance.release();
+    }
+  });
 }
 
 test("registry identifies owners and issuers, filters on the server, and excludes logins", async ({
@@ -82,12 +174,11 @@ test("registry identifies owners and issuers, filters on the server, and exclude
     "Командный CI",
   ]);
   await page.goto(`organizations/${lab.id}`);
-  await page.getByRole("link", { name: "API-токены ↗", exact: true }).click();
-  await expect(page).toHaveURL(`/profile?section=api-tokens&owner=${lab.id}`);
-  await expect(page.getByRole("tab", { name: "API-токены", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(
-    page.getByLabel("Владелец токенов", { exact: true }),
-  ).toHaveValue(lab.id);
+  const settings = await openOrganizationTokens(page);
+  await expect(page).toHaveURL(`/organizations/${lab.id}`);
+  await expect(settings.getByRole("tab", { name: "API-токены", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(settings.getByLabel("Владелец токенов", { exact: true })).toHaveCount(0);
+  await expect(settings.locator(".token-registry-row h2")).toHaveText(["Командный CI"]);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

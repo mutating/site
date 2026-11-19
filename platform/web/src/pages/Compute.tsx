@@ -1,6 +1,7 @@
 import { useState, type FocusEvent } from "react";
 import { allPages } from "../lib/api";
 import { useData } from "../lib/useData";
+import { useReloadOnOrganizationChange } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import type { Company } from "../lib/types";
@@ -28,6 +29,7 @@ export function Compute() {
     true,
     revision,
   );
+  useReloadOnOrganizationChange(user!.id, "all", companies.reload);
   return (
     <>
       <Heading

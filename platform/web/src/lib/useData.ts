@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 export function useData<T>(
   load: (signal: AbortSignal) => Promise<T>,
   key: string,
@@ -9,6 +9,7 @@ export function useData<T>(
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
+  const reload = useCallback(() => setRevision((x) => x + 1), []);
   const previousKey = useRef<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -33,6 +34,6 @@ export function useData<T>(
     error,
     loading,
     update: setData,
-    reload: () => setRevision((x) => x + 1),
+    reload,
   };
 }

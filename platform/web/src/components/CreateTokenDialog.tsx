@@ -4,31 +4,39 @@ import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { memberName } from "../lib/permissions";
 import type { Company, IssuedApiToken, TokenScope } from "../lib/types";
-import { ErrorBox, Icon } from "./UI";
+import { ErrorBox, Icon, Loading } from "./UI";
 import { Select } from "./Select";
 
 export function CreateTokenDialog({
   companies,
   initialCompanyId,
+  fixedCompanyId,
+  check,
+  restoreFocus,
   onRefresh,
   onClose,
 }: {
   companies: Pick<Company, "id" | "name" | "my_permissions">[];
   initialCompanyId?: string;
+  fixedCompanyId?: string;
+  check?: { error: unknown; retry: () => void };
+  restoreFocus?: () => void;
   onRefresh: (failure?: unknown) => void;
   onClose: () => void;
 }) {
   const { user } = useSession();
   const { t, locale } = useI18n();
+  const checking = !!check;
   const ref = useRef<HTMLDialogElement>(null);
   const inFlight = useRef(false);
-  const [kind, setKind] = useState(initialCompanyId ? "company" : "personal");
+  const [kind, setKind] = useState(fixedCompanyId || initialCompanyId ? "company" : "personal");
   const manageable = companies.filter((company) =>
     company.my_permissions.includes("tokens.manage"),
   );
-  const [companyId, setCompanyId] = useState(
+  const [chosenCompanyId, setCompanyId] = useState(
     initialCompanyId || manageable[0]?.id || "",
   );
+  const companyId = fixedCompanyId ?? chosenCompanyId;
   const [name, setName] = useState("");
   const [days, setDays] = useState("30");
   const [execute, setExecute] = useState(true);
@@ -56,25 +64,27 @@ export function CreateTokenDialog({
     dialog.showModal();
     return () => {
       dialog.close();
-      const visible = (element: HTMLElement) =>
-        element.isConnected && element.getClientRects().length > 0;
+      const focusable = (element: HTMLElement) =>
+        element.isConnected && element.getClientRects().length > 0 &&
+        !(element instanceof HTMLButtonElement && element.disabled);
       const fallback = Array.from(
         document.querySelectorAll<HTMLElement>(".token-create-button"),
-      ).find(visible);
+      ).find(focusable);
       const target =
         trigger instanceof HTMLElement &&
-        visible(trigger)
+        focusable(trigger)
           ? trigger
           : fallback;
-      target?.focus({ preventScroll: true });
+      if (target) target.focus({ preventScroll: true });
+      else restoreFocus?.();
     };
   }, []);
   useEffect(() => {
-    if (issued) {
+    if (issued && !checking) {
       if (ref.current) ref.current.scrollTop = 0;
       resultTitle.current?.focus({ preventScroll: true });
     }
-  }, [issued]);
+  }, [issued, checking]);
   useEffect(() => {
     const companyId = issued?.value.company_id;
     if (companyId && !companies.some((company) => company.id === companyId &&
@@ -95,7 +105,7 @@ export function CreateTokenDialog({
       observer.disconnect();
       dialog.style.removeProperty("--token-actions-height");
     };
-  }, [issued]);
+  }, [issued, checking]);
   return (
     <dialog
       ref={ref}
@@ -118,7 +128,12 @@ export function CreateTokenDialog({
           <Icon name="close" size={17} />
         </button>
       </div>
-      {issued ? (
+      {check ? (
+        <div>
+          <h2 id="create-token-title">{t("apiTokens")}</h2>
+          {check.error ? <ErrorBox error={check.error} retry={check.retry} /> : <Loading />}
+        </div>
+      ) : issued ? (
         <div className="issued-token">
           <div className="token-success-icon">
             <Icon name="check" size={22} />
@@ -213,7 +228,7 @@ export function CreateTokenDialog({
         <form
           onSubmit={async (event) => {
             event.preventDefault();
-            if (inFlight.current || !name.trim() || !canCreate) return;
+            if (checking || inFlight.current || !name.trim() || !canCreate) return;
             inFlight.current = true;
             setBusy(true);
             setError(null);
@@ -252,7 +267,7 @@ export function CreateTokenDialog({
               .
             </span>
           </h2>
-          <fieldset className="token-owner-choices" disabled={busy}>
+          {!fixedCompanyId && <fieldset className="token-owner-choices" disabled={busy}>
             <legend>{t("tokenOwner")}</legend>
             <label>
               <input
@@ -283,8 +298,8 @@ export function CreateTokenDialog({
                 <small>{company?.name || t("tokenNoCompanyChoice")}</small>
               </span>
             </label>
-          </fieldset>
-          {kind === "company" && manageable.length > 1 && (
+          </fieldset>}
+          {!fixedCompanyId && kind === "company" && manageable.length > 1 && (
             <label className="field">
               {t("tokenOrganization")}
               <Select

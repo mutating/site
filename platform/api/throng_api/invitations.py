@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_, select
 
 from throng_api import outputs as out
 from throng_api.accounts import membership_change_allowed
+from throng_api.database import company_query_id
 from throng_api.models import Company, CompanyInvitation, Membership, User
 from throng_api.organization_counts import organization_counts
 from throng_api.permissions import effective_permissions
@@ -24,7 +25,7 @@ from throng_api.security import (
     secret,
 )
 from throng_api.serialization import public
-from throng_api.sharing import grant_allowed, member_profile, member_view, resolve_user
+from throng_api.sharing import check_grant, grant_allowed, member_profile, member_view, resolve_user
 
 router = APIRouter(
     prefix="/v1", tags=["organization sharing"], dependencies=[Depends(access_token_scheme)]
@@ -63,16 +64,16 @@ async def invitation_for_manager(session, principal, invitation_id, now):
     row = await session.get(CompanyInvitation, str(invitation_id))
     if not row:
         raise HTTPException(404, "Invitation not found")
-    await membership_change_allowed(session, principal, row.company_id, None, row.role)
+    issuer = await membership_change_allowed(session, principal, row.company_id, None, row.role)
     pending(row, now)
-    return row
+    return row, issuer
 
 
 @router.get("/companies/{company_id}/users/lookup", response_model=out.MemberProfile)
 async def lookup_user(
     company_id: UUID, request: Request, identifier: str = Query(min_length=1, max_length=320)
 ):
-    async with request.app.state.db.read() as session:
+    async with request.app.state.db.read(snapshot=True) as session:
         principal = await authenticate(session, request, "manage")
         await company_access(session, principal, str(company_id), permission="members.manage")
         user = await resolve_user(session, identifier)
@@ -83,7 +84,7 @@ async def lookup_user(
 
 @router.get("/memberships/{membership_id}/avatar", response_class=Response)
 async def member_avatar(membership_id: UUID, request: Request):
-    async with request.app.state.db.read() as session:
+    async with request.app.state.db.read(snapshot=True) as session:
         principal = await authenticate(session, request)
         row = await session.get(Membership, str(membership_id))
         if not row:
@@ -155,28 +156,34 @@ async def list_invitations(
     request: Request,
     response: Response,
     company_id: UUID | None = None,
-    limit: int = Query(100, ge=1, le=200),
+    limit: int = Query(100, ge=0, le=200),
     offset: PaginationOffset = 0,
+    include_counts: bool = True,
 ):
-    async with request.app.state.db.read() as session:
+    """List invitations. With limit zero, return only the total in X-Total-Count."""
+    async with request.app.state.db.read(snapshot=True) as session:
         principal = await authenticate(session, request)
-        user = await session.get(User, personal(principal))
+        user_id = personal(principal)
         now = request.app.state.clock()
         if company_id:
             await company_access(session, principal, str(company_id), permission="members.manage")
-            condition = CompanyInvitation.company_id == str(company_id)
+            condition = CompanyInvitation.company_id == company_query_id(session, company_id)
         else:
+            user = await session.get(User, user_id)
             # Open links are never listed publicly; addressed invitations appear only in their recipient's inbox.
             condition = and_(
                 recipient_condition(user),
                 CompanyInvitation.status == "pending",
                 CompanyInvitation.expires_at > now,
             )
-        response.headers["X-Total-Count"] = str(
-            await session.scalar(
-                select(func.count()).select_from(CompanyInvitation).where(condition)
+        if include_counts or not limit:
+            response.headers["X-Total-Count"] = str(
+                await session.scalar(
+                    select(func.count()).select_from(CompanyInvitation).where(condition)
+                )
             )
-        )
+        if not limit:
+            return []
         rows = (
             await session.scalars(
                 select(CompanyInvitation)
@@ -186,7 +193,11 @@ async def list_invitations(
                 .offset(offset)
             )
         ).all()
-        counts = await organization_counts(session, (row.company_id for row in rows))
+        counts = (
+            await organization_counts(session, (row.company_id for row in rows))
+            if include_counts
+            else {}
+        )
         return [{**invitation_view(row, now), **counts.get(row.company_id, {})} for row in rows]
 
 
@@ -282,8 +293,8 @@ async def rotate_link(invitation_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         now = request.app.state.clock()
-        row = await invitation_for_manager(session, principal, invitation_id, now)
-        await grant_allowed(session, principal, row.company_id, row.role, row.permissions)
+        row, issuer = await invitation_for_manager(session, principal, invitation_id, now)
+        check_grant(issuer, row.role, row.permissions)
         raw = secret("inv_")
         row.token_hash = digest(raw)
         row.created_by_user_id = personal(principal)
@@ -294,7 +305,7 @@ async def rotate_link(invitation_id: UUID, request: Request):
 async def revoke_invitation(invitation_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
-        row = await invitation_for_manager(
+        row, _ = await invitation_for_manager(
             session, principal, invitation_id, request.app.state.clock()
         )
         row.status = "revoked"

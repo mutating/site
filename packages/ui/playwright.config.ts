@@ -17,6 +17,8 @@ export default defineConfig({
     { name: "mobile", testIgnore: "**/header-parity.spec.ts", use: { viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true } },
     { name: "dropdown-firefox", testMatch: "**/dropdown-frame.spec.ts", use: { browserName: "firefox", viewport: { width: 1440, height: 1000 } } },
     { name: "dropdown-webkit", testMatch: "**/dropdown-frame.spec.ts", use: { browserName: "webkit", viewport: { width: 1440, height: 1000 } } },
+    { name: "widget-layout-firefox", testMatch: "**/widget-layout.spec.ts", use: { browserName: "firefox" } },
+    { name: "widget-layout-webkit", testMatch: "**/widget-layout.spec.ts", use: { browserName: "webkit" } },
     { name: "header-parity", testMatch: "**/header-parity.spec.ts", use: { browserName: "firefox", viewport: { width: 1440, height: 1000 } } },
   ],
   webServer: {

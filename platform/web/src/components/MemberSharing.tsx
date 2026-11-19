@@ -1,41 +1,46 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, ApiError, json } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { memberName, rolePermissions } from "../lib/permissions";
 import type {
   Company,
   CreatedInvitation,
+  Invitation,
   MemberProfile,
   Permission,
   Role,
 } from "../lib/types";
-import { ErrorBox } from "./UI";
+import { ErrorBox, Icon } from "./UI";
 import { Select } from "./Select";
 import { PermissionPicker } from "./PermissionPicker";
 import { ShareLink } from "./InvitationUI";
 
+type GrantDraft = { role: Role; custom: boolean; selected: Permission[] };
+
 export function MemberSharing({
   company,
   onChanged,
-  linkRevision = 0,
+  onAccessError,
+  invitations,
+  accessRevision,
+  linkRevision,
 }: {
   company: Company;
-  onChanged: () => void;
-  linkRevision?: number;
+  onChanged: (addedMember: boolean) => void;
+  onAccessError: () => void;
+  invitations: Invitation[] | null;
+  accessRevision: number;
+  linkRevision: number;
 }) {
   const { t } = useI18n();
   const [mode, setMode] = useState<"add" | "invite" | "link">("add");
   const [identifier, setIdentifier] = useState("");
   const [found, setFound] = useState<MemberProfile | null>(null);
-  const [role, setRole] = useState<Role>("user");
-  const [custom, setCustom] = useState(
-    !rolePermissions("user").every((permission) =>
-      company.my_permissions.includes(permission),
-    ),
-  );
-  const [selected, setSelected] = useState<Permission[]>(
-    rolePermissions("user").filter((p) => company.my_permissions.includes(p)),
-  );
+  const [draft, setDraft] = useState<GrantDraft>(() => ({
+    role: "user",
+    custom: false,
+    selected: rolePermissions("user"),
+  }));
   const [days, setDays] = useState(7);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -43,14 +48,36 @@ export function MemberSharing({
   const [success, setSuccess] = useState<
     "memberAdded" | "invitationCreated" | null
   >(null);
-  const [link, setLink] = useState<string | null>(null);
-  useEffect(() => {
+  const [link, setLink] = useState<{ invitation: CreatedInvitation; accessRevision: number } | null>(null);
+  const [previousLinkRevision, setPreviousLinkRevision] = useState(linkRevision);
+  const privileged = company.my_role === "creator";
+  const canGrant = company.my_permissions;
+  const role = privileged ? draft.role : "user";
+  const defaults = rolePermissions(role);
+  const defaultsAllowed = defaults.every((permission) => canGrant.includes(permission));
+  const roleChanged = role !== draft.role;
+  const custom = !defaultsAllowed || draft.custom;
+  const resetSelection = !draft.custom && (roleChanged || !defaultsAllowed);
+  const selected = (resetSelection ? defaults : draft.selected)
+    .filter((permission) => canGrant.includes(permission));
+  // Live access can change while the form stays mounted. Reconcile the draft
+  // so the picker and the submitted grant use the same role and permissions.
+  if (roleChanged || resetSelection || selected.length !== draft.selected.length) {
+    setDraft({ role, custom, selected });
+  }
+  if (previousLinkRevision !== linkRevision) {
+    setPreviousLinkRevision(linkRevision);
     setLink(null);
-  }, [linkRevision]);
+  }
+  if (link && (link.accessRevision !== accessRevision || invitations?.some((invitation) =>
+    invitation.id === link.invitation.id && invitation.status !== "pending"))) {
+    setLink(null);
+    setSuccess(null);
+  }
   return (
     <section className="panel member-sharing" aria-label={t("addMember")}>
       <details>
-        <summary>{t("addMember")}</summary>
+        <summary><Icon name="plus" size={16} />{t("addMember")}<span className="organization-team-chevron"><Icon name="chevron-down" size={15} /></span></summary>
         <form
           onSubmit={async (event) => {
             event.preventDefault();
@@ -82,14 +109,15 @@ export function MemberSharing({
                     expires_in_seconds: days * 86400,
                   }),
                 );
-                setLink(result.token);
+                setLink({ invitation: result, accessRevision });
               }
               setSuccess(mode === "add" ? "memberAdded" : "invitationCreated");
               setIdentifier("");
               setFound(null);
-              onChanged();
+              onChanged(mode === "add");
             } catch (e) {
               setError(e);
+              if (e instanceof ApiError && (e.status === 403 || e.status === 404)) onAccessError();
             } finally {
               setBusy(false);
             }
@@ -154,6 +182,7 @@ export function MemberSharing({
                   if (e instanceof ApiError && e.status === 404)
                     setLookupMissing(true);
                   else setError(e);
+                  if (e instanceof ApiError && (e.status === 403 || e.status === 404)) onAccessError();
                 } finally {
                   setBusy(false);
                 }
@@ -179,16 +208,15 @@ export function MemberSharing({
           <PermissionPicker
             role={role}
             onRole={(value) => {
-              setRole(value);
-              setCustom(false);
-              setSelected(rolePermissions(value));
+              setDraft({ role: value, custom: false, selected: rolePermissions(value) });
             }}
             custom={custom}
-            onCustom={setCustom}
+            onCustom={(value) => setDraft((previous) => ({ ...previous, custom: value }))}
             selected={selected}
-            onSelected={setSelected}
-            canGrant={company.my_permissions}
-            privileged={company.my_role === "creator"}
+            onSelected={(value) => setDraft((previous) => ({ ...previous, selected: value }))}
+            canGrant={canGrant}
+            privileged={privileged}
+            defaultsAllowed={defaultsAllowed}
             disabled={busy}
           />
           {mode !== "add" && (
@@ -237,7 +265,7 @@ export function MemberSharing({
             )}
           </button>
         </form>
-        {link && <ShareLink key={link} token={link} />}
+        {link && <ShareLink key={link.invitation.token} token={link.invitation.token} />}
       </details>
     </section>
   );

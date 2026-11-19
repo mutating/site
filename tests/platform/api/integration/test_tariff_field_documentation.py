@@ -3920,11 +3920,14 @@ async def test_documentation_migration_respects_its_owner_and_cannot_drop_hidden
 @pytest.mark.parametrize("move_guard", [False, True])
 async def test_documentation_migration_survives_a_change_of_table_owner(
     migration_database,
+    alembic_config,
     postgres_migration_role,
     move_guard,
 ):
     """Allow the new owner to replace its table while retaining a separately owned routine."""
     database = migration_database
+    await database.close()
+    await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0023")
     owner, migrate = postgres_migration_role
     routine = text(
         "SELECT tgfoid FROM pg_trigger WHERE tgrelid = 'tariff_field_documentation'::regclass AND tgname = 'serialize_billing_writes'"
@@ -3956,10 +3959,12 @@ async def test_documentation_migration_survives_a_change_of_table_owner(
 
 @pytest.mark.parametrize("permission", ["schema_owner", "version_column"])
 async def test_documentation_downgrade_preserves_existing_migration_role_permissions(
-    postgres_migration_role, migration_database, permission
+    postgres_migration_role, migration_database, alembic_config, permission
 ):
     """Downgrade with the ownership or column grants already sufficient for Alembic."""
     database = migration_database
+    await database.close()
+    await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0023")
     owner, migrate = postgres_migration_role
     async with database.engine.begin() as connection:
         original_owner = await connection.scalar(
@@ -4244,8 +4249,7 @@ async def test_billing_downgrade_holds_the_physical_schema_through_the_version_u
     database = migration_database
     if database.engine.dialect.name != "postgresql":
         pytest.skip("PostgreSQL supports transactional locks on schema names")
-    if revision != "0023":
-        await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, revision)
+    await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, revision)
     await create_staged_billing_catalogue(database, alembic_config, revision)
     populated_original = boundary == "before_documentation_lock"
     options = {} if populated_original else {"schema_translate_map": {None: "staged_docs"}}
@@ -4368,8 +4372,9 @@ async def test_documentation_upgrade_and_downgrade_preserve_catalogue(
         await session.delete(unused)
         await session.flush()
     await migration_database.close()
-    await anyio.to_thread.run_sync(alembic.upgrade, alembic_config, "0023")
+    await anyio.to_thread.run_sync(alembic.upgrade, alembic_config, "head")
     await anyio.to_thread.run_sync(alembic.check, alembic_config)
+    await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0023")
     assert await documentation_revision(migration_database) == ("0023", True)
 
     doc = TariffFieldDocumentation(
@@ -4766,21 +4771,21 @@ def test_postgres_billing_migration_ddl_embeds_the_selected_schema():
 async def test_billing_upgrade_keeps_references_to_legacy_owner_schemas(
     migration_database, alembic_config, namesakes
 ):
-    """Apply and remove billing while the original owner tables live in separate schemas."""
+    """Upgrade and roll back the catalogue and organization fields across owner schemas."""
     database = migration_database
     if database.engine.dialect.name != "postgresql":
         pytest.skip("PostgreSQL allows references across schemas")
     await database.close()
     await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0019")
-    owner = User(
-        email="legacy-owner@example.test",
-        password_hash="unused",
-        first_name="Legacy",
-        last_name="Owner",
-    )
-    async with database.write() as session:
-        session.add(owner)
+    owner_id = str(uuid4())
     async with database.engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO users (id, created_at, email, password_hash, first_name, last_name) "
+                "VALUES (:id, CURRENT_TIMESTAMP, 'legacy-owner@example.test', 'unused', 'Legacy', 'Owner')"
+            ),
+            {"id": owner_id},
+        )
         await connection.execute(CreateSchema("legacy_identity"))
         await connection.execute(CreateSchema("Legacy, companies"))
         await connection.exec_driver_sql("ALTER TABLE public.users SET SCHEMA legacy_identity")
@@ -4795,7 +4800,7 @@ async def test_billing_upgrade_keeps_references_to_legacy_owner_schemas(
         name = connection.dialect.identifier_preparer.quote_identifier(database.engine.url.database)
         await connection.exec_driver_sql(f"ALTER DATABASE {name} SET search_path TO {path}")
     await database.close()
-    await anyio.to_thread.run_sync(alembic.upgrade, alembic_config, "0023")
+    await anyio.to_thread.run_sync(alembic.upgrade, alembic_config, "head")
     async with database.engine.begin() as connection:
         assert await documentation_guard_is_active(connection)
         for table, expected in (
@@ -4812,9 +4817,23 @@ async def test_billing_upgrade_keeps_references_to_legacy_owner_schemas(
                 for key in keys
                 if key["referred_table"] in expected
             } == expected
+        assert (
+            await connection.scalar(text("SELECT name_search FROM legacy_identity.users"))
+            == "legacy owner"
+        )
+        columns = await connection.run_sync(
+            lambda sync: inspect(sync).get_columns("companies", schema="Legacy, companies")
+        )
+        assert "avatar_version" in {column["name"] for column in columns}
+        if namesakes:
+            for table in ("users", "companies"):
+                shadow = await connection.run_sync(
+                    lambda sync, table=table: inspect(sync).get_columns(table, schema="public")
+                )
+                assert {column["name"] for column in shadow} == {"id"}
         async with AsyncSession(bind=connection) as session:
-            assert await session.get(User, owner.id) is not None
-            account = PaymentAccount(user_id=owner.id)
+            assert await session.get(User, owner_id) is not None
+            account = PaymentAccount(user_id=owner_id)
             session.add(account)
             await session.flush()
             assert await session.get(PaymentAccount, account.id) is account
@@ -4961,7 +4980,7 @@ async def test_documentation_uses_the_created_relation_when_server_hooks_change_
 
 @pytest.mark.parametrize("occupied", [False, True])
 async def test_documentation_downgrade_checks_the_locked_schema_after_a_path_change(
-    migration_database, plan_type, alembic_config, occupied
+    migration_database, plan_type, alembic_config, migration_head, occupied
 ):
     """Use the locked relation for both the emptiness check and the actual drop."""
     database = migration_database
@@ -5002,7 +5021,10 @@ async def test_documentation_downgrade_checks_the_locked_schema_after_a_path_cha
     finally:
         event.remove(Engine, "after_cursor_execute", shift_after_lock)
 
-    assert await documentation_revision(database) == ("0023" if occupied else "0022", occupied)
+    assert await documentation_revision(database) == (
+        migration_head if occupied else "0022",
+        occupied,
+    )
     async with database.engine.begin() as connection:
         assert await connection.scalar(
             text(f"SELECT count(*) FROM docs_shadow.{TABLE.name}")
