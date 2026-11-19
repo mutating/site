@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 import importlib.util
 import re
+import shlex
 import shutil
+import ssl
 import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from urllib.parse import urlparse
 
 import pytest
@@ -465,7 +469,9 @@ def test_server_and_deploy_configuration_enforce_the_canonical_origin() -> None:
     assert "return 308 https://{{ site_domain }}$request_uri;" in playbook
     assert 'if ($request_uri ~ "^(.*/)index\\.html(?:\\?.*)?$")' in playbook
     assert "return 308 https://{{ site_domain }}$1$is_args$args;" in playbook
-    assert "http2 on;" in playbook
+    assert "http2 on;" not in playbook
+    for name in ("{{ site_domain }}", "{{ site_aliases | join(' ') }}"):
+        assert f"http2 off;\n              server_name {name};" in playbook
     assert "gzip_vary on;" in playbook
     assert 'Cache-Control "public, max-age=31536000, immutable"' in playbook
     assert 'Cache-Control "public, max-age=604800"' in playbook
@@ -484,11 +490,133 @@ def test_server_and_deploy_configuration_enforce_the_canonical_origin() -> None:
 
     assert "SITE_BASE_URL: https://mutating.tech/" in deploy
     assert "sudo apt-get install --yes ripgrep rsync sshpass" in deploy
-    assert "Verify the production server before upload" in deploy
     assert "--panicOnWarning" in deploy
-    assert "Verify the deployed content contracts" in deploy
-    assert "openssl x509 -noout -checkhost www.mutating.tech" in deploy
-    assert "ALPN protocol" in deploy
+    for step_name in (
+        "Verify the production server before upload",
+        "Verify the deployed content contracts",
+    ):
+        step = deploy.split(f"- name: {step_name}\n", maxsplit=1)[1].split(
+            "\n      - name:", maxsplit=1
+        )[0]
+        assert "bash deploy/verify-site.sh" in step
+        for curl_args in re.findall(r"\$\(curl ([^\n]+)", step):
+            assert "--http1.1" in curl_args.split()
+    assert "-alpn h2" not in deploy
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_error"),
+    [
+        ("healthy", None),
+        ("before-first-release", None),
+        ("redirect-status", "Expected HTTP 308"),
+        ("redirect-query", "Expected redirect"),
+        ("hsts", "Unexpected Strict-Transport-Security header"),
+        ("cache", "Unexpected Cache-Control header"),
+        ("untrusted-certificate", "curl: (60)"),
+        ("wrong-hostname", "curl: (60)"),
+    ],
+)
+def test_deployment_checks_a_site_served_over_http1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str, expected_error: str | None
+) -> None:
+    certificate = tmp_path / "server.pem"
+    key = tmp_path / "server.key"
+    alt_names = "DNS:mutating.tech"
+    if scenario != "wrong-hostname":
+        alt_names += ",DNS:www.mutating.tech"
+    generated = subprocess.run(
+        [
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+            "-subj", "/CN=mutating.tech", "-addext", f"subjectAltName={alt_names}",
+            "-keyout", str(key), "-out", str(certificate),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    assert generated.returncode == 0, generated.stderr
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(certificate, key)
+    tls.set_alpn_protocols(["http/1.1"])
+
+    requests: list[tuple[str, str, bool, str]] = []
+
+    class Site(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_HEAD(self) -> None:
+            requests.append((
+                self.headers["Host"], self.path,
+                isinstance(self.connection, ssl.SSLSocket), self.request_version,
+            ))
+            if self.path == "/":
+                self.send_response(403 if scenario == "before-first-release" else 200)
+                hsts = "max-age=0" if scenario == "hsts" else "max-age=31536000; includeSubDomains"
+                self.send_header("Strict-Transport-Security", hsts)
+                self.send_header("Cache-Control", "public" if scenario == "cache" else "no-cache")
+            else:
+                self.send_response(301 if scenario == "redirect-status" else 308)
+                destination = "https://mutating.tech/blog/"
+                if scenario != "redirect-query":
+                    destination += "?probe=1"
+                self.send_header("Location", destination)
+            self.send_header("Connection", "close")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    with (
+        ThreadingHTTPServer(("127.0.0.1", 0), Site) as http,
+        ThreadingHTTPServer(("127.0.0.1", 0), Site) as https,
+    ):
+        https.socket = tls.wrap_socket(https.socket, server_side=True)
+        curl = shutil.which("curl")
+        assert curl is not None
+        # Send curl to the local sockets while keeping the production URLs, Host and TLS SNI.
+        arguments = [
+            "--noproxy", "*", "--proto", "=http,https",
+            "--connect-to", f":80:127.0.0.1:{http.server_port}",
+            "--connect-to", f"::127.0.0.1:{https.server_port}",
+        ]
+        if scenario != "untrusted-certificate":
+            arguments.extend(("--cacert", str(certificate)))
+        curl_args_log = tmp_path / "curl-args"
+        wrapper = tmp_path / "curl"
+        wrapper.write_text(
+            '#!/bin/sh\n'
+            f'printf "%s\\n" "$@" >> {shlex.quote(str(curl_args_log))}\n'
+            f'exec {shlex.quote(curl)} "$@" {shlex.join(arguments)}\n'
+        )
+        wrapper.chmod(0o755)
+        monkeypatch.setenv("PATH", str(tmp_path), prepend=":")
+
+        threads = []
+        for server in (http, https):
+            thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+            thread.start()
+            threads.append(thread)
+        try:
+            result = subprocess.run(
+                ["bash", str(REPOSITORY_ROOT / "deploy/verify-site.sh")],
+                capture_output=True, text=True, check=False, timeout=15,
+            )
+        finally:
+            for server, thread in zip((http, https), threads):
+                server.shutdown()
+                thread.join()
+
+    if expected_error is None:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert curl_args_log.read_text().splitlines().count("--http1.1") == 4
+        assert requests == [
+            ("mutating.tech", "/blog/?probe=1", False, "HTTP/1.1"),
+            ("www.mutating.tech", "/blog/?probe=1", False, "HTTP/1.1"),
+            ("www.mutating.tech", "/blog/?probe=1", True, "HTTP/1.1"),
+            ("mutating.tech", "/", True, "HTTP/1.1"),
+        ]
+    else:
+        assert result.returncode != 0
+        assert expected_error in result.stderr, result.stderr
 
 
 def test_readme_documents_the_verified_ansible_invocation() -> None:

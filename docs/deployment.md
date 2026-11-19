@@ -473,6 +473,21 @@ Playbook также обновляет root-owned activation wrapper: после
 push. Настройка `queue: max` сохраняет ожидающие запуски вместо замены новым push;
 [GitHub Actions допускает до 100 запусков в очереди](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs).
 
+До загрузки и после активации релиза CI выполняет `bash deploy/verify-site.sh`.
+Скрипт проверяет доступ по HTTP/1.1, доверие к TLS-сертификатам и имена обоих
+хостов сайта, редиректы 308 с сохранением пути и запроса, HSTS и кэширование HTML.
+В `setup-site.yml` HTTP/2 отключён на HTTPS-хостах `mutating.tech` и `www.mutating.tech`.
+
+Для сервера, настроенного с помощью `setup-site.yml`, тег `nginx_config`
+обновляет конфигурацию виртуальных хостов сайта отдельно от выкладки релиза.
+
+```sh
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 ansible-playbook \
+  -i 'SERVER_IP,' infra/playbooks/setup-site.yml -u root --tags nginx_config
+```
+
+Для просмотра изменений можно добавить `--check --diff`.
+
 В GitHub-репозитории добавьте Actions secrets:
 
 | Secret | Значение |

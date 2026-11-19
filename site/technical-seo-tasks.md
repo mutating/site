@@ -218,7 +218,7 @@ Backlog сформирован по итогам 20 независимых SEO-�
 
 ### HTTP, compression и caching
 
-- [x] Включить HTTP/2 в реальном TLS server block и проверить ALPN.
+- [x] Проверять HTTPS на публичном сайте по HTTP/1.1. HTTP/2 отключён для обоих HTTPS-хостов сайта.
 - [x] Включить gzip для CSS, JS, SVG, XML и других текстовых ресурсов.
 - [x] Добавить `gzip_vary on` и проверять `Vary: Accept-Encoding`.
 - [ ] Рассмотреть Brotli после корректной настройки gzip.

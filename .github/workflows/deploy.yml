@@ -95,40 +95,7 @@ jobs:
 
       - name: Verify the production server before upload
         timeout-minutes: 3
-        run: |
-          set -euo pipefail
-          trap 'echo "::error title=Production server contract failed::Verify the mutating.tech virtual hosts, redirects, TLS, HTTP/2 and response headers before rerunning deployment."' ERR
-
-          assert_redirect() {
-            local source_url="$1"
-            local expected_location="$2"
-            local headers
-            local location
-            headers="$(curl --silent --show-error --head --max-time 30 "$source_url")"
-            rg --quiet '^HTTP/[^ ]+ 308' <<< "$headers"
-            location="$(printf '%s' "$headers" | rg --ignore-case '^location: ' | cut -d' ' -f2- | tr -d '\r')"
-            [[ "$location" == "$expected_location" ]]
-          }
-
-          assert_redirect "http://mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-          assert_redirect "http://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-          assert_redirect "https://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-
-          printf '' | timeout --kill-after=5s 30s openssl s_client \
-            -connect www.mutating.tech:443 \
-            -servername www.mutating.tech \
-            2>/dev/null | openssl x509 -noout -checkhost www.mutating.tech
-
-          alpn="$(printf '' | timeout --kill-after=5s 30s openssl s_client \
-            -connect mutating.tech:443 \
-            -servername mutating.tech \
-            -alpn h2 \
-            2>/dev/null | sed -n 's/^ALPN protocol: //p')"
-          [[ "$alpn" == "h2" ]]
-
-          root_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/)"
-          rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$' <<< "$root_headers"
-          rg --quiet --ignore-case '^cache-control: no-cache\r?$' <<< "$root_headers"
+        run: bash deploy/verify-site.sh
 
       - name: Build the production platform web UI
         env:
@@ -167,13 +134,14 @@ jobs:
         run: |
           set -euo pipefail
           trap 'echo "::error title=Deployed content contract failed::line $LINENO: $BASH_COMMAND"' ERR
-          echo 'Checking public HTTP statuses, redirects and TLS.'
+          bash deploy/verify-site.sh
+          echo 'Checking public HTTP statuses.'
 
           assert_status() {
             local expected="$1"
             local url="$2"
             local actual
-            actual="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 30 "$url")"
+            actual="$(curl --http1.1 --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 30 "$url")"
             if [[ "$actual" != "$expected" ]]; then
               echo "Expected $expected from $url, got $actual." >&2
               exit 1
@@ -185,42 +153,11 @@ jobs:
           assert_status 200 "https://mutating.tech/sitemap.xml"
           assert_status 404 "https://mutating.tech/__seo_missing_page__"
 
-          assert_redirect() {
-            local source_url="$1"
-            local expected_location="$2"
-            local headers
-            local location
-            headers="$(curl --silent --show-error --head --max-time 30 "$source_url")"
-            rg --quiet '^HTTP/[^ ]+ 308' <<< "$headers"
-            location="$(printf '%s' "$headers" | rg --ignore-case '^location: ' | cut -d' ' -f2- | tr -d '\r')"
-            [[ "$location" == "$expected_location" ]]
-          }
-
-          assert_redirect "http://mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-          assert_redirect "http://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-          assert_redirect "https://www.mutating.tech/blog/?probe=1" "https://mutating.tech/blog/?probe=1"
-
-          printf '' | timeout --kill-after=5s 30s openssl s_client \
-            -connect www.mutating.tech:443 \
-            -servername www.mutating.tech \
-            2>/dev/null | openssl x509 -noout -checkhost www.mutating.tech
-
-          alpn="$(printf '' | timeout --kill-after=5s 30s openssl s_client \
-            -connect mutating.tech:443 \
-            -servername mutating.tech \
-            -alpn h2 \
-            2>/dev/null | sed -n 's/^ALPN protocol: //p')"
-          [[ "$alpn" == "h2" ]]
-
           echo 'Checking canonical URL and robots.txt.'
-          root_html="$(curl --fail --silent --show-error --max-time 30 https://mutating.tech/)"
-          robots="$(curl --fail --silent --show-error --max-time 30 https://mutating.tech/robots.txt)"
+          root_html="$(curl --http1.1 --fail --silent --show-error --max-time 30 https://mutating.tech/)"
+          robots="$(curl --http1.1 --fail --silent --show-error --max-time 30 https://mutating.tech/robots.txt)"
           rg --quiet '<link rel=?"?canonical"? href=?"?https://mutating\.tech/"?>' <<< "$root_html"
           [[ "$robots" == *'Sitemap: https://mutating.tech/sitemap.xml'* ]]
-
-          root_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/)"
-          rg --quiet --ignore-case '^strict-transport-security: max-age=31536000; includeSubDomains\r?$' <<< "$root_headers"
-          rg --quiet --ignore-case '^cache-control: no-cache\r?$' <<< "$root_headers"
 
           echo 'Checking fingerprinted CSS availability, compression and caching.'
           mapfile -t css_paths < <(rg --files site/public/css site/public/ui/styles | rg '\.[0-9a-f]{64}\.css$')
@@ -228,14 +165,14 @@ jobs:
           for css_path in "${css_paths[@]}"; do
             css_url="https://mutating.tech/${css_path#site/public/}"
             echo "Checking $css_url"
-            css_headers="$(curl --fail --silent --show-error --dump-header - --output /dev/null --header 'Accept-Encoding: gzip' --max-time 30 "$css_url")"
+            css_headers="$(curl --http1.1 --fail --silent --show-error --dump-header - --output /dev/null --header 'Accept-Encoding: gzip' --max-time 30 "$css_url")"
             rg --quiet --ignore-case '^content-encoding: gzip\r?$' <<< "$css_headers"
             rg --quiet --ignore-case '^vary: Accept-Encoding\r?$' <<< "$css_headers"
             rg --quiet --ignore-case '^cache-control: public, max-age=31536000, immutable\r?$' <<< "$css_headers"
           done
 
           echo 'Checking stable image cache policy.'
-          image_headers="$(curl --silent --show-error --head --max-time 30 https://mutating.tech/og.png)"
+          image_headers="$(curl --http1.1 --silent --show-error --head --max-time 30 https://mutating.tech/og.png)"
           if rg --quiet --ignore-case 'immutable' <<< "$image_headers"; then
             echo "Stable image URLs must not use immutable caching." >&2
             exit 1
