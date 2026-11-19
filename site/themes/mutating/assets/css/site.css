@@ -320,6 +320,11 @@ a.section-index:focus-visible {
   font-size: clamp(72px, 8.5vw, 146px);
 }
 
+.hero__heading-line {
+  display: block;
+  white-space: nowrap;
+}
+
 html:lang(ru) .hero h1 {
   font-size: clamp(66px, 7.8vw, 116px);
 }
@@ -800,6 +805,8 @@ html:lang(ru) .hero h1 {
 .pillar-card h3 {
   margin: 22px 0 10px;
   font-size: 23px;
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 
 .pillar-card p {
@@ -1835,6 +1842,7 @@ html:lang(ru) .hero h1 {
 
 .dispatch-card {
   min-height: 360px;
+  min-width: 0;
   padding: 27px;
   color: inherit;
   display: flex;
@@ -1863,6 +1871,8 @@ html:lang(ru) .hero h1 {
   font-size: clamp(27px, 3vw, 45px);
   line-height: 1.04;
   letter-spacing: -0.05em;
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 
 .dispatch-card__description,
@@ -2341,7 +2351,7 @@ html:lang(ru) .hero h1 {
   }
 
   .dispatch-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .contact {
@@ -2368,6 +2378,7 @@ html:lang(ru) .hero h1 {
   .hero {
     padding-top: var(--site-hero-mobile-inset);
     gap: 0;
+    container-type: inline-size;
   }
 
   .hero h1,
@@ -2377,11 +2388,14 @@ html:lang(ru) .hero h1 {
 
   .hero h1 {
     margin-top: 23px;
-    font-size: clamp(61px, 20vw, 92px);
+    /* Keep "AI systems" on one line: its width is ~4.72em at this tracking. */
+    font-size: min(20vw, 92px, calc((100vw - 28px) / 4.75));
+    font-size: min(20vw, 92px, calc((100cqi - 4px) / 4.75));
   }
 
   html:lang(ru) .hero h1 {
-    font-size: clamp(39px, 14.6vw, 70px);
+    font-size: min(clamp(39px, 14.6vw, 70px), calc((100vw - 28px) / 6.08));
+    font-size: min(clamp(39px, 14.6vw, 70px), calc((100cqi - 4px) / 6.08));
   }
 
   .hero__lede {
@@ -2540,11 +2554,14 @@ html:lang(ru) .hero h1 {
   }
 
   .coexistence h2 {
-    font-size: 68px;
+    font-size: min(68px, calc((100vw - 28px) / 3.65));
   }
 
   html:lang(ru) .coexistence h2 {
-    font-size: clamp(30px, 10.4vw, 68px);
+    font-size: min(
+      clamp(30px, 10.4vw, 68px),
+      calc((100vw - 28px) / 7.85)
+    );
   }
 
   .coexistence > p:not(.section-index) {
@@ -2591,6 +2608,35 @@ html:lang(ru) .hero h1 {
   .site-footer {
     margin-top: 110px;
     padding-block: 24px;
+  }
+}
+
+@media (max-width: 270px) {
+  .manifesto h2,
+  .complexity h2,
+  .containment h2,
+  .pillars h2,
+  .distribution h2,
+  .feedback h2,
+  .coexistence h2,
+  .dispatches h2,
+  .contact h2 {
+    hyphens: auto;
+    overflow-wrap: anywhere;
+  }
+
+  .complexity-chart__curve-label--entropy {
+    right: 24px;
+  }
+}
+
+@media (max-width: 290px) {
+  .coexistence__pair-face {
+    padding: 40px 12px;
+  }
+
+  .coexistence__pair-face > span {
+    font-size: clamp(17px, 7.1vw, 22px);
   }
 }
 
