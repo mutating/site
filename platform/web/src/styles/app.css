@@ -283,15 +283,8 @@ h3 {
   background: var(--hot-pale);
   color: var(--active-ink);
 }
-.nav-link:nth-child(4) {
+.nav-link:last-child {
   margin-top: 26px;
-}
-.soon-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ink-muted);
-  margin-left: auto;
 }
 .nav-scroll-hint {
   display: none;
@@ -1208,6 +1201,24 @@ td small {
   color: var(--ink);
   box-shadow: 0 2px 7px color-mix(in srgb, var(--ink) 6%, transparent);
 }
+/* On the dark canvas the flat surface disappears into the track, so the
+   selected tab needs to be raised instead of recessed. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .profile-tabs > button[aria-selected="true"] {
+    background: color-mix(in srgb, var(--hot) 16%, var(--surface-raised));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--hot) 34%, var(--line)),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 4px 16px rgba(0, 0, 0, 0.45);
+  }
+}
+:root[data-theme="dark"] .profile-tabs > button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--hot) 16%, var(--surface-raised));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--hot) 34%, var(--line)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 16px rgba(0, 0, 0, 0.45);
+}
 .profile-personal-panel,
 .profile-account-panel {
   width: 100%;
@@ -1730,7 +1741,7 @@ td small {
   .nav-link:focus-visible {
     outline-offset: -2px;
   }
-  .nav-link:nth-child(4) {
+  .nav-link:last-child {
     margin: 0;
   }
   .nav-link svg {
@@ -1766,9 +1777,6 @@ td small {
     .nav-scroll-hint {
     visibility: visible;
     opacity: 1;
-  }
-  .soon-dot {
-    display: none;
   }
   .page-heading {
     margin-top: 5px;

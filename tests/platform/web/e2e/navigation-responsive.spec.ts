@@ -3,8 +3,8 @@ import { test, expect, login } from "./fixtures";
 import { actionsPeer } from "./actions-peer";
 
 const broad = [1440, 1101, 1024, 801];
-const narrow = [800, 700, 640, 540, 480, 430, 390, 360, 320, 280];
-const overflowing = [430, 390, 360, 320, 280];
+const narrow = [800, 700, 640, 540, 480, 430, 412, 390, 360, 320, 280];
+const overflowing = [412, 390, 360, 320, 280];
 
 async function settle(page: Page) {
   await page.evaluate(async () => {
@@ -62,7 +62,7 @@ test.describe("responsive account navigation", () => {
   test("desktop keeps the vertical sidebar at every wide breakpoint", async ({ page, account }) => {
     await actionsPeer(page);
     await login(page, account);
-    await expect(page.locator(".sidebar .nav-link")).toHaveCount(5);
+    await expect(page.locator(".sidebar .nav-link")).toHaveCount(4);
 
     for (const width of broad) {
       await page.setViewportSize({ width, height: 1000 });
@@ -74,7 +74,7 @@ test.describe("responsive account navigation", () => {
       expect(nav.overflowX).toBe("visible");
       expect(nav.hint.display).toBe("none");
       expect(nav.scrollWidth).toBeLessThanOrEqual(nav.clientWidth + 1);
-      expect(new Set(nav.links.map((link) => Math.round(link.top))).size).toBe(5);
+      expect(new Set(nav.links.map((link) => Math.round(link.top))).size).toBe(4);
       expect(new Set(nav.links.map((link) => Math.round(link.left))).size).toBe(1);
       expect(nav.sidebar.right).toBeLessThanOrEqual(nav.main.left + 1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -87,7 +87,7 @@ test.describe("responsive account navigation", () => {
   }) => {
     await actionsPeer(page);
     await login(page, account);
-    await expect(page.locator(".sidebar .nav-link")).toHaveCount(5);
+    await expect(page.locator(".sidebar .nav-link")).toHaveCount(4);
 
     for (const width of narrow) {
       await page.setViewportSize({ width, height: 900 });
