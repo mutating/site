@@ -141,6 +141,40 @@ async def test_existing_results_survive_run_migration(
         assert len(list(await session.scalars(select(BenchmarkResult)))) == 4
 
 
+async def test_billing_upgrade_and_downgrade_preserve_existing_pi_metadata(
+    computer, http_server, migration_database, alembic_config
+):
+    """Keep the benchmark records of an existing 0019 database through the billing revisions."""
+    http_server.server.should_exit = True
+    await asyncio.wait_for(http_server.task, timeout=10)
+    await migration_database.close()
+    await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0019")
+    result = BenchmarkResult(
+        computer_id=computer["id"],
+        benchmark_name="single_core",
+        benchmarker_version="0.0.9",
+        number=42,
+        pi_equivalent=0.75,
+        aggregated_scores={"pi_equivalent": 1.25},
+    )
+    invalidation = BenchmarkAggregateInvalidation(computer_id=computer["id"], run_id=str(uuid4()))
+    async with migration_database.write() as session:
+        session.add_all([result, invalidation])
+    expected = public(result)
+    invalidation_id = (invalidation.computer_id, invalidation.run_id)
+
+    for operation, target, revision in (
+        (alembic.upgrade, "head", "0023"),
+        (alembic.downgrade, "0019", "0019"),
+    ):
+        await migration_database.close()
+        await anyio.to_thread.run_sync(operation, alembic_config, target)
+        async with migration_database.read() as session:
+            assert await session.scalar(text("SELECT version_num FROM alembic_version")) == revision
+            assert public(await session.get(BenchmarkResult, result.id)) == expected
+            assert await session.get(BenchmarkAggregateInvalidation, invalidation_id) is not None
+
+
 @pytest.mark.parametrize("count", [1, 2])
 async def test_downgrade_cannot_discard_run_identity(
     api, computer, http_server, migration_database, alembic_config, count
@@ -215,8 +249,7 @@ async def test_pi_schema_change_can_be_retried_after_interruption(
     """Fail after DDL but before Alembic stamps 0019 or 0018, then retry the migration."""
     run = getattr(alembic, direction)
     initial, target = ("0018", "0019") if direction == "upgrade" else ("0019", "0018")
-    if direction == "upgrade":
-        await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, initial)
+    await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, initial)
 
     def fail_before_stamp(connection, cursor, statement, parameters, context, executemany):
         if statement.startswith("UPDATE alembic_version"):
@@ -364,7 +397,7 @@ async def test_postgres_upgrade_allows_computer_deletion_before_migration_locks(
     async with pause_migration(
         alembic.upgrade,
         alembic_config,
-        "0019",
+        "head",
         "before_cursor_execute",
         "LOCK TABLE computers IN SHARE ROW EXCLUSIVE MODE NOWAIT",
     ):
@@ -401,6 +434,7 @@ async def test_postgres_downgrade_releases_partial_locks_on_conflict(
     """The downgrade yields to a concurrent computer writer and can be retried afterward."""
     if migration_database.engine.dialect.name != "postgresql":
         pytest.skip("PostgreSQL foreign key locks")
+    await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0019")
     await set_postgres_database_default(migration_database, "lock_timeout TO '500ms'")
     async with migration_database.engine.begin() as connection:
         await connection.exec_driver_sql("LOCK TABLE computers IN ROW EXCLUSIVE MODE")
