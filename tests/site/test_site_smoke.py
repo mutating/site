@@ -108,6 +108,173 @@ def test_primary_hero_action_is_hidden_only_on_narrow_screens(
         expect(thesis_link).to_be_hidden()
 
 
+@pytest.mark.parametrize(
+    ("language", "initial_path"),
+    [("en", "/"), ("ru", "/ru/")],
+)
+@pytest.mark.parametrize("viewport_width", [240, 280, 390, 430, 861])
+def test_hero_heading_keeps_two_lines_across_viewports(
+    driver: DriverFactory,
+    language: str,
+    initial_path: str,
+    viewport_width: int,
+) -> None:
+    """Keep the hero statement on two lines without overflowing the shell."""
+
+    page = driver(
+        stored_language=language,
+        initial_path=initial_path,
+        viewport=(viewport_width, 844),
+        load_interactive_visuals=False,
+    )
+
+    expect(page.locator(".hero__heading-line")).to_have_count(2)
+    metrics = page.locator(".hero h1").evaluate(
+        """
+        (heading) => {
+          const lineRects = [...heading.querySelectorAll(".hero__heading-line")]
+            .flatMap((line) => {
+              const range = document.createRange();
+              range.selectNodeContents(line);
+              return [...range.getClientRects()];
+            });
+          const bounds = heading.getBoundingClientRect();
+          return {
+            lineTops: new Set(
+              lineRects.map((rect) => Math.round(rect.top))
+            ).size,
+            textLeft: Math.min(...lineRects.map((rect) => rect.left)),
+            textRight: Math.max(...lineRects.map((rect) => rect.right)),
+            headingLeft: bounds.left,
+            headingRight: bounds.right,
+            viewportWidth: document.documentElement.clientWidth,
+          };
+        }
+        """
+    )
+
+    assert metrics["lineTops"] == 2
+    assert metrics["textLeft"] >= metrics["headingLeft"] - 0.5
+    assert (
+        metrics["textRight"]
+        <= min(metrics["headingRight"], metrics["viewportWidth"]) + 0.5
+    )
+
+
+@pytest.mark.parametrize(
+    ("language", "initial_path"),
+    [("en", "/"), ("ru", "/ru/")],
+)
+@pytest.mark.parametrize("viewport_width", [240, 280, 320])
+def test_home_layout_contains_long_localized_text_at_narrow_widths(
+    driver: DriverFactory,
+    language: str,
+    initial_path: str,
+    viewport_width: int,
+) -> None:
+    """Keep headings and controls inside the page at very narrow widths."""
+
+    page = driver(
+        stored_language=language,
+        initial_path=initial_path,
+        viewport=(viewport_width, 900),
+        load_interactive_visuals=False,
+    )
+
+    metrics = page.locator("body").evaluate(
+        """
+        () => {
+          const viewportWidth = document.documentElement.clientWidth;
+          const textRects = (element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            return [...range.getClientRects()].filter(
+              (rect) => rect.width > 0 && rect.height > 0
+            );
+          };
+          const headings = [
+            ...document.querySelectorAll("main h1, main h2, main h3"),
+          ].filter((heading) => {
+            const style = getComputedStyle(heading);
+            return style.display !== "none" && style.visibility !== "hidden";
+          });
+          const overflowingHeadings = headings.flatMap((heading) => {
+            const rects = textRects(heading);
+            const outside = rects.some(
+              (rect) =>
+                rect.right > viewportWidth + 1 || rect.left < -1
+            );
+            return outside ? [heading.textContent.trim()] : [];
+          });
+          const clippedCardHeadings = [
+            ...document.querySelectorAll(
+              ".pillar-card h3, .dispatch-card h3"
+            ),
+          ].filter((heading) => {
+            const headingRect = heading.getBoundingClientRect();
+            return (
+              heading.scrollWidth > heading.clientWidth + 1 ||
+              textRects(heading).some(
+                (rect) =>
+                  rect.right > headingRect.right + 1 ||
+                  rect.left < headingRect.left - 1
+              )
+            );
+          }).map((heading) => heading.textContent.trim());
+
+          const face = document.querySelector(
+            ".coexistence__pair-face:not(.coexistence__pair-face--back)"
+          );
+          const arrowRect = face
+            .querySelector(":scope > i")
+            .getBoundingClientRect();
+          const pairSpans = [
+            ...face.querySelectorAll(":scope > span"),
+          ];
+          const overlappingPairSpans = pairSpans
+            .filter((span) => {
+              const rect = span.getBoundingClientRect();
+              return (
+                rect.right > arrowRect.left + 0.5 &&
+                rect.left < arrowRect.right - 0.5
+              );
+            })
+            .map((span) => span.textContent.trim());
+
+          const chartRect = document
+            .querySelector(".complexity-chart")
+            .getBoundingClientRect();
+          const clippedChartLabels = [
+            ...document.querySelectorAll(
+              ".complexity-chart__curve-label"
+            ),
+          ].filter((label) => {
+            const rect = label.getBoundingClientRect();
+            return (
+              rect.left < chartRect.left - 0.5 ||
+              rect.right > chartRect.right + 0.5
+            );
+          }).map((label) => label.textContent.trim());
+
+          return {
+            documentOverflow:
+              document.documentElement.scrollWidth - viewportWidth,
+            overflowingHeadings,
+            clippedCardHeadings,
+            overlappingPairSpans,
+            clippedChartLabels,
+          };
+        }
+        """
+    )
+
+    assert metrics["documentOverflow"] <= 1
+    assert metrics["overflowingHeadings"] == []
+    assert metrics["clippedCardHeadings"] == []
+    assert metrics["overlappingPairSpans"] == []
+    assert metrics["clippedChartLabels"] == []
+
+
 def test_lossless_webp_assets_preserve_every_source_pixel() -> None:
     """Keep optimized browser assets pixel-identical to their PNG sources.
 

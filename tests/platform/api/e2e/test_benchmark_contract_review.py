@@ -26,13 +26,23 @@ async def test_openapi_benchmark_input_and_output_contracts(client):
         "BenchmarkMeasurement": {"benchmark_name", "number"},
         "BenchmarkSuite": {"benchmarker_version", "results"},
     }
+    measurement_metadata = {"pi_equivalent", "reference_machine", "reference_run"}
+    run_metadata = {"aggregated_scores"}
+    optional_fields = {
+        "BenchmarkCreate": measurement_metadata | run_metadata | {"run_id"},
+        "BenchmarkMeasurement": measurement_metadata,
+        "BenchmarkSuite": run_metadata | {"run_id"},
+        "BenchmarkUpdate": set(),
+    }
     for name, expected in fields.items():
         model = models[name]
         assert model["type"] == "object"
         assert model["additionalProperties"] is False
-        optional = {"run_id"} if name in {"BenchmarkCreate", "BenchmarkSuite"} else set()
+        optional = optional_fields[name]
         assert set(model["properties"]) == expected | optional
         assert set(model["required"]) == expected
+        for field in optional:
+            assert {"type": "null"} in model["properties"][field]["anyOf"]
     for name in ["BenchmarkCreate", "BenchmarkMeasurement"]:
         properties = models[name]["properties"]
         benchmark_name = properties["benchmark_name"]
@@ -57,6 +67,9 @@ async def test_openapi_benchmark_input_and_output_contracts(client):
         "number",
         "benchmarker_version",
     }
+    assert (
+        set(output["properties"]) == set(output["required"]) | measurement_metadata | run_metadata
+    )
     assert output["properties"]["number"]["type"] == "number"
     assert "enum" not in output["properties"]["benchmark_name"]
 
@@ -184,6 +197,88 @@ async def test_worker_finite_double_extremes_round_trip_without_score_truncation
         assert detail.json() == row
 
 
+async def test_agent_accepts_benchset_pi_scores_and_reference_calibration(api, agent_api, computer):
+    """Measurement and run fields survive upload and owner reads in the existing result shape."""
+    calibration = {
+        "reference_machine": {
+            "name": "Raspberry Pi 5 Model B Rev 1.0",
+            "short_name": "pi",
+            "os_name": "Ubuntu Server",
+            "os_version": "26.04 LTS",
+            "cpu_architecture": "aarch64",
+            "memory_bytes": 8589934592,
+            "cpu_cores": 4,
+        },
+        "reference_run": {
+            "started_at_unix_seconds": 1792767590.517391,
+            "start_temperature_c": 41.35,
+            "end_temperature_c": 66.65,
+            "warmup_seconds": 1248.0,
+            "results": [
+                {"benchmark": "single_core", "score": 47231.227029007096},
+                {"benchmark": "multi_core", "score": 181953.17419139884},
+            ],
+        },
+    }
+    measurements = [
+        {
+            "benchmark_name": "single_core",
+            "number": 23615.613514503548,
+            "pi_equivalent": 0.5,
+            **calibration,
+        },
+        {"benchmark_name": "multi_core", "number": 363906.3483827977, "pi_equivalent": 2.0},
+    ]
+    scores = {"pi_equivalent": 1.0}
+    response = await agent_api.put(
+        AGENT_RESULTS,
+        json={"benchmarker_version": "0.0.9", "aggregated_scores": scores, "results": measurements},
+    )
+    assert response.status_code == 200, response.text
+    single, multi = rows = response.json()
+    assert "reference_machine" not in multi and "reference_run" not in multi
+    for row, measurement in zip(rows, measurements, strict=True):
+        assert row["aggregated_scores"] == scores
+        assert {key: row[key] for key in measurement} == measurement
+        detail = await api.get(f"{OWNER_RESULTS}/{row['id']}")
+        assert detail.json() == row
+    assert single["run_id"] == multi["run_id"]
+    for path in [
+        f"{OWNER_RESULTS}?computer_id={computer['id']}",
+        f"/v1/computers/{computer['id']}/benchmark-results",
+    ]:
+        assert (await api.get(path)).json() == [multi, single]
+
+
+async def test_calibration_text_fields_have_a_bounded_length(api, agent_api, computer):
+    """Oversized calibration labels are rejected before storage, while 200 characters round-trip."""
+    labels = ("name", "short_name", "os_name", "os_version", "cpu_architecture")
+    machine = {**dict.fromkeys(labels, "x" * 200), "memory_bytes": 8589934592, "cpu_cores": 4}
+    measurement = {"benchmark_name": "single_core", "number": 23615.613514503548}
+    for field in labels:
+        response = await agent_api.put(
+            AGENT_RESULTS,
+            json={
+                "benchmarker_version": "0.0.9",
+                "results": [{**measurement, "reference_machine": {**machine, field: "x" * 201}}],
+            },
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"][0]["loc"][-2:] == ["reference_machine", field]
+    path = f"/v1/computers/{computer['id']}/benchmark-results"
+    assert (await api.get(path)).json() == []
+
+    response = await agent_api.put(
+        AGENT_RESULTS,
+        json={
+            "benchmarker_version": "0.0.9",
+            "results": [{**measurement, "reference_machine": machine}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert (await api.get(path)).json()[0]["reference_machine"] == machine
+
+
 async def test_invalid_nested_json_cannot_replace_an_already_uploaded_result(
     api, agent_api, computer
 ):
@@ -247,4 +342,29 @@ async def test_agent_nonfinite_wire_numbers_return_json_validation_errors(api, a
         assert response.status_code == 422, (value, response.text)
         assert response.headers["content-type"].startswith("application/json")
         assert isinstance(response.json()["detail"], list)
+    assert (await api.get(f"/v1/computers/{computer['id']}/benchmark-results")).json() == []
+
+
+async def test_invalid_pi_equivalents_reject_the_entire_upload(api, agent_api, computer):
+    """Both Pi equivalents must be finite nonnegative numbers when supplied."""
+    for value in [-1, "1.0", True, float("nan"), float("inf")]:
+        for field in ["measurement", "aggregate"]:
+            payload = {
+                "benchmarker_version": "0.0.9",
+                "results": [
+                    {"benchmark_name": "single_core", "number": 100},
+                    {"benchmark_name": "multi_core", "number": 200},
+                ],
+            }
+            if field == "measurement":
+                payload["results"][1]["pi_equivalent"] = value
+            else:
+                payload["aggregated_scores"] = {"pi_equivalent": value}
+            response = await agent_api.put(
+                AGENT_RESULTS,
+                content=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 422, response.text
+            assert response.json()["detail"][0]["loc"][-1] == "pi_equivalent"
     assert (await api.get(f"/v1/computers/{computer['id']}/benchmark-results")).json() == []

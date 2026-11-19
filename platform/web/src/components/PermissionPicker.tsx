@@ -16,6 +16,7 @@ export function PermissionPicker({
   onSelected,
   canGrant,
   privileged,
+  defaultsAllowed = true,
   disabled = false,
 }: {
   role: Role;
@@ -26,6 +27,7 @@ export function PermissionPicker({
   onSelected: (value: Permission[]) => void;
   canGrant: Permission[];
   privileged: boolean;
+  defaultsAllowed?: boolean;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -62,7 +64,7 @@ export function PermissionPicker({
           <input
             type="checkbox"
             checked={custom}
-            disabled={disabled}
+            disabled={disabled || !defaultsAllowed}
             onChange={(event) => onCustom(event.target.checked)}
           />
           {t("customPermissions")}

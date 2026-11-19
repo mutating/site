@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { allPages, api, ApiError, json, request } from "../lib/api";
 import { useData } from "../lib/useData";
+import { useReloadOnOrganizationChange } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
 import { memberName } from "../lib/permissions";
@@ -16,40 +17,67 @@ import {
   Loading,
 } from "../components/UI";
 
-export function ApiTokens() {
+export function ApiTokens({ company, check, onCheckPermissions }: {
+  company?: Company;
+  check?: { error: unknown; retry: () => void };
+  onCheckPermissions?: () => void;
+} = {}) {
   const { user } = useSession();
   const { t, locale } = useI18n();
-  const [params, setParams] = useSearchParams();
-  const owner = params.get("owner") || "all";
+  const checking = !!check;
+  const [urlParams, setUrlParams] = useSearchParams();
+  const [localParams, setLocalParams] = useState(() => new URLSearchParams());
+  const params = company ? localParams : urlParams;
+  function setParams(next: URLSearchParams, options?: { replace?: boolean }) {
+    if (company) setLocalParams(next);
+    else setUrlParams(next, options);
+  }
+  const owner = company?.id ?? (params.get("owner") || "all");
   const filterStatus = params.get("status") === "active" ? "active" : "all";
   const page = Math.max(
     1,
     Math.min(1_000_000, Number.parseInt(params.get("page") || "1", 10) || 1),
   );
-  const key = `${user!.id}/${owner}/${filterStatus}/${page}`;
+  const companyKey = company ? JSON.stringify([company.id, company.name, company.my_permissions]) : "";
+  const pageKey = (index: number) => `${user!.id}/${owner}/${filterStatus}/${index}/${companyKey}`;
+  const key = pageKey(page);
   const registryFocus = useRef<HTMLDivElement>(null);
   const registry = useRef<HTMLDivElement>(null);
+  const restoreRegistryFocus = company ? () => {
+    const focused = document.activeElement;
+    if (focused?.matches(".token-registry-row") && registry.current?.contains(focused)) return;
+    registryFocus.current?.focus({ preventScroll: true });
+  } : undefined;
   const pendingFocus = useRef<{ key: string; tokenId?: string } | null>(null);
-  const [owners, setOwners] = useState<{ userId: string; items: Pick<Company, "id" | "name" | "my_permissions">[] } | null>(null);
+  const [owners, setOwners] = useState<{ userId: string; companyKey: string; items: Pick<Company, "id" | "name" | "my_permissions">[] } | null>(null);
   const state = useData(
     async (signal) => {
-      const companies = (await allPages<Company>("companies", signal)).filter(
-        (company) =>
-          company.my_permissions.includes("tokens.read") ||
-          company.my_permissions.includes("tokens.manage"),
+      const scoped = company && await api<Company>(`companies/${company.id}`, { signal }).catch((error) => {
+        if (!signal.aborted && error instanceof ApiError && error.status === 404) onCheckPermissions?.();
+        throw error;
+      });
+      if (!signal.aborted && company && scoped && (
+        scoped.my_membership_id !== company.my_membership_id || scoped.my_role !== company.my_role ||
+        scoped.my_permissions.join(",") !== company.my_permissions.join(",")
+      )) onCheckPermissions?.();
+      const entries = scoped ? [scoped] : await allPages<Company>("companies", signal);
+      const companies = entries.filter(
+        (entry) =>
+          entry.my_permissions.includes("tokens.read") ||
+          entry.my_permissions.includes("tokens.manage"),
       );
-      if (!signal.aborted) setOwners({ userId: user!.id, items: companies });
-      const company = companies.find((value) => value.id === owner);
-      if (owner !== "all" && owner !== "personal" && !company)
+      if (!signal.aborted) setOwners({ userId: user!.id, companyKey, items: companies });
+      const selected = companies.find((value) => value.id === owner);
+      if (owner !== "all" && owner !== "personal" && !selected)
         throw new ApiError(404, "");
       const canRead =
-        !company || company.my_permissions.includes("tokens.read");
+        !selected || selected.my_permissions.includes("tokens.read");
       const query = new URLSearchParams({
         limit: "10",
         offset: String((page - 1) * 10),
       });
       if (owner === "personal") query.set("user_id", user!.id);
-      else if (company) query.set("company_id", company.id);
+      else if (selected) query.set("company_id", selected.id);
       if (filterStatus === "active") query.set("status", "active");
       const result = canRead
         ? await request<ApiToken[]>(`api-tokens?${query}`, { signal })
@@ -65,7 +93,7 @@ export function ApiTokens() {
     key,
     true,
   );
-  const ownerChoices = owners?.userId === user!.id ? owners.items : [];
+  const ownerChoices = owners?.userId === user!.id && owners.companyKey === companyKey ? owners.items : company ? [company] : [];
   const readableCompany = (id: string) => ownerChoices.some((company) =>
     company.id === id && company.my_permissions.includes("tokens.read"));
   // Only a newer owners snapshot can invalidate an already authorized registry response.
@@ -74,27 +102,47 @@ export function ApiTokens() {
       previous.my_permissions.includes("tokens.read") && !readableCompany(previous.id)) ||
     state.data.tokens.some((token) => token.company_id && !readableCompany(token.company_id))
   );
-  const data = state.data?.key === key && !lostAccess ? state.data : null;
-  const selected = data?.companies.find((company) => company.id === owner);
-  const canManage =
-    owner === "all" ||
-    owner === "personal" ||
-    !!selected?.my_permissions.includes("tokens.manage");
+  const data = !checking && state.data?.key === key && !lostAccess ? state.data : null;
+  const selected = company ? ownerChoices[0] : data?.companies.find((company) => company.id === owner);
+  const canManage = company
+    ? !!selected?.my_permissions.includes("tokens.manage")
+    : owner === "all" || owner === "personal" || !!selected?.my_permissions.includes("tokens.manage");
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<ApiToken | null>(null);
+  useReloadOnOrganizationChange(user!.id, owner === "personal" ? null : owner, (change) => {
+    if (company && change.type !== "membersChanged") return;
+    if (change.type === "membersChanged") {
+      const row = document.activeElement?.closest<HTMLElement>(".token-registry-row");
+      if (row && registry.current?.contains(row)) pendingFocus.current = { key, tokenId: row.dataset.tokenId };
+    }
+    if (change.type === "removed" || change.type === "membershipUpdated") {
+      state.update((current) => {
+        if (current?.key !== key) return current;
+        if (owner !== "all") return null;
+        return {
+          ...current,
+          companies: current.companies.filter((company) => company.id !== change.companyId),
+          tokens: current.tokens.filter((token) => token.company_id !== change.companyId),
+        };
+      });
+      setRevoking((token) => token?.company_id === change.companyId ? null : token);
+    }
+    state.reload();
+  }, { includeMemberChanges: true });
   useEffect(() => {
     setCreating(false);
     setRevoking(null);
-  }, [key]);
+  }, [user?.id, owner, filterStatus]);
   useEffect(() => {
     // Fresh company permissions can deny access before the token request finishes.
     const denied = state.error instanceof ApiError && [403, 404].includes(state.error.status);
     if (lostAccess || denied) {
       state.update(null);
       setRevoking(null);
-      if (denied) setCreating(false);
+      // The profile dialog can issue a personal token while the organization filter loses access.
+      if (denied && company) setCreating(false);
     }
-  }, [lostAccess, state.error, state.update]);
+  }, [company, lostAccess, state.error, state.update]);
   const refresh = (failure?: unknown) => {
     if (failure instanceof ApiError && failure.status === 404) {
       state.update(null);
@@ -105,7 +153,7 @@ export function ApiTokens() {
   };
   const pages = Math.max(1, Math.ceil((data?.total || 0) / 10));
   const updatePage = (value: number, replace = false, focusResult = false) => {
-    if (focusResult) pendingFocus.current = { key: `${user!.id}/${owner}/${filterStatus}/${value}` };
+    if (focusResult) pendingFocus.current = { key: pageKey(value) };
     const next = new URLSearchParams(params);
     if (value === 1) next.delete("page");
     else next.set("page", String(value));
@@ -126,7 +174,7 @@ export function ApiTokens() {
     // A list refresh can remove or disable the trigger; respect any newer focus.
     const focused = document.activeElement;
     const disabledAction = focused instanceof HTMLButtonElement && focused.disabled && registry.current?.contains(focused);
-    if (focused !== document.body && !disabledAction) return;
+    if (focused !== document.body && focused !== registryFocus.current && !disabledAction) return;
     const row = pending.tokenId && Array.from(registry.current?.querySelectorAll<HTMLElement>(".token-registry-row") || [])
       .find(element => element.dataset.tokenId === pending.tokenId);
     if (row) row.focus({ preventScroll: true });
@@ -147,10 +195,11 @@ export function ApiTokens() {
       : token.expires_at !== null && Date.parse(token.expires_at) <= Date.now()
         ? "tokenExpired"
         : "tokenActive";
+  const refreshing = checking || state.loading;
   const createToken = (
     <button
       className="button primary token-create-button"
-      disabled={!data || !canManage}
+      disabled={!data || !canManage || (!!company && state.loading)}
       onClick={(event) => {
         event.currentTarget.focus({ preventScroll: true });
         setCreating(true);
@@ -171,7 +220,7 @@ export function ApiTokens() {
       >
         <div className="token-create-compact">{createToken}</div>
         <div className="token-registry-filter">
-          <div className="field token-owner-filter">
+          {!company && <div className="field token-owner-filter">
             <Select
               aria-label={t("tokenOwnerFilter")}
               value={owner}
@@ -194,11 +243,12 @@ export function ApiTokens() {
                 </option>
               ))}
             </Select>
-          </div>
+          </div>}
           <div className="field token-status-filter">
             <Select
               aria-label={t("tokenStatusFilter")}
               value={filterStatus}
+              disabled={checking}
               onChange={(event) => {
                 const next = new URLSearchParams(params);
                 if (event.target.value === "active") next.set("status", "active");
@@ -215,23 +265,26 @@ export function ApiTokens() {
             className="button secondary token-refresh"
             aria-label={t("refresh")}
             title={t("refresh")}
-            disabled={state.loading}
-            onClick={state.reload}
+            disabled={!company && refreshing}
+            aria-disabled={!!company && refreshing || undefined}
+            onClick={() => { if (!refreshing) state.reload(); }}
           >
             <Icon name="refresh" size={15} />
           </button>
         </div>
         <div className="token-create-wide">{createToken}</div>
       </div>
-      {selected &&
+      {data && selected &&
         (!selected.my_permissions.includes("tokens.manage") ||
           !data?.canRead) && (
           <p className="token-permission-note">
             {t(data?.canRead ? "tokenReadOnlyHelp" : "tokenNoReadHelp")}
           </p>
         )}
-      <ErrorBox error={state.error} retry={state.reload} />
-      {!data || page > pages ? (
+      {!checking && <ErrorBox error={state.error} retry={state.reload} />}
+      {check ? (
+        check.error ? <ErrorBox error={check.error} retry={check.retry} /> : <Loading />
+      ) : !data || page > pages ? (
         state.loading ? (
           <Loading />
         ) : null
@@ -317,7 +370,7 @@ export function ApiTokens() {
                 </div>
                 <div className="token-registry-action">
                   {!token.company_id ||
-                  data.companies
+                  ownerChoices
                     .find((company) => company.id === token.company_id)
                     ?.my_permissions.includes("tokens.manage") ? (
                     <button
@@ -325,7 +378,9 @@ export function ApiTokens() {
                       disabled={
                         !!token.revoked_at || status(token) === "tokenExpired"
                       }
+                      aria-disabled={!!company && state.loading || undefined}
                       onClick={(event) => {
+                        if (company && state.loading) return;
                         event.currentTarget.focus({ preventScroll: true });
                         setRevoking(token);
                       }}
@@ -368,6 +423,9 @@ export function ApiTokens() {
         <CreateTokenDialog
           companies={ownerChoices}
           initialCompanyId={selected?.id}
+          fixedCompanyId={company?.id}
+          check={check}
+          restoreFocus={restoreRegistryFocus}
           onRefresh={refresh}
           onClose={() => setCreating(false)}
         />
@@ -377,6 +435,8 @@ export function ApiTokens() {
           title={t("revokeToken")}
           value={revoking.name}
           warning={`${t("tokenOwner")}: ${ownerName(revoking)}. ${t("tokenRevokeHelp")}`}
+          restoreFocus={restoreRegistryFocus}
+          check={check}
           onClose={() => setRevoking(null)}
           onConfirm={async () => {
             try {

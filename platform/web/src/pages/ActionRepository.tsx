@@ -215,6 +215,6 @@ function WorkflowSetup({ binding, workflows, focusFrom }: { binding: CIRoute; wo
 
 function RunHistory({ binding, refreshCount }: { binding: CIRoute; refreshCount: number }) {
   const { t } = useI18n();
-  const runs = useData(signal => allPages<CIRun>(`github/routes/${binding.id}/runs`, signal, 100), `${binding.id}/${binding.revision}/${refreshCount}`, true);
+  const runs = useData(signal => allPages<CIRun>(`github/routes/${binding.id}/runs`, signal, { pageSize: 100 }), `${binding.id}/${binding.revision}/${refreshCount}`, true);
   return <section className="panel repository-runs"><h2>{t("ciRunHistory")}</h2><ErrorBox error={runs.error} retry={runs.reload} />{runs.loading && !runs.data ? <Loading /> : runs.data && <>{!runs.data.length && <p className="field-help">{t("ciNoRuns")}</p>}<div className="actions-ci-runs">{runs.data.map(run => <p key={run.id}><a href={run.url} target="_blank" rel="noreferrer">#{run.run_id} / {run.run_attempt}</a><span className="actions-ci-status" data-status={run.status} data-result={run.reason ?? run.status}>{t(runLabel(run))}</span>{runReason(run.reason) && <span className="muted">{t(runReason(run.reason)!)}</span>}</p>)}</div></> }</section>;
 }

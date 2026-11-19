@@ -27,7 +27,7 @@ export class ApiError extends Error {
     super(detail);
   }
 }
-const DEFAULT_TIMEOUT_MS = 20_000;
+export const DEFAULT_TIMEOUT_MS = 20_000;
 const client = createClient({
   baseUrl: globalThis.location?.href,
   headers: {
@@ -36,12 +36,13 @@ const client = createClient({
   },
 });
 type ReadBody<T> = (response: Response) => Promise<T>;
+type ApiResponse<T> = { data: T; total: number | null; unfilteredTotal?: number };
 
 export function request<T>(
   path: string,
   options: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<{ data: T; total: number | null }> {
+): Promise<ApiResponse<T>> {
   return requestWithReader<T>(path, options, timeoutMs, response => response.json());
 }
 
@@ -54,7 +55,7 @@ async function requestWithReader<T>(
   options: RequestInit,
   timeoutMs: number,
   readBody: ReadBody<T>,
-): Promise<{ data: T; total: number | null }> {
+): Promise<ApiResponse<T>> {
   const method = (options.method ?? "GET").toUpperCase();
   const changesCookie = path === "auth/session" && (method === "POST" || method === "DELETE")
     || method === "DELETE" && /^users\/[\da-f-]{36}$/i.test(path);
@@ -89,7 +90,7 @@ async function sendRequest<T>(
   revision: number,
   timeoutMs: number,
   readBody: ReadBody<T>,
-): Promise<{ data: T; total: number | null }> {
+): Promise<ApiResponse<T>> {
   options.signal?.throwIfAborted();
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
@@ -98,6 +99,8 @@ async function sendRequest<T>(
       data: (response.status === 204 || options.method?.toUpperCase() === "HEAD"
         ? undefined : await readBody(response)) as T,
       total: response.headers.has("X-Total-Count") ? Number(response.headers.get("X-Total-Count")) : null,
+      ...(response.headers.has("X-Total-Unfiltered-Count")
+        ? { unfilteredTotal: Number(response.headers.get("X-Total-Unfiltered-Count")) } : {}),
     }), { ...options, signal, credentials: "include", timeoutMs });
   } catch (error) {
     options.signal?.throwIfAborted();
@@ -119,17 +122,32 @@ export const json = (method: string, data?: unknown): RequestInit => ({
   method,
   body: data === undefined ? undefined : JSON.stringify(data),
 });
+export async function withDeadline<T>(
+  signal: AbortSignal | undefined,
+  load: (signal: AbortSignal) => Promise<T>,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), timeoutMs);
+  try {
+    return await load(signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function allPages<T>(
   path: string,
   signal?: AbortSignal,
-  pageSize = 200,
+  { pageSize = 200, deadlineMs }: { pageSize?: number; deadlineMs?: number } = {},
 ): Promise<T[]> {
   const rows: T[] = [];
   for (let offset = 0; ; offset += pageSize) {
-    const page = await api<T[]>(
-      `${path}${path.includes("?") ? "&" : "?"}limit=${pageSize}&offset=${offset}`,
-      { signal },
-    );
+    const pagePath = `${path}${path.includes("?") ? "&" : "?"}limit=${pageSize}&offset=${offset}`;
+    const read = (pageSignal?: AbortSignal) => api<T[]>(pagePath, { signal: pageSignal });
+    const page = deadlineMs === undefined
+      ? await read(signal)
+      : await withDeadline(signal, read, deadlineMs);
     rows.push(...page);
     if (page.length < pageSize) return rows;
   }

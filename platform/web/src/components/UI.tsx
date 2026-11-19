@@ -1,6 +1,21 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react";
 import { ApiError } from "../lib/api";
 import { useI18n, type MessageKey } from "../lib/i18n";
+
+/**
+ * Power Cell glyph from the mac_agent menu bar icon (inactive variant):
+ * Packaging/MenuBarIconInactive.svg, scaled from an 18×18 to a 24×24 grid
+ * (hence the 2.6 × 4/3 stroke). The stroke is clipped to the silhouette so
+ * it sits inside the shape, exactly like the menu bar rendering.
+ */
+const POWER_CELL_PATH =
+  "M 12 1.467 C 14.693 1.467 16.693 3.427 16.467 6.067 C 16.187 9.147 16.573 10.693 19.093 12.16 C 22.187 13.707 23.08 16.44 21.6 18.973 C 20.173 21.427 17.213 22.08 14.92 20.107 C 12.813 18.293 11.2 18.227 8.96 19.947 C 6.64 21.733 3.733 21.173 2.36 18.707 C 0.92 16.12 1.853 13.507 5 11.973 C 7.627 10.507 7.787 8.867 7.533 6.067 C 7.307 3.427 9.307 1.467 12 1.467 Z";
+
+export function useRestoreFocusOnRemoval(control: RefObject<HTMLElement | null>, restore: () => void) {
+  useLayoutEffect(() => () => {
+    if (control.current?.contains(document.activeElement)) requestAnimationFrame(restore);
+  }, [control, restore]);
+}
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const shapes: Record<string, ReactNode> = {
@@ -20,8 +35,17 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     ),
     compute: (
       <>
-        <path d="m12 2 9 5v10l-9 5-9-5V7l9-5ZM3 7l9 5 9-5M12 12v10" />
-        <path d="m7 4.8 10 5.5" />
+        <defs>
+          <clipPath id="tmc-power-cell">
+            <path d={POWER_CELL_PATH} />
+          </clipPath>
+        </defs>
+        <path
+          d={POWER_CELL_PATH}
+          strokeWidth="3.467"
+          strokeLinejoin="round"
+          clipPath="url(#tmc-power-cell)"
+        />
       </>
     ),
     cloud: <path d="M6 18a4 4 0 1 1 .5-8A6 6 0 0 1 18 8a5 5 0 0 1 0 10H6Z" />,
@@ -244,6 +268,8 @@ export function ConfirmDialog({
   warning,
   onConfirm,
   onClose,
+  restoreFocus,
+  check,
   conflict = "blockedDelete",
 }: {
   title: string;
@@ -251,6 +277,8 @@ export function ConfirmDialog({
   warning: string;
   onConfirm: () => Promise<void>;
   onClose: () => void;
+  restoreFocus?: () => void;
+  check?: { error: unknown; retry: () => void };
   conflict?: MessageKey;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -258,6 +286,17 @@ export function ConfirmDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const { t } = useI18n();
+  const expected = value.replace(/\r\n?/g, "\n");
+  const matches = text === expected;
+  const field = {
+    value: text,
+    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setText(event.currentTarget.value),
+    autoComplete: "off",
+    autoFocus: true,
+    readOnly: busy,
+    "aria-disabled": busy || undefined,
+  };
   useEffect(() => {
     const dialog = ref.current;
     const trigger = document.activeElement;
@@ -267,8 +306,12 @@ export function ConfirmDialog({
       // WebKit applies modal removal after the cleanup callback, so restoring
       // focus immediately can be undone when the dialog node is detached.
       window.requestAnimationFrame(() => {
-        if (trigger instanceof HTMLElement && trigger.isConnected)
+        if (trigger instanceof HTMLElement && trigger.isConnected &&
+            !(trigger instanceof HTMLButtonElement && trigger.disabled)) {
           trigger.focus({ preventScroll: true });
+        } else {
+          restoreFocus?.();
+        }
       });
     };
   }, []);
@@ -285,7 +328,7 @@ export function ConfirmDialog({
       <form
         onSubmit={async (e) => {
           e.preventDefault();
-          if (text !== value || busy) return;
+          if (!matches || busy || check) return;
           setBusy(true);
           setError(null);
           try {
@@ -302,16 +345,11 @@ export function ConfirmDialog({
         <p className="muted">{warning}</p>
         <label className="field">
           {t("typeToConfirm")}{" "}
-          <strong className="confirm-value">{value}</strong>
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            autoComplete="off"
-            autoFocus
-            disabled={busy}
-          />
+          <strong className="confirm-value">{expected}</strong>
+          {expected.includes("\n") ? <textarea {...field} rows={3} /> : <input {...field} />}
         </label>
         <ErrorBox error={error} conflict={conflict} />
+        <ErrorBox error={check?.error} retry={check?.retry} />
         <div className="form-actions">
           <button
             type="button"
@@ -321,8 +359,8 @@ export function ConfirmDialog({
           >
             {t("cancel")}
           </button>
-          <button className="button danger" disabled={text !== value || busy}>
-            {busy ? t("waiting") : t("confirm")}
+          <button className="button danger" aria-disabled={!matches || busy || !!check}>
+            {busy || check ? t("waiting") : t("confirm")}
           </button>
         </div>
       </form>

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { api, json } from "../lib/api";
-import { useOrganizationDirectory } from "../lib/useOrganizationDirectory";
+import { notifyOrganizationChange, useOrganizationDirectory } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n, type MessageKey } from "../lib/i18n";
+import { organizationImagePath } from "../lib/organizationImages";
 import {
   ORGANIZATIONS_PAGE_SIZE,
   organizationPage,
@@ -11,32 +12,28 @@ import {
 } from "../lib/organizations";
 import type { Company, Invitation } from "../lib/types";
 import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
-import {
-  ConfirmDialog,
-  Empty,
-  ErrorBox,
-  Heading,
-  Icon,
-  Loading,
-} from "../components/UI";
+import { ApiImage } from "../components/ApiImage";
+import { Empty, ErrorBox, Heading, Icon, Loading } from "../components/UI";
 
 export function Organizations() {
-  const { user } = useSession();
+  const userId = useSession().user!.id;
+  const { key: locationKey } = useLocation();
   const { t, locale } = useI18n();
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
   const page = organizationPage(params);
-  const state = useOrganizationDirectory(user!.id, query, page);
+  const state = useOrganizationDirectory(userId, query, page);
+  const activeView = useRef<{ userId: string; locationKey: string } | null>(null);
+  useLayoutEffect(() => {
+    activeView.current = { userId, locationKey };
+    return () => { activeView.current = null; };
+  }, [userId, locationKey]);
   const setQuery = (value: string) =>
     setParams(organizationSearchParams(params, value), { replace: true });
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState<MessageKey | null>(null);
   const [busyInvitation, setBusyInvitation] = useState<string | null>(null);
   const [invitationError, setInvitationError] = useState<unknown>(null);
-  const [action, setAction] = useState<{
-    type: "delete" | "leave";
-    company: Company;
-  } | null>(null);
   const entries = state.data?.entries ?? [];
   const totalPages = Math.max(
     1,
@@ -160,16 +157,10 @@ export function Organizations() {
                 .map((part) => Array.from(part)[0])
                 .join("")
                 .toLocaleUpperCase(locale);
-              return (
-                <article
-                  className={`organization-row${pending ? " invitation-row" : ""}`}
-                  key={`${entry.kind}:${entry.id}`}
-                  aria-label={name}
-                  data-kind={entry.kind}
-                  data-group={entry.group}
-                >
+              const content = (
+                <>
                   <span className="organization-monogram" aria-hidden="true">
-                    {initials}
+                    {pending ? initials : <ApiImage path={organizationImagePath(entry.company, "avatar")} fallback={initials} />}
                   </span>
                   <div className="organization-info">
                     <h3>{name}</h3>
@@ -186,24 +177,37 @@ export function Organizations() {
                       ? t("invitedOrganization")
                       : t(entry.company.my_role)}
                   </span>
+                  <span
+                    className="organization-metric organization-members-metric"
+                    role="img"
+                    aria-label={`${t("members")}: ${number(row.member_count)}`}
+                  >
+                    <Icon name="users" size={16} />
+                    <span>{number(row.member_count)}</span>
+                  </span>
+                  <span
+                    className="organization-metric organization-computers-metric"
+                    role="img"
+                    aria-label={`${t("computers")}: ${number(entry.computerCount)}`}
+                  >
+                    <Icon name="computer" size={16} />
+                    <span data-testid="organization-computer-count">
+                      {number(entry.computerCount)}
+                    </span>
+                  </span>
+                </>
+              );
+              return (
+                <article
+                  className={`organization-row${pending ? " invitation-row" : ""}`}
+                  key={`${entry.kind}:${entry.id}`}
+                  aria-label={name}
+                  data-kind={entry.kind}
+                  data-group={entry.group}
+                >
                   {pending ? (
                     <>
-                      <span
-                        className="organization-metric organization-members-metric"
-                        aria-label={`${t("members")}: ${number(row.member_count)}`}
-                      >
-                        <Icon name="users" size={16} />
-                        <span>{number(row.member_count)}</span>
-                      </span>
-                      <span
-                        className="organization-metric organization-computers-metric"
-                        aria-label={`${t("computers")}: ${number(entry.computerCount)}`}
-                      >
-                        <Icon name="computer" size={16} />
-                        <span data-testid="organization-computer-count">
-                          {number(entry.computerCount)}
-                        </span>
-                      </span>
+                      {content}
                       <div className="invitation-actions">
                         <button
                           className="button primary compact"
@@ -230,77 +234,16 @@ export function Organizations() {
                       </div>
                     </>
                   ) : (
-                    <>
-                      <Link
-                        className="organization-metric organization-members-metric"
-                        aria-label={`${t("members")}: ${number(row.member_count)}`}
-                        to={`/organizations/${entry.company.id}`}
-                        state={{
-                          directorySearch: params.size ? `?${params}` : "",
-                        }}
-                      >
-                        <Icon name="users" size={16} />
-                        <span>{number(row.member_count)}</span>
-                      </Link>
-                      <Link
-                        className="organization-metric organization-computers-metric"
-                        aria-label={`${t("computers")}: ${number(entry.computerCount)}`}
-                        to={`/compute/computers?company_id=${entry.company.id}`}
-                      >
-                        <Icon name="computer" size={16} />
-                        <span data-testid="organization-computer-count">
-                          {number(entry.computerCount)}
-                        </span>
-                      </Link>
-                      <div className="organization-actions">
-                        {entry.company.my_role === "creator" && (
-                          <button
-                            className="text-button organization-icon-button danger-text"
-                            aria-label={t("deleteOrganization")}
-                            title={t("deleteOrganization")}
-                            onClick={(event) => {
-                              event.currentTarget.focus({
-                                preventScroll: true,
-                              });
-                              setAction({
-                                type: "delete",
-                                company: entry.company,
-                              });
-                            }}
-                          >
-                            <Icon name="trash" size={16} />
-                          </button>
-                        )}
-                        {entry.company.my_membership_id && (
-                          <button
-                            className="text-button organization-icon-button"
-                            aria-label={t("leave")}
-                            title={t("leave")}
-                            onClick={(event) => {
-                              event.currentTarget.focus({
-                                preventScroll: true,
-                              });
-                              setAction({
-                                type: "leave",
-                                company: entry.company,
-                              });
-                            }}
-                          >
-                            <Icon name="exit" size={16} />
-                          </button>
-                        )}
-                        <Link
-                          className="organization-open"
-                          aria-label={`${t("openOrganization")}: ${name}`}
-                          to={`/organizations/${entry.company.id}`}
-                          state={{
-                            directorySearch: params.size ? `?${params}` : "",
-                          }}
-                        >
-                          <Icon name="arrow" size={18} />
-                        </Link>
-                      </div>
-                    </>
+                    <Link
+                      className="organization-row-link"
+                      aria-label={`${t("openOrganization")}: ${name}`}
+                      to={`/organizations/${entry.company.id}`}
+                      state={{
+                        directorySearch: params.size ? `?${params}` : "",
+                      }}
+                    >
+                      {content}
+                    </Link>
                   )}
                 </article>
               );
@@ -349,34 +292,15 @@ export function Organizations() {
               "companies",
               json("POST", { name }),
             );
-            state.insert(company);
-            setQuery("");
-            setMessage("organizationCreated");
-            state.reload();
-          }}
-        />
-      )}
-      {action && (
-        <ConfirmDialog
-          title={t(
-            action.type === "delete" ? "deleteOrganization" : "confirmLeave",
-          )}
-          warning={t(
-            action.type === "delete" ? "irreversible" : "leaveWarning",
-          )}
-          value={action.company.name}
-          conflict={action.type === "leave" ? "leaveBlocked" : "blockedDelete"}
-          onClose={() => setAction(null)}
-          onConfirm={async () => {
-            await api(
-              action.type === "delete"
-                ? `companies/${action.company.id}`
-                : `memberships/${action.company.my_membership_id}`,
-              json("DELETE"),
-            );
-            setMessage(null);
-            state.remove(action.company.id);
-            state.reload();
+            const current = activeView.current;
+            if (current?.userId === userId) {
+              if (current.locationKey === locationKey) {
+                state.insert(company);
+                setQuery("");
+              }
+              setMessage("organizationCreated");
+            }
+            notifyOrganizationChange({ type: "created", userId });
           }}
         />
       )}

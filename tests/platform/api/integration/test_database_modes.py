@@ -3,6 +3,7 @@
 import asyncio
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import anyio
@@ -11,6 +12,7 @@ from alembic import command as alembic
 from alembic.script import ScriptDirectory
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
 from throng_api.cli import migrate
@@ -68,6 +70,19 @@ async def test_postgres_configuration_preserves_native_uuid_and_bigint_sql(postg
             lock.compile(bind=session.bind.sync_engine)
         )
         assert database.engine.pool.checkedout() == 0
+
+
+async def test_snapshot_reads_use_transactions_in_both_database_modes(
+    memory_database, postgres_configuration, monkeypatch
+):
+    """Start SQLite's snapshot explicitly and request repeatable PostgreSQL reads."""
+    async with memory_database.read(snapshot=True) as session:
+        assert await session.scalar(select(Coordination.revision)) == 0
+
+    connect = AsyncMock()
+    monkeypatch.setattr(AsyncSession, "connection", connect)
+    async with postgres_configuration.read(snapshot=True):
+        connect.assert_awaited_once_with(execution_options={"isolation_level": "REPEATABLE READ"})
 
 
 async def test_memory_migration_builds_full_schema_without_treating_url_as_file(

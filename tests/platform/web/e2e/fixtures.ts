@@ -104,6 +104,38 @@ export async function addComputer(
   }
   return computer;
 }
+export async function pauseMutation(
+  page: Page,
+  endpoint: string,
+  { method = "DELETE", pause = "request" }: {
+    method?: "DELETE" | "PATCH" | "POST" | "PUT";
+    pause?: "request" | "response" | "both";
+  } = {},
+) {
+  let release!: () => void;
+  let commit!: () => void;
+  let markSent!: () => void;
+  let markPending!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const commitGate = new Promise<void>((resolve) => { commit = resolve; });
+  const sent = new Promise<void>((resolve) => { markSent = resolve; });
+  const pending = new Promise<void>((resolve) => { markPending = resolve; });
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() !== method) return route.continue();
+    markSent();
+    if (pause === "both") await commitGate;
+    const response = pause === "request" ? null : await route.fetch();
+    markPending();
+    await gate;
+    if (response) {
+      await route.fulfill({ response });
+    } else {
+      await route.continue();
+    }
+  });
+  return { sent, pending, commit, release: () => { commit(); release(); } };
+}
+
 export const test = base.extend<{ account: Account }>({
   account: async ({ request }, use) => {
     await use(await makeAccount(request));

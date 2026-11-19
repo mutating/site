@@ -1,12 +1,17 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, literal, select
 from sqlalchemy.orm import joinedload
 
 from throng_api import outputs as out
 from throng_api.accounts import saved, validate_owner
-from throng_api.availability import sync_capacity
+from throng_api.availability import (
+    active_computer_session,
+    available_computer_filter,
+    sync_capacity,
+)
+from throng_api.database import company_query_id
 from throng_api.execution import invalidate_computer
 from throng_api.models import (
     CPU_RESOURCE_ID,
@@ -16,7 +21,12 @@ from throng_api.models import (
     ComputerOwnership,
 )
 from throng_api.resource_history import report_owner
-from throng_api.resource_ledger import add_resource, change_resource, transfer_resources
+from throng_api.resource_ledger import (
+    add_resource,
+    change_resource,
+    resource_time,
+    transfer_resources,
+)
 from throng_api.schemas import (
     ComputerCreate,
     ComputerOwnerCreate,
@@ -39,6 +49,10 @@ from throng_api.serialization import public
 router = APIRouter(prefix="/v1", tags=["computers"], dependencies=[Depends(access_token_scheme)])
 
 
+def computer_view(computer, now):
+    return {**public(computer), "session_active": active_computer_session(computer, now)}
+
+
 async def computer_for_user(session, principal, computer_id, admin=False):
     computer = await session.get(Computer, str(computer_id))
     if not computer:
@@ -59,7 +73,7 @@ async def disconnect_idle(session, computer, now):
             409, "Destroy assigned isolates before changing computer ownership or credentials"
         )
     computer.online = False
-    await sync_capacity(session, computer, now)
+    await sync_capacity(session, computer, await resource_time(session, now))
     computer.session_id = None
     computer.lease_expires_at = None
     await session.execute(delete(AgentCredential).where(AgentCredential.computer_id == computer.id))
@@ -82,14 +96,13 @@ async def create_computer(data: ComputerCreate, request: Request):
         ownership = ComputerOwnership(computer_id=computer.id, **owner)
         session.add(ownership)
         await session.flush()
+        now = request.app.state.clock()
         for type_id, total in (
             (CPU_RESOURCE_ID, data.cpu_millis),
             (MEMORY_RESOURCE_ID, data.memory_bytes),
         ):
-            await add_resource(
-                session, computer, type_id, total, request.app.state.clock(), principal.actor_id
-            )
-        return {**public(computer), "ownership": public(ownership)}
+            await add_resource(session, computer, type_id, total, now, principal.actor_id)
+        return {**computer_view(computer, now), "ownership": public(ownership)}
 
 
 @router.get("/computers", response_model=list[out.Computer])
@@ -106,48 +119,55 @@ async def list_computers(
         principal = await authenticate(session, request)
         if user_id is not None and company_id is not None:
             raise HTTPException(422, "Choose one owner")
-        conditions = [owned_filter(ComputerOwnership, principal)]
         if user_id is not None or company_id is not None:
-            owner = await report_owner(session, principal, user_id=user_id, company_id=company_id)
-            conditions.append(
-                ComputerOwnership.user_id == owner[0]
-                if owner[0]
-                else ComputerOwnership.company_id == owner[1]
+            owner_user, owner_company = await report_owner(
+                session, principal, user_id=user_id, company_id=company_id
             )
+            ownership = (
+                ComputerOwnership.user_id == owner_user
+                if owner_user
+                else owned_filter(
+                    ComputerOwnership,
+                    principal,
+                    company_id=company_query_id(session, owner_company),
+                )
+            )
+        else:
+            ownership = owned_filter(ComputerOwnership, principal)
+        now = request.app.state.clock()
+        eligible = select(ComputerOwnership.computer_id).where(ownership)
         if only_available:
-            conditions.extend(
-                [
-                    Computer.enabled.is_(True),
-                    Computer.accepting_work.is_(True),
-                    Computer.online.is_(True),
-                    Computer.session_id.is_not(None),
-                    Computer.lease_expires_at > request.app.state.clock(),
-                ]
+            eligible = eligible.join(Computer, Computer.id == ComputerOwnership.computer_id).where(
+                available_computer_filter(now)
             )
+
+        page = (
+            eligible.order_by(ComputerOwnership.computer_id)
+            .limit(literal(limit, literal_execute=True))
+            .offset(offset)
+            .subquery()
+        )
         statement = (
             select(Computer)
-            .join(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
-            .where(*conditions)
+            .join(page, page.c.computer_id == Computer.id)
             .options(joinedload(Computer.resources))
+            .order_by(page.c.computer_id)
         )
-        rows = await session.scalars(statement.order_by(Computer.id).limit(limit).offset(offset))
-        response.headers["X-Total-Count"] = str(
-            await session.scalar(
-                select(func.count())
-                .select_from(Computer)
-                .join(ComputerOwnership)
-                .where(*conditions)
-            )
-        )
-        return [public(row) for row in rows.unique()]
+        rows = await session.scalars(statement)
+        # A foreign key and a unique computer_id make ownership rows sufficient
+        # for exact counts unless availability has to inspect the computer.
+        count = select(func.count()).select_from(eligible.subquery())
+        response.headers["X-Total-Count"] = str(await session.scalar(count))
+        return [computer_view(row, now) for row in rows.unique()]
 
 
 @router.get("/computers/{computer_id}", response_model=out.Computer)
 async def get_computer(computer_id: UUID, request: Request):
     async with request.app.state.db.read() as session:
-        return public(
-            await computer_for_user(session, await authenticate(session, request), computer_id)
+        computer = await computer_for_user(
+            session, await authenticate(session, request), computer_id
         )
+        return computer_view(computer, request.app.state.clock())
 
 
 @router.patch("/computers/{computer_id}", response_model=out.Computer)
@@ -155,6 +175,7 @@ async def update_computer(computer_id: UUID, data: ComputerUpdate, request: Requ
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         computer = await computer_for_user(session, principal, computer_id, admin=True)
+        now = request.app.state.clock()
         for key, value in data.model_dump(exclude_unset=True).items():
             if value is None and key != "name":
                 raise HTTPException(422, f"{key} cannot be null")
@@ -165,7 +186,7 @@ async def update_computer(computer_id: UUID, data: ComputerUpdate, request: Requ
                     await change_resource(
                         session,
                         row,
-                        request.app.state.clock(),
+                        now,
                         "capacity_changed",
                         total=value,
                         actor_id=principal.actor_id,
@@ -176,15 +197,15 @@ async def update_computer(computer_id: UUID, data: ComputerUpdate, request: Requ
                         computer,
                         type_id,
                         value,
-                        request.app.state.clock(),
+                        now,
                         principal.actor_id,
                     )
             else:
                 setattr(computer, key, value)
         # The database also enforces that capacity cannot fall below reservations.
         await session.flush()
-        await sync_capacity(session, computer, request.app.state.clock())
-        return public(computer)
+        await sync_capacity(session, computer, now)
+        return computer_view(computer, now)
 
 
 @router.delete("/computers/{computer_id}", status_code=204)
@@ -192,13 +213,14 @@ async def delete_computer(computer_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         computer = await computer_for_user(session, principal, computer_id, admin=True)
-        await disconnect_idle(session, computer, request.app.state.clock())
+        now = request.app.state.clock()
+        await disconnect_idle(session, computer, now)
         for row in computer.resources:
             if row.deleted_at is None:
                 await change_resource(
                     session,
                     row,
-                    request.app.state.clock(),
+                    now,
                     "computer_deleted",
                     deleted=True,
                     actor_id=principal.actor_id,
@@ -292,7 +314,8 @@ async def update_owner(ownership_id: UUID, data: OwnerInput, request: Request):
         row = await owned(session, ComputerOwnership, ownership_id, principal, admin=True)
         values = await validate_owner(session, principal, data)
         computer = await session.get(Computer, row.computer_id)
-        await disconnect_idle(session, computer, request.app.state.clock())
+        now = request.app.state.clock()
+        await disconnect_idle(session, computer, now)
         before = (row.user_id, row.company_id)
         for key, value in values.items():
             setattr(row, key, value)
@@ -302,7 +325,7 @@ async def update_owner(ownership_id: UUID, data: OwnerInput, request: Request):
             computer,
             before,
             (row.user_id, row.company_id),
-            request.app.state.clock(),
+            now,
             principal.actor_id,
         )
         return public(row)
@@ -314,13 +337,14 @@ async def delete_owner(ownership_id: UUID, request: Request):
         principal = await authenticate(session, request, "manage")
         row = await owned(session, ComputerOwnership, ownership_id, principal, admin=True)
         computer = await session.get(Computer, row.computer_id)
-        await disconnect_idle(session, computer, request.app.state.clock())
+        now = request.app.state.clock()
+        await disconnect_idle(session, computer, now)
         await transfer_resources(
             session,
             computer,
             (row.user_id, row.company_id),
             (None, None),
-            request.app.state.clock(),
+            now,
             principal.actor_id,
         )
         await session.delete(row)

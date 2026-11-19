@@ -1,0 +1,71 @@
+@property --tmc-widget-layout-gap {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 16px;
+}
+
+.tmc-widget-layout {
+  --tmc-widget-layout-gap: 16px;
+  --tmc-widget-layout-primary-track: 1fr;
+  box-sizing: border-box;
+  container: tmc-widget-layout / inline-size;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.tmc-widget-layout__grid,
+.tmc-widget-layout__group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: max(0px, var(--tmc-widget-layout-gap, 16px));
+  min-inline-size: 0;
+}
+
+.tmc-widget-layout__group:empty {
+  display: none;
+}
+
+.tmc-widget-layout__group[data-tmc-widget-empty]:not(:empty, :focus-within),
+.tmc-widget-layout[data-tmc-widget-empty]:not(:focus-within) > .tmc-widget-layout__grid {
+  /* Keep empty tracks out of the layout and restore them before focus scrolls. */
+  display: contents !important;
+}
+
+:where(.tmc-widget-layout[data-tmc-widget-empty]:not([hidden], :focus-within)) {
+  display: contents;
+  /* A consumer's display rule can keep a box, which must stay out of the grid. */
+  position: absolute !important;
+  inline-size: 0 !important;
+  block-size: 0 !important;
+  clip-path: inset(50%) !important;
+}
+
+.tmc-widget-layout__group > [hidden]:not([hidden="until-found" i]) {
+  /* Preserve native hidden semantics for widgets that set their own display. */
+  display: none !important;
+}
+
+@container tmc-widget-layout (min-width: 52rem) {
+  .tmc-widget-layout__grid:has(
+    > .tmc-widget-layout__aside:not(:empty, [data-tmc-widget-empty]:not(:focus-within))
+  ):has(
+    > :is(.tmc-widget-layout__lead, .tmc-widget-layout__following):not(:empty, [data-tmc-widget-empty]:not(:focus-within))
+  ) {
+    grid-template-columns: minmax(0, var(--tmc-widget-layout-primary-track)) minmax(0, 1fr);
+    grid-template-rows: auto;
+
+    > .tmc-widget-layout__aside {
+      grid-area: 1 / 2 / -1;
+    }
+
+    &:has(
+      > .tmc-widget-layout__lead:not(:empty, [data-tmc-widget-empty]:not(:focus-within))
+    ):has(
+      > .tmc-widget-layout__following:not(:empty, [data-tmc-widget-empty]:not(:focus-within))
+    ) {
+      /* Only the flexible row grows to fit a tall spanning sidebar. */
+      grid-template-rows: max-content minmax(0, 1fr);
+    }
+  }
+}

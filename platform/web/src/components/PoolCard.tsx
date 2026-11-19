@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useI18n } from "../lib/i18n";
-import { GiB, number } from "../lib/chart";
+import { GiB, day, number } from "../lib/chart";
 import type { Pool, Summary, CapacityHistory, Company } from "../lib/types";
 import { CapacityChart } from "./CapacityChart";
 import { ErrorBox, Icon, Loading } from "./UI";
@@ -23,10 +23,34 @@ export function RestrictedPoolCard({ company }: { company: Company }) {
     </section>
   );
 }
-export function Metrics({ summary }: { summary: Summary }) {
+export function Metrics({
+  summary,
+  compact = false,
+}: {
+  summary: Summary;
+  compact?: boolean;
+}) {
   const { t, locale } = useI18n();
   const cpu = summary.resources.find((r) => r.code === "cpu");
   const memory = summary.resources.find((r) => r.code === "memory");
+  const amount = (value: number) => {
+    const formatted = number(value, locale);
+    if (!compact) return formatted;
+    if (value > 0 && value < 0.01) {
+      return new Intl.NumberFormat(locale, {
+        maximumSignificantDigits: 3,
+        notation: value < 0.0001 ? "scientific" : "standard",
+      }).format(value);
+    }
+    if (value >= 10_000 && formatted.length > 8) {
+      const short = new Intl.NumberFormat(locale, {
+        notation: "compact",
+        maximumSignificantDigits: 3,
+      }).format(value);
+      return <abbr title={formatted}>{short}</abbr>;
+    }
+    return formatted;
+  };
   return (
     <div className="metrics">
       <div className="metric">
@@ -36,10 +60,10 @@ export function Metrics({ summary }: { summary: Summary }) {
         </span>
         <div className="metric-value">
           <span className="metric-free">
-            {number((cpu?.free || 0) / 1000, locale)}
+            {amount((cpu?.free || 0) / 1000)}
           </span>
           <span className="metric-total">
-            / {number((cpu?.total || 0) / 1000, locale)}
+            / {amount((cpu?.total || 0) / 1000)}
           </span>
         </div>
         <small>
@@ -60,10 +84,10 @@ export function Metrics({ summary }: { summary: Summary }) {
         </span>
         <div className="metric-value">
           <span className="metric-free">
-            {number((memory?.free || 0) / GiB, locale)}
+            {amount((memory?.free || 0) / GiB)}
           </span>
           <span className="metric-total">
-            / {number((memory?.total || 0) / GiB, locale)}
+            / {amount((memory?.total || 0) / GiB)}
           </span>
         </div>
         <small>
@@ -83,7 +107,7 @@ export function Metrics({ summary }: { summary: Summary }) {
           {t("connected")}
         </span>
         <div className="metric-value" data-testid="computer-count">
-          {number(summary.computer_count, locale)}
+          {amount(summary.computer_count)}
         </div>
         <small>
           <span
@@ -107,7 +131,7 @@ export function PoolCard({
   const { t } = useI18n();
   const state = useData(async (signal) => {
     const now = new Date();
-    const from = new Date(now.getTime() - 7 * 86400000);
+    const from = new Date(now.getTime() - 7 * day);
     const prefix = `${pool.kind}/${pool.id}/resources`;
     const [summary, history] = await Promise.all([
       api<Summary>(`${prefix}/summary?only_available=true`, { signal }),
@@ -119,9 +143,13 @@ export function PoolCard({
         : Promise.resolve(null),
     ]);
     return { summary, history };
-  }, `${pool.kind}/${pool.id}/${chart}/${revision}`);
+  }, `${pool.kind}/${pool.id}/${chart}`, chart, revision);
   return (
-    <section className="pool-card" aria-label={pool.name}>
+    <section
+      className="pool-card"
+      aria-label={pool.name}
+      aria-busy={chart && state.loading && state.data ? true : undefined}
+    >
       <header className="pool-card-header">
         <div className="pool-title">
           <span className="pool-icon">
@@ -141,14 +169,14 @@ export function PoolCard({
           {t("viewComputers")} <Icon name="arrow" size={16} />
         </Link>
       </header>
-      {state.loading ? (
+      {state.loading && !state.data ? (
         <Loading />
       ) : state.error ? (
         <ErrorBox error={state.error} retry={state.reload} />
       ) : (
         state.data && (
           <>
-            <Metrics summary={state.data.summary} />
+            <Metrics summary={state.data.summary} compact={chart} />
             {state.data.history && (
               <CapacityChart history={state.data.history} />
             )}

@@ -12,7 +12,9 @@ import {
 import { GiB, historyNow, reserve, seedHistory } from "./resources";
 import { resolve } from "node:path";
 import { openLanguages } from "./header-controls";
+import { openOrganizationMember } from "./organization-controls";
 import type { Locator } from "@playwright/test";
+import type { Membership } from "../../../../platform/web/src/lib/types";
 
 /** Effective visibility includes ancestor opacity and filter-based hiding. */
 async function effectivelyVisible(locator: Locator) {
@@ -252,11 +254,11 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     await expect(
       page.locator("h1:visible, #auth-title:visible").first(),
     ).toBeVisible();
-    await expect(page.locator(".loading")).toHaveCount(0);
+    await expect(page.locator(".loading:visible")).toHaveCount(0);
     await settleFonts();
-    if (name.startsWith("computer-")) {
-      // BenchmarkHistory scrolls and focuses in an animation frame after mount.
-      // Settle that frame before resetting the full-page capture to the top.
+    if (name.startsWith("computer-") || name.startsWith("organization-")) {
+      // Benchmark history and the organization tab controls can scroll before capture.
+      // Keep the sticky app header at the top for the full-page comparison.
       await page.evaluate(async () => {
         if (document.activeElement instanceof HTMLElement)
           document.activeElement.blur();
@@ -395,7 +397,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     { cpu_millis: 4000, memory_bytes: 12 * GiB },
   );
   await seedHistory(request, personal.id);
-  await seedHistory(request, shared.id);
+  await seedHistory(request, shared.id, "sparse");
   await page.goto("");
   await screenshot("overview");
   await page.goto("compute");
@@ -429,12 +431,68 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await expect(createDialog).toHaveScreenshot("organization-create-dialog.png");
   await page.keyboard.press("Escape");
   await expect(createDialog).not.toBeVisible();
+  for (const [first_name, last_name, role, alias] of [
+    ["Михаил", "Ким", "admin", "kim"], ["Нина", "Орлова", "user", "orlova"], ["Майя", "Соколова", "user", "sokolova"],
+    ["Данил", "Чен", "user", "chen"], ["София", "Левина", "user", "levina"],
+  ]) {
+    const user = await request.post(`${API}/users`, {
+      data: { first_name, last_name, email: `${nickname}_${alias}@example.com`, password },
+    });
+    expect(user.status()).toBe(201);
+    const grant = await request.post(`${API}/memberships`, { headers: headers(account), data: {
+      company_id: company.id, user_id: (await user.json()).id, role,
+    } });
+    expect(grant.status()).toBe(201);
+  }
+  const invite = await request.post(`${API}/invitations`, { headers: headers(account), data: {
+    company_id: company.id, identifier: "lab-guest@example.com", role: "user", expires_in_seconds: 86400,
+  } });
+  expect(invite.status()).toBe(201);
+  // Order real memberships before slicing so the five visible rows are deterministic.
+  await page.route(`**/v1/memberships?company_id=${company.id}&*`, async (route) => {
+    const url = new URL(route.request().url());
+    const limit = Number(url.searchParams.get("limit"));
+    url.searchParams.set("limit", "200");
+    const response = await route.fetch({ url: url.href });
+    const members: Membership[] = await response.json();
+    const order = ["creator", "admin", "user"];
+    members.sort((first, second) => order.indexOf(first.role) - order.indexOf(second.role)
+      || first.user.first_name.localeCompare(second.user.first_name, "ru"));
+    await route.fulfill({ response, json: members.slice(0, limit) });
+  });
+  // Keep the week and the chart shapes stable when CI runs on a different date.
+  const poolPoints = [
+    [1, 2000, 4, 1500, 2.5], [3, 4000, 12, 2500, 8], [5, 4000, 12, 0, 0],
+    [6, 4000, 12, 4000, 12], [8, 4000, 12, 4000, 12],
+  ].map(([day, cpu, memory, freeCpu, freeMemory]) => ({
+    at: new Date(Date.UTC(2026, 0, day)).toISOString(),
+    cpu_total_millis: cpu,
+    memory_total_bytes: memory * GiB,
+    cpu_free_millis: freeCpu,
+    memory_free_bytes: freeMemory * GiB,
+  }));
+  await page.route(`**/v1/companies/${company.id}/resources/pool-history`, (route) => route.fulfill({ json: {
+    from_time: poolPoints[0].at,
+    to_time: historyNow.toISOString(),
+    points: poolPoints,
+  } }));
   await page.goto(`organizations/${company.id}`);
-  await expect(page.locator(".member-row")).toHaveCount(1);
+  await expect(page.locator(".member-row")).toHaveCount(5);
+  await expect(page.locator(".organization-history[aria-busy='false']")).toHaveCount(2);
+  await expect(page.locator(".organization-computers")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator(".organization-overview")).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByRole("tab", { name: language === "ru" ? "Приглашения" : "Invitations", exact: true })).toContainText("1");
   await screenshot("organization-members");
+  await page.getByRole("tab", { name: language === "ru" ? "Приглашения" : "Invitations", exact: true }).click();
   await page.locator(".member-sharing summary").click();
   await screenshot("organization-sharing");
-  await page
+  await page.getByRole("tab", { name: language === "ru" ? "Участники" : "Members", exact: true }).click();
+  await page.getByRole("link", { name: language === "ru" ? "Смотреть всех 6" : "View all 6" }).click();
+  await expect(page.locator(".member-directory .member-row")).toHaveCount(6);
+  await screenshot("organization-directory-members");
+  const self = page.getByRole("article", { name: "Алиса Волкова", exact: true });
+  await openOrganizationMember(self);
+  await self
     .getByRole("button", {
       name: language === "ru" ? "Изменить права" : "Edit permissions",
       exact: true,

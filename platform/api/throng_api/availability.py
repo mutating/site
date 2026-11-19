@@ -4,13 +4,33 @@ from collections import defaultdict
 from datetime import UTC, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 
-from throng_api.models import AvailabilityBaseline, CapacityInterval, ComputerOwnership
+from throng_api.models import AvailabilityBaseline, CapacityInterval, Computer, ComputerOwnership
+
+
+def active_computer_session(computer, now):
+    return bool(
+        computer.online
+        and computer.session_id
+        and computer.lease_expires_at
+        and computer.lease_expires_at > now
+    )
+
+
+def available_computer_filter(now):
+    return and_(
+        Computer.enabled.is_(True),
+        Computer.accepting_work.is_(True),
+        Computer.online.is_(True),
+        Computer.session_id.is_not(None),
+        Computer.lease_expires_at > now,
+    )
 
 
 async def sync_capacity(session, computer, now):
     """Called inside the same serialized transaction as every availability mutation."""
+    now = max(now, session.info.get("resource_time", now))
     await session.flush()
     current = await session.scalar(
         select(CapacityInterval).where(
@@ -24,10 +44,7 @@ async def sync_capacity(session, computer, now):
         owner
         and computer.enabled
         and computer.accepting_work
-        and computer.online
-        and computer.session_id
-        and computer.lease_expires_at
-        and computer.lease_expires_at > now
+        and active_computer_session(computer, now)
     )
     value = (
         (
@@ -86,7 +103,7 @@ async def sync_capacity(session, computer, now):
     await session.flush()
 
 
-async def capacity_history(session, owner, start, end, now):
+async def capacity_history(session, owner, start, end, now, *, include_free=False):
     if start.tzinfo is None or end.tzinfo is None or start >= end:
         raise HTTPException(422, "from and to must be timezone-aware, with from < to")
     try:
@@ -112,26 +129,35 @@ async def capacity_history(session, owner, start, end, now):
         if owner[0]
         else CapacityInterval.company_id == owner[1]
     )
-    rows = (
-        await session.scalars(
-            select(CapacityInterval).where(
-                condition,
-                CapacityInterval.starts_at < ending,
-                CapacityInterval.ends_at > beginning,
-            )
+    stored_fields = ("cpu_millis", "memory_bytes", "cpu_occupied_millis", "memory_occupied_bytes")
+    rows = await session.execute(
+        select(
+            CapacityInterval.starts_at,
+            CapacityInterval.ends_at,
+            *(getattr(CapacityInterval, field) for field in stored_fields),
+        ).where(
+            condition, CapacityInterval.starts_at < ending, CapacityInterval.ends_at > beginning
         )
-    ).all()
-    fields = ("cpu_millis", "memory_bytes", "cpu_occupied_millis", "memory_occupied_bytes")
+    )
+    fields = stored_fields + (("cpu_free_millis", "memory_free_bytes") if include_free else ())
     deltas = defaultdict(lambda: [0] * len(fields))
     deltas[beginning] = [0] * len(fields)
-    for row in rows:
-        if row.ends_at <= row.starts_at:
+    for starts_at, ends_at, cpu, memory, occupied_cpu, occupied_memory in rows:
+        if ends_at <= starts_at:
             continue
-        left = max(row.starts_at, beginning)
-        for index, field in enumerate(fields):
-            deltas[left][index] += getattr(row, field)
-            if row.ends_at < ending:
-                deltas[row.ends_at][index] -= getattr(row, field)
+        left = max(starts_at, beginning)
+        values = [cpu, memory, occupied_cpu, occupied_memory]
+        if include_free:
+            values.extend(
+                (
+                    max(0, cpu - occupied_cpu),
+                    max(0, memory - occupied_memory),
+                )
+            )
+        for index, value in enumerate(values):
+            deltas[left][index] += value
+            if ends_at < ending:
+                deltas[ends_at][index] -= value
     totals = [0] * len(fields)
     for at, changes in sorted(deltas.items()):
         totals = [value + delta for value, delta in zip(totals, changes, strict=True)]

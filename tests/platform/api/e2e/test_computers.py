@@ -1,5 +1,6 @@
 """Computer inventory, ownership, capacity and enrollment exercised through HTTP."""
 
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -52,6 +53,24 @@ async def test_nullable_patch_fields_do_not_erase_required_capacity(api, compute
     path = f"/v1/computers/{computer['id']}"
     assert (await api.patch(path, json={field: None})).status_code == 422
     assert (await api.get(path)).json()[field] == computer[field]
+
+
+@pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
+async def test_inventory_reports_session_expiry_before_controller_sweep(
+    api, agent, computer, clock
+):
+    """Both reads report the server's effective session state without rewriting online."""
+    path = f"/v1/computers/{computer['id']}"
+    assert (await api.get(path)).json()["session_active"]
+    assert (await api.get("/v1/computers", params={"only_available": True})).json()[0][
+        "session_active"
+    ]
+    clock.now = datetime.fromisoformat(agent["session"]["lease_expires_at"])
+    detail = (await api.get(path)).json()
+    row = (await api.get("/v1/computers")).json()[0]
+    assert detail["online"] and row["online"]
+    assert not detail["session_active"] and not row["session_active"]
+    assert (await api.get("/v1/computers", params={"only_available": True})).json() == []
 
 
 async def test_busy_computer_cannot_lose_owner_or_reserved_capacity(

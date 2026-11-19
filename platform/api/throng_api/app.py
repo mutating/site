@@ -134,7 +134,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
         allow_headers=["Content-Type", "X-Requested-With", "Authorization"],
-        expose_headers=["X-Total-Count"],
+        expose_headers=["X-Total-Count", "X-Total-Unfiltered-Count"],
     )
 
     @app.exception_handler(RequestValidationError)
@@ -203,6 +203,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
     for router in (
         browser.router,
         avatars.router,
+        avatars.company_router,
         accounts.public_router,
         accounts.router,
         token_checks.router,

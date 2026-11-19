@@ -3,6 +3,7 @@ import {
   test,
   expect,
   login,
+  startSession,
   API,
   headers,
   makeAccount,
@@ -120,6 +121,12 @@ test("one directory prioritizes pending, authored and member organizations and s
   await expect(
     page.locator('[data-testid="organization-computer-count"]'),
   ).toHaveText(["2", "2", "0", "4", "1", "0", "6", "2", "0"]);
+  if ((page.viewportSize()?.width ?? 0) > 640) {
+    const leftEdges = await page.locator(".organization-computers-metric").evaluateAll(
+      (metrics) => metrics.map((metric) => metric.getBoundingClientRect().left),
+    );
+    expect(leftEdges).toEqual(leftEdges.map(() => leftEdges[0]));
+  }
   await expect(page.locator(".organization-row")).toHaveCount(9);
   await expect(
     page.getByRole("heading", { name: "Созданные вами", exact: true }),
@@ -354,6 +361,51 @@ test("creation inserts once and resorts immediately while the background list re
   expect(
     saved.filter((row: { name: string }) => row.name === "Новая <Team>"),
   ).toHaveLength(1);
+});
+
+test("a late organization creation keeps the page the user chose", async ({
+  page,
+  account,
+}) => {
+  const name = "Команда создана после возврата";
+  await startSession(page, account);
+  await page.goto("cloud");
+  const nav = page.getByRole("navigation", { name: "Навигация кабинета" });
+  const directory = nav.getByRole("link", { name: "Организации", exact: true });
+  await directory.click();
+  await page.getByRole("searchbox").fill("Старый поиск");
+  await page.getByRole("button", { name: "Создать организацию", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Создать организацию" });
+  await dialog.getByLabel("Название организации").fill(name);
+
+  let release!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const pending = new Promise<void>((resolve) => { started = resolve; });
+  await page.route("**/v1/companies", async (route) => {
+    if (route.request().method() === "POST") {
+      started();
+      await gate;
+    }
+    await route.continue();
+  });
+  try {
+    await dialog.getByRole("button", { name: "Создать организацию", exact: true }).click();
+    await pending;
+    await page.goBack();
+    await expect(page).toHaveURL(/\/cloud$/);
+    const created = page.waitForResponse((response) =>
+      response.url() === `${API}/companies` && response.request().method() === "POST",
+    );
+    release();
+    expect((await created).status()).toBe(201);
+    await page.waitForLoadState("networkidle");
+    await expect(page).toHaveURL(/\/cloud$/);
+    await directory.click();
+    await expect(page.getByRole("link", { name: `Открыть организацию: ${name}` })).toBeVisible();
+  } finally {
+    release();
+  }
 });
 
 test("acceptance moves an invited creator into the membership group and updates counts without navigation", async ({

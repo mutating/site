@@ -158,6 +158,28 @@ export function Example() {
 выполнен, `controller` равен `null`. Контроллер предоставляет `setTheme`,
 `toggle` и `useSystemTheme`. `ThemeToggle` требует провайдер.
 
+### Раскладка виджетов
+
+`WidgetLayout` размещает основную и боковую группы виджетов. При ширине
+контейнера от `52rem` основная группа и `aside` стоят рядом. Виджеты основной
+группы идут друг за другом с отступом `gap` при любой высоте `aside`.
+В узком контейнере группы идут в порядке DOM `lead`, `aside`, `children`.
+
+```tsx
+import "@mutating/ui/styles/widget-layout.css";
+import { WidgetLayout } from "@mutating/ui/react";
+
+<WidgetLayout gap="18px" primaryWeight={1.32} lead={<Inventory />} aside={<Team />}>
+  <History />
+</WidgetLayout>
+```
+
+Каждая группа может содержать несколько виджетов. Пустые группы, виджеты с
+`hidden` и пустые вложенные раскладки освобождают место. `gap` принимает длину
+CSS и задаёт общий отступ в обеих осях. Значение
+по умолчанию `16px`. Положительный `primaryWeight` задаёт отношение ширины
+основной группы к боковой, по умолчанию `1`.
+
 ## Настройка хэдера
 
 `HeaderConfig` — общий контракт React и Hugo. Один массив `items` задаёт оба

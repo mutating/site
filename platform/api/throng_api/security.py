@@ -230,6 +230,7 @@ async def company_access(
             raise HTTPException(403, "Organization permission required")
     elif admin and member.role not in {"creator", "admin"}:
         raise HTTPException(403, "Company administrator required")
+    return member
 
 
 async def owner_access(session, principal, owner, admin=False):
@@ -259,7 +260,7 @@ def membership_permission(permission):
     )
 
 
-def owned_filter(model, principal):
+def owned_filter(model, principal, *, company_id=None):
     """Authorize live membership and owner in the same statement that reads resource data."""
     companies = select(Membership.company_id).where(
         Membership.user_id == (principal.user_id or principal.actor_id)
@@ -267,8 +268,17 @@ def owned_filter(model, principal):
     if principal.permission:
         companies = companies.where(membership_permission(principal.permission))
     if principal.company_id:
-        companies = companies.where(membership_permission("tokens.manage"))
-        return and_(model.company_id == principal.company_id, model.company_id.in_(companies))
+        companies = companies.where(
+            Membership.company_id == principal.company_id,
+            membership_permission("tokens.manage"),
+        )
+        if company_id is None:
+            company_id = principal.company_id
+    if company_id is not None:
+        return and_(
+            model.company_id == company_id,
+            companies.where(Membership.company_id == company_id).exists(),
+        )
     return or_(
         model.user_id == principal.user_id,
         and_(model.company_id.is_not(None), model.company_id.in_(companies)),

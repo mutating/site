@@ -32,8 +32,8 @@ async def paused_computer_list(app, shared_review_computer):
         if (
             not entered.is_set()
             and statement.startswith("SELECT")
-            and "JOIN computer_ownerships" in statement
-            and "ORDER BY computers.id" in statement
+            and "computer_ownerships" in statement
+            and "LEFT OUTER JOIN computer_resources" in statement
         ):
             entered.set()
             await_only(resume.wait())

@@ -5,6 +5,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from throng_api.benchmark_schemas import (
+    BenchmarkAggregatedScores,
+    BenchmarkReferenceMachine,
+    BenchmarkReferenceRun,
+    Score,
+)
 from throng_api.permissions import Permission
 from throng_api.schemas import Role, Scope
 
@@ -38,6 +44,10 @@ class BenchmarkResult(Identity):
     benchmark_name: str
     number: float
     benchmarker_version: str
+    pi_equivalent: Score | None = None
+    reference_machine: BenchmarkReferenceMachine | None = None
+    reference_run: BenchmarkReferenceRun | None = None
+    aggregated_scores: BenchmarkAggregatedScores | None = None
 
 
 class Owner(BaseModel):
@@ -45,7 +55,12 @@ class Owner(BaseModel):
     company_id: str | None
 
 
-class Company(Identity):
+class CompanyAppearance(BaseModel):
+    avatar_version: str | None = None
+    background_version: str | None = None
+
+
+class Company(Identity, CompanyAppearance):
     name: str
     name_key: str = ""
     created_by_user_id: str
@@ -195,6 +210,7 @@ class Computer(Identity):
     certificate_sha256: str | None
     enabled: bool
     online: bool
+    session_active: bool
     session_id: str | None
     last_seen_at: datetime | None
     lease_expires_at: datetime | None
@@ -356,6 +372,11 @@ class ResourceSummary(BaseModel):
     computer_count: int
 
 
+class PoolSummary(BaseModel):
+    inventory: ResourceSummary
+    available: ResourceSummary
+
+
 class CapacityPoint(BaseModel):
     at: datetime
     cpu_millis: int
@@ -370,6 +391,21 @@ class CapacityHistory(BaseModel):
     as_of: datetime
     available_from: datetime
     points: list[CapacityPoint]
+
+
+class PoolHistoryPoint(BaseModel):
+    at: datetime
+    cpu_total_millis: int
+    memory_total_bytes: int
+    cpu_free_millis: int
+    memory_free_bytes: int
+
+
+class PoolHistory(BaseModel):
+    from_time: datetime
+    to_time: datetime
+    points: list[PoolHistoryPoint]
+    sampled: bool
 
 
 class ResourceHistoryPoint(BaseModel):

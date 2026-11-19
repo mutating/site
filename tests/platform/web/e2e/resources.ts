@@ -58,11 +58,12 @@ export async function reserve(
 export async function seedHistory(
   request: APIRequestContext,
   computerId: string,
+  pattern: "full" | "sparse" = "full",
 ) {
   const response = await request.post(
     "http://127.0.0.1:18100/__test__/history",
     {
-      data: { computer_id: computerId },
+      data: { computer_id: computerId, pattern },
     },
   );
   expect(response.status()).toBe(200);
