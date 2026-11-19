@@ -5,6 +5,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from throng_api.benchmark_schemas import (
+    BenchmarkAggregatedScores,
+    BenchmarkReferenceMachine,
+    BenchmarkReferenceRun,
+    Score,
+)
 from throng_api.permissions import Permission
 from throng_api.schemas import Role, Scope
 
@@ -38,6 +44,10 @@ class BenchmarkResult(Identity):
     benchmark_name: str
     number: float
     benchmarker_version: str
+    pi_equivalent: Score | None = None
+    reference_machine: BenchmarkReferenceMachine | None = None
+    reference_run: BenchmarkReferenceRun | None = None
+    aggregated_scores: BenchmarkAggregatedScores | None = None
 
 
 class Owner(BaseModel):

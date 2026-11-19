@@ -3,7 +3,7 @@
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select, update
 
 from throng_api import outputs as out
 from throng_api.benchmark_schemas import (
@@ -14,7 +14,13 @@ from throng_api.benchmark_schemas import (
 )
 from throng_api.computers import computer_for_user
 from throng_api.device_security import agent_device_proof
-from throng_api.models import BenchmarkResult, Computer, ComputerOwnership, utcnow
+from throng_api.models import (
+    BenchmarkAggregateInvalidation,
+    BenchmarkResult,
+    Computer,
+    ComputerOwnership,
+    utcnow,
+)
 from throng_api.security import (
     access_token_scheme,
     agent_auth,
@@ -34,7 +40,7 @@ agent_router = APIRouter(
 )
 
 
-async def record_run(session, computer_id, version, measurements, run_id):
+async def record_run(session, computer_id, version, measurements, run_id, *, aggregated_scores):
     # Clients keep this ID across transport retries and generate a new one for
     # each actual run. Legacy clients without an ID create a run per upload.
     run_id = str(run_id or uuid4())
@@ -49,14 +55,27 @@ async def record_run(session, computer_id, version, measurements, run_id):
     if any(row.benchmarker_version != version for row in existing):
         raise HTTPException(409, "Benchmark run already has a different tooling version")
     by_name = {row.benchmark_name: row for row in existing}
-    recorded_at = existing[0].created_at if existing else utcnow()
+    first = existing[0] if existing else None
+    recorded_at = first.created_at if first else utcnow()
+    # Each row of the run carries the same aggregate, including when it arrives
+    # after some measurements have already been recorded.
+    scores = first.aggregated_scores if first else None
+    if (
+        aggregated_scores is not None
+        and aggregated_scores.pi_equivalent is not None
+        and await session.get(BenchmarkAggregateInvalidation, (computer_id, run_id)) is None
+    ):
+        submitted_scores = aggregated_scores.model_dump()
+        if scores is None:
+            scores = submitted_scores
+            for row in existing:
+                row.aggregated_scores = scores
+        elif scores != submitted_scores:
+            raise HTTPException(409, "Benchmark run already has different aggregated scores")
     results = []
     for measurement in measurements:
         row = by_name.get(measurement.benchmark_name)
-        if row is not None:
-            if row.number != measurement.number:
-                raise HTTPException(409, "Benchmark run already has a different result")
-        else:
+        if row is None:
             row = BenchmarkResult(
                 computer_id=computer_id,
                 run_id=run_id,
@@ -64,58 +83,91 @@ async def record_run(session, computer_id, version, measurements, run_id):
                 benchmark_name=measurement.benchmark_name,
                 benchmarker_version=version,
                 number=measurement.number,
+                aggregated_scores=scores,
             )
             session.add(row)
+        elif row.number != measurement.number:
+            raise HTTPException(409, "Benchmark run already has a different result")
+        metadata = measurement.model_dump(
+            include={"pi_equivalent", "reference_machine", "reference_run"}, exclude_none=True
+        )
+        for field, value in metadata.items():
+            previous = getattr(row, field)
+            if previous is None:
+                setattr(row, field, value)
+            elif previous != value:
+                raise HTTPException(409, "Benchmark run already has different measurement metadata")
         await session.flush()
         results.append(public(row))
     return results
 
 
-@router.post("/benchmark-results", status_code=201, response_model=out.BenchmarkResult)
+@router.post(
+    "/benchmark-results",
+    status_code=201,
+    response_model=out.BenchmarkResult,
+    response_model_exclude_none=True,
+)
 async def create_result(data: BenchmarkCreate, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         computer = await computer_for_user(session, principal, data.computer_id, admin=True)
         return (
-            await record_run(session, computer.id, data.benchmarker_version, [data], data.run_id)
+            await record_run(
+                session,
+                computer.id,
+                data.benchmarker_version,
+                [data],
+                data.run_id,
+                aggregated_scores=data.aggregated_scores,
+            )
         )[0]
 
 
 async def results_for_computer(session, request, computer_id, latest_only):
     principal = await authenticate(session, request)
     computer = await computer_for_user(session, principal, computer_id)
-    rows = list(
-        await session.scalars(
-            select(BenchmarkResult)
-            .join(Computer, Computer.id == BenchmarkResult.computer_id)
-            .outerjoin(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
-            .where(
-                BenchmarkResult.computer_id == computer.id,
-                # A transfer can commit after the initial computer check; read
-                # measurements only within the owner scope of this statement.
-                or_(
-                    owned_filter(ComputerOwnership, principal),
-                    and_(
-                        ComputerOwnership.id.is_(None),
-                        Computer.registered_by_user_id == principal.user_id,
-                    ),
+    query = (
+        select(BenchmarkResult)
+        .join(Computer, Computer.id == BenchmarkResult.computer_id)
+        .outerjoin(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
+        .where(
+            BenchmarkResult.computer_id == computer.id,
+            # A transfer can commit after the initial computer check; read
+            # measurements only within the owner scope of this statement.
+            or_(
+                owned_filter(ComputerOwnership, principal),
+                and_(
+                    ComputerOwnership.id.is_(None),
+                    Computer.registered_by_user_id == principal.user_id,
                 ),
-            )
+            ),
         )
     )
+    if latest_only:
+        # Rank identifiers within each version and name before loading the results
+        # and their calibration JSON. The owner check stays in the same statement.
+        ranked = query.with_only_columns(
+            BenchmarkResult.id,
+            func.row_number()
+            .over(
+                partition_by=(BenchmarkResult.benchmarker_version, BenchmarkResult.benchmark_name),
+                order_by=(BenchmarkResult.created_at.desc(), BenchmarkResult.run_id.desc()),
+            )
+            .label("position"),
+        ).subquery()
+        query = (
+            select(BenchmarkResult)
+            .join(ranked, ranked.c.id == BenchmarkResult.id)
+            .where(ranked.c.position == 1)
+        )
+    rows = list(await session.scalars(query))
     if not rows:
         # Preserve valid empty inventories while hiding access lost in a transfer.
         await computer_for_user(session, principal, computer_id)
     if rows and latest_only:
         version = max((row.benchmarker_version for row in rows), key=semver_key)
         rows = [row for row in rows if row.benchmarker_version == version]
-        # Keep the newest measurement of each name in the latest tooling version.
-        # Suites uploaded together share a timestamp, so concurrent complete
-        # suites cannot produce a pair assembled from different runs.
-        latest = {}
-        for row in sorted(rows, key=lambda row: (row.created_at, row.run_id)):
-            latest[row.benchmark_name] = row
-        rows = list(latest.values())
     return [
         public(row)
         for row in sorted(
@@ -130,8 +182,14 @@ async def results_for_computer(session, request, computer_id, latest_only):
     ]
 
 
-@router.get("/benchmark-results", response_model=list[out.BenchmarkResult])
-@router.get("/computers/{computer_id}/benchmark-results", response_model=list[out.BenchmarkResult])
+@router.get(
+    "/benchmark-results", response_model=list[out.BenchmarkResult], response_model_exclude_none=True
+)
+@router.get(
+    "/computers/{computer_id}/benchmark-results",
+    response_model=list[out.BenchmarkResult],
+    response_model_exclude_none=True,
+)
 async def list_results(computer_id: UUID, request: Request, latest_only: bool = True):
     """Return the newest result per name in the greatest SemVer, or all runs."""
     async with request.app.state.db.read() as session:
@@ -147,17 +205,42 @@ async def result_for_user(session, request, result_id, *, write=False):
     return row
 
 
-@router.get("/benchmark-results/{result_id}", response_model=out.BenchmarkResult)
+async def invalidate_run_aggregate(session, row):
+    computer_id, run_id = row.computer_id, row.run_id
+    if await session.get(BenchmarkAggregateInvalidation, (computer_id, run_id)) is None:
+        session.add(BenchmarkAggregateInvalidation(computer_id=computer_id, run_id=run_id))
+    await session.execute(
+        update(BenchmarkResult)
+        .where(
+            BenchmarkResult.computer_id == computer_id,
+            BenchmarkResult.run_id == run_id,
+        )
+        .values(aggregated_scores=None)
+    )
+
+
+@router.get(
+    "/benchmark-results/{result_id}",
+    response_model=out.BenchmarkResult,
+    response_model_exclude_none=True,
+)
 async def get_result(result_id: UUID, request: Request):
     async with request.app.state.db.read() as session:
         return public(await result_for_user(session, request, result_id))
 
 
-@router.patch("/benchmark-results/{result_id}", response_model=out.BenchmarkResult)
+@router.patch(
+    "/benchmark-results/{result_id}",
+    response_model=out.BenchmarkResult,
+    response_model_exclude_none=True,
+)
 async def update_result(result_id: UUID, data: BenchmarkUpdate, request: Request):
     async with request.app.state.db.write() as session:
         row = await result_for_user(session, request, result_id, write=True)
-        row.number = data.number
+        if row.number != data.number:
+            row.number = data.number
+            row.pi_equivalent = None
+            await invalidate_run_aggregate(session, row)
         await session.flush()
         return public(row)
 
@@ -165,14 +248,23 @@ async def update_result(result_id: UUID, data: BenchmarkUpdate, request: Request
 @router.delete("/benchmark-results/{result_id}", status_code=204)
 async def delete_result(result_id: UUID, request: Request):
     async with request.app.state.db.write() as session:
-        await session.delete(await result_for_user(session, request, result_id, write=True))
+        row = await result_for_user(session, request, result_id, write=True)
+        await session.delete(row)
+        await invalidate_run_aggregate(session, row)
 
 
-@agent_router.put("/benchmark-results", response_model=list[out.BenchmarkResult])
+@agent_router.put(
+    "/benchmark-results", response_model=list[out.BenchmarkResult], response_model_exclude_none=True
+)
 async def upload_suite(data: BenchmarkSuite, request: Request):
     """All measurements commit together. Works before the first agent session."""
     async with request.app.state.db.write() as session:
         computer = await agent_auth(session, request, require_session=False)
         return await record_run(
-            session, computer.id, data.benchmarker_version, data.results, data.run_id
+            session,
+            computer.id,
+            data.benchmarker_version,
+            data.results,
+            data.run_id,
+            aggregated_scores=data.aggregated_scores,
         )

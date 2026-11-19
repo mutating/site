@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from datetime import timedelta
 from uuid import UUID
 
 import anyio
@@ -63,6 +64,56 @@ async def test_older_version_run_retains_history_after_application_restart(
                 updated,
                 newer,
             ]
+
+
+async def test_latest_benchmarks_only_materialize_recent_results_with_calibration(
+    api, app, computer, clock
+):
+    """Read each version's latest result per benchmark without decoding older calibration objects."""
+    calibration = {
+        "started_at_unix_seconds": 1792767590.517391,
+        "start_temperature_c": 41.35,
+        "end_temperature_c": 66.65,
+        "warmup_seconds": 1248.0,
+        "results": [{"benchmark": "single_core", "score": 47231.227029007096}],
+    }
+    versions = ("0.0.9", "0.0.10")
+    names = ("multi_core", "single_core")
+    newest = {}
+    async with app.state.db.write() as session:
+        for index, version in enumerate(versions):
+            for run in range(6):
+                for name in names:
+                    result = BenchmarkResult(
+                        computer_id=computer["id"],
+                        benchmark_name=name,
+                        benchmarker_version=version,
+                        created_at=clock.now + timedelta(seconds=run // 2),
+                        run_id=str(UUID(int=1 + index * 6 + run)),
+                        number=run + 1,
+                        pi_equivalent=0.5,
+                        reference_run=calibration,
+                    )
+                    session.add(result)
+                    newest[version, name] = result
+
+    loaded = set()
+
+    def record_result(result, context):
+        loaded.add(result.id)
+
+    path = f"/v1/computers/{computer['id']}/benchmark-results"
+    event.listen(BenchmarkResult, "load", record_result)
+    try:
+        latest = await api.get(path)
+    finally:
+        event.remove(BenchmarkResult, "load", record_result)
+
+    assert latest.status_code == 200, latest.text
+    assert [row["id"] for row in latest.json()] == [newest[versions[-1], name].id for name in names]
+    assert all(row["reference_run"] == calibration for row in latest.json())
+    assert loaded <= {row.id for row in newest.values()}
+    assert len((await api.get(path, params={"latest_only": False})).json()) == 24
 
 
 async def test_mid_suite_database_failure_rolls_back_all_new_run_results(

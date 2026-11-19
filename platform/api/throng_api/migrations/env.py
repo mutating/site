@@ -14,6 +14,10 @@ if not config.get_main_option("sqlalchemy.url"):
 
 
 def run(connection):
+    # Alembic reads its revision before acquiring migration locks. A later
+    # guard needs to see writes that committed before its lock was acquired.
+    if connection.dialect.name == "postgresql":
+        connection = connection.execution_options(isolation_level="READ COMMITTED")
     context.configure(
         connection=connection,
         target_metadata=Base.metadata,

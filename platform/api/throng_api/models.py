@@ -294,6 +294,20 @@ class BenchmarkResult(Identity, Base):
     number: Mapped[float] = mapped_column(Float)
     benchmarker_version: Mapped[str] = mapped_column(String(200))
     run_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), default=new_id)
+    pi_equivalent: Mapped[float | None] = mapped_column(Float)
+    reference_machine: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    reference_run: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    aggregated_scores: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+
+
+class BenchmarkAggregateInvalidation(Base):
+    """Remember an invalidated aggregate even after all run results are deleted."""
+
+    __tablename__ = "benchmark_aggregate_invalidations"
+    computer_id: Mapped[str] = mapped_column(
+        ForeignKey("computers.id", ondelete="CASCADE"), primary_key=True
+    )
+    run_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
 
 
 class ComputerResource(Identity, Base):

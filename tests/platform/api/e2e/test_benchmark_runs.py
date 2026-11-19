@@ -164,21 +164,218 @@ async def test_concurrent_transport_replays_do_not_create_runs(api, agent_api, c
     assert len(await history(api, computer)) == 2
 
 
-@pytest.mark.parametrize("conflict", ["number", "version"])
+@pytest.mark.parametrize("conflict", ["number", "version", "pi_equivalent", "aggregated_scores"])
 async def test_conflicting_run_replay_is_atomic(api, agent_api, computer, conflict):
-    """A conflicting replay rolls back all additions and preserves previous results."""
+    """A conflicting replay rolls back all additions and preserves previous results and metadata."""
     run_id = str(uuid4())
-    first = await agent_api.put("/agent/v1/benchmark-results", json=suite(run_id))
+    initial = suite(run_id, version="0.0.9")
+    initial["results"][-1]["pi_equivalent"] = 2.0
+    initial["aggregated_scores"] = {"pi_equivalent": 1.0}
+    first = await agent_api.put("/agent/v1/benchmark-results", json=initial)
     assert first.status_code == 200
-    payload = suite(run_id, version="0.0.3" if conflict == "version" else "0.0.2")
-    payload["results"].insert(0, {"benchmark_name": "new_metric", "number": 99})
+    payload = {
+        **initial,
+        "results": [
+            {"benchmark_name": "new_metric", "number": 99},
+            *(row.copy() for row in initial["results"]),
+        ],
+    }
     if conflict == "number":
         payload["results"][-1]["number"] = 100
+    elif conflict == "version":
+        payload["benchmarker_version"] = "0.0.10"
+    elif conflict == "pi_equivalent":
+        payload["results"][-1]["pi_equivalent"] = 3.0
+    else:
+        payload["aggregated_scores"] = {"pi_equivalent": 2.0}
     rejected = await agent_api.put("/agent/v1/benchmark-results", json=payload)
     assert rejected.status_code == 409, rejected.text
-    rows = await history(api, computer)
-    assert {row["id"] for row in rows} == {row["id"] for row in first.json()}
-    assert {row["number"] for row in rows} == {10, 20}
+    assert await history(api, computer) == list(reversed(first.json()))
+
+
+async def test_incremental_uploads_keep_zero_scores_and_ignore_null_metadata(
+    api, agent_api, computer
+):
+    """Late aggregate and measurement scores fill gaps without creating new rows on retry."""
+    path = "/agent/v1/benchmark-results"
+    payload = {"benchmarker_version": "0.0.9", "run_id": str(uuid4())}
+    single = {"benchmark_name": "single_core", "number": 0}
+    first = {
+        **payload,
+        "results": [
+            {**single, "pi_equivalent": None, "reference_machine": None, "reference_run": None}
+        ],
+        "aggregated_scores": {"pi_equivalent": None},
+    }
+    response = await agent_api.put(path, json=first)
+    assert response.status_code == 200, response.text
+    original = response.json()[0]
+    assert {"pi_equivalent", "reference_machine", "reference_run", "aggregated_scores"}.isdisjoint(
+        original
+    )
+
+    scores = {"pi_equivalent": 0}
+    second = {
+        **payload,
+        "aggregated_scores": scores,
+        "results": [{"benchmark_name": "multi_core", "number": 20, "pi_equivalent": 2.0}],
+    }
+    response = await agent_api.put(path, json=second)
+    assert response.status_code == 200, response.text
+    multi = response.json()[0]
+    assert await history(api, computer) == [multi, {**original, "aggregated_scores": scores}]
+
+    response = await agent_api.put(
+        path, json={**payload, "results": [{**single, "pi_equivalent": 0}]}
+    )
+    updated = {**original, "pi_equivalent": 0, "aggregated_scores": scores}
+    assert response.status_code == 200, response.text
+    assert response.json() == [updated]
+    assert (await agent_api.put(path, json=first)).json() == [updated]
+    assert (await agent_api.put(path, json=second)).json() == [multi]
+    assert await history(api, computer) == [multi, updated]
+
+
+async def test_editing_number_invalidates_its_pi_equivalent_and_the_run_aggregate(
+    api, agent_api, computer
+):
+    """A corrected raw score clears the affected derived values while keeping the other measurements."""
+    payload = {"benchmarker_version": "0.0.9", "run_id": str(uuid4())}
+    scores = {"pi_equivalent": 1.0}
+    response = await api.post(
+        "/v1/benchmark-results",
+        json={
+            **payload,
+            "computer_id": computer["id"],
+            "benchmark_name": "single_core",
+            "number": 10,
+            "pi_equivalent": 0.5,
+            "aggregated_scores": scores,
+        },
+    )
+    assert response.status_code == 201, response.text
+    single = response.json()
+    response = await agent_api.put(
+        "/agent/v1/benchmark-results",
+        json={
+            **payload,
+            "results": [{"benchmark_name": "multi_core", "number": 20, "pi_equivalent": 2.0}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    multi = response.json()[0]
+    assert multi["aggregated_scores"] == single["aggregated_scores"] == scores
+
+    path = f"/v1/benchmark-results/{single['id']}"
+    assert (await api.patch(path, json={"number": 10})).json() == single
+    changed = await api.patch(path, json={"number": 11})
+    assert changed.status_code == 200, changed.text
+    single.pop("pi_equivalent")
+    single.pop("aggregated_scores")
+    multi.pop("aggregated_scores")
+    assert changed.json() == {**single, "number": 11}
+    assert await history(api, computer) == [multi, changed.json()]
+
+
+@pytest.mark.parametrize("aggregate_arrived", [False, True])
+async def test_editing_number_blocks_a_delayed_aggregate(
+    api, agent_api, computer, aggregate_arrived
+):
+    """The last chunk still saves its measurement after an edit, without restoring the old aggregate."""
+    path = "/agent/v1/benchmark-results"
+    run = {"benchmarker_version": "0.0.9", "run_id": str(uuid4())}
+    first = await agent_api.put(
+        path,
+        json={
+            **run,
+            "results": [{"benchmark_name": "single_core", "number": 10, "pi_equivalent": 0.5}],
+        },
+    )
+    assert first.status_code == 200, first.text
+    single = first.json()[0]
+    final_chunk = {
+        **run,
+        "results": [{"benchmark_name": "multi_core", "number": 20, "pi_equivalent": 2.0}],
+        "aggregated_scores": {"pi_equivalent": 1.0},
+    }
+    if aggregate_arrived:
+        saved = await agent_api.put(path, json=final_chunk)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()[0]["aggregated_scores"] == final_chunk["aggregated_scores"]
+
+    edited = await api.patch(f"/v1/benchmark-results/{single['id']}", json={"number": 40})
+    assert edited.status_code == 200, edited.text
+    for _ in range(2):
+        uploaded = await agent_api.put(path, json=final_chunk)
+        assert uploaded.status_code == 200, uploaded.text
+        multi = uploaded.json()[0]
+        assert multi["pi_equivalent"] == 2.0
+        assert "aggregated_scores" not in multi
+        assert await history(api, computer) == [multi, edited.json()]
+
+
+async def test_replacing_deleted_measurement_does_not_inherit_the_old_aggregate(
+    api, agent_api, computer
+):
+    """Replacing a deleted score under the same run ID keeps the aggregate of the old suite absent."""
+    payload = suite(str(uuid4()), version="0.0.9")
+    payload["results"][0]["pi_equivalent"] = 0.5
+    payload["results"][1]["pi_equivalent"] = 2.0
+    payload["aggregated_scores"] = {"pi_equivalent": 1.0}
+    path = "/agent/v1/benchmark-results"
+    uploaded = await agent_api.put(path, json=payload)
+    assert uploaded.status_code == 200, uploaded.text
+    single, multi = uploaded.json()
+
+    removed = await api.delete(f"/v1/benchmark-results/{single['id']}")
+    assert removed.status_code == 204, removed.text
+    replacement = await api.post(
+        "/v1/benchmark-results",
+        json={
+            "computer_id": computer["id"],
+            "run_id": payload["run_id"],
+            "benchmarker_version": "0.0.9",
+            "benchmark_name": "single_core",
+            "number": 40,
+            "pi_equivalent": 2.0,
+        },
+    )
+    assert replacement.status_code == 201, replacement.text
+    assert replacement.json()["pi_equivalent"] == 2.0
+    assert "aggregated_scores" not in replacement.json()
+    multi.pop("aggregated_scores")
+    replay = {**payload, "results": payload["results"][1:]}
+    assert (await agent_api.put(path, json=replay)).json() == [multi]
+    assert await history(api, computer) == [multi, replacement.json()]
+
+
+async def test_deleting_the_only_saved_measurement_blocks_a_delayed_aggregate(
+    api, agent_api, computer
+):
+    """Deleting the first chunk clears its run aggregate before the other measurement arrives."""
+    path = "/agent/v1/benchmark-results"
+    payload = suite(str(uuid4()), version="0.0.9")
+    single, multi = payload["results"]
+    first = await agent_api.put(
+        path, json={**payload, "results": [{**single, "pi_equivalent": 0.5}]}
+    )
+    assert first.status_code == 200, first.text
+    removed = await api.delete(f"/v1/benchmark-results/{first.json()[0]['id']}")
+    assert removed.status_code == 204, removed.text
+    assert await history(api, computer) == []
+
+    last_chunk = {
+        **payload,
+        "results": [{**multi, "pi_equivalent": 2.0}],
+        "aggregated_scores": {"pi_equivalent": 1.0},
+    }
+    uploaded = await agent_api.put(path, json=last_chunk)
+    assert uploaded.status_code == 200, uploaded.text
+    stored = uploaded.json()[0]
+    assert stored["pi_equivalent"] == 2.0
+    assert "aggregated_scores" not in stored
+    assert await history(api, computer) == [stored]
+    assert (await agent_api.put(path, json=last_chunk)).json() == [stored]
 
 
 async def test_owner_retries_and_incremental_agent_results_share_run_date(api, agent_api, computer):
