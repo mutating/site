@@ -2611,6 +2611,12 @@ html:lang(ru) .hero h1 {
   }
 }
 
+@media (max-width: 300px) {
+  .complexity-chart__curve-label--entropy {
+    right: 16px;
+  }
+}
+
 @media (max-width: 270px) {
   .manifesto h2,
   .complexity h2,
@@ -2626,7 +2632,8 @@ html:lang(ru) .hero h1 {
   }
 
   .complexity-chart__curve-label--entropy {
-    right: 24px;
+    right: 16px;
+    font-size: 9px;
   }
 }
 
