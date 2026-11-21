@@ -42,7 +42,7 @@ from sqlalchemy.exc import (
     StatementError,
 )
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload, make_transient_to_detached, selectinload
 from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateTable, DropTable
 
@@ -855,29 +855,33 @@ async def sqlite_case_distinct_owners(tmp_path, request):
     plan = TariffPlan(
         name="Example", plan_type=TariffPlanType(name="Example", field_types={}), field_values={}
     )
+    # Revision 0019 predates both the billing tables and the members' name_search
+    # column, so insert the legacy owners through explicit columns. The current
+    # models would otherwise send name_search, which this schema does not have.
+    # The dashed spelling only survives through direct SQL.
+    upper_id = literal(alternate) if spelling == "dashed" else alternate
     try:
         async with database.write() as session:
-            session.add(lower)
-            await session.flush()
-            session.add(Company(id=key, name="Lower", created_by_user_id=key))
-            if spelling == "dashed":
-                # The old schema accepts physical dashed keys through direct SQL.
+            for user in (lower, upper):
                 await session.execute(
                     insert(User.__table__).values(
-                        id=literal(alternate),
-                        email=upper.email,
-                        password_hash=upper.password_hash,
-                        first_name=upper.first_name,
-                        last_name=upper.last_name,
+                        id=upper_id if user is upper else key,
+                        email=user.email,
+                        password_hash=user.password_hash,
+                        first_name=user.first_name,
+                        last_name=user.last_name,
                     )
                 )
+            for company_id, name in ((key, "Lower"), (upper_id, company.name)):
                 await session.execute(
                     insert(Company.__table__).values(
-                        id=literal(alternate), name=company.name, created_by_user_id=key
+                        id=company_id, name=name, created_by_user_id=key
                     )
                 )
-            else:
-                session.add_all([upper, company])
+            # Keep the detached owners the ORM insert used to return, including
+            # the original spelling of their owner key.
+            for owner in (lower, upper, company):
+                make_transient_to_detached(owner)
         await anyio.to_thread.run_sync(alembic.upgrade, config, "head")
         async with database.write() as session:
             session.add(plan)

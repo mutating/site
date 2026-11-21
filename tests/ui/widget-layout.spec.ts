@@ -200,7 +200,9 @@ test("new widgets can focus input during mount in an empty group or layout", asy
         await example.getByRole("button", { name: action }).press("Enter");
         const input = example.getByLabel("New widget draft");
         await expect(input).toBeFocused();
-        await expect(input).toBeInViewport({ ratio: 0.95 });
+        // WebKit aligns a focused element to the viewport edge and can leave a
+        // sliver clipped, so require most of the input to be visible.
+        await expect(input).toBeInViewport({ ratio: 0.8 });
         await example.getByRole("button", { name: "Unmount focus widget" }).press("Enter");
         await expect(input).toHaveCount(0);
       }

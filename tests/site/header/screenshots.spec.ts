@@ -256,7 +256,7 @@ for (const [name, declaration] of [
         const mobile = width <= 1120;
         if (mobile) await page.locator((await selector(page, "mobile-menu")) + " > summary").click();
         const navigation = mobile ? "mobile-menu__links" : "main-nav";
-        await page.locator((await selector(page, navigation)) + " a").first().hover();
+        await page.locator((await selector(page, navigation)) + " > a").first().hover();
         await page.clock.runFor(512);
         pictures.push(await capture(page, "navigation-hover", mobile ? 560 : 160));
         const languageMenu = page.locator(await selector(page, `language-switcher--${mobile ? "mobile" : "desktop"}`));

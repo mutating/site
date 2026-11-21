@@ -20,7 +20,7 @@ concurrency:
 jobs:
   http_lint:
     name: HTTP client lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
 
   ui:
     name: Shared UI and site header
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,7 +63,7 @@ jobs:
 
   seo_contracts:
     name: SEO contracts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
@@ -97,7 +97,7 @@ jobs:
 
   pytest:
     name: ${{ matrix.suite.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.suite.timeout }}
     strategy:
       fail-fast: false
@@ -169,7 +169,7 @@ jobs:
       - pytest
       - seo_contracts
       - ui
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
@@ -185,7 +185,7 @@ jobs:
 
   api_sqlite:
     name: API SQLite (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -212,7 +212,7 @@ jobs:
 
   api_postgres:
     name: API PostgreSQL
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -238,7 +238,7 @@ jobs:
 
   web:
     name: Platform web, browsers and HTTPS
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
