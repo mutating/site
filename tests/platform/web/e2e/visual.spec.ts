@@ -4,17 +4,18 @@ import {
   expect,
   headers,
   makeAccount,
+  markAccountComputer,
   password,
   startSession,
   test,
   type Account,
 } from "./fixtures";
-import { GiB, historyNow, reserve, seedHistory } from "./resources";
+import { GiB, historyNow, reserve, seedHistory, useHistoricalPersonalCapacity } from "./resources";
 import { resolve } from "node:path";
 import { openLanguages } from "./header-controls";
 import { openOrganizationMember } from "./organization-controls";
-import type { Locator } from "@playwright/test";
-import type { Membership } from "../../../../platform/web/src/lib/types";
+import type { Locator, Page } from "@playwright/test";
+import type { Computer, ConnectedComputerPage, Membership } from "../../../../platform/web/src/lib/types";
 
 /** Effective visibility includes ancestor opacity and filter-based hiding. */
 async function effectivelyVisible(locator: Locator) {
@@ -227,11 +228,7 @@ test("responsive computer benchmarks and focused run history", async ({ page, re
   await expect(page).toHaveScreenshot("computer-responsive-history.png");
 });
 
-test("auth, every product page, populated and empty pools, and confirmation dialog", async ({
-  page,
-  request,
-}, info) => {
-  const { language, theme } = info.project.metadata;
+async function prepareDashboard(page: Page, language: string, theme: string) {
   await page.addInitScript(
     ({ language, theme }) => {
       localStorage.setItem("tmc-language", language);
@@ -256,7 +253,7 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     ).toBeVisible();
     await expect(page.locator(".loading:visible")).toHaveCount(0);
     await settleFonts();
-    if (name.startsWith("computer-") || name.startsWith("organization-")) {
+    if (name.startsWith("computer-") || name.startsWith("organization-") || name.startsWith("compute-")) {
       // Benchmark history and the organization tab controls can scroll before capture.
       // Keep the sticky app header at the top for the full-page comparison.
       await page.evaluate(async () => {
@@ -271,6 +268,83 @@ test("auth, every product page, populated and empty pools, and confirmation dial
     }
     await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true });
   }
+  return { settleFonts, screenshot };
+}
+
+test("Compute overview, connected computers, pool catalog and transfer dialog", async ({ page, request }, info) => {
+  const { language, theme } = info.project.metadata;
+  const { screenshot } = await prepareDashboard(page, language, theme);
+  const account = await makeAccount(request, "Алиса");
+  expect((await request.patch(`${API}/users/${account.id}`, {
+    headers: headers(account), data: { last_name: "Волкова" },
+  })).status()).toBe(200);
+  await startSession(page, account);
+  await page.goto("compute");
+  await expect(page.locator(".compute-status-summary dd")).toHaveText(["0", "0", "0"]);
+  await expect(page.locator(".compute-destination").last().locator("strong")).toHaveText("1");
+  await screenshot("compute-empty");
+  await page.goto("compute/computers");
+  await expect(page.locator(".empty-state")).toBeVisible();
+  await screenshot("compute-connected-empty");
+
+  const creation = await request.post(`${API}/companies`, {
+    headers: headers(account), data: { name: "Исследовательская лаборатория" },
+  });
+  expect(creation.status()).toBe(201);
+  const company = await creation.json();
+  const personal = await addComputer(request, account, "workstation-01");
+  const mini = await addComputer(request, account, "mini-node-02", undefined, true, { cpu_millis: 500, memory_bytes: 1.5 * GiB });
+  const shared = await addComputer(request, account, "lab-node-01", company.id, true, { cpu_millis: 4000, memory_bytes: 12 * GiB });
+  const offline = await addComputer(request, account, "portable-mac", undefined, false);
+  for (const computer of [personal, shared, offline]) await markAccountComputer(request, computer.id);
+  await seedHistory(request, personal.id);
+  await seedHistory(request, shared.id, "sparse");
+  const personalOrder = [personal.id, mini.id, offline.id];
+  await page.route(`${API}/users/${account.id}/resources/pool-overview`, async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json() as { computers: Computer[] };
+    snapshot.computers.sort((first, second) => personalOrder.indexOf(first.id) - personalOrder.indexOf(second.id));
+    await route.fulfill({ response, json: snapshot });
+  });
+  const connectedOrder = [personal.id, shared.id, offline.id];
+  await page.route(`${API}/connected-computers?limit=10&offset=0`, async (route) => {
+    const response = await route.fetch();
+    const inventory: ConnectedComputerPage = await response.json();
+    inventory.items.sort((first, second) => connectedOrder.indexOf(first.id) - connectedOrder.indexOf(second.id));
+    await route.fulfill({ response, json: inventory });
+  });
+
+  await page.goto("compute");
+  await expect(page.locator(".compute-status-summary dd")).toHaveText(["3", "2", "1"]);
+  await expect(page.locator(".compute-destination").last().locator("strong")).toHaveText("2");
+  await screenshot("compute");
+  await page.goto("compute/pools");
+  await expect(page.locator(".compute-pool-list [data-testid='organization-computer-count']")).toHaveText(["3", "1"]);
+  await screenshot("compute-pools");
+  await useHistoricalPersonalCapacity(page, account.id);
+  await page.goto("compute/pools/personal");
+  await expect(page.locator("[data-series]")).toHaveCount(4);
+  await expect(page.locator(".organization-computer-identity strong")).toHaveText([personal.name, mini.name, offline.name]);
+  await screenshot("compute-personal-pool");
+  await page.goto(`compute/pools/${company.id}`);
+  await expect(page.locator("[data-series]")).toHaveCount(4);
+  await screenshot("compute-organization-pool");
+  await page.goto("compute/computers");
+  await expect(page.locator(".connected-computer-row")).toHaveCount(3);
+  await screenshot("compute-connected-computers");
+  await page.locator(".connected-computer-row").filter({ hasText: "workstation-01" }).getByRole("button").click();
+  const transfer = page.getByRole("dialog");
+  await expect(transfer.getByRole("combobox").locator("option")).toHaveCount(2);
+  await transfer.getByRole("combobox").selectOption(company.id);
+  await screenshot("compute-move-pool");
+});
+
+test("auth, every product page, populated and empty pools, and confirmation dialog", async ({
+  page,
+  request,
+}, info) => {
+  const { language, theme } = info.project.metadata;
+  const { settleFonts, screenshot } = await prepareDashboard(page, language, theme);
   await page.goto("login");
   await screenshot("login");
   await expect(page.getByRole("banner")).toHaveScreenshot("header-compact.png");
@@ -325,8 +399,6 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   expect(response.status()).toBe(200);
   await page.goto("");
   await screenshot("overview-empty");
-  await page.goto("compute");
-  await screenshot("compute-empty");
   const first = await addComputer(request, account, "fixture-node-01");
   const second = await addComputer(request, account, "fixture-node-02");
   // The API orders by UUID. Give the first returned node the same visible data
@@ -400,9 +472,6 @@ test("auth, every product page, populated and empty pools, and confirmation dial
   await seedHistory(request, shared.id, "sparse");
   await page.goto("");
   await screenshot("overview");
-  await page.goto("compute");
-  await expect(page.locator("[data-series]")).toHaveCount(8);
-  await screenshot("compute");
   await page.goto(`compute/computers?user_id=${account.id}`);
   await expect(page.locator("tbody tr")).toHaveCount(2);
   await screenshot("computers");

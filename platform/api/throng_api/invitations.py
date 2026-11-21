@@ -9,7 +9,11 @@ from sqlalchemy import and_, func, or_, select
 
 from throng_api import outputs as out
 from throng_api.accounts import membership_change_allowed
-from throng_api.database import company_query_id
+from throng_api.database import (
+    COMPUTER_POOL_CHECK_REVISION_HEADER,
+    company_query_id,
+    current_revision,
+)
 from throng_api.models import Company, CompanyInvitation, Membership, User
 from throng_api.organization_counts import organization_counts
 from throng_api.permissions import effective_permissions
@@ -21,6 +25,7 @@ from throng_api.security import (
     authenticate,
     company_access,
     digest,
+    organization_membership_headers,
     personal,
     secret,
 )
@@ -32,12 +37,16 @@ router = APIRouter(
 )
 
 
-def invitation_view(row, now):
-    return {
+def invitation_view(row, now, link_check_revision=None):
+    view = {
         **public(row),
         "status": "expired" if row.status == "pending" and row.expires_at <= now else row.status,
         "effective_permissions": sorted(effective_permissions(row.role, row.permissions)),
     }
+    if link_check_revision is not None:
+        view["link_version"] = digest(f"invitation-link:{row.token_hash}")
+        view["link_check_revision"] = link_check_revision
+    return view
 
 
 def recipient_condition(user):
@@ -145,7 +154,7 @@ async def create_invitation(data: InvitationCreate, request: Request):
         session.add(row)
         await session.flush()
         return {
-            **invitation_view(row, now),
+            **invitation_view(row, now, await current_revision(session)),
             **(await organization_counts(session, [company_id]))[company_id],
             "token": raw,
         }
@@ -165,8 +174,19 @@ async def list_invitations(
         principal = await authenticate(session, request)
         user_id = personal(principal)
         now = request.app.state.clock()
+        revision = None
         if company_id:
-            await company_access(session, principal, str(company_id), permission="members.manage")
+            member = await company_access(
+                session,
+                principal,
+                str(company_id),
+                permission="members.manage",
+                include_membership_id=True,
+                include_check_revision=True,
+            )
+            revision = await current_revision(session)
+            response.headers.update(organization_membership_headers(principal, member))
+            response.headers[COMPUTER_POOL_CHECK_REVISION_HEADER] = str(revision)
             condition = CompanyInvitation.company_id == company_query_id(session, company_id)
         else:
             user = await session.get(User, user_id)
@@ -198,7 +218,10 @@ async def list_invitations(
             if include_counts
             else {}
         )
-        return [{**invitation_view(row, now), **counts.get(row.company_id, {})} for row in rows]
+        return [
+            {**invitation_view(row, now, revision), **counts.get(row.company_id, {})}
+            for row in rows
+        ]
 
 
 @router.get("/invitations/link/{token}", response_model=out.Invitation)
@@ -298,7 +321,7 @@ async def rotate_link(invitation_id: UUID, request: Request):
         raw = secret("inv_")
         row.token_hash = digest(raw)
         row.created_by_user_id = personal(principal)
-        return {**invitation_view(row, now), "token": raw}
+        return {**invitation_view(row, now, await current_revision(session)), "token": raw}
 
 
 @router.delete("/invitations/{invitation_id}", status_code=204)

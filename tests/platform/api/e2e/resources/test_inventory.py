@@ -96,7 +96,7 @@ async def test_foreign_and_absent_resources_are_indistinguishable(
         )
         assert foreign.status_code == absent.status_code == 404
         assert foreign.json() == absent.json() == {"detail": "Resource not found"}
-    for suffix in ["summary", "history"]:
+    for suffix in ["summary", "pool-overview", "history"]:
         response = await other_api.get(
             f"/v1/users/{user['id']}/resources/{suffix}", params=history_range
         )
@@ -125,7 +125,7 @@ async def test_company_members_read_inventory_and_only_managers_can_mutate(
             f"/v1/computer-resources/{resource['id']}/history", params=history_range
         )
     ).status_code == 200
-    for suffix in ["summary", "history"]:
+    for suffix in ["summary", "pool-summary", "pool-overview", "pool-snapshot", "history"]:
         assert (
             await other_api.get(
                 f"/v1/companies/{company['id']}/resources/{suffix}", params=history_range
@@ -157,6 +157,9 @@ async def test_membership_revocation_closes_existing_resource_access(
         path,
         path + "/history",
         f"/v1/companies/{company['id']}/resources/summary",
+        f"/v1/companies/{company['id']}/resources/pool-summary",
+        f"/v1/companies/{company['id']}/resources/pool-overview",
+        f"/v1/companies/{company['id']}/resources/pool-snapshot",
         f"/v1/companies/{company['id']}/resources/history",
     ]:
         assert (await other_api.get(url, params=history_range)).status_code == 404
@@ -180,7 +183,7 @@ async def test_company_token_is_scoped_to_company_inventory(
         json={"total": 6000},
     )
     assert response.status_code == 200
-    for suffix in ["summary", "history"]:
+    for suffix in ["summary", "pool-overview", "history"]:
         assert (
             await client.get(
                 f"/v1/companies/{company['id']}/resources/{suffix}",

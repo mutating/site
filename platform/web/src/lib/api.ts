@@ -1,14 +1,23 @@
 import { createClient, HTTPError } from "reboop";
+import { tabNotifications } from "./tabNotifications";
 
 export const API_BASE = window.__TMC_API_URL__;
 export const apiURL = (path: string) => `${API_BASE}/${path}`;
 
 let sessionRevision = 0;
+let expectedUserId: string | null = null;
 let sessionQueue: Promise<unknown> = Promise.resolve();
 
-export function advanceSessionRevision() {
+export function advanceSessionRevision(userId = expectedUserId) {
+  expectedUserId = userId;
   ++sessionRevision;
 }
+
+const sessionChanged = (message: unknown) => {
+  const owner = message && typeof message === "object" && "userId" in message ? message.userId : null;
+  window.dispatchEvent(new CustomEvent("session-changed", { detail: typeof owner === "string" ? owner : null }));
+};
+const notifySessionChange = tabNotifications(`tmc-session-changed:${API_BASE}`, sessionChanged);
 
 function withSessionLock<T>(run: () => Promise<T>): Promise<T> {
   // Cookie writes are shared by tabs. Finish an old logout before a new login
@@ -23,6 +32,9 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public detail: string,
+    public organizationMembershipId?: string,
+    public organizationId?: string,
+    public poolCheckRevision?: number,
   ) {
     super(detail);
   }
@@ -36,7 +48,21 @@ const client = createClient({
   },
 });
 type ReadBody<T> = (response: Response) => Promise<T>;
-type ApiResponse<T> = { data: T; total: number | null; unfilteredTotal?: number };
+export type ApiResponse<T> = {
+  data: T;
+  total: number | null;
+  unfilteredTotal?: number;
+  organizationMembershipId?: string;
+  organizationId?: string;
+  poolCheckRevision?: number;
+  computerReadAllowed?: boolean;
+  computerPoolAssigned?: boolean;
+};
+
+function poolCheckRevision(headers: Headers) {
+  const revision = headers.get("X-Computer-Pool-Check-Revision");
+  return revision !== null && Number.isSafeInteger(Number(revision)) ? Number(revision) : undefined;
+}
 
 export function request<T>(
   path: string,
@@ -59,7 +85,14 @@ async function requestWithReader<T>(
   const method = (options.method ?? "GET").toUpperCase();
   const changesCookie = path === "auth/session" && (method === "POST" || method === "DELETE")
     || method === "DELETE" && /^users\/[\da-f-]{36}$/i.test(path);
-  if (changesCookie) return withSessionLock(() => sendRequest(path, options, ++sessionRevision, timeoutMs, readBody));
+  if (changesCookie) return withSessionLock(async () => {
+    const result = await sendRequest(path, options, ++sessionRevision, timeoutMs, readBody);
+    const profile = result.data;
+    const userId = method === "POST" && profile && typeof profile === "object" &&
+      "id" in profile && typeof profile.id === "string" ? profile.id : null;
+    notifySessionChange({ userId });
+    return result;
+  });
   return sendRequest(path, options, sessionRevision, timeoutMs, readBody);
 }
 
@@ -94,6 +127,8 @@ async function sendRequest<T>(
   options.signal?.throwIfAborted();
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
+  const headers = new Headers(options.headers);
+  if (expectedUserId && path !== "auth/session") headers.set("X-Expected-User-Id", expectedUserId);
   try {
     return await client.read(apiURL(path), async response => ({
       data: (response.status === 204 || options.method?.toUpperCase() === "HEAD"
@@ -101,7 +136,17 @@ async function sendRequest<T>(
       total: response.headers.has("X-Total-Count") ? Number(response.headers.get("X-Total-Count")) : null,
       ...(response.headers.has("X-Total-Unfiltered-Count")
         ? { unfilteredTotal: Number(response.headers.get("X-Total-Unfiltered-Count")) } : {}),
-    }), { ...options, signal, credentials: "include", timeoutMs });
+      ...(response.headers.has("X-Organization-Membership-Id")
+        ? { organizationMembershipId: response.headers.get("X-Organization-Membership-Id")! } : {}),
+      ...(response.headers.has("X-Organization-Id")
+        ? { organizationId: response.headers.get("X-Organization-Id")! } : {}),
+      ...(response.headers.has("X-Computer-Pool-Check-Revision")
+        ? { poolCheckRevision: poolCheckRevision(response.headers) } : {}),
+      ...(response.headers.has("X-Computer-Read-Allowed")
+        ? { computerReadAllowed: response.headers.get("X-Computer-Read-Allowed") === "true" } : {}),
+      ...(response.headers.has("X-Computer-Pool-Assigned")
+        ? { computerPoolAssigned: response.headers.get("X-Computer-Pool-Assigned") === "true" } : {}),
+    }), { ...options, headers, signal, credentials: "include", timeoutMs });
   } catch (error) {
     options.signal?.throwIfAborted();
     if (error instanceof HTTPError) {
@@ -109,7 +154,16 @@ async function sendRequest<T>(
         window.dispatchEvent(new Event("session-expired"));
       const detail = await errorDetail(error.response, controller, signal, timeoutMs);
       options.signal?.throwIfAborted();
-      throw new ApiError(error.response.status, detail);
+      if (error.response.status === 409 && detail === "Account session changed" && revision === sessionRevision) {
+        sessionChanged(null);
+      }
+      throw new ApiError(
+        error.response.status,
+        detail,
+        error.response.headers.get("X-Organization-Membership-Id") ?? undefined,
+        error.response.headers.get("X-Organization-Id") ?? undefined,
+        poolCheckRevision(error.response.headers),
+      );
     }
     if (error instanceof SyntaxError || error instanceof Error && error.name === "AbortError") throw error;
     throw new ApiError(0, "Network error");
@@ -139,15 +193,21 @@ export async function withDeadline<T>(
 export async function allPages<T>(
   path: string,
   signal?: AbortSignal,
-  { pageSize = 200, deadlineMs }: { pageSize?: number; deadlineMs?: number } = {},
+  { pageSize = 200, deadlineMs, onPage }: {
+    pageSize?: number;
+    deadlineMs?: number;
+    onPage?: (result: ApiResponse<T[]>) => void;
+  } = {},
 ): Promise<T[]> {
   const rows: T[] = [];
   for (let offset = 0; ; offset += pageSize) {
     const pagePath = `${path}${path.includes("?") ? "&" : "?"}limit=${pageSize}&offset=${offset}`;
-    const read = (pageSignal?: AbortSignal) => api<T[]>(pagePath, { signal: pageSignal });
-    const page = deadlineMs === undefined
+    const read = (pageSignal?: AbortSignal) => request<T[]>(pagePath, { signal: pageSignal });
+    const result = deadlineMs === undefined
       ? await read(signal)
       : await withDeadline(signal, read, deadlineMs);
+    if (!signal?.aborted) onPage?.(result);
+    const page = result.data;
     rows.push(...page);
     if (page.length < pageSize) return rows;
   }

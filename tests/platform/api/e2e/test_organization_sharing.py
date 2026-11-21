@@ -416,11 +416,30 @@ async def test_invitation_badge_and_rows_can_be_fetched_independently(
     assert ordinary.status_code == compact.status_code == 200
     assert ordinary.headers["x-total-count"] == "3"
     assert "x-total-count" not in compact.headers
+    revision = "x-computer-pool-check-revision"
+    for result in [counted, ordinary, compact]:
+        assert result.headers["x-organization-membership-id"] == company["my_membership_id"]
+        assert int(result.headers[revision]) > 0
     assert all(row["member_count"] == 2 for row in ordinary.json())
-    assert compact.json() == [
-        dict(row, member_count=0, computer_count=0) for row in ordinary.json()
-    ]
-    assert (await other_api.get(path, params={**scope, "limit": 0})).status_code == 403
+    for complete, reduced in zip(ordinary.json(), compact.json(), strict=True):
+        assert reduced["link_check_revision"] >= complete["link_check_revision"]
+        assert reduced == dict(
+            complete,
+            member_count=0,
+            computer_count=0,
+            link_check_revision=reduced["link_check_revision"],
+        )
+    denied = await other_api.get(path, params={**scope, "limit": 0})
+    assert denied.status_code == 403
+    assert denied.headers["x-organization-membership-id"] == membership["id"]
+    assert int(denied.headers[revision]) >= int(counted.headers[revision])
+    assert (await api.delete(f"/v1/memberships/{membership['id']}")).status_code == 204
+    for requested in [{**scope, "limit": 0}, {**scope, "include_counts": False}]:
+        missing = await other_api.get(path, params=requested)
+        assert missing.status_code == 404
+        assert int(missing.headers[revision]) > int(denied.headers[revision])
+        assert "x-organization-membership-id" not in missing.headers
+        assert "x-organization-id" not in missing.headers
 
 
 async def test_team_reads_stay_in_the_authorized_snapshot(
@@ -519,9 +538,23 @@ async def test_share_links_are_single_use_and_rotation_invalidates_previous_secr
     assert (await other_api.post(f"/v1/invitations/{row['id']}/accept")).status_code == 404
     rotated = await api.post(f"/v1/invitations/{row['id']}/link")
     assert rotated.status_code == 200
+    replacement = rotated.json()
+    manager_list = await api.get("/v1/invitations", params={"company_id": company["id"]})
+    assert manager_list.status_code == 200
+    listed = manager_list.json()[0]
+    assert listed["link_version"] == replacement["link_version"] != row["link_version"]
+    assert (
+        listed["link_check_revision"]
+        >= replacement["link_check_revision"]
+        > row["link_check_revision"]
+    )
+    assert "token_hash" not in listed and "token" not in listed
     assert (await other_api.get(f"/v1/invitations/link/{row['token']}")).status_code == 404
-    token = rotated.json()["token"]
-    assert (await other_api.get(f"/v1/invitations/link/{token}")).status_code == 200
+    token = replacement["token"]
+    opened = await other_api.get(f"/v1/invitations/link/{token}")
+    assert opened.status_code == 200
+    assert opened.json()["link_version"] is None
+    assert opened.json()["link_check_revision"] is None
     results = await asyncio.gather(
         *[other_api.post(f"/v1/invitations/link/{token}/accept") for _ in range(2)]
     )

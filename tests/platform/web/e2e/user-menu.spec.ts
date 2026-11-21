@@ -1,4 +1,4 @@
-import { API, expect, headers, login, makeAccount, password, test } from "./fixtures";
+import { API, expect, headers, login, makeAccount, password, pauseMutation, test } from "./fixtures";
 import { selectLanguage } from "./header-controls";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=", "base64");
@@ -694,4 +694,109 @@ test("a sign-in in another tab survives an older pending sign-out response", asy
     await other.reload();
     await expect(trigger(other)).toBeVisible();
   } finally { release(); await other.close(); }
+});
+
+test("a queued sign-in survives another tab confirming a different account", async ({ page, account, context, request }) => {
+  const laterAccount = await makeAccount(request, "Борис");
+  const other = await context.newPage();
+  await other.addInitScript(() => {
+    window.addEventListener("session-changed", () => {
+      document.documentElement.dataset.sessionChangeObserved = "true";
+    });
+  });
+  await page.goto("login");
+  await other.goto("login");
+  test.skip(!await other.evaluate(() => Boolean(navigator.locks)), "Browser Web Locks support is required for this scenario");
+  const endpoint = `${API}/auth/session`;
+  const earlier = await pauseMutation(page, endpoint, { method: "POST", pause: "response" });
+  const later = await pauseMutation(other, endpoint, { method: "POST" });
+  try {
+    await page.getByLabel("Email или ник").fill(account.email);
+    await page.getByLabel("Пароль", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Войти", exact: true }).click();
+    await earlier.pending;
+    const email = other.getByLabel("Email или ник");
+    const submit = other.locator("form button.primary");
+    await email.fill(laterAccount.email);
+    await other.getByLabel("Пароль", { exact: true }).fill(password);
+    await submit.click();
+    await expect(submit).toBeDisabled();
+    const backgroundReads: string[] = [];
+    const countRead = (incoming: import("@playwright/test").Request) => {
+      if (incoming.url() === endpoint && incoming.method() === "GET") backgroundReads.push(incoming.url());
+    };
+    other.on("request", countRead);
+    earlier.release();
+    await later.pending;
+    await expect(other.locator("html")).toHaveAttribute("data-session-change-observed", "true");
+    await expect(email).toHaveValue(laterAccount.email);
+    await expect(submit).toBeDisabled();
+    expect(backgroundReads).toHaveLength(0);
+    other.off("request", countRead);
+    later.release();
+    await expect(other.getByRole("heading", { name: `Привет, ${laterAccount.first_name}` })).toBeVisible();
+    const verified = await other.request.get(endpoint);
+    expect(verified.status()).toBe(200);
+    expect((await verified.json()).id).toBe(laterAccount.id);
+  } finally {
+    earlier.release();
+    later.release();
+    await other.close();
+  }
+});
+
+test("a delayed same-account session refresh preserves the newly saved profile", async ({ page, account, context }) => {
+  const other = await context.newPage();
+  await page.goto("login");
+  await other.goto("login");
+  test.skip(!await other.evaluate(() => Boolean(navigator.locks)), "Browser Web Locks support is required for this scenario");
+  const endpoint = `${API}/auth/session`;
+  const first = await pauseMutation(page, endpoint, { method: "POST", pause: "response" });
+  const second = await pauseMutation(other, endpoint, { method: "POST" });
+  let release!: () => void;
+  let received!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  const fetched = new Promise<void>((resolve) => { received = resolve; });
+  try {
+    for (const tab of [page, other]) {
+      await tab.getByLabel("Email или ник").fill(account.email);
+      await tab.getByLabel("Пароль", { exact: true }).fill(password);
+    }
+    await page.getByRole("button", { name: "Войти", exact: true }).click();
+    await first.pending;
+    await other.getByRole("button", { name: "Войти", exact: true }).click();
+    first.release();
+    await second.pending;
+    await expect(page.getByRole("heading", { name: `Привет, ${account.first_name}` })).toBeVisible();
+    await page.goto("profile");
+    const name = page.getByLabel("Имя", { exact: true });
+    await expect(name).toHaveValue(account.first_name);
+    await page.route(endpoint, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      expect((await response.json()).first_name).toBe(account.first_name);
+      received();
+      await waiting;
+      await route.fulfill({ response });
+    });
+    second.release();
+    await fetched;
+    await name.fill("Зоя");
+    await page.getByRole("button", { name: "Сохранить изменения" }).click();
+    await expect(trigger(page).locator(".avatar")).toHaveText("З");
+    const delivered = page.waitForResponse((response) =>
+      response.url() === endpoint && response.request().method() === "GET"
+    );
+    release();
+    await (await delivered).finished();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(trigger(page).locator(".avatar")).toHaveText("З");
+    await expect(name).toHaveValue("Зоя");
+  } finally {
+    first.release();
+    second.release();
+    release();
+    await other.close();
+  }
 });

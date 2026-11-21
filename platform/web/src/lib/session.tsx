@@ -15,6 +15,7 @@ const Context = createContext<{
   loading: boolean;
   error: unknown;
   setUser: (u: User | null) => void;
+  beginAuthentication: () => () => void;
   updateUser: (update: () => Promise<unknown>) => Promise<void>;
   reload: () => void;
   signOut: () => Promise<void>;
@@ -25,12 +26,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const currentSession = useRef(session);
   const refreshSequence = useRef(0);
   const publishedRefresh = useRef(0);
+  const sessionRead = useRef(0);
+  const activeAuthentication = useRef<symbol | null>(null);
+  const deferredSessionRead = useRef(false);
   const { user, generation, avatarRevision } = session;
   const publishUser = useCallback((next: User | null, expectedGeneration: number) => {
     const current = currentSession.current;
     if (current.generation !== expectedGeneration) return;
     // A confirmed session also supersedes old 401s after re-login by the same user.
-    advanceSessionRevision();
+    advanceSessionRevision(next?.id ?? null);
     const updated = {
       user: next,
       generation: current.generation + Number(current.user?.id !== next?.id),
@@ -78,31 +82,79 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })();
     return pendingSignOut.current;
   }, [setUser]);
-  const reload = useCallback(() => {
+  const readSession = useCallback((showLoading: boolean) => {
+    if (activeAuthentication.current) {
+      deferredSessionRead.current = true;
+      return;
+    }
     const expectedGeneration = currentSession.current.generation;
-    setLoading(true);
+    const read = ++sessionRead.current;
+    const profileRead = ++refreshSequence.current;
+    const isLatest = () => read === sessionRead.current;
+    const canPublish = () => {
+      if (currentSession.current.generation !== expectedGeneration) return false;
+      if (!activeAuthentication.current) return true;
+      deferredSessionRead.current = true;
+      return false;
+    };
+    if (showLoading) setLoading(true);
     setError(null);
     api<User>("auth/session")
       .then(user => {
-        if (currentSession.current.generation !== expectedGeneration) return;
+        if (!isLatest()) return;
         setLoading(false);
-        publishUser(user, expectedGeneration);
+        if (!canPublish()) return;
+        const current = currentSession.current.user;
+        if (current?.id === user.id && profileRead < publishedRefresh.current) {
+          publishUser(current, expectedGeneration);
+        } else {
+          publishedRefresh.current = Math.max(profileRead, publishedRefresh.current);
+          publishUser(user, expectedGeneration);
+        }
       })
       .catch((e) => {
-        if (currentSession.current.generation !== expectedGeneration) return;
-        if (!(e instanceof ApiError && e.status === 401)) setError(e);
+        if (!isLatest()) return;
         setLoading(false);
+        if (!canPublish()) return;
+        if (!(e instanceof ApiError && e.status === 401)) {
+          if (!showLoading) return;
+          setError(e);
+        }
         publishUser(null, expectedGeneration);
       });
   }, [publishUser]);
+  const beginAuthentication = useCallback(() => {
+    const operation = Symbol();
+    activeAuthentication.current = operation;
+    return () => {
+      if (activeAuthentication.current !== operation) return;
+      activeAuthentication.current = null;
+      if (deferredSessionRead.current) {
+        deferredSessionRead.current = false;
+        readSession(false);
+      }
+    };
+  }, [readSession]);
+  const reload = useCallback(() => readSession(true), [readSession]);
   useEffect(() => {
     reload();
     const expire = () => publishUser(null, currentSession.current.generation);
+    // An anonymous tab can already have a sign-in queued behind the other
+    // tab's cookie write. Revalidate without unmounting the active form.
+    const revalidate = (event: Event) => {
+      const announcedUser = event instanceof CustomEvent ? event.detail : null;
+      const current = currentSession.current.user;
+      readSession(current !== null && current.id !== announcedUser);
+    };
     window.addEventListener("session-expired", expire);
-    return () => window.removeEventListener("session-expired", expire);
-  }, [reload, publishUser]);
+    window.addEventListener("session-changed", revalidate);
+    return () => {
+      window.removeEventListener("session-expired", expire);
+      window.removeEventListener("session-changed", revalidate);
+    };
+  }, [reload, readSession, publishUser]);
   return (
-    <Context.Provider value={{ user, avatarRevision, loading, error, setUser, updateUser, reload, signOut, signingOut }}>
+    <Context.Provider value={{ user, avatarRevision, loading, error, setUser, beginAuthentication, updateUser, reload, signOut, signingOut }}>
       {children}
     </Context.Provider>
   );

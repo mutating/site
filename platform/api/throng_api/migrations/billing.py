@@ -27,7 +27,7 @@ LOCK_VERSION_SCHEMA = """
         'schema', ARRAY[version.nspname::text], ARRAY[]::text[]
     ) AS locked
 """
-PAYMENT_OWNER_SCHEMA = text("""
+REFERENCED_OWNER_SCHEMA = text("""
     WITH owner AS MATERIALIZED (
         SELECT owner_schema.nspname AS schema_name,
                owner_schema.oid AS schema_oid,
@@ -94,21 +94,27 @@ def constrain_billing_version_update(connection, statement, multiparams, params,
     return statement, multiparams, params
 
 
-def payment_owner_schema(connection, billing_schema, owner_column):
-    """Lock the original owner table and its schema before qualifying organization DDL."""
-    if billing_schema is None:
+def referenced_owner_schema(connection, source_schema, table_name, owner_column):
+    """Resolve and lock the actual target of a qualified table's existing owner key."""
+    if source_schema is None:
         return None
-    quoted = connection.dialect.identifier_preparer.quote_schema(billing_schema)
-    catalogue = f"{quoted}.payment_accounts"
+    preparer = connection.dialect.identifier_preparer
+    catalogue = f"{preparer.quote_schema(source_schema)}.{preparer.quote(table_name)}"
     # Keep the foreign key stable while locking the objects it refers to.
     connection.exec_driver_sql(f"LOCK TABLE {catalogue} IN ACCESS SHARE MODE NOWAIT")
     schema = connection.execute(
-        PAYMENT_OWNER_SCHEMA,
+        REFERENCED_OWNER_SCHEMA,
         {"table_name": catalogue, "owner_column": owner_column},
     ).scalar_one_or_none()
     if schema is None:
-        raise CommandError("The billing owner table changed while Alembic was selecting it")
+        raise CommandError(
+            f"The owner table for {table_name}.{owner_column} changed during migration"
+        )
     return schema
+
+
+def payment_owner_schema(connection, billing_schema, owner_column):
+    return referenced_owner_schema(connection, billing_schema, "payment_accounts", owner_column)
 
 
 @contextmanager

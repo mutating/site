@@ -49,7 +49,7 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
     )
       failures.push(response.url());
   });
-  await page.goto("compute");
+  await page.goto(`${browserAPI}/connected-computers/browser`);
   await expect(
     page.getByRole("heading", { name: "Welcome back." }),
   ).toBeVisible();
@@ -66,8 +66,10 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   const body = await (await sessionResponse).json();
   expect(body.email).toBe(email);
   expect(body).not.toHaveProperty("access_token");
-  await expect(page).toHaveURL(`${origin}/compute`);
-  await expect(page.getByTestId("computer-count")).toHaveText("0");
+  await expect(page).toHaveURL(`${origin}/compute/computers`);
+  await expect(page.getByText("No computers connected yet", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "← Back to Compute" }).click();
+  await expect(page.locator(".compute-status-summary dd")).toHaveText(["0", "0", "0"]);
   await page.evaluate(() => document.fonts.ready);
   const cookie = (await page.context().cookies()).find(
     (c) => c.name === "tmc_session",
@@ -129,10 +131,11 @@ test("nginx serves root dashboard routes over TLS, retains sessions after restar
   expect(forbidden.status()).toBe(403);
   await stack.restartDashboard();
   await page.reload();
+  await page.getByRole("link", { name: "Compute pools", exact: true }).click();
   await expect(
     page
-      .getByRole("region", { name: "HTTPS organization" })
-      .getByTestId("computer-count"),
+      .getByRole("article", { name: "HTTPS organization" })
+      .getByTestId("organization-computer-count"),
   ).toHaveText("0");
   expect(
     (await page.context().cookies()).find((c) => c.name === cookie.name)!.value,

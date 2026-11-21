@@ -692,7 +692,7 @@ for (const view of ["inventory", "computer details", "API tokens"]) {
   });
 }
 
-for (const destination of [{ label: "Compute", path: "/compute" }, { label: "Обзор", path: "/" }]) {
+for (const destination of [{ label: "Compute", path: "/compute/pools" }, { label: "Обзор", path: "/" }]) {
   test(`a late leave refreshes the organization pool without leaving ${destination.label}`, async ({
     page,
     request,
@@ -727,14 +727,28 @@ for (const destination of [{ label: "Compute", path: "/compute" }, { label: "О�
       await removal.pending;
       await page.goBack();
       await nav.getByRole("link", { name: destination.label, exact: true }).click();
-      const pool = page.getByRole("region", { name: company.name, exact: true });
-      await expect(pool.getByTestId("computer-count")).toHaveText("1");
+      const catalog = destination.path === "/compute/pools";
+      if (catalog) await page.getByRole("link", { name: "Вычислительные пулы", exact: true }).click();
+      const pool = page.getByRole(catalog ? "article" : "region", { name: company.name, exact: true });
+      await expect(pool.getByTestId(catalog ? "organization-computer-count" : "computer-count")).toHaveText("1");
+      const companies = "**/v1/companies?*";
+      if (catalog) {
+        await page.route(companies, (route) => route.fulfill({ status: 503, json: { detail: "Temporary outage" } }));
+      }
       const left = page.waitForResponse((result) =>
         result.url() === endpoint && result.request().method() === "DELETE",
       );
       removal.release();
       expect((await left).status()).toBe(204);
+      if (catalog) await expect(page.getByRole("alert")).toBeVisible();
       await expect(pool).toHaveCount(0);
+      if (catalog) {
+        await expect(page.getByRole("article", { name: "Личный пул" })).toBeVisible();
+        await page.unroute(companies);
+        await page.getByRole("alert").getByRole("button").click();
+        await expect(page.getByRole("alert")).toHaveCount(0);
+        await expect(pool).toHaveCount(0);
+      }
       expect(new URL(page.url()).pathname).toBe(destination.path);
       await nav.getByRole("link", { name: "Организации", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Ваша команда начинается здесь" })).toBeVisible();

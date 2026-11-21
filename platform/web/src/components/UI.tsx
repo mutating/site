@@ -149,17 +149,19 @@ export function Heading({
   title,
   children,
   action,
+  titleRef,
 }: {
-  index: string;
+  index?: string;
   title: string;
   children?: ReactNode;
   action?: ReactNode;
+  titleRef?: RefObject<HTMLHeadingElement | null>;
 }) {
   return (
     <div className="page-heading">
       <div>
-        <p className="eyebrow">{index}</p>
-        <h1>
+        {index && <p className="eyebrow">{index}</p>}
+        <h1 ref={titleRef} tabIndex={titleRef ? -1 : undefined}>
           {title}
           <span className="hot">.</span>
         </h1>
@@ -181,10 +183,14 @@ export function Loading() {
 export function ErrorBox({
   error,
   retry,
+  retryRef,
+  retryLabel = "retry",
   conflict = "conflict",
 }: {
   error: unknown;
   retry?: () => void;
+  retryRef?: RefObject<HTMLButtonElement | null>;
+  retryLabel?: MessageKey;
   conflict?: MessageKey;
 }) {
   const { t } = useI18n();
@@ -236,13 +242,24 @@ export function ErrorBox({
     <div className="error-box" role="alert">
       <span>{t(key)}</span>
       {retry && (
-        <button type="button" className="text-button" onClick={retry}>
-          {t("retry")} ↻
+        <button ref={retryRef} type="button" className="text-button" onClick={retry}>
+          {t(retryLabel)} ↻
         </button>
       )}
     </div>
   );
 }
+export function RetryErrorBox({ error, retry, restoreFocus, retryLabel }: {
+  error: unknown;
+  retry: () => void;
+  restoreFocus: () => void;
+  retryLabel?: MessageKey;
+}) {
+  const button = useRef<HTMLButtonElement>(null);
+  useRestoreFocusOnRemoval(button, restoreFocus);
+  return <ErrorBox error={error} retry={retry} retryRef={button} retryLabel={retryLabel} />;
+}
+
 export function Empty({
   icon = "compute",
   title,
@@ -262,6 +279,26 @@ export function Empty({
     </div>
   );
 }
+export function useModalFocus(ref: RefObject<HTMLDialogElement | null>, restoreFocus?: () => void) {
+  useEffect(() => {
+    const dialog = ref.current;
+    const trigger = document.activeElement;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      // WebKit applies modal removal after cleanup and can undo immediate restoration.
+      window.requestAnimationFrame(() => {
+        if (trigger instanceof HTMLElement && trigger.isConnected &&
+            !(trigger instanceof HTMLButtonElement && trigger.disabled)) {
+          trigger.focus({ preventScroll: true });
+        } else {
+          restoreFocus?.();
+        }
+      });
+    };
+  }, []);
+}
+
 export function ConfirmDialog({
   title,
   value,
@@ -297,24 +334,7 @@ export function ConfirmDialog({
     readOnly: busy,
     "aria-disabled": busy || undefined,
   };
-  useEffect(() => {
-    const dialog = ref.current;
-    const trigger = document.activeElement;
-    dialog?.showModal();
-    return () => {
-      dialog?.close();
-      // WebKit applies modal removal after the cleanup callback, so restoring
-      // focus immediately can be undone when the dialog node is detached.
-      window.requestAnimationFrame(() => {
-        if (trigger instanceof HTMLElement && trigger.isConnected &&
-            !(trigger instanceof HTMLButtonElement && trigger.disabled)) {
-          trigger.focus({ preventScroll: true });
-        } else {
-          restoreFocus?.();
-        }
-      });
-    };
-  }, []);
+  useModalFocus(ref, restoreFocus);
   return (
     <dialog
       ref={ref}

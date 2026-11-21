@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
-const bootstrap = () => readFileSync(new URL("../../packages/ui/dist/theme-bootstrap.js", import.meta.url));
+function bootstrap() {
+  const theme = readFileSync(new URL("../../packages/ui/dist/theme-bootstrap.js", import.meta.url), "utf8");
+  const connectedPool = readFileSync(new URL("./src/connectedPoolBootstrap.js", import.meta.url), "utf8");
+  return `${theme}\n${connectedPool}`;
+}
 function sharedThemeBootstrap(): Plugin {
   return {
     name: "shared-theme-bootstrap",

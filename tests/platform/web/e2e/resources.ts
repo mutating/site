@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { API, expect, headers, type Account } from "./fixtures";
 
 export const GiB = 1024 ** 3;
 export const historyNow = new Date("2026-01-08T00:00:00Z");
+
+export async function useHistoricalPersonalCapacity(page: Page, userId: string, end = historyNow) {
+  const path = `${API}/users/${userId}/resources/availability-history`;
+  const from = new Date(end.getTime() - 7 * 86_400_000);
+  const query = new URLSearchParams({ from: from.toISOString(), to: end.toISOString() });
+  await page.route(path, (route) => route.continue({ url: `${path}?${query}` }));
+}
 
 // Exercise real scheduling/reservations, without an executing agent or fabricated responses.
 export async function reserve(

@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { Icon } from "./UI";
 import { Header as SharedHeader, SquareButton } from "@mutating/ui/react";
 import { useData } from "../lib/useData";
+import { useResumeComputerPoolMoves } from "../lib/compute";
 import type { GitHubStatus } from "../lib/github";
 import { UserMenu } from "./UserMenu";
 import { useHeaderPresence } from "../lib/useHeaderPresence";
@@ -81,6 +82,7 @@ export function Header() {
 export function Layout() {
   const { t, language } = useI18n();
   const { user } = useSession();
+  useResumeComputerPoolMoves(user!.id);
   const github = useData(
     (signal) => api<GitHubStatus>("github/status", { signal }),
     user!.id,
@@ -194,7 +196,7 @@ export function Layout() {
             <span className="nav-scroll-hint" aria-hidden="true" />
           </div>
         </aside>
-        <main id="main" className="main-content">
+        <main id="main" className="main-content" tabIndex={-1}>
           <Outlet />
         </main>
       </div>

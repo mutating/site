@@ -4,8 +4,50 @@ from datetime import datetime
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
+
+from throng_api.config import Settings
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize(
+    ("settings", "destination"),
+    [
+        ({}, "/compute/computers"),
+        (
+            {
+                "browser_origins": ["https://dev.example", "https://office.example:9443"],
+                "platform_origin": "https://office.example:9443",
+            },
+            "https://office.example:9443/compute/computers",
+        ),
+    ],
+    indirect=["settings"],
+)
+async def test_native_browser_link_uses_the_platform_origin(client, settings, destination):
+    """Resolve the native Compute link using the configured cabinet origin."""
+    response = await client.get(
+        "/v1/connected-computers/browser",
+        params={"next": "https://unrelated.example"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, response.text
+    assert response.headers["location"] == destination
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("suffix", ["/dashboard", "?view=compute", "#compute"])
+def test_native_browser_link_rejects_non_origin_configuration(suffix):
+    """Reject paths, query strings and fragments in a platform origin."""
+    with pytest.raises(ValidationError, match="Use the dashboard origin"):
+        Settings(platform_origin=f"https://office.example{suffix}", _env_file=None)
+
+
+def test_native_browser_link_rejects_credentials_in_the_origin():
+    """Keep platform origin credentials out of the browser redirect."""
+    with pytest.raises(ValidationError, match="Use the dashboard origin"):
+        Settings(platform_origin="https://user:password@office.example", _env_file=None)
 
 
 async def test_computer_crud_and_ownership_lifecycle(
@@ -30,6 +72,13 @@ async def test_computer_crud_and_ownership_lifecycle(
     )
     assert response.status_code == 200 and response.json()["name"] is None
     assert response.json()["cpu_millis"] == 4000 and not response.json()["enabled"]
+    invalid_expectation = await api.patch(
+        owner_path,
+        params={"expected_company_id": company["id"], "expected_user_id": user["id"]},
+        json={"company_id": company["id"]},
+    )
+    assert invalid_expectation.status_code == 422, invalid_expectation.text
+    assert invalid_expectation.json()["detail"] == "Specify a single expected computer owner"
     response = await api.patch(owner_path, json={"company_id": company["id"]})
     assert response.status_code == 200 and response.json()["user_id"] is None
     assert (await agent_api.post("/agent/v1/heartbeat")).status_code == 401

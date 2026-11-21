@@ -36,7 +36,7 @@ def test_payment_owner_schema_uses_a_qualified_catalogue():
         "owner_column": "user_id",
     }
     owner_query.return_value = None
-    with pytest.raises(CommandError, match="billing owner table changed"):
+    with pytest.raises(CommandError, match=r"owner table for payment_accounts\.user_id changed"):
         payment_owner_schema(connection, "public", "user_id")
 
 

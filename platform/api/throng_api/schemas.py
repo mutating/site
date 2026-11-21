@@ -161,6 +161,19 @@ class ComputerOwnerCreate(OwnerInput):
     computer_id: UUID
 
 
+class ComputerPoolUpdate(Input):
+    company_id: UUID | None
+    expected_company_id: UUID | None
+    expected_user_id: UUID | None = None
+    expected_revision: int | None = Field(default=None, ge=0)
+
+
+class ComputerTransferRecovery(Input):
+    expected_user_id: UUID
+    expected_company_id: UUID | None
+    expected_revision: int = Field(ge=0)
+
+
 class TokenOptions(Input):
     name: str = Field(min_length=1, max_length=100)
     scopes: list[Scope] = Field(min_length=1, max_length=3)
@@ -254,6 +267,10 @@ class CommandCreate(Input):
 
 class IDs(Input):
     ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+class ComputerConnectionConfirmation(Input):
+    computer_id: UUID
 
 
 class SessionStart(Input):

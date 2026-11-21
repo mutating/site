@@ -7,7 +7,11 @@ from sqlalchemy import String, and_, cast, delete, func, or_, select, true, unio
 from sqlalchemy.orm import aliased, load_only
 
 from throng_api import outputs as out
-from throng_api.database import company_query_id
+from throng_api.database import (
+    COMPUTER_POOL_CHECK_REVISION_HEADER,
+    company_query_id,
+    current_revision,
+)
 from throng_api.models import (
     AccessToken,
     Company,
@@ -49,6 +53,7 @@ from throng_api.security import (
     issue_token,
     membership_role,
     modern_personal,
+    organization_membership_headers,
     owned,
     owned_filter,
     owner_access,
@@ -312,10 +317,12 @@ async def list_companies(
 
 
 @router.get("/companies/{company_id}", response_model=out.Company)
-async def get_company(company_id: UUID, request: Request):
+async def get_company(company_id: UUID, request: Request, response: Response):
     async with request.app.state.db.read(snapshot=True) as session:
         principal = await authenticate(session, request)
-        member = await company_access(session, principal, str(company_id))
+        member = await company_access(
+            session, principal, str(company_id), include_check_revision=True
+        )
         company_key = company_query_id(session, company_id)
         result = await session.execute(
             select(Company, *organization_count_columns(company_key)).where(
@@ -324,6 +331,7 @@ async def get_company(company_id: UUID, request: Request):
         )
         # The authorized membership references this company in the same snapshot.
         company, computers, members = result.one()
+        response.headers[COMPUTER_POOL_CHECK_REVISION_HEADER] = str(await current_revision(session))
         return {
             **public(company),
             "computer_count": computers,
@@ -478,7 +486,13 @@ async def list_memberships(
 ):
     async with request.app.state.db.read(snapshot=True) as session:
         principal = await authenticate(session, request)
-        await company_access(session, principal, str(company_id))
+        member = await company_access(
+            session,
+            principal,
+            str(company_id),
+            include_membership_id=True,
+            include_check_revision=True,
+        )
         conditions = [Membership.company_id == company_query_id(session, company_id)]
         if user_id:
             conditions.append(Membership.user_id == str(user_id))
@@ -526,6 +540,8 @@ async def list_memberships(
         response.headers["X-Total-Count"] = str(rows[0].total)
         if query:
             response.headers["X-Total-Unfiltered-Count"] = str(rows[0].unfiltered)
+        response.headers.update(organization_membership_headers(principal, member))
+        response.headers[COMPUTER_POOL_CHECK_REVISION_HEADER] = str(await current_revision(session))
         return [
             member_with_profile(member, user) for member, user, *_ in rows if member is not None
         ]

@@ -104,6 +104,10 @@ export async function addComputer(
   }
   return computer;
 }
+export async function markAccountComputer(request: APIRequestContext, id: string) {
+  const response = await request.post(`http://127.0.0.1:18100/__test__/connected-computer/${id}`);
+  expect(response.status()).toBe(204);
+}
 export async function pauseMutation(
   page: Page,
   endpoint: string,

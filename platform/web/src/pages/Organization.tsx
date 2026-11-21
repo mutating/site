@@ -1,4 +1,4 @@
-import { Activity, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Activity, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { WidgetLayout } from "@mutating/ui/react";
 import "@mutating/ui/styles/widget-layout.css";
 import {
@@ -7,6 +7,7 @@ import {
   useLocation,
   useMatch,
   useNavigate,
+  useNavigationType,
   useParams,
   useSearchParams,
 } from "react-router-dom";
@@ -18,12 +19,17 @@ import {
   json,
   request,
   withDeadline,
+  type ApiResponse,
 } from "../lib/api";
-import { useData } from "../lib/useData";
+import { useRefreshWhileVisible } from "../lib/useData";
+import { OutdatedPoolRead, usePoolRead, useReloadOnComputerPoolChange } from "../lib/compute";
 import { useSession } from "../lib/session";
 import {
   notifyOrganizationChange,
   subscribeToOrganizationChanges,
+  useOrganizationMembershipCheck,
+  useOrganizationSectionAccess,
+  type OrganizationMemberPermission,
 } from "../lib/useOrganizationDirectory";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { organizationImagePath } from "../lib/organizationImages";
@@ -34,86 +40,32 @@ import type {
   CompanyAppearance,
   CreatedInvitation,
   Invitation,
+  InvitationLinkCheck,
   Membership,
+  OrganizationMembershipCheck,
 } from "../lib/types";
-import { ConfirmDialog, ErrorBox, Icon, Loading, useRestoreFocusOnRemoval } from "../components/UI";
+import { ConfirmDialog, ErrorBox, Icon, Loading, RetryErrorBox, useRestoreFocusOnRemoval } from "../components/UI";
 import { MemberSharing } from "../components/MemberSharing";
 import { keepOrganizationControlVisible, memberDirectoryPageSize, OrganizationMembers, useMemberSearch, type MemberSearch } from "../components/OrganizationMembers";
-import { ApiImage } from "../components/ApiImage";
+import { OrganizationHero } from "../components/OrganizationHero";
 import { SectionTabs } from "../components/SectionTabs";
 import { OrganizationSettings } from "../components/OrganizationSettings";
-import { OrganizationComputers, OrganizationOverview, OrganizationResourceCharts, type OrganizationResourceAccess } from "../components/OrganizationResources";
-import organizationArtwork from "../assets/organization-atlas.webp";
+import { OrganizationResourceCharts, PoolComputers, PoolOverview, usePoolOverview, usePoolPointerLayout,
+  type OrganizationResourceAccess } from "../components/OrganizationResources";
 import {
   InvitationExpiry,
   InvitationFacts,
   PermissionSummary,
   ShareLink,
+  invitationLinkIsOutdated,
 } from "../components/InvitationUI";
 import "../styles/organization.css";
 
-type CompanyCheck = { view: symbol; reason: "access" | "update" };
+const checkPriority = { section: 0, metadata: 1, update: 2, access: 3 } as const;
+type CompanyCheck = { view: symbol; reason: keyof typeof checkPriority };
+type InvitationRefresh = { revision: number; verifyFrom: number; checks: ReadonlyMap<string, InvitationLinkCheck> };
 type InvitationAction = "link" | "revoke";
-
-function useTeamPointerLayout() {
-  const gesture = useRef<AbortController | null>(null);
-  useEffect(() => () => gesture.current?.abort(), []);
-
-  return (event: ReactPointerEvent<HTMLElement>) => {
-    if (!event.isTrusted || !event.isPrimary || event.button !== 0 || !(event.target instanceof Element)) return;
-    const control = event.target.closest<HTMLElement>("a[href], button, input, select, textarea, summary, .tmc-select");
-    if (!control) return;
-    const openSelect = event.target.closest(".tmc-select__panel");
-    gesture.current?.abort();
-    const detail = event.currentTarget.closest(".organization-detail");
-    const sections = detail?.querySelectorAll<HTMLElement>(
-      ".organization-overview, .organization-computers, .organization-people, .organization-member-results, .organization-history-grid",
-    );
-    if (!sections?.length) return;
-    const layout = Array.from(sections, (section) => ({
-      section,
-      size: section.getBoundingClientRect().height,
-      blockSize: section.style.blockSize,
-      overflow: section.style.overflow,
-    }));
-    const pointerId = event.pointerId;
-    const controller = new AbortController();
-    gesture.current = controller;
-    const options = { capture: true, signal: controller.signal };
-    let released = false;
-    let expiry: number | undefined;
-    const abort = () => controller.abort();
-
-    // A response can move the control before the browser dispatches its click.
-    for (const { section, size } of layout) {
-      section.style.blockSize = `${size}px`;
-      if (!openSelect || !section.contains(openSelect)) section.style.overflow = "clip";
-    }
-    window.addEventListener("pointerup", (up) => {
-      if (up.pointerId !== pointerId) return;
-      released = true;
-      // Touch browsers dispatch click after pointerup. A canceled gesture may send no click.
-      expiry = window.setTimeout(abort, up.pointerType === "touch" ? 400 : 100);
-    }, options);
-    window.addEventListener("click", (click) => {
-      if (!released || click.detail === 0) return;
-      window.clearTimeout(expiry);
-      expiry = window.setTimeout(abort);
-    }, options);
-    window.addEventListener("pointercancel", (cancel) => {
-      if (cancel.pointerId === pointerId) abort();
-    }, options);
-    window.addEventListener("pointerdown", abort, options);
-    window.addEventListener("blur", abort, { signal: controller.signal });
-    controller.signal.addEventListener("abort", () => {
-      window.clearTimeout(expiry);
-      for (const { section, blockSize, overflow } of layout) {
-        section.style.blockSize = blockSize;
-        section.style.overflow = overflow;
-      }
-    }, { once: true });
-  };
-}
+const resourceWidgets = ".organization-overview, .organization-computers, .organization-history-grid";
 
 function OrganizationLookupStatus({ error, retry, restoreFocus }: {
   error: unknown;
@@ -154,12 +106,16 @@ function InvitationActions({ summaryId, disabled, onAction }: {
 export function Organization({ memberSearchDrafts }: { memberSearchDrafts: Map<string, string> }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const userId = useSession().user!.id;
+  const navigationType = useNavigationType();
+  const user = useSession().user!;
+  const userId = user.id;
   const directorySearch =
     typeof location.state?.directorySearch === "string"
       ? location.state.directorySearch
       : "";
-  const { companyId = "" } = useParams();
+  const connectedPoolOrigin = location.state?.connectedPoolOrigin;
+  const poolNavigationState = connectedPoolOrigin ? { connectedPoolOrigin } : undefined;
+  const companyId = useParams().companyId?.toLowerCase() ?? "";
   const showMembers = !!useMatch("/organizations/:companyId/members");
   const [params] = useSearchParams();
   const memberSearch = useMemberSearch(memberSearchDrafts);
@@ -168,43 +124,158 @@ export function Organization({ memberSearchDrafts }: { memberSearchDrafts: Map<s
   const previousView = useRef({ companyId, showMembers });
   const key = `${userId}/${companyId}`;
   const view = useMemo(() => Symbol(key), [key]);
+  const { checked: membershipCheck, remember: recordMembership, clearPermission, resourcesRead,
+    precedesMembershipCheck, rememberMemberPermission, newerMemberPermission } = useOrganizationMembershipCheck(key);
+  const acceptCompanyError = useCallback((error: ApiError) => {
+    if (error.status === 404) return !precedesMembershipCheck(error.poolCheckRevision);
+    return error.status !== 403 || !error.organizationMembershipId ||
+      !precedesMembershipCheck(error.poolCheckRevision, error.organizationMembershipId);
+  }, [precedesMembershipCheck]);
+  const ensureCurrentMembership = useCallback((id: string, revision?: number) => {
+    if (revision !== undefined && precedesMembershipCheck(revision, id)) throw new OutdatedPoolRead(revision);
+  }, [precedesMembershipCheck]);
+  const [resourceDenial, setResourceDenial] = useState<symbol | null>(null);
+  const verifyResourcePermission = useCallback((proof: { id: string; revision?: number; resourcesRead: boolean }) => {
+    if (!recordMembership(proof)) return false;
+    setResourceDenial((current) => current === view ? null : current);
+    return true;
+  }, [recordMembership, view]);
+  const recordReadMembership = (member: OrganizationMembershipCheck, permission: "resources.read" | OrganizationMemberPermission) => {
+    ensureCurrentMembership(member.id, member.revision);
+    if (permission === "resources.read") verifyResourcePermission({ ...member, resourcesRead: true });
+    else {
+      recordMembership(member);
+      rememberMemberPermission(permission, member.id, true, member.revision);
+    }
+  };
+  const [leaving, setLeaving] = useState<{ view: symbol; membershipId: string } | null>(null);
+  const previousLocation = useRef(location);
+  useLayoutEffect(() => {
+    const previous = previousLocation.current;
+    previousLocation.current = location;
+    const searchChangedInPlace = navigationType === "REPLACE" && location.state?.keepScroll &&
+      previous.pathname === location.pathname && previous.hash === location.hash && previous.search !== location.search;
+    if (previous.key !== location.key && !searchChangedInPlace) setLeaving(null);
+  }, [location, navigationType]);
   const backLink = useRef<HTMLAnchorElement>(null);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   const restoreRouteFocus = useCallback(() => {
     if (document.activeElement === document.body) backLink.current?.focus({ preventScroll: true });
+  }, []);
+  const restoreLeaveFocus = useCallback(() => {
+    if (document.activeElement === document.body) {
+      (settingsButton.current ?? backLink.current)?.focus({ preventScroll: true });
+    }
+  }, []);
+  const focusBackWithin = useCallback((selector: string) => {
+    if (document.activeElement?.closest(selector)) {
+      backLink.current?.focus();
+    }
   }, []);
   const [returnView, setReturnView] = useState<symbol | null>(null);
   const [check, setCheck] = useState<CompanyCheck | null>(null);
   const [memberRevision, setMemberRevision] = useState(0);
-  const [invitationRevision, setInvitationRevision] = useState(0);
+  const [invitationRefresh, setInvitationRefresh] = useState<InvitationRefresh>(() => ({
+    revision: 0, verifyFrom: 0, checks: new Map(),
+  }));
+  const refreshInvitations = useCallback((verify = false, invitation?: InvitationLinkCheck) => {
+    setInvitationRefresh(({ revision, verifyFrom, checks }) => {
+      const previous = invitation ? checks.get(invitation.id) : undefined;
+      if (invitation && (!previous || previous.status === "pending" &&
+          (invitation.status === "revoked" || (invitation.link_check_revision ?? 0) > (previous.link_check_revision ?? 0)))) {
+        checks = new Map(checks).set(invitation.id, invitation);
+      }
+      return { revision: revision + 1, verifyFrom: verify ? revision + 1 : verifyFrom, checks };
+    });
+  }, []);
   const currentCheck = check?.view === view ? check : null;
-  const state = useData(
+  const state = usePoolRead<{ key: string; company: Company | null; check: CompanyCheck | null; poolCheckRevision?: number }>(
     async (signal) => {
-      const company = await withDeadline(signal, (lookupSignal) =>
-        api<Company>(`companies/${companyId}`, { signal: lookupSignal }),
-      ).catch((error) => {
-        if (currentCheck && error instanceof ApiError && error.status === 404) {
-          return null;
+      try {
+        const { data: company, poolCheckRevision } = await withDeadline(signal, (lookupSignal) =>
+          request<Company>(`companies/${companyId}`, { signal: lookupSignal }),
+        );
+        if (!signal.aborted) {
+          ensureCurrentMembership(company.my_membership_id, poolCheckRevision);
+          const canRead = company.my_permissions.includes("resources.read");
+          const accepted = verifyResourcePermission({
+            id: company.my_membership_id, revision: poolCheckRevision,
+            resourcesRead: canRead,
+          });
+          if (accepted && !canRead) focusBackWithin(resourceWidgets);
+          let conflictingPermission = false;
+          for (const permission of ["members.read", "members.manage"] as const) {
+            const allowed = company.my_permissions.includes(permission);
+            const newer = newerMemberPermission(permission, company.my_membership_id, poolCheckRevision);
+            if (newer !== undefined) conflictingPermission ||= newer !== allowed;
+            else rememberMemberPermission(permission, company.my_membership_id, allowed, poolCheckRevision);
+          }
+          if (conflictingPermission && poolCheckRevision !== undefined) throw new OutdatedPoolRead(poolCheckRevision);
+        }
+        return { key, company, check: currentCheck, poolCheckRevision };
+      } catch (error) {
+        if (!signal.aborted && error instanceof ApiError && [401, 403, 404].includes(error.status) && acceptCompanyError(error)) {
+          focusBackWithin(".organization-detail");
+          if (error.status === 404 && (currentCheck || state.data?.key === key)) {
+            return { key, company: null, check: currentCheck };
+          }
+          state.update(null);
         }
         throw error;
-      });
-      return { key, company, check: currentCheck };
+      }
     },
     key,
     true,
+    { retainError: true, onAccessError: acceptCompanyError },
   );
   const lookup = state.data?.key === key ? state.data : null;
   const company = lookup?.company?.id === companyId ? lookup.company : null;
   const membershipId = company?.my_membership_id;
   const reload = state.reload;
+  useReloadOnComputerPoolChange(userId, ({ assignment }) => {
+    if (assignment?.companyId === companyId && assignment.membershipId) {
+      const accepted = recordMembership({
+        id: assignment.membershipId, revision: assignment.revision, resourcesRead: assignment.canRead,
+      });
+      if (accepted && !assignment.canRead) focusBackWithin(resourceWidgets);
+    }
+    reload();
+  }, companyId);
+  useRefreshWhileVisible(reload);
   const checking = currentCheck !== null && lookup?.check !== currentCheck;
   const recheck = useCallback((reason: CompanyCheck["reason"]) => {
     setCheck((pending) => ({
       view,
-      reason: pending?.view === view && pending.reason === "access" ? "access" : reason,
+      reason: pending?.view === view && checkPriority[pending.reason] > checkPriority[reason] ? pending.reason : reason,
     }));
+    if (reason === "metadata" || reason === "update") {
+      focusBackWithin(".outgoing-invitations .share-link");
+      refreshInvitations(true);
+    }
     reload();
-  }, [view, reload]);
-  const recheckMemberAccess = useCallback(() => recheck("update"), [recheck]);
+  }, [view, reload, focusBackWithin, refreshInvitations]);
+  const recheckContentAccess = useCallback((error?: ApiError, permission?: OrganizationMemberPermission) => {
+    if (error && !acceptCompanyError(error)) return false;
+    if (permission && error?.status === 403 && error.organizationMembershipId &&
+        !rememberMemberPermission(permission, error.organizationMembershipId, false, error.poolCheckRevision)) return false;
+    if (error?.status === 404) focusBackWithin(".organization-detail");
+    recheck(error?.status === 404 ? "access" : error ? "section" : "update");
+    return true;
+  }, [acceptCompanyError, rememberMemberPermission, focusBackWithin, recheck]);
+  const recheckResourceAccess = useCallback((error: ApiError) => {
+    if (error.status === 403) {
+      if (error.organizationId === companyId && error.organizationMembershipId && error.poolCheckRevision !== undefined) {
+        const accepted = verifyResourcePermission({
+          id: error.organizationMembershipId, revision: error.poolCheckRevision, resourcesRead: false,
+        });
+        if (!accepted) return false;
+      } else {
+        setResourceDenial(view);
+      }
+      focusBackWithin(resourceWidgets);
+    }
+    return recheckContentAccess(error);
+  }, [companyId, view, verifyResourcePermission, focusBackWithin, recheckContentAccess]);
   const finishMemberReturn = useCallback(() => setReturnView(null), []);
   useLayoutEffect(() => {
     if (previousView.current.companyId === companyId && previousView.current.showMembers !== showMembers) {
@@ -223,28 +294,34 @@ export function Organization({ memberSearchDrafts }: { memberSearchDrafts: Map<s
     return subscribeToOrganizationChanges((change) => {
       if (change.type === "created" || change.userId !== userId || change.companyId !== companyId) return;
       if (change.type === "removed") {
-        if (!change.membershipId || (change.source === view && change.membershipId === membershipId)) {
-          navigate(directory, { replace: true });
-        } else if (!membershipId || change.membershipId === membershipId) {
+        const checked = membershipCheck.current;
+        const verifiedId = checked?.key === key ? checked.id : membershipId;
+        if (!change.membershipId || (change.source === view && change.membershipId === verifiedId)) {
+          navigate(directory, { replace: true, state: connectedPoolOrigin ? { connectedPoolOrigin } : undefined });
+        } else if (!verifiedId || change.membershipId === verifiedId) {
           recheck("access");
+        } else if (change.membershipId === membershipId) {
+          recheck("metadata");
         }
         return;
       }
       if (change.type === "membersChanged") {
         setMemberRevision((value) => value + 1);
-        setInvitationRevision((value) => value + 1);
+        refreshInvitations();
         reload();
         return;
       }
       if (change.type === "invitationsChanged") {
-        setInvitationRevision((value) => value + 1);
+        refreshInvitations(false, change.invitation);
         return;
       }
       // A reopened page may already have a newer save than this response.
       if (change.source !== view) {
-        recheck("update");
+        const metadataOnly = change.type === "renamed" || change.type === "appearanceUpdated";
+        recheck(metadataOnly ? "metadata" : "update");
         return;
       }
+      if (change.type === "membershipUpdated" && change.member.id === membershipId) clearPermission();
       state.update((current) => {
         if (current?.key !== key || !current.company) return current;
         if (change.type === "renamed") {
@@ -265,9 +342,9 @@ export function Organization({ memberSearchDrafts }: { memberSearchDrafts: Map<s
       });
       reload();
     });
-  }, [userId, companyId, membershipId, view, key, directory, navigate, reload, recheck, state.update]);
+  }, [userId, companyId, membershipId, view, key, directory, navigate, reload, recheck, refreshInvitations, state.update, connectedPoolOrigin, clearPermission]);
   const { t } = useI18n();
-  if (lookup?.company === null) return <Navigate replace to={directory} />;
+  if (lookup?.company === null) return <Navigate replace to={directory} state={poolNavigationState} />;
 
   const legacyPage = organizationPage(params);
   if (!showMembers && legacyPage > 1) {
@@ -281,50 +358,64 @@ export function Organization({ memberSearchDrafts }: { memberSearchDrafts: Map<s
   const q = typeof location.state?.memberSearch === "string" ? location.state.memberSearch : memberSearch.input;
   if (q) memberQuery.set("q", q);
   const onMembersChanged = () => notifyOrganizationChange({ type: "membersChanged", userId, companyId, source: view });
-  const onInvitationsChanged = () => notifyOrganizationChange({ type: "invitationsChanged", userId, companyId, source: view });
+  const onInvitationsChanged = (invitation?: InvitationLinkCheck) =>
+    notifyOrganizationChange({ type: "invitationsChanged", userId, companyId, source: view, invitation });
   const onMembershipChanged = (member: Membership) => notifyOrganizationChange({
     type: "membershipUpdated", userId, companyId, member, source: view,
   });
+  const onAccessRemoved = (removedMembershipId?: string) => notifyOrganizationChange({
+    type: "removed", userId, companyId, membershipId: removedMembershipId, source: view,
+  });
+  const currentMembershipId = () => membershipCheck.current?.key === key ? membershipCheck.current.id : membershipId;
+  const confirmedLeave = leaving?.view === view && leaving.membershipId === currentMembershipId() ? leaving : null;
   const loadingCompany = (!company || checking && currentCheck.reason === "access") && (state.loading || checking);
   return (
     <>
       <Link ref={backLink} key={showMembers ? "organization" : "directory"} className="back-link"
         to={showMembers ? { pathname: organizationPath, search: memberQuery.toString() } : directory}
-        state={showMembers ? { directorySearch } : undefined}>
+        state={showMembers ? { directorySearch, connectedPoolOrigin } : poolNavigationState}>
         ← {t(showMembers ? "backOrganization" : "backOrganizations")}
       </Link>
-      {(!!state.error || loadingCompany) && <OrganizationLookupStatus key={state.error ? "error" : "pending"}
-        error={state.error} restoreFocus={restoreRouteFocus}
-        retry={() => {
-          backLink.current?.focus({ preventScroll: true });
-          reload();
-        }} />}
       {company && !(checking && currentCheck.reason === "access") ? (
         showMembers ? <OrganizationMembers
           key={`${companyId}/${membershipId}`}
           company={company}
+          companyRevision={lookup?.poolCheckRevision}
           memberSearch={memberSearch}
           directory
           revision={memberRevision}
           check={checking ? { error: state.error, retry: reload } : undefined}
           onChanged={onMembersChanged}
-          onAccessError={recheckMemberAccess}
+          onAccessError={(error) => recheckContentAccess(error, "members.read")}
+          onMembershipCheck={(member) => recordReadMembership(member, "members.read")}
           onMembershipChanged={onMembershipChanged}
         /> : <OrganizationContent
           key={`${companyId}/${membershipId}`}
           company={company}
+          companyRevision={lookup?.poolCheckRevision}
           directorySearch={directorySearch}
           memberSearch={memberSearch}
           onMemberReturn={returnView === view ? finishMemberReturn : undefined}
           memberRevision={memberRevision}
-          invitationRevision={invitationRevision}
+          invitationRefresh={invitationRefresh}
           onMembersChanged={onMembersChanged}
           onInvitationsChanged={onInvitationsChanged}
-          onMemberAccessError={recheckMemberAccess}
+          onMemberAccessError={recheckContentAccess}
+          onResourceAccessError={recheckResourceAccess}
+          onMembershipCheck={recordReadMembership}
+          onResourceRead={(member) => recordReadMembership(member, "resources.read")}
+          verifiedResourceRead={resourcesRead}
+          resourcesDenied={resourceDenial === view}
+          settingsButton={settingsButton}
+          onLeave={() => {
+            const membershipId = currentMembershipId();
+            if (membershipId) setLeaving({ view, membershipId });
+          }}
           checkingCompany={checking}
+          checkingResources={checking && (currentCheck.reason === "update" || currentCheck.reason === "access")}
+          sectionOnlyCheck={currentCheck?.reason === "section"}
           companyCheckError={checking ? state.error : null}
           onChanged={reload}
-          onCheckPermissions={() => recheck("update")}
           onRenamed={(name) => notifyOrganizationChange({
             type: "renamed", userId, companyId, name, source: view,
           })}
@@ -332,95 +423,114 @@ export function Organization({ memberSearchDrafts }: { memberSearchDrafts: Map<s
             type: "appearanceUpdated", userId, companyId, appearance, source: view,
           })}
           onMembershipChanged={onMembershipChanged}
-          onAccessRemoved={(removedMembershipId) => notifyOrganizationChange({
-            type: "removed",
-            userId,
-            companyId,
-            membershipId: removedMembershipId,
-            source: view,
-          })}
+          onAccessRemoved={onAccessRemoved}
         />
       ) : null}
+      {company && !showMembers && confirmedLeave && (
+        <ConfirmDialog
+          check={checking ? { error: state.error, retry: reload } : undefined}
+          title={t("confirmLeave")}
+          value={memberName(user)}
+          warning={t("leaveWarning")}
+          conflict="leaveBlocked"
+          restoreFocus={restoreLeaveFocus}
+          onClose={() => setLeaving(null)}
+          onConfirm={async () => {
+            await api(`memberships/${confirmedLeave.membershipId}`, json("DELETE"));
+            onAccessRemoved(confirmedLeave.membershipId);
+          }}
+        />
+      )}
+      {(!!state.error || loadingCompany) && <OrganizationLookupStatus key={state.error ? "error" : "pending"}
+        error={state.error} restoreFocus={restoreRouteFocus}
+        retry={() => {
+          backLink.current?.focus({ preventScroll: true });
+          state.clearError();
+          reload();
+        }} />}
     </>
-  );
-}
-
-function OrganizationHero({ company, onSettings }: { company: Company; onSettings: () => void }) {
-  const { t } = useI18n();
-  const background = organizationImagePath(company, "background");
-  const avatar = organizationImagePath(company, "avatar");
-  const breakAt = company.name.indexOf(" ");
-  return (
-    <header className="organization-hero">
-      <div className={`organization-hero-art${background ? " is-custom" : ""}`} aria-hidden="true">
-        <ApiImage path={background} fallback={<img src={organizationArtwork} alt="" />} />
-      </div>
-      <div className="organization-hero-copy">
-        <div className="organization-hero-context">
-          {avatar && <span className="organization-hero-avatar" aria-hidden="true"><ApiImage path={avatar} fallback={null} /></span>}
-          <p className="eyebrow">{t("organizationType")}</p>
-        </div>
-        <h1 aria-label={`${company.name}.`}>
-          {breakAt > 0 ? <>{company.name.slice(0, breakAt)}{" "}<br /><span>{company.name.slice(breakAt + 1)}</span></> : company.name}
-          <span className="hot" aria-hidden="true">.</span>
-        </h1>
-        <p className="lede">{t("sharedWorkspace")}</p>
-        <button type="button" className="button primary compact organization-settings-trigger" aria-haspopup="dialog" onClick={(event) => {
-          event.currentTarget.focus({ preventScroll: true });
-          onSettings();
-        }}><Icon name="building" size={16} />{t("organizationSettings")}</button>
-      </div>
-    </header>
   );
 }
 
 function OrganizationContent({
   company,
+  companyRevision,
   directorySearch,
   memberSearch,
   onMemberReturn,
   memberRevision,
-  invitationRevision,
+  invitationRefresh,
   checkingCompany,
+  checkingResources,
+  sectionOnlyCheck,
   companyCheckError,
   onChanged,
   onMembersChanged,
   onInvitationsChanged,
   onMemberAccessError,
-  onCheckPermissions,
+  onResourceAccessError,
+  onMembershipCheck,
+  onResourceRead,
+  verifiedResourceRead,
+  resourcesDenied,
+  settingsButton,
+  onLeave,
   onRenamed,
   onAppearanceChanged,
   onMembershipChanged,
   onAccessRemoved,
 }: {
   company: Company;
+  companyRevision?: number;
   directorySearch: string;
   memberSearch: MemberSearch;
   onMemberReturn?: () => void;
   memberRevision: number;
-  invitationRevision: number;
+  invitationRefresh: InvitationRefresh;
   checkingCompany: boolean;
+  checkingResources: boolean;
+  sectionOnlyCheck: boolean;
   companyCheckError: unknown;
   onChanged: () => void;
   onMembersChanged: () => void;
-  onInvitationsChanged: () => void;
-  onMemberAccessError: () => void;
-  onCheckPermissions: () => void;
+  onInvitationsChanged: (invitation?: InvitationLinkCheck) => void;
+  onMemberAccessError: (error?: ApiError, permission?: OrganizationMemberPermission) => boolean;
+  onResourceAccessError: (error: ApiError) => boolean;
+  onMembershipCheck: (membership: OrganizationMembershipCheck, permission: OrganizationMemberPermission) => void;
+  onResourceRead: (membership: OrganizationMembershipCheck) => void;
+  verifiedResourceRead?: boolean;
+  resourcesDenied: boolean;
+  settingsButton: RefObject<HTMLButtonElement | null>;
+  onLeave: () => void;
   onRenamed: (name: string) => void;
   onAppearanceChanged: (appearance: CompanyAppearance) => void;
   onMembershipChanged: (member: Membership) => void;
   onAccessRemoved: (membershipId?: string) => void;
 }) {
   const { t, locale } = useI18n();
-  const { user } = useSession();
   const memberQuery = memberSearch.input;
   const canManage = company.my_permissions.includes("members.manage");
   const canDelete = company.my_role === "creator";
-  const canReadResources = company.my_permissions.includes("resources.read");
-  const resourceAccess: OrganizationResourceAccess = checkingCompany
+  const metadataCanRead = company.my_permissions.includes("resources.read");
+  const canReadResources = verifiedResourceRead ?? metadataCanRead;
+  const resourceAccess: OrganizationResourceAccess = checkingResources
     ? (companyCheckError ? "unverified" : "checking")
-    : (canReadResources ? "available" : "denied");
-  const pendingCheck = checkingCompany ? { error: companyCheckError, retry: onChanged } : undefined;
+    : (canReadResources && !resourcesDenied ? "available" : "denied");
+  const resources = usePoolOverview({ kind: "companies", id: company.id }, {
+    enabled: (canReadResources || metadataCanRead) && !checkingResources,
+    onAccessError: onResourceAccessError,
+    onRead: onResourceRead,
+  });
+  const { update: updateOverview, reload: reloadOverview } = resources;
+  const checkResourceAccess = useCallback((error: ApiError) => {
+    if (!onResourceAccessError(error)) return false;
+    if (error.status === 403) {
+      updateOverview(null);
+      reloadOverview();
+    }
+    return true;
+  }, [onResourceAccessError, updateOverview, reloadOverview]);
+  const pendingCheck = checkingCompany ? { error: companyCheckError, retry: onChanged, scoped: sectionOnlyCheck } : undefined;
   const computersQuery = new URLSearchParams({
     company_id: company.id,
     only_available: "false",
@@ -431,27 +541,53 @@ function OrganizationContent({
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [people, setPeople] = useState<"members" | "invitations">("members");
   const [invitationsOpened, setInvitationsOpened] = useState(false);
+  const [lastInvitationDenial, setInvitationDenial] = useState<ApiError | null>(null);
   const invitationPath = `invitations?company_id=${company.id}`;
-  const invitations = useData(
+  const invitations = usePoolRead<{ key: string; items: Invitation[] | null; count: number | null; revision: number }>(
     async (signal) => {
-      if (!canManage) return { key: accessKey, items: [], count: 0 };
+      const revision = invitationRefresh.revision;
+      if (!canManage) return { key: accessKey, items: [], count: 0, revision };
+      let firstPage: OrganizationMembershipCheck | undefined;
+      const recordPage = ({ organizationMembershipId: id, poolCheckRevision }: ApiResponse<Invitation[]>) => {
+        if (signal.aborted || !id || poolCheckRevision === undefined) return;
+        onMembershipCheck({ id, revision: poolCheckRevision }, "members.manage");
+        if (firstPage && firstPage.id !== id) throw new OutdatedPoolRead(firstPage.revision);
+        firstPage ??= { id, revision: poolCheckRevision };
+      };
       if (!invitationsOpened) {
-        const { total } = await withDeadline(signal, (readSignal) =>
+        const result = await withDeadline(signal, (readSignal) =>
           request<Invitation[]>(`${invitationPath}&limit=0`, { signal: readSignal }),
         );
-        return { key: accessKey, items: null, count: total };
+        recordPage(result);
+        if (!signal.aborted) setInvitationDenial(null);
+        return { key: accessKey, items: null, count: result.total, revision };
       }
       const items = await allPages<Invitation>(`${invitationPath}&include_counts=false`, signal, {
-        deadlineMs: DEFAULT_TIMEOUT_MS,
+        deadlineMs: DEFAULT_TIMEOUT_MS, onPage: recordPage,
       });
-      return { key: accessKey, items, count: items.length };
+      if (!signal.aborted) setInvitationDenial(null);
+      return { key: accessKey, items, count: items.length, revision };
     },
     accessKey,
     true,
-    invitationRevision,
+    {
+      revision: invitationRefresh.revision, retainError: true,
+      onAccessError: (error) => {
+        if (!onMemberAccessError(error, "members.manage")) return false;
+        invitations.update(null);
+        setInvitationDenial(error);
+        return true;
+      },
+    },
   );
-  const invitationData = invitations.data?.key === accessKey ? invitations.data : null;
+  const { denial: invitationDenial, error: invitationError } = useOrganizationSectionAccess(
+    invitations, lastInvitationDenial, canManage ? companyRevision : undefined,
+  );
+  useRefreshWhileVisible(invitations.reload, canManage);
+  const invitationData = !invitationDenial && invitations.data?.key === accessKey ? invitations.data : null;
   const invitationRows = invitationData?.items ?? null;
+  const showInvitationLinks = invitationRefresh.verifyFrom === 0 ||
+    Boolean(invitationData?.items && invitationData.revision >= invitationRefresh.verifyFrom);
   const [invitationAccess, setInvitationAccess] = useState(() => ({
     key: accessKey, role: company.my_role, permissions: company.my_permissions, revision: 0,
   }));
@@ -465,12 +601,12 @@ function OrganizationContent({
       revision: invitationAccess.revision + Number(lostRole || lostPermissions) });
   }
   const accessRevision = invitationAccess.revision;
-  const [leaving, setLeaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [renewed, setRenewed] = useState<{ invitation: CreatedInvitation; accessRevision: number } | null>(null);
-  if (renewed && (renewed.accessRevision !== accessRevision || invitationRows?.some((invitation) =>
-    invitation.id === renewed.invitation.id && invitation.status !== "pending"))) setRenewed(null);
-  const token = renewed?.invitation.token;
+  const [renewed, setRenewed] = useState<{ invitation: CreatedInvitation; accessRevision: number; verifiedFrom: number } | null>(null);
+  if (renewed && (invitationDenial || renewed.accessRevision !== accessRevision ||
+      invitationLinkIsOutdated(renewed.invitation, invitationRows, invitationRefresh.checks.get(renewed.invitation.id)))) setRenewed(null);
+  const token = renewed && (showInvitationLinks || renewed.verifiedFrom === invitationRefresh.verifyFrom)
+    ? renewed.invitation.token : undefined;
   const renewedLink = useRef<HTMLInputElement>(null);
   const focusRenewedLink = useRef(false);
   const [linkRevision, setLinkRevision] = useState(0);
@@ -479,8 +615,11 @@ function OrganizationContent({
   const [inviteError, setInviteError] = useState<unknown>(null);
   const [settings, setSettings] = useState(false);
   const [expandedTeamRows, setExpandedTeamRows] = useState(() => new Set<string>());
-  const holdTeamLayout = useTeamPointerLayout();
+  const holdTeamLayout = usePoolPointerLayout();
   const peopleId = useId();
+  const restoreInvitationFocus = useCallback(() => {
+    if (document.activeElement === document.body) document.getElementById(`${peopleId}-tab-invitations`)?.focus();
+  }, [peopleId]);
   const canReadMembers = company.my_permissions.includes("members.read");
   const teamCount = (canReadMembers ? memberCount : null) ?? company.member_count;
   const peopleOptions: { key: typeof people; label: string; count?: string }[] = [{
@@ -531,18 +670,22 @@ function OrganizationContent({
     setInviteBusy(invitation.id);
     setInviteError(null);
     try {
+      let checked: InvitationLinkCheck;
       if (action === "link") {
         const result = await api<CreatedInvitation>(
           `invitations/${invitation.id}/link`,
           json("POST"),
         );
         focusRenewedLink.current = document.activeElement === trigger;
-        setRenewed({ invitation: result, accessRevision });
+        setRenewed({ invitation: result, accessRevision, verifiedFrom: invitationRefresh.verifyFrom });
+        const { id, status, link_version, link_check_revision } = result;
+        checked = { id, status, link_version, link_check_revision };
       } else {
         await api(`invitations/${invitation.id}`, json("DELETE"));
         setRenewed(null);
+        checked = { id: invitation.id, status: "revoked" };
       }
-      onInvitationsChanged();
+      onInvitationsChanged(checked);
       setLinkRevision((value) => value + 1);
     } catch (e) {
       setInviteError(e);
@@ -558,70 +701,87 @@ function OrganizationContent({
     revoked: "invitationStatusRevoked",
     expired: "invitationStatusExpired",
   };
-  const memberPanel = <OrganizationMembers company={company} memberSearch={memberSearch} revision={memberRevision} check={pendingCheck}
+  const memberPanel = <OrganizationMembers company={company} companyRevision={companyRevision}
+    memberSearch={memberSearch} revision={memberRevision} check={pendingCheck}
     onReturn={onMemberReturn} knownCount={memberCount} onCount={setMemberCount} onMembershipChanged={onMembershipChanged}
-    onAccessError={onMemberAccessError} onChanged={onMembersChanged} />;
+    onAccessError={(error) => onMemberAccessError(error, "members.read")}
+    onMembershipCheck={(member) => onMembershipCheck(member, "members.read")} onChanged={onMembersChanged} />;
   const invitationPanel = canManage && (
         <section
           className="outgoing-invitations"
           aria-label={t("invitations")}
         >
-          <MemberSharing company={company} onChanged={(addedMember) => {
-            if (addedMember) onMembersChanged();
-            else onInvitationsChanged();
-          }} onAccessError={onMemberAccessError} invitations={invitationRows}
-            accessRevision={accessRevision} linkRevision={linkRevision} />
-          <ErrorBox error={inviteError} conflict="invitationConflict" />
-          {token && <ShareLink key={token} token={token} inputRef={renewedLink} />}
-          {invitations.error ? (
-            <ErrorBox error={invitations.error} retry={invitations.reload} />
-          ) : !invitationRows ? (
-            <Loading />
-          ) : !invitationRows.length ? (
-            <p className="organization-invitations-empty">{t("noInvitations")}</p>
-          ) : (
-            <div className="organization-team-list" aria-busy={invitations.loading || undefined}>
-              {invitationRows.map((invitation) => {
-                const label = invitation.email || t("openInvitationLabel");
-                const detailsId = `${peopleId}-invitation-${invitation.id}`;
-                const expanded = expandedTeamRows.has(detailsId);
-                return (
-                  <article key={invitation.id} className="invitation-row" aria-label={label}>
-                    <h3 className="organization-team-row-heading">
-                      <button id={`${detailsId}-summary`} className="organization-invitation-summary" type="button" aria-expanded={expanded}
-                        aria-controls={detailsId} onClick={() => toggleTeamRow(detailsId)}>
-                        <span className="organization-invitation-label">
-                          <strong>{label}</strong>
-                          {!invitation.email && <small>
-                            {t(invitation.role)} · <InvitationExpiry expiresAt={invitation.expires_at} />
-                          </small>}
-                        </span>
-                        <span className={`organization-invitation-status ${invitation.status}`}>{t(statuses[invitation.status])}</span>
-                        <span className="organization-team-chevron"><Icon name="chevron-down" size={15} /></span>
-                      </button>
-                    </h3>
-                    <div className="organization-invitation-details" id={detailsId} hidden={!expanded}>
-                      {invitation.email
-                        ? <InvitationFacts invitation={invitation} />
-                        : <PermissionSummary values={invitation.effective_permissions} />}
-                      {invitation.status === "pending" && (company.my_role === "creator" || invitation.role === "user") && (
-                        <InvitationActions summaryId={`${detailsId}-summary`} disabled={inviteActionsDisabled}
-                          onAction={(action, trigger) => inviteAction(invitation, action, trigger)} />
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
+          {invitationDenial ? <RetryErrorBox error={invitationDenial} retry={invitations.reload} restoreFocus={restoreInvitationFocus} /> : <>
+            <MemberSharing company={company} onChanged={(addedMember) => {
+              if (addedMember) onMembersChanged();
+              else onInvitationsChanged();
+            }} onAccessError={onMemberAccessError} invitations={invitationRows}
+              accessRevision={accessRevision} linkRevision={linkRevision} showInvitationLinks={showInvitationLinks}
+              verifyInvitationsFrom={invitationRefresh.verifyFrom} invitationChecks={invitationRefresh.checks}
+              restoreInvitationFocus={restoreInvitationFocus} />
+            <ErrorBox error={inviteError} conflict="invitationConflict" />
+            {token && <ShareLink key={token} token={token} inputRef={renewedLink} restoreFocus={restoreInvitationFocus} />}
+            {invitationError ? (
+              <RetryErrorBox error={invitationError} retry={invitations.reload} restoreFocus={restoreInvitationFocus} />
+            ) : !invitationRows ? (
+              <Loading />
+            ) : !invitationRows.length ? (
+              <p className="organization-invitations-empty">{t("noInvitations")}</p>
+            ) : (
+              <div className="organization-team-list" aria-busy={invitations.loading || undefined}>
+                {invitationRows.map((invitation) => {
+                  const label = invitation.email || t("openInvitationLabel");
+                  const detailsId = `${peopleId}-invitation-${invitation.id}`;
+                  const expanded = expandedTeamRows.has(detailsId);
+                  return (
+                    <article key={invitation.id} className="invitation-row" aria-label={label}>
+                      <h3 className="organization-team-row-heading">
+                        <button id={`${detailsId}-summary`} className="organization-invitation-summary" type="button" aria-expanded={expanded}
+                          aria-controls={detailsId} onClick={() => toggleTeamRow(detailsId)}>
+                          <span className="organization-invitation-label">
+                            <strong>{label}</strong>
+                            {!invitation.email && <small>
+                              {t(invitation.role)} · <InvitationExpiry expiresAt={invitation.expires_at} />
+                            </small>}
+                          </span>
+                          <span className={`organization-invitation-status ${invitation.status}`}>{t(statuses[invitation.status])}</span>
+                          <span className="organization-team-chevron"><Icon name="chevron-down" size={15} /></span>
+                        </button>
+                      </h3>
+                      <div className="organization-invitation-details" id={detailsId} hidden={!expanded}>
+                        {invitation.email
+                          ? <InvitationFacts invitation={invitation} />
+                          : <PermissionSummary values={invitation.effective_permissions} />}
+                        {invitation.status === "pending" && (company.my_role === "creator" || invitation.role === "user") && (
+                          <InvitationActions summaryId={`${detailsId}-summary`} disabled={inviteActionsDisabled}
+                            onAction={(action, trigger) => inviteAction(invitation, action, trigger)} />
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </>}
         </section>
   );
   return (
     <div className="organization-detail">
-      <OrganizationHero company={company} onSettings={() => setSettings(true)} />
-      <OrganizationOverview company={company} memberCount={teamCount} access={resourceAccess} />
+      <OrganizationHero
+        name={company.name}
+        context={t("organizationType")}
+        description={t("sharedWorkspace")}
+        avatar={organizationImagePath(company, "avatar")}
+        background={organizationImagePath(company, "background")}
+        action={<button ref={settingsButton} type="button" className="button primary compact organization-hero-action organization-settings-trigger" aria-haspopup="dialog" onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          setSettings(true);
+        }}><Icon name="building" size={16} />{t("organizationSettings")}</button>}
+      />
+      <PoolOverview state={resources} computerCount={company.computer_count} memberCount={teamCount} access={resourceAccess} />
       <WidgetLayout className="organization-widgets" gap="var(--organization-gap)" primaryWeight={1.32}
-        lead={<OrganizationComputers company={company} query={computersQuery.toString()} access={resourceAccess} />}
+        lead={<PoolComputers state={resources} computerCount={company.computer_count} query={computersQuery.toString()}
+          access={resourceAccess} onAccessError={checkResourceAccess} />}
         aside={<section className="organization-widget organization-people" aria-label={t("organizationTeam")}
             onFocus={keepOrganizationControlVisible} onPointerDownCapture={holdTeamLayout}>
             <header className="organization-team-header">
@@ -635,28 +795,15 @@ function OrganizationContent({
               {invitationPanel}
             </div>}
           </section>}>
-        {canReadResources && <Activity mode={resourceAccess === "available" ? "visible" : "hidden"}>
-          <OrganizationResourceCharts companyId={company.id} />
+        {canReadResources && !resourcesDenied && <Activity mode={resourceAccess === "available" ? "visible" : "hidden"}>
+          <OrganizationResourceCharts companyId={company.id} overview={resources}
+            onRead={onResourceRead} onAccessError={checkResourceAccess} />
         </Activity>}
       </WidgetLayout>
       {settings && <OrganizationSettings company={company}
         check={pendingCheck}
-        onClose={() => setSettings(false)} onLeave={() => setLeaving(true)} onDelete={() => setDeleting(true)}
-        onRenamed={onRenamed} onAppearanceChanged={onAppearanceChanged} onCheckPermissions={onCheckPermissions} />}
-      {leaving && (
-        <ConfirmDialog
-          check={pendingCheck}
-          title={t("confirmLeave")}
-          value={memberName(user!)}
-          warning={t("leaveWarning")}
-          conflict="leaveBlocked"
-          onClose={() => setLeaving(false)}
-          onConfirm={async () => {
-            await api(`memberships/${company.my_membership_id}`, json("DELETE"));
-            onAccessRemoved(company.my_membership_id);
-          }}
-        />
-      )}
+        onClose={() => setSettings(false)} onLeave={onLeave} onDelete={() => setDeleting(true)}
+        onRenamed={onRenamed} onAppearanceChanged={onAppearanceChanged} onCheckPermissions={onMemberAccessError} />}
       {deleting && canDelete && (
         <ConfirmDialog
           check={pendingCheck}

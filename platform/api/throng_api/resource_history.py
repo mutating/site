@@ -23,12 +23,20 @@ from throng_api.models import (
 from throng_api.models import (
     ComputerResourceChange as Change,
 )
-from throng_api.security import company_access, personal
+from throng_api.security import company_access, organization_membership_headers, personal
 
 
-async def report_owner(session, principal, *, user_id=None, company_id=None):
+async def report_owner(session, principal, *, user_id=None, company_id=None, response=None):
     if company_id is not None:
-        await company_access(session, principal, company_id)
+        member = await company_access(
+            session,
+            principal,
+            company_id,
+            include_membership_id=response is not None,
+            include_check_revision=response is not None,
+        )
+        if response is not None:
+            response.headers.update(organization_membership_headers(principal, member))
         return (None, str(company_id))
     if principal.user_id != str(user_id):
         raise HTTPException(404, "Resource not found")
@@ -188,8 +196,10 @@ async def pool_resource_totals(session, condition, available, *, include_types=T
     return types, inventory, schedulable
 
 
-async def pool_summary(session, company_id, now):
-    condition = ComputerOwnership.company_id == company_query_id(session, company_id)
+async def pool_summary(session, owner, now):
+    if owner[1] is not None:
+        owner = (None, company_query_id(session, owner[1]))
+    condition = ownership_condition(owner)
     available = available_computer_filter(now)
     types, inventory, schedulable = await pool_resource_totals(session, condition, available)
     computer_counts = await session.execute(

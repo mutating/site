@@ -1,15 +1,19 @@
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../lib/api";
-import { useData } from "../lib/useData";
+import { ApiError, request, type ApiResponse } from "../lib/api";
+import { OutdatedPoolRead, usePoolRead, useReloadOnComputerPoolChange } from "../lib/compute";
+import { useRefreshWhileVisible } from "../lib/useData";
+import { useOrganizationSectionAccess } from "../lib/useOrganizationDirectory";
 import { useI18n } from "../lib/i18n";
+import { useSession } from "../lib/session";
 import { GiB, day, number } from "../lib/chart";
-import type { Pool, Summary, CapacityHistory, Company } from "../lib/types";
+import type { Pool, Summary, CapacityHistory, Company, OrganizationMembershipCheck } from "../lib/types";
 import { CapacityChart } from "./CapacityChart";
 import { ErrorBox, Icon, Loading } from "./UI";
-export function RestrictedPoolCard({ company }: { company: Company }) {
+export function RestrictedPoolCard({ company, cardRef }: { company: Company; cardRef?: RefObject<HTMLElement | null> }) {
   const { t } = useI18n();
   return (
-    <section className="pool-card" aria-label={company.name}>
+    <section className="pool-card" ref={cardRef} aria-label={company.name}>
       <header className="pool-card-header">
         <div>
           <p className="eyebrow">{t("organizationType")}</p>
@@ -123,30 +127,86 @@ export function PoolCard({
   pool,
   chart = false,
   revision = 0,
+  cardRef,
+  grantedAt,
+  onAccessError,
+  onMembershipCheck,
 }: {
   pool: Pool;
   chart?: boolean;
   revision?: number;
+  cardRef?: RefObject<HTMLElement | null>;
+  grantedAt?: number;
+  onAccessError?: (error: ApiError) => boolean;
+  onMembershipCheck?: (membership: OrganizationMembershipCheck) => void;
 }) {
   const { t } = useI18n();
-  const state = useData(async (signal) => {
+  const userId = useSession().user!.id;
+  const computersLink = useRef<HTMLAnchorElement>(null);
+  const retry = useRef<HTMLButtonElement>(null);
+  const [denial, setDenial] = useState<ApiError | null>(null);
+  const [reportedGrant, setReportedGrant] = useState(-1);
+  const restoreInventoryFocus = useRef(false);
+  const state = usePoolRead<{ summary: Summary; history: CapacityHistory | null }>(async (signal) => {
     const now = new Date();
     const from = new Date(now.getTime() - 7 * day);
     const prefix = `${pool.kind}/${pool.id}/resources`;
+    function recordRead({ organizationMembershipId: id, poolCheckRevision }: ApiResponse<unknown>) {
+      if (!signal.aborted && id && poolCheckRevision !== undefined) {
+        onMembershipCheck?.({ id, revision: poolCheckRevision });
+        setReportedGrant((current) => Math.max(current, poolCheckRevision));
+      }
+    }
+    async function read<T>(endpoint: string) {
+      try {
+        const result = await request<T>(endpoint, { signal });
+        recordRead(result);
+        return result;
+      } catch (error) {
+        if (!signal.aborted && error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+          if (onAccessError?.(error) === false && error.poolCheckRevision !== undefined) {
+            throw new OutdatedPoolRead(error.poolCheckRevision);
+          }
+          const rejectedAt = error.poolCheckRevision;
+          setDenial((current) => current?.poolCheckRevision !== undefined && rejectedAt !== undefined && current.poolCheckRevision > rejectedAt
+            ? current : error);
+          state.update(null);
+        }
+        throw error;
+      }
+    }
     const [summary, history] = await Promise.all([
-      api<Summary>(`${prefix}/summary?only_available=true`, { signal }),
+      read<Summary>(`${prefix}/summary?only_available=true`),
       chart
-        ? api<CapacityHistory>(
+        ? read<CapacityHistory>(
             `${prefix}/availability-history?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(now.toISOString())}`,
-            { signal },
           )
         : Promise.resolve(null),
     ]);
-    return { summary, history };
-  }, `${pool.kind}/${pool.id}/${chart}`, chart, revision);
+    if (!signal.aborted) {
+      recordRead(summary);
+      if (history) recordRead(history);
+      setDenial(null);
+      if (document.activeElement === retry.current) {
+        if (computersLink.current) computersLink.current.focus();
+        else restoreInventoryFocus.current = true;
+      }
+    }
+    return { summary: summary.data, history: history?.data ?? null };
+  }, `${pool.kind}/${pool.id}/${chart}`, chart, { revision, retainError: true });
+  const { denial: activeDenial, error } = useOrganizationSectionAccess(state, denial, Math.max(grantedAt ?? -1, reportedGrant));
+  const denied = activeDenial !== null;
+  useLayoutEffect(() => {
+    if (denied || !restoreInventoryFocus.current) return;
+    restoreInventoryFocus.current = false;
+    if (document.activeElement === document.body || document.activeElement === retry.current) computersLink.current?.focus();
+  }, [denied]);
+  useReloadOnComputerPoolChange(userId, state.reload, pool.kind === "companies" ? pool.id : null);
+  useRefreshWhileVisible(state.reload, chart);
   return (
     <section
       className="pool-card"
+      ref={cardRef}
       aria-label={pool.name}
       aria-busy={chart && state.loading && state.data ? true : undefined}
     >
@@ -162,27 +222,21 @@ export function PoolCard({
             <h2>{pool.name}</h2>
           </div>
         </div>
-        <Link
+        {!denied && <Link
+          ref={computersLink}
           className="text-link"
           to={`/compute/computers?${pool.kind === "users" ? "user_id" : "company_id"}=${pool.id}`}
         >
           {t("viewComputers")} <Icon name="arrow" size={16} />
-        </Link>
+        </Link>}
       </header>
-      {state.loading && !state.data ? (
-        <Loading />
-      ) : state.error ? (
-        <ErrorBox error={state.error} retry={state.reload} />
-      ) : (
-        state.data && (
-          <>
-            <Metrics summary={state.data.summary} compact={chart} />
-            {state.data.history && (
-              <CapacityChart history={state.data.history} />
-            )}
-          </>
-        )
-      )}
+      <ErrorBox error={activeDenial ?? error} retry={state.reload} retryRef={retry} />
+      {state.data ? (
+        <>
+          <Metrics summary={state.data.summary} compact={chart} />
+          {state.data.history && <CapacityChart history={state.data.history} />}
+        </>
+      ) : state.loading && !error && !denied && <Loading />}
     </section>
   );
 }

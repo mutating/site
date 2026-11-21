@@ -13,13 +13,13 @@ type Field = "name" | OrganizationImage;
 
 export function OrganizationSettings({ company, check, onClose, onLeave, onDelete, onRenamed, onAppearanceChanged, onCheckPermissions }: {
   company: Company;
-  check?: { error: unknown; retry: () => void };
+  check?: { error: unknown; retry: () => void; scoped?: boolean };
   onClose: () => void;
   onLeave: () => void;
   onDelete: () => void;
   onRenamed: (name: string) => void;
   onAppearanceChanged: (appearance: CompanyAppearance) => void;
-  onCheckPermissions: () => void;
+  onCheckPermissions: (error?: ApiError) => void;
 }) {
   const { t } = useI18n();
   const id = useId();

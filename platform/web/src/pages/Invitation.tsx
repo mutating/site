@@ -3,12 +3,15 @@ import { Link, useParams } from "react-router-dom";
 import { api, json } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useI18n } from "../lib/i18n";
+import { useSession } from "../lib/session";
+import { notifyOrganizationChange } from "../lib/useOrganizationDirectory";
 import type { Invitation as InvitationData } from "../lib/types";
 import { ErrorBox, Heading, Loading } from "../components/UI";
 import { InvitationFacts } from "../components/InvitationUI";
 
 export function Invitation() {
   const { token = "" } = useParams();
+  const userId = useSession().user!.id;
   const { t } = useI18n();
   const state = useData(
     (signal) =>
@@ -53,12 +56,14 @@ export function Invitation() {
                   if (busy) return;
                   setBusy(true);
                   setError(null);
+                  const companyId = state.data!.company_id;
                   try {
                     await api(
                       `invitations/link/${encodeURIComponent(token)}/accept`,
                       json("POST"),
                     );
                     setAccepted(true);
+                    notifyOrganizationChange({ type: "membersChanged", userId, companyId, source: Symbol() });
                   } catch (e) {
                     setError(e);
                   } finally {

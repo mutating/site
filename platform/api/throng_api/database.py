@@ -9,6 +9,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from throng_api.models import Coordination
 from throng_api.transport import db_wait
 
+COMPUTER_POOL_CHECK_REVISION_HEADER = "X-Computer-Pool-Check-Revision"
+
+
+async def current_revision(session):
+    return await session.scalar(select(Coordination.revision).where(Coordination.id == 1))
+
 
 def company_query_id(session, company_id):
     """Let PostgreSQL plan a collection query for this company's actual cardinality."""

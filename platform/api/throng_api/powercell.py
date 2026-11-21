@@ -209,6 +209,9 @@ async def detach_computer(session, computer, now, actor_id=None):
     if computer.certificate_sha256:
         certificate = await session.get(DeviceCertificate, computer.certificate_sha256)
         certificate.revoked_at = now
+    computer.connected_user_id = None
+    computer.legacy_transfer_user_id = None
+    computer.legacy_transfer_pending = False
     computer.session_id = None
     await session.execute(delete(AgentCredential).where(AgentCredential.computer_id == computer.id))
 

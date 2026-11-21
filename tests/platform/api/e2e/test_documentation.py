@@ -35,6 +35,7 @@ async def test_openapi_security_matches_public_and_protected_operations(client):
         ("/v1/auth/session", "delete"),
         ("/health/live", "get"),
         ("/v1/agent-capabilities", "get"),
+        ("/v1/connected-computers/browser", "get"),
         ("/v1/github/oauth/callback", "get"),
         ("/v1/github/installations/callback", "get"),
         ("/v1/github/webhook", "post"),
@@ -60,6 +61,7 @@ async def test_openapi_security_matches_public_and_protected_operations(client):
             }
             if path.startswith("/agent/") and path not in {
                 "/agent/v1/session",
+                "/agent/v1/connection/confirm",
                 "/agent/v1/unbind",
                 "/agent/v1/diagnostics/{diagnostic_id}",
                 "/agent/v1/benchmark-results",
@@ -104,6 +106,10 @@ async def test_openapi_includes_every_required_crud_and_execution_operation(clie
         "/v1/commands/cancel",
     ]:
         assert "post" in paths[path]
+    assert "get" in paths["/v1/connected-computers"]
+    assert "patch" in paths["/v1/connected-computers/{computer_id}/pool"]
+    assert "post" in paths["/v1/connected-computers/{computer_id}/pool/reconcile"]
+    assert {"get", "post"} <= paths["/v1/connected-computers/{computer_id}/recovery"].keys()
 
 
 async def test_resource_contract_describes_inventory_reports_and_server_managed_reservations(

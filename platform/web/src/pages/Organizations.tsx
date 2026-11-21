@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { api, json } from "../lib/api";
+import { useReloadOnComputerPoolChange } from "../lib/compute";
 import { notifyOrganizationChange, useOrganizationDirectory } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n, type MessageKey } from "../lib/i18n";
@@ -12,24 +13,27 @@ import {
 } from "../lib/organizations";
 import type { Company, Invitation } from "../lib/types";
 import { CreateOrganizationDialog } from "../components/CreateOrganizationDialog";
-import { ApiImage } from "../components/ApiImage";
+import { OrganizationRowContent } from "../components/OrganizationRowContent";
 import { Empty, ErrorBox, Heading, Icon, Loading } from "../components/UI";
 
 export function Organizations() {
   const userId = useSession().user!.id;
-  const { key: locationKey } = useLocation();
+  const { key: locationKey, state: routeState } = useLocation();
+  const connectedPoolOrigin = routeState?.connectedPoolOrigin;
+  const poolNavigationState = connectedPoolOrigin ? { connectedPoolOrigin } : undefined;
   const { t, locale } = useI18n();
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
   const page = organizationPage(params);
   const state = useOrganizationDirectory(userId, query, page);
+  useReloadOnComputerPoolChange(userId, state.reload);
   const activeView = useRef<{ userId: string; locationKey: string } | null>(null);
   useLayoutEffect(() => {
     activeView.current = { userId, locationKey };
     return () => { activeView.current = null; };
   }, [userId, locationKey]);
   const setQuery = (value: string) =>
-    setParams(organizationSearchParams(params, value), { replace: true });
+    setParams(organizationSearchParams(params, value), { replace: true, state: poolNavigationState });
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState<MessageKey | null>(null);
   const [busyInvitation, setBusyInvitation] = useState<string | null>(null);
@@ -44,12 +48,12 @@ export function Organizations() {
     const next = new URLSearchParams(params);
     if (value === 1) next.delete("page");
     else next.set("page", String(value));
-    setParams(next, { replace });
+    setParams(next, { replace, state: poolNavigationState });
   };
   useEffect(() => {
     if (!state.loading && !state.error && outsidePages)
       updatePage(totalPages, true);
-  }, [state.loading, state.error, outsidePages, totalPages, params, setParams]);
+  }, [state.loading, state.error, outsidePages, totalPages, params, setParams, connectedPoolOrigin]);
   const number = (value: number) => value.toLocaleString(locale);
 
   async function invitationAction(
@@ -66,7 +70,11 @@ export function Organizations() {
       setMessage(
         kind === "accept" ? "invitationAccepted" : "invitationDeclined",
       );
-      state.reload();
+      if (kind === "accept") {
+        notifyOrganizationChange({ type: "membersChanged", userId, companyId: invitation.company_id, source: Symbol() });
+      } else {
+        state.reload();
+      }
     } catch (error) {
       setInvitationError(error);
     } finally {
@@ -150,52 +158,16 @@ export function Organizations() {
               const pending = entry.kind === "invitation";
               const row = pending ? entry.invitation : entry.company;
               const name = entry.name;
-              const initials = name
-                .trim()
-                .split(/\s+/u)
-                .slice(0, 2)
-                .map((part) => Array.from(part)[0])
-                .join("")
-                .toLocaleUpperCase(locale);
               const content = (
-                <>
-                  <span className="organization-monogram" aria-hidden="true">
-                    {pending ? initials : <ApiImage path={organizationImagePath(entry.company, "avatar")} fallback={initials} />}
-                  </span>
-                  <div className="organization-info">
-                    <h3>{name}</h3>
-                    <small>
-                      {pending
-                        ? t(entry.invitation.role)
-                        : t("sharedWorkspace")}
-                    </small>
-                  </div>
-                  <span
-                    className={`badge organization-role${pending ? " invitation-badge" : ""}`}
-                  >
-                    {pending
-                      ? t("invitedOrganization")
-                      : t(entry.company.my_role)}
-                  </span>
-                  <span
-                    className="organization-metric organization-members-metric"
-                    role="img"
-                    aria-label={`${t("members")}: ${number(row.member_count)}`}
-                  >
-                    <Icon name="users" size={16} />
-                    <span>{number(row.member_count)}</span>
-                  </span>
-                  <span
-                    className="organization-metric organization-computers-metric"
-                    role="img"
-                    aria-label={`${t("computers")}: ${number(entry.computerCount)}`}
-                  >
-                    <Icon name="computer" size={16} />
-                    <span data-testid="organization-computer-count">
-                      {number(entry.computerCount)}
-                    </span>
-                  </span>
-                </>
+                <OrganizationRowContent
+                  name={name}
+                  subtitle={pending ? t(entry.invitation.role) : t("sharedWorkspace")}
+                  role={pending ? t("invitedOrganization") : t(entry.company.my_role)}
+                  avatarPath={pending ? null : organizationImagePath(entry.company, "avatar")}
+                  memberCount={row.member_count}
+                  computerCount={entry.computerCount}
+                  invited={pending}
+                />
               );
               return (
                 <article
