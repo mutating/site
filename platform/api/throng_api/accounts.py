@@ -47,6 +47,7 @@ from throng_api.security import (
     SCOPES,
     access_token_scheme,
     authenticate,
+    authenticated_snapshot,
     company_access,
     digest,
     hash_password,
@@ -318,8 +319,7 @@ async def list_companies(
 
 @router.get("/companies/{company_id}", response_model=out.Company)
 async def get_company(company_id: UUID, request: Request, response: Response):
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
+    async with authenticated_snapshot(request) as (session, principal):
         member = await company_access(
             session, principal, str(company_id), include_check_revision=True
         )
@@ -484,8 +484,7 @@ async def list_memberships(
     user_id: UUID | None = None,
     q: str = Query("", max_length=201, pattern=r"^[^\x00]*$"),
 ):
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
+    async with authenticated_snapshot(request) as (session, principal):
         member = await company_access(
             session,
             principal,

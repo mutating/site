@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
@@ -35,7 +36,7 @@ ORGANIZATION_MEMBERSHIP_HEADER = "X-Organization-Membership-Id"
 ORGANIZATION_HEADER = "X-Organization-Id"
 
 # These dependencies describe and parse bearer headers. Database-backed checks
-# remain in authenticate()/agent_auth(), inside each endpoint's transaction.
+# remain in authenticate()/agent_auth(), inside the endpoint's database sessions.
 user_bearer_scheme = HTTPBearer(
     scheme_name="AccessToken",
     auto_error=False,
@@ -182,6 +183,16 @@ async def authenticate(session, request: Request, scope="read") -> Principal:
         legacy,
         password_login=token_kind == "session" or (legacy and token.purpose == "login"),
     )
+
+
+@asynccontextmanager
+async def authenticated_snapshot(request: Request, scope="read"):
+    """Check credentials before opening a stable snapshot of the authorized data."""
+    database = request.app.state.db
+    async with database.read() as session:
+        principal = await authenticate(session, request, scope)
+    async with database.read(snapshot=True) as session:
+        yield session, principal
 
 
 def personal(principal):

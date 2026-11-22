@@ -30,18 +30,23 @@ for (const [reason, ru, en] of [["github_success", "Успешно", "Succeeded"
   });
 }
 
-/** Browser constraints reject out-of-range policy values before a network mutation. */
-test("Actions validates resource, concurrency and timeout limits before saving", async ({ page, account }) => {
-  const peer = await actionsPeer(page);
-  await login(page, account); await page.goto(repositoryURL);
-  await page.locator(".binding-advanced > summary").click();
-  for (const [name, bad] of [["cpu", "0"], ["memory", "0"], ["disk", "0"], ["parallel", "101"], ["wait", "301"], ["duration", "361"]]) {
-    const input = page.locator(`input[name=${name}]`); const original = await input.inputValue();
-    await input.fill(bad); await page.getByRole("button", { name: "Подключить", exact: true }).click();
+for (const [name, bad] of [["cpu", "0"], ["memory", "0"], ["disk", "0"], ["parallel", "101"], ["wait", "301"], ["duration", "361"]]) {
+  /** Verify native validation with a fresh form so the previous field's deferred focus cannot steal this fill. */
+  test(`Actions rejects an out-of-range ${name} before saving`, async ({ page, account }) => {
+    const peer = await actionsPeer(page);
+    await login(page, account);
+    await page.goto(repositoryURL);
+    await page.locator(".binding-advanced > summary").click();
+    const save = page.getByRole("button", { name: "Подключить", exact: true });
+    const input = page.locator(`input[name=${name}]`);
+    await expect(save).toBeEnabled();
+    await input.fill(bad);
+    await expect(input).toHaveValue(bad);
+    await save.click();
+    await expect(input).toBeFocused();
     expect(peer.calls.filter(row => row.path === "github/routes" && row.method === "POST")).toHaveLength(0);
-    await input.fill(original);
-  }
-});
+  });
+}
 
 /** Choosing a different branch must not show YAML generated against the saved branch's policy. */
 test("Actions requires saving a changed branch before generating setup YAML", async ({ page, account }) => {

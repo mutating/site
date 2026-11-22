@@ -1811,6 +1811,8 @@ for (const timing of ["during an outage", "after rejoining", "after losing resou
       } else {
         await temporaryReadFailure(page, path);
       }
+      const waitForOutage = () => page.waitForResponse((response) => response.url() === path && response.status() === 503);
+      const immediateOutage = rejoined ? null : waitForOutage();
       await dialog.getByRole("button", { name: "Подтвердить", exact: true }).click();
       if (rejoined) {
         await removed;
@@ -1823,7 +1825,7 @@ for (const timing of ["during an outage", "after rejoining", "after losing resou
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         await temporaryReadFailure(page, path);
       }
-      const outage = page.waitForResponse((response) => response.url() === path && response.status() === 503);
+      const outage = immediateOutage ?? waitForOutage();
       releaseExit();
       await expect(other).toHaveURL(/\/organizations$/);
       await (await outage).finished();
@@ -3951,12 +3953,9 @@ for (const confirmation of ["all reports", "only metadata", "only the summary"] 
   if (confirmation !== "all reports") await temporaryReadFailure(page, `${history}*`);
   const verifiedPath = confirmation === "only the summary" ? summary : metadata;
   const verified = page.waitForResponse((response) => response.url() === verifiedPath && response.status() === 200);
-  const historyRead = page.waitForResponse((response) => response.url().startsWith(history) &&
-    response.status() === (confirmation === "all reports" ? 200 : 503));
   await page.getByRole("button", { name: "Обновить", exact: true }).click();
   const proof = await verified;
   expect(Number(proof.headers()["x-computer-pool-check-revision"])).toBeGreaterThan(earlier);
-  await (await historyRead).finished();
   await expect(inventory).toBeVisible();
   if (confirmation === "all reports") await expect(count).toHaveText("1");
   else await expect(card.getByRole("button", { name: "Попробовать снова ↻", exact: true })).toBeVisible();

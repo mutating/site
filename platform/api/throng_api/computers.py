@@ -50,6 +50,7 @@ from throng_api.security import (
     ORGANIZATION_MEMBERSHIP_HEADER,
     access_token_scheme,
     authenticate,
+    authenticated_snapshot,
     company_access,
     digest,
     organization_membership_headers,
@@ -107,8 +108,7 @@ async def list_connected_computers(
     offset: PaginationOffset = 0,
     computer_id: UUID | None = None,
 ):
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
+    async with authenticated_snapshot(request) as (session, principal):
         user_id = personal(principal)
         now = request.app.state.clock()
         inventory = connected_to_account(user_id)
@@ -178,8 +178,7 @@ async def list_connected_computers(
 @router.get("/connected-computers/{computer_id}/position", response_model=int | None)
 async def connected_computer_position(computer_id: UUID, request: Request):
     """Return the zero-based list position of the account's computer, or null if absent."""
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
+    async with authenticated_snapshot(request) as (session, principal):
         inventory = connected_to_account(personal(principal))
         identity = str(computer_id)
         created_at = await session.scalar(
@@ -204,8 +203,7 @@ async def connected_computer_position(computer_id: UUID, request: Request):
 async def can_recover_connected_computer(
     computer_id: UUID, request: Request, snapshot: bool = False
 ):
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request, "manage")
+    async with authenticated_snapshot(request, "manage") as (session, principal):
         user_id = personal(principal)
         revision = await session.scalar(
             select(ComputerOwnership.revision)
@@ -508,8 +506,7 @@ async def list_computers(
     only_available: bool = False,
     computer_id: UUID | None = None,
 ):
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
+    async with authenticated_snapshot(request) as (session, principal):
         if user_id is not None and company_id is not None:
             raise HTTPException(422, "Choose one owner")
         if company_id is not None:
@@ -545,10 +542,8 @@ async def list_computers(
 
 @router.get("/computers/{computer_id}", response_model=out.Computer)
 async def get_computer(computer_id: UUID, request: Request, response: Response):
-    async with request.app.state.db.read(snapshot=True) as session:
-        computer = await computer_for_user(
-            session, await authenticate(session, request), computer_id, response=response
-        )
+    async with authenticated_snapshot(request) as (session, principal):
+        computer = await computer_for_user(session, principal, computer_id, response=response)
         return computer_view(computer, request.app.state.clock())
 
 

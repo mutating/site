@@ -17,29 +17,23 @@ for (const operation of ["save", "toggle", "authorize", "expired", "renewed"] as
     let releaseProfile!: () => void, releaseMutation!: () => void, profileRequested = false, mutationRequested = false;
     const profileGate = new Promise<void>(resolve => releaseProfile = resolve);
     const mutationGate = new Promise<void>(resolve => releaseMutation = resolve);
-    let actor = account.id, bMetadata = false, renewed = false;
+    let sessionReplaced = false, bMetadata = false;
     await page.route(`${API}/users/${account.id}`, async route => {
       if (route.request().method() !== "PATCH") { await route.continue(); return; }
       const response = await route.fetch(); expect(response.status()).toBe(200);
       profileRequested = true; await profileGate; await route.fulfill({ response });
     });
-    await page.route(`${API}/users/me`, async route => {
-      const response = await route.fetch(); expect(response.status()).toBe(200);
-      actor = (await response.json()).id;
-      if (actor === other.id && (!sameUser || renewed)) peer.bindings = [b];
-      await route.fulfill({ response });
-    });
     peer.custom = async (route, url) => {
       if (operation === "authorize" && url.pathname === "/v1/github/authorize" && route.request().method() === "POST") {
-        if (actor === other.id) { await route.fulfill({ json: { url: oauthB } }); return true; }
+        if (sessionReplaced) { await route.fulfill({ json: { url: oauthB } }); return true; }
         mutationRequested = true; await mutationGate; await route.fulfill({ json: { url: oauthA } }); return true;
       }
-      if (operation === "authorize" && actor === other.id && url.pathname === "/v1/github/repositories") bMetadata = true;
-      if (actor === other.id && route.request().method() === "GET" && url.pathname.startsWith(`/v1/github/routes/${a.id}`)) {
+      if (operation === "authorize" && sessionReplaced && url.pathname === "/v1/github/repositories") bMetadata = true;
+      if (!sameUser && sessionReplaced && route.request().method() === "GET" && url.pathname.startsWith(`/v1/github/routes/${a.id}`)) {
         await route.fulfill({ status: 404, json: { detail: "Not found" } }); return true;
       }
-      if (url.pathname.endsWith("/configuration") && actor === other.id) {
-        if (url.searchParams.get("binding_id") === a.id) { await route.fulfill({ status: 404, json: {} }); return true; }
+      if (url.pathname.endsWith("/configuration") && sessionReplaced) {
+        if (!sameUser && url.searchParams.get("binding_id") === a.id) { await route.fulfill({ status: 404, json: {} }); return true; }
         bMetadata = true;
       }
       if (url.pathname !== `/v1/github/routes/${a.id}` || route.request().method() !== "PATCH") return false;
@@ -90,15 +84,22 @@ for (const operation of ["save", "toggle", "authorize", "expired", "renewed"] as
       await expect(secondMenu).toHaveAttribute("title", account.email);
       await secondMenu.click(); await second.getByRole("menuitem", { name: "Выйти", exact: true }).click();
       await expect(second.getByLabel("Email или ник")).toBeVisible();
+      await expect(page.getByLabel("Email или ник")).toBeVisible();
+      // The other tab now reloads its Actions data directly after a real login.
+      peer.bindings = [b];
+      sessionReplaced = true;
       await login(second, sameUser ? { ...other, first_name: profileName } : other);
-      renewed = true;
       const session = await page.request.get(`${API}/users/me`);
       expect(session.status()).toBe(200); expect((await session.json()).id).toBe(other.id);
       releaseProfile();
       await expect(menu).toHaveAttribute("title", other.email);
-      if (!sameUser) await expect.poll(() => bMetadata).toBe(true);
-      else await expect(menu.getByText("Э", { exact: true })).toBeVisible();
-      if (operation !== "authorize") await expect(page.getByLabel("CPU", { exact: true })).toHaveValue(sameUser ? "0.75" : "3");
+      await expect.poll(() => bMetadata).toBe(true);
+      if (sameUser) await expect(menu.getByText("Э", { exact: true })).toBeVisible();
+      if (operation !== "authorize") {
+        const cpu = page.getByLabel("CPU", { exact: true });
+        await expect(cpu).toHaveValue("3");
+        if (sameUser) await cpu.fill("0.75");
+      }
       const currentURL = page.url();
       releaseMutation(); await response; await page.waitForLoadState("networkidle");
       await expect(page).toHaveURL(currentURL);

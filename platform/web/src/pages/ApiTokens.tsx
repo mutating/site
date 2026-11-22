@@ -435,7 +435,7 @@ export function ApiTokens({ company, check, onCheckPermissions }: {
           )}
         </>
       )}
-      {creating && !denied && (
+      {creating && (!company || !denied) && (
         <CreateTokenDialog
           companies={ownerChoices}
           initialCompanyId={selected?.id}

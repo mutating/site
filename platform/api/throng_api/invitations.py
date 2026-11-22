@@ -23,6 +23,7 @@ from throng_api.security import (
     Principal,
     access_token_scheme,
     authenticate,
+    authenticated_snapshot,
     company_access,
     digest,
     organization_membership_headers,
@@ -82,8 +83,7 @@ async def invitation_for_manager(session, principal, invitation_id, now):
 async def lookup_user(
     company_id: UUID, request: Request, identifier: str = Query(min_length=1, max_length=320)
 ):
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request, "manage")
+    async with authenticated_snapshot(request, "manage") as (session, principal):
         await company_access(session, principal, str(company_id), permission="members.manage")
         user = await resolve_user(session, identifier)
         if not user:
@@ -93,8 +93,7 @@ async def lookup_user(
 
 @router.get("/memberships/{membership_id}/avatar", response_class=Response)
 async def member_avatar(membership_id: UUID, request: Request):
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
+    async with authenticated_snapshot(request) as (session, principal):
         row = await session.get(Membership, str(membership_id))
         if not row:
             raise HTTPException(404, "Member not found")
@@ -170,8 +169,7 @@ async def list_invitations(
     include_counts: bool = True,
 ):
     """List invitations. With limit zero, return only the total in X-Total-Count."""
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
+    async with authenticated_snapshot(request) as (session, principal):
         user_id = personal(principal)
         now = request.app.state.clock()
         revision = None
