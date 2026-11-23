@@ -11,10 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  # A push and its pull_request event describe the same tree. Sharing a group
-  # avoids running the full browser/WebGL suite twice and cancels superseded
-  # pushes instead of queuing them behind a stale run.
-  group: ${{ github.workflow }}-tests-${{ github.head_ref || github.ref_name }}
+  # Branch builds and PR merge builds use different refs and both report
+  # checks on the head commit. Cancel superseded runs for the same ref.
+  group: ${{ github.workflow }}-tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
