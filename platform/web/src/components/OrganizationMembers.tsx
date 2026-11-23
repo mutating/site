@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type RefObject } from "react";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, json, request, withDeadline } from "../lib/api";
+import { usePoolRead } from "../lib/compute";
 import { useI18n } from "../lib/i18n";
 import { organizationPage } from "../lib/organizations";
 import { memberName } from "../lib/permissions";
 import { useSession } from "../lib/session";
-import type { Company, Membership } from "../lib/types";
-import { useData } from "../lib/useData";
+import type { Company, Membership, OrganizationMembershipCheck } from "../lib/types";
+import { useRefreshWhileVisible } from "../lib/useData";
+import { useOrganizationSectionAccess } from "../lib/useOrganizationDirectory";
 import { ApiImage } from "./ApiImage";
 import { PermissionSummary } from "./InvitationUI";
 import { MemberEditor } from "./MemberEditor";
@@ -20,35 +22,44 @@ function memberSearch(value: string) {
   return Array.from(value.replace(/\0/g, "")).slice(0, searchLength).join("");
 }
 
+function memberSearchEntry(key: string, { pathname, search, hash }: Pick<Location, "pathname" | "search" | "hash">) {
+  // Native fragment navigation can reuse the router's default history key.
+  return JSON.stringify([key, pathname, search, hash]);
+}
+
 export function useMemberSearch(drafts: Map<string, string>) {
   const location = useLocation();
-  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const entry = memberSearchEntry(location.key, location);
   const fromUrl = memberSearch(params.get("q") ?? "");
   const [draft, setDraft] = useState<{ entry: string; value: string }>();
-  const input = draft?.entry === location.key ? draft.value : drafts.get(location.key) ?? fromUrl;
+  const input = draft?.entry === entry ? draft.value : drafts.get(entry) ?? fromUrl;
   useEffect(() => {
     if (input === fromUrl) return;
     const timer = window.setTimeout(() => {
       // The router can still be rendering the previous entry after browser Back.
-      if ((window.history.state?.key ?? "default") !== location.key || drafts.get(location.key) !== input) return;
+      if (memberSearchEntry(window.history.state?.key ?? "default", window.location) !== entry || drafts.get(entry) !== input) return;
       const next = new URLSearchParams(params);
       if (input) next.set("q", input);
       else next.delete("q");
       if (input.trim() !== fromUrl.trim()) next.delete("page");
-      drafts.delete(location.key);
-      setParams(next, { replace: true, state: { ...location.state, keepScroll: true } });
+      drafts.delete(entry);
+      navigate({ search: next.toString(), hash: location.hash }, {
+        replace: true, state: { ...location.state, keepScroll: true },
+      });
     }, 240);
     return () => window.clearTimeout(timer);
-  }, [input, fromUrl, drafts, params, setParams, location.key, location.state]);
+  }, [input, fromUrl, drafts, params, navigate, entry, location.hash, location.state]);
 
   return {
     input,
     fromUrl,
     change(value: string) {
       const search = memberSearch(value);
-      if (search === fromUrl) drafts.delete(location.key);
-      else drafts.set(location.key, search);
-      setDraft({ entry: location.key, value: search });
+      if (search === fromUrl) drafts.delete(entry);
+      else drafts.set(entry, search);
+      setDraft({ entry, value: search });
     },
   };
 }
@@ -227,6 +238,7 @@ function MemberLoadError({ error, retry, restoreFocus }: {
 
 export function OrganizationMembers({
   company,
+  companyRevision,
   memberSearch,
   directory = false,
   onReturn,
@@ -236,9 +248,11 @@ export function OrganizationMembers({
   knownCount,
   onChanged,
   onAccessError,
+  onMembershipCheck,
   onMembershipChanged,
 }: {
   company: Company;
+  companyRevision?: number;
   memberSearch: MemberSearch;
   directory?: boolean;
   onReturn?: () => void;
@@ -247,13 +261,15 @@ export function OrganizationMembers({
   onCount?: (count: number) => void;
   knownCount?: number | null;
   onChanged: () => void;
-  onAccessError: () => void;
+  onAccessError: (error?: ApiError) => boolean;
+  onMembershipCheck?: (membership: OrganizationMembershipCheck) => void;
   onMembershipChanged: (member: Membership) => void;
 }) {
   const { t, locale } = useI18n();
   const { user } = useSession();
   const location = useLocation();
-  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { input, fromUrl: urlInput } = memberSearch;
   const query = urlInput.trim();
   const pendingSearch = input.trim() !== query;
@@ -262,32 +278,51 @@ export function OrganizationMembers({
   const offset = (page - 1) * limit;
   const canRead = company.my_permissions.includes("members.read");
   const canManage = company.my_permissions.includes("members.manage");
+  const [lastDenial, setDenial] = useState<ApiError | null>(null);
   const requestParams = new URLSearchParams({ company_id: company.id, limit: String(limit), offset: String(offset) });
   if (query) requestParams.set("q", query);
   const key = `${requestParams}/${company.my_membership_id}/${company.my_role}/${company.my_permissions.join(",")}`;
-  const state = useData(async (signal) => ({
-    ...(canRead ? await withDeadline(signal, (panelSignal) =>
+  const state = usePoolRead<{ key: string; data: Membership[]; total: number | null; unfilteredTotal?: number }>(async (signal) => {
+    if (!canRead) return { key, data: [], total: 0 };
+    const result = await withDeadline(signal, (panelSignal) =>
       request<Membership[]>(`memberships?${requestParams}`, { signal: panelSignal }),
-    ) : { data: [], total: 0 }),
-    key,
-  }), key, true, revision);
-  const result = state.data?.key === key ? state.data : null;
+    );
+    if (!signal.aborted) {
+      const { organizationMembershipId: id, poolCheckRevision: revision } = result;
+      if (id && revision !== undefined) onMembershipCheck?.({ id, revision });
+      setDenial(null);
+    }
+    return { ...result, key };
+  }, key, true, {
+    revision, retainError: true,
+    onAccessError: (error) => {
+      if (!onAccessError(error)) return false;
+      state.update(null);
+      setDenial(error);
+      setAction(null);
+      return true;
+    },
+  });
+  const { denial, error } = useOrganizationSectionAccess(state, lastDenial, canRead ? companyRevision : undefined);
+  useRefreshWhileVisible(state.reload, canRead);
+  const rosterAllowed = canRead && !denial;
+  const result = rosterAllowed && state.data?.key === key ? state.data : null;
   const total = result?.total ?? result?.data.length ?? 0;
   const currentCount = result ? result.unfilteredTotal ?? (query ? null : result.total) : null;
   const count = currentCount ?? knownCount ?? company.member_count;
   const pages = Math.max(1, Math.ceil(total / limit));
   const outsidePages = !!result && page > pages;
-  const settled = !canRead || !pendingSearch && (!!state.error || !!result && !outsidePages);
-  const accessError = state.error instanceof ApiError && (state.error.status === 403 || state.error.status === 404);
-  const waitingForResults = canRead && (pendingSearch || !state.error && (!result || outsidePages));
-  const previewResolved = result !== null || knownCount != null || !!state.error;
-  const showFullList = !directory && canRead && !accessError && previewResolved && count > previewSize;
+  const settled = !rosterAllowed || !pendingSearch && (!!error || !!result && !outsidePages);
+  const waitingForResults = rosterAllowed && (pendingSearch || !error && (!result || outsidePages));
+  const previewResolved = result !== null || knownCount != null || !!error;
+  const showFullList = !directory && rosterAllowed && previewResolved && count > previewSize;
   const number = (value: number) => value.toLocaleString(locale);
   const [expanded, setExpanded] = useState(() => new Set<string>());
   const [action, setAction] = useState<{ type: MemberAction; member: Membership; scope: string } | null>(null);
   const canEditMember = (role: Membership["role"]) => canManage && (company.my_role === "creator" || role === "user");
   const actionRole = action && (result?.data.find((member) => member.id === action.member.id)?.role ?? action.member.role);
-  const activeAction = action?.scope === key && canRead && actionRole && canEditMember(actionRole) ? action : null;
+  const activeAction = action?.scope === key && rosterAllowed && actionRole && canEditMember(actionRole) ? action : null;
+  const readError = denial ?? error;
   const rowsId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -313,7 +348,9 @@ export function OrganizationMembers({
     const next = new URLSearchParams(params);
     if (value > 1) next.set("page", String(value));
     else next.delete("page");
-    setParams(next, { replace, state: { ...location.state, keepScroll: true } });
+    navigate({ search: next.toString(), hash: replace ? location.hash : "" }, {
+      replace, state: { ...location.state, keepScroll: true },
+    });
   }
 
   useEffect(() => {
@@ -325,12 +362,8 @@ export function OrganizationMembers({
   }, [currentCount, canRead, onCount]);
 
   useEffect(() => {
-    if (accessError) onAccessError();
-  }, [accessError, onAccessError]);
-
-  useEffect(() => {
     if (outsidePages && input === urlInput && !state.loading && !state.error) updatePage(pages, true);
-  }, [outsidePages, input, urlInput, state.loading, state.error, pages, params]);
+  }, [outsidePages, input, urlInput, state.loading, state.error, pages, params, navigate, location.hash, location.state]);
 
   useEffect(() => {
     if (!directory) return;
@@ -380,11 +413,11 @@ export function OrganizationMembers({
   const results = (
     <section ref={panel} className={`members-panel${directory ? " organization-widget member-directory-panel" : ""}`}
       aria-label={t("members")} tabIndex={-1} onFocus={directory ? keepOrganizationControlVisible : undefined}>
-      {canRead && <MemberSearchField search={memberSearch} inputRef={search} restoreFocus={restoreRosterFocus} />}
+      {rosterAllowed && <MemberSearchField search={memberSearch} inputRef={search} restoreFocus={restoreRosterFocus} />}
       <div className="organization-member-results" role="group" aria-label={t("memberSearchResults")}
         tabIndex={waitingForResults && !showFullList ? 0 : -1}>
-        {!canRead ? <p className="muted">{t("memberReadDenied")}</p> : waitingForResults ? <Loading /> : state.error ? (
-          <MemberLoadError error={state.error} restoreFocus={restoreRosterFocus} retry={() => {
+        {!canRead ? <p className="muted">{t("memberReadDenied")}</p> : waitingForResults ? <Loading /> : readError ? (
+          <MemberLoadError error={readError} restoreFocus={restoreRosterFocus} retry={() => {
             focusRoster();
             state.reload();
           }} />
@@ -435,7 +468,7 @@ export function OrganizationMembers({
           <p className="eyebrow">{company.name}</p>
           <h1 ref={heading} tabIndex={-1}>{t("members")}<span className="hot" aria-hidden="true">.</span></h1>
         </div>
-        {canRead && <span className="member-directory-count"><Icon name="users" size={17} />{t("members")} {number(count)}</span>}
+        {rosterAllowed && <span className="member-directory-count"><Icon name="users" size={17} />{t("members")} {number(count)}</span>}
       </header>
       {results}
     </div> : results}

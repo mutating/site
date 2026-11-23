@@ -173,6 +173,20 @@ it("keeps expected login failures separate from session expiration", async () =>
   expect(dispatchEvent).not.toHaveBeenCalled();
 });
 
+it("binds protected reads to the displayed account and reconciles a changed cookie", async () => {
+  const { api, advanceSessionRevision } = await import("../../../../platform/web/src/lib/api");
+  advanceSessionRevision("first-account");
+  fetchMock.mockResolvedValueOnce(new Response('{"detail":"Account session changed"}', { status: 409 }))
+    .mockResolvedValueOnce(new Response('{"id":"second-account"}'));
+  await expect(api("connected-computers")).rejects.toMatchObject({ status: 409 });
+  const [protectedURL, protectedOptions] = fetchMock.mock.calls[0];
+  expect(new Request(protectedURL, protectedOptions).headers.get("X-Expected-User-Id")).toBe("first-account");
+  expect(dispatchEvent.mock.calls[0][0].type).toBe("session-changed");
+  await expect(api("auth/session")).resolves.toEqual({ id: "second-account" });
+  const [sessionURL, sessionOptions] = fetchMock.mock.calls[1];
+  expect(new Request(sessionURL, sessionOptions).headers.has("X-Expected-User-Id")).toBe(false);
+});
+
 /** The Web Locks branch must serialize login/logout/account deletion under the same API-specific lock across tabs. */
 it.each([
   ["auth/session", "POST"],

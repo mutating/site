@@ -16,6 +16,7 @@ async def test_authentication_matrix_covers_all_protected_operations(
     public = {
         ("GET", "/health/live"),
         ("GET", "/v1/agent-capabilities"),
+        ("GET", "/v1/connected-computers/browser"),
         ("GET", "/v1/github/oauth/callback"),
         ("GET", "/v1/github/installations/callback"),
         ("POST", "/v1/github/webhook"),
@@ -191,6 +192,7 @@ async def test_every_session_bound_agent_operation_requires_a_live_session(
     for case in agent_requests:
         if case["template"] in {
             "/agent/v1/session",
+            "/agent/v1/connection/confirm",
             "/agent/v1/unbind",
             "/agent/v1/diagnostics/{diagnostic_id}",
             "/agent/v1/benchmark-results",

@@ -323,9 +323,24 @@ class Computer(Identity, Base):
         CheckConstraint("disk_bytes > 0", name="positive_capacity"),
         CheckConstraint("reserved_disk >= 0", name="nonnegative_reservation"),
         CheckConstraint("reserved_disk <= disk_bytes", name="reservation_within_capacity"),
+        Index(
+            "ix_computers_connected_account_order",
+            "connected_user_id",
+            "created_at",
+            "id",
+        ),
     )
     name: Mapped[str | None] = mapped_column(String(200))
     registered_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    connected_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    legacy_transfer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    legacy_transfer_pending: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
     os: Mapped[str] = mapped_column(String(40))
     architecture: Mapped[str] = mapped_column(String(40))
     runtime: Mapped[str] = mapped_column(String(80))
@@ -535,6 +550,7 @@ class ComputerOwnership(Identity, Ownership, Base):
     )
     company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"))
     computer_id: Mapped[str] = mapped_column(ForeignKey("computers.id"), unique=True)
+    revision: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
 
 class AvailabilityBaseline(Base):
@@ -570,6 +586,9 @@ class AgentCredential(Identity, Base):
     __tablename__ = "agent_credentials"
     computer_id: Mapped[str] = mapped_column(ForeignKey("computers.id"), unique=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    pending_connected_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
 
 
 class Artifact(Identity, Ownership, Base):

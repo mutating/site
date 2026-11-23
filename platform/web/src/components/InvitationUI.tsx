@@ -3,8 +3,8 @@ import { api, allPages, json } from "../lib/api";
 import { useData } from "../lib/useData";
 import { useI18n } from "../lib/i18n";
 import { permissionLabels } from "../lib/permissions";
-import type { Invitation, Permission } from "../lib/types";
-import { ErrorBox, Loading } from "./UI";
+import type { Invitation, InvitationLinkCheck, Permission } from "../lib/types";
+import { ErrorBox, Loading, useRestoreFocusOnRemoval } from "./UI";
 
 export function PermissionSummary({ values }: { values: Permission[] }) {
   const { t } = useI18n();
@@ -41,15 +41,33 @@ export function InvitationFacts({ invitation }: { invitation: Invitation }) {
     </>
   );
 }
-export function ShareLink({ token, inputRef }: { token: string; inputRef?: RefObject<HTMLInputElement | null> }) {
+export function invitationLinkIsOutdated(issued: Invitation, invitations: Invitation[] | null, confirmed?: InvitationLinkCheck) {
+  const latestRow = invitations?.find((invitation) => invitation.id === issued.id);
+  return [latestRow, confirmed].some((current) => current && (current.status !== "pending" || (
+    typeof current.link_check_revision === "number" && typeof issued.link_check_revision === "number" &&
+    current.link_check_revision >= issued.link_check_revision &&
+    typeof current.link_version === "string" && typeof issued.link_version === "string" &&
+    current.link_version !== issued.link_version
+  )));
+}
+
+const leaveFocus = () => {};
+
+export function ShareLink({ token, inputRef, restoreFocus = leaveFocus }: {
+  token: string;
+  inputRef?: RefObject<HTMLInputElement | null>;
+  restoreFocus?: () => void;
+}) {
   const { t } = useI18n();
+  const panel = useRef<HTMLDivElement>(null);
+  useRestoreFocusOnRemoval(panel, restoreFocus);
   const fallbackRef = useRef<HTMLInputElement>(null);
   const ref = inputRef ?? fallbackRef;
   const [copied, setCopied] = useState(false);
   const [selected, setSelected] = useState(false);
   const value = `${window.location.origin}/invitations/${encodeURIComponent(token)}`;
   return (
-    <div className="share-link panel" key={token}>
+    <div className="share-link panel" key={token} ref={panel}>
       <label className="field">
         {t("invitationLink")}
         <input

@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
@@ -11,6 +12,7 @@ from fastapi.security import APIKeyCookie, HTTPBearer
 from sqlalchemy import String, and_, cast, or_, select
 from starlette.concurrency import run_in_threadpool
 
+from throng_api.database import COMPUTER_POOL_CHECK_REVISION_HEADER, current_revision
 from throng_api.models import (
     AccessToken,
     AgentCredential,
@@ -30,9 +32,11 @@ DUMMY_PASSWORD_HASH = PASSWORDS.hash(secrets.token_urlsafe(32))
 SCOPES = frozenset({"read", "manage", "execute"})
 REQUEST_PERMISSION = object()
 SESSION_COOKIE = "tmc_session"
+ORGANIZATION_MEMBERSHIP_HEADER = "X-Organization-Membership-Id"
+ORGANIZATION_HEADER = "X-Organization-Id"
 
 # These dependencies describe and parse bearer headers. Database-backed checks
-# remain in authenticate()/agent_auth(), inside each endpoint's transaction.
+# remain in authenticate()/agent_auth(), inside the endpoint's database sessions.
 user_bearer_scheme = HTTPBearer(
     scheme_name="AccessToken",
     auto_error=False,
@@ -108,6 +112,7 @@ class Principal:
     permission: str | None = None
     token_kind: Literal["session", "personal", "company"] = "session"
     legacy: bool = False
+    password_login: bool = False
 
     @property
     def key(self):
@@ -165,6 +170,9 @@ async def authenticate(session, request: Request, scope="read") -> Principal:
         raise ProtocolError("token_expired", "Token has expired", status_code=401)
     if scope not in token.scopes:
         raise HTTPException(403, "Token lacks required scope")
+    expected_user = request.headers.get("x-expected-user-id")
+    if expected_user is not None and expected_user != user_id:
+        raise ProtocolError("account_session_changed", "Account session changed")
     return Principal(
         user_id,
         company_id,
@@ -173,7 +181,18 @@ async def authenticate(session, request: Request, scope="read") -> Principal:
         request_permission(request, scope),
         token_kind,
         legacy,
+        password_login=token_kind == "session" or (legacy and token.purpose == "login"),
     )
+
+
+@asynccontextmanager
+async def authenticated_snapshot(request: Request, scope="read"):
+    """Check credentials before opening a stable snapshot of the authorized data."""
+    database = request.app.state.db
+    async with database.read() as session:
+        principal = await authenticate(session, request, scope)
+    async with database.read(snapshot=True) as session:
+        yield session, principal
 
 
 def personal(principal):
@@ -203,10 +222,27 @@ async def membership_role(session, user_id, company_id):
     )
 
 
+def organization_membership_headers(principal, member):
+    if principal.user_id and member is not None:
+        return {
+            ORGANIZATION_HEADER: member.company_id,
+            ORGANIZATION_MEMBERSHIP_HEADER: member.id,
+        }
+    return {}
+
+
 async def company_access(
-    session, principal, company_id, admin=False, permission=REQUEST_PERMISSION
+    session,
+    principal,
+    company_id,
+    admin=False,
+    permission=REQUEST_PERMISSION,
+    *,
+    include_membership_id=False,
+    include_check_revision=False,
 ):
     company_id = str(company_id)
+    versioned = include_check_revision and principal.user_id is not None
     if principal.company_id:
         if principal.company_id != company_id:
             raise HTTPException(404, "Company not found")
@@ -217,7 +253,12 @@ async def company_access(
         )
     )
     if member is None:
-        raise HTTPException(404, "Company not found")
+        headers = (
+            {COMPUTER_POOL_CHECK_REVISION_HEADER: str(await current_revision(session))}
+            if versioned
+            else None
+        )
+        raise HTTPException(404, "Company not found", headers=headers)
     required = principal.permission if permission is REQUEST_PERMISSION else permission
     if admin and required and required.endswith(".read"):
         required = (
@@ -227,15 +268,31 @@ async def company_access(
         )
     if required:
         if required not in effective_permissions(member.role, member.permissions):
-            raise HTTPException(403, "Organization permission required")
+            headers = (
+                organization_membership_headers(principal, member)
+                if include_membership_id
+                else None
+            )
+            if versioned:
+                headers = {
+                    **(headers or {}),
+                    COMPUTER_POOL_CHECK_REVISION_HEADER: str(await current_revision(session)),
+                }
+            raise HTTPException(403, "Organization permission required", headers=headers)
     elif admin and member.role not in {"creator", "admin"}:
         raise HTTPException(403, "Company administrator required")
     return member
 
 
-async def owner_access(session, principal, owner, admin=False):
+async def owner_access(session, principal, owner, admin=False, *, include_membership_id=False):
     if owner.company_id:
-        await company_access(session, principal, owner.company_id, admin=admin)
+        return await company_access(
+            session,
+            principal,
+            owner.company_id,
+            admin=admin,
+            include_membership_id=include_membership_id,
+        )
     elif not principal.user_id or principal.user_id != str(owner.user_id):
         raise HTTPException(404, "Resource not found")
 
@@ -309,7 +366,7 @@ async def issue_token(session, owner, actor_id, name, scopes, expires_at):
     return token, raw
 
 
-async def agent_auth(session, request, require_session=True):
+async def authenticated_agent(session, request, require_session=True):
     credential = await session.scalar(
         select(AgentCredential).where(AgentCredential.token_hash == digest(bearer(request)))
     )
@@ -342,6 +399,11 @@ async def agent_auth(session, request, require_session=True):
             raise ProtocolError(
                 "session_expired", "Agent session expired; a clean start is required"
             )
+    return computer, credential
+
+
+async def agent_auth(session, request, require_session=True):
+    computer, _ = await authenticated_agent(session, request, require_session)
     return computer
 
 

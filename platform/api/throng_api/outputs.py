@@ -103,6 +103,8 @@ class Invitation(Identity):
     computer_count: int = 0
     member_count: int = 0
     name_key: str = ""
+    link_version: str | None = None
+    link_check_revision: int | None = None
 
 
 class DirectoryCompany(BaseModel):
@@ -180,6 +182,7 @@ class TokenCheck(BaseModel):
 
 class ComputerOwnership(Identity, Owner):
     computer_id: str
+    revision: int
 
 
 class Computer(Identity):
@@ -220,9 +223,42 @@ class RegisteredComputer(Computer):
     ownership: ComputerOwnership
 
 
+class ConnectedPool(BaseModel):
+    company_id: str | None
+    name: str | None
+
+
+class ConnectedComputer(BaseModel):
+    id: str
+    name: str | None
+    os: str
+    architecture: str
+    runtime: str
+    online: bool
+    pool: ConnectedPool | None
+    pool_membership_id: str | None
+    pool_revision: int
+    can_move: bool
+    transfer_pending: bool
+
+
+class ConnectedComputers(BaseModel):
+    items: list[ConnectedComputer]
+    total: int
+    online: int
+
+
 class AgentCredential(BaseModel):
     computer_id: str
     token: str
+
+
+class RecoveredComputerCredential(AgentCredential):
+    ownership: ComputerOwnership
+
+
+class ComputerRecoverySnapshot(BaseModel):
+    revision: int | None
 
 
 class Artifact(Identity, Owner):
@@ -325,7 +361,14 @@ class AgentSession(BaseModel):
     lease_expires_at: datetime
 
 
+class AgentPoolOwner(BaseModel):
+    user_id: str | None
+    company_id: str | None
+
+
 class CurrentAgentSession(BaseModel):
+    transfer_pending: bool
+    pool_owner: AgentPoolOwner | None = None
     computer_id: str
     session_id: str | None
     server_time: datetime
@@ -377,6 +420,11 @@ class PoolSummary(BaseModel):
     available: ResourceSummary
 
 
+class PoolOverview(PoolSummary):
+    computers: list[Computer]
+    check_revision: int
+
+
 class CapacityPoint(BaseModel):
     at: datetime
     cpu_millis: int
@@ -393,6 +441,11 @@ class CapacityHistory(BaseModel):
     points: list[CapacityPoint]
 
 
+class PersonalPoolSnapshot(BaseModel):
+    overview: PoolOverview
+    history: CapacityHistory
+
+
 class PoolHistoryPoint(BaseModel):
     at: datetime
     cpu_total_millis: int
@@ -406,6 +459,11 @@ class PoolHistory(BaseModel):
     to_time: datetime
     points: list[PoolHistoryPoint]
     sampled: bool
+
+
+class PoolSnapshot(BaseModel):
+    overview: PoolOverview
+    history: PoolHistory
 
 
 class ResourceHistoryPoint(BaseModel):

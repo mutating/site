@@ -93,6 +93,7 @@ export const test = base.extend<{ ready: void }, { stack: Stack }>({
         THRONG_ALLOW_REGISTRATION: "true",
         THRONG_BROWSER_ORIGINS: JSON.stringify([origin]),
         THRONG_BROWSER_SECURE_COOKIE: "true",
+        THRONG_PLATFORM_ORIGIN: origin,
       };
       let api: ChildProcess;
       let bff: ChildProcess;

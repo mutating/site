@@ -28,9 +28,22 @@ from throng_api.execution import (
     replay,
     task_for_agent,
 )
-from throng_api.models import AgentTask, Artifact, CIReservation, Command, Isolate, TaskArtifact
-from throng_api.schemas import Claim, SessionStart, TaskComplete
-from throng_api.security import agent_auth, agent_credential_scheme, renew_agent
+from throng_api.models import (
+    AgentTask,
+    Artifact,
+    CIReservation,
+    Command,
+    ComputerOwnership,
+    Isolate,
+    TaskArtifact,
+)
+from throng_api.schemas import Claim, ComputerConnectionConfirmation, SessionStart, TaskComplete
+from throng_api.security import (
+    agent_auth,
+    agent_credential_scheme,
+    authenticated_agent,
+    renew_agent,
+)
 from throng_api.serialization import public
 from throng_api.transport import ProtocolError
 
@@ -98,10 +111,28 @@ def session_info(computer, now):
     }
 
 
+def confirm_connected_account(computer, credential):
+    if credential.pending_connected_user_id is not None:
+        computer.connected_user_id = credential.pending_connected_user_id
+        credential.pending_connected_user_id = None
+    computer.legacy_transfer_user_id = None
+    computer.legacy_transfer_pending = False
+
+
+@router.post("/connection/confirm", status_code=204)
+async def confirm_connection(data: ComputerConnectionConfirmation, request: Request):
+    """Confirm the persisted key without starting a worker or a lease."""
+    async with request.app.state.db.write() as session:
+        computer, credential = await authenticated_agent(session, request, require_session=False)
+        if computer.id != str(data.computer_id) or not computer.certificate_sha256:
+            raise HTTPException(404, "Attested computer not found")
+        confirm_connected_account(computer, credential)
+
+
 @router.post("/session", response_model=out.AgentSession)
 async def start_session(data: SessionStart, request: Request, idempotency_key: str = Header()):
     async with request.app.state.db.write() as session:
-        computer = await agent_auth(session, request, require_session=False)
+        computer, credential = await authenticated_agent(session, request, require_session=False)
         now = request.app.state.clock()
         namespace = f"agent:{computer.id}"
         payload = data.model_dump(mode="json")
@@ -120,24 +151,39 @@ async def start_session(data: SessionStart, request: Request, idempotency_key: s
                 409, "Session changed; reconcile and clean up before starting again"
             )
         await clean_start(session, computer, now, request.app.state.settings)
+        confirm_connected_account(computer, credential)
         remember(session, namespace, "start_session", idempotency_key, payload, computer.session_id)
         return session_info(computer, now)
 
 
-@router.get("/session", response_model=out.CurrentAgentSession)
-async def current_session(request: Request):
-    async with request.app.state.db.read() as session:
+@router.get("/session", response_model=out.CurrentAgentSession, response_model_exclude_unset=True)
+async def current_session(request: Request, include_pool: bool = False):
+    async with request.app.state.db.read(snapshot=include_pool) as session:
         computer = await agent_auth(session, request, require_session=False)
         now = request.app.state.clock()
-        return {
+        state = {
             "computer_id": computer.id,
             "session_id": computer.session_id,
             "server_time": now,
             "lease_expires_at": computer.lease_expires_at,
+            "transfer_pending": computer.legacy_transfer_pending,
             "active": bool(
                 computer.online and computer.lease_expires_at and computer.lease_expires_at > now
             ),
         }
+        if include_pool and computer.certificate_sha256 and not computer.legacy_transfer_pending:
+            state["pool_owner"] = (
+                (
+                    await session.execute(
+                        select(ComputerOwnership.user_id, ComputerOwnership.company_id).where(
+                            ComputerOwnership.computer_id == computer.id
+                        )
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return state
 
 
 @router.post("/heartbeat", response_model=out.AgentSession, openapi_extra=AGENT_SESSION_DOCS)

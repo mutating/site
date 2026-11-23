@@ -38,8 +38,9 @@ from throng_api import (
     token_checks,
 )
 from throng_api.config import Settings
-from throng_api.database import Database
+from throng_api.database import COMPUTER_POOL_CHECK_REVISION_HEADER, Database
 from throng_api.models import utcnow
+from throng_api.security import ORGANIZATION_HEADER, ORGANIZATION_MEMBERSHIP_HEADER
 from throng_api.transport import ProtocolError, RequestLog
 
 
@@ -133,8 +134,22 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         allow_origins=settings.browser_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
-        allow_headers=["Content-Type", "X-Requested-With", "Authorization"],
-        expose_headers=["X-Total-Count", "X-Total-Unfiltered-Count"],
+        allow_headers=[
+            "Content-Type",
+            "X-Requested-With",
+            "Authorization",
+            "Idempotency-Key",
+            "X-Expected-User-Id",
+        ],
+        expose_headers=[
+            "X-Total-Count",
+            "X-Total-Unfiltered-Count",
+            COMPUTER_POOL_CHECK_REVISION_HEADER,
+            computers.COMPUTER_READ_ALLOWED_HEADER,
+            computers.COMPUTER_POOL_ASSIGNED_HEADER,
+            ORGANIZATION_HEADER,
+            ORGANIZATION_MEMBERSHIP_HEADER,
+        ],
     )
 
     @app.exception_handler(RequestValidationError)
@@ -211,6 +226,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         invitations.router,
         organization_directory.router,
         computers.router,
+        computers.public_router,
         benchmarks.router,
         benchmarks.agent_router,
         artifacts.router,

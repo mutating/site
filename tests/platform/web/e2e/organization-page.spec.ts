@@ -1,5 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
-import { addComputer, API, expect, headers, makeAccount, pauseMutation, startSession, test, type Account } from "./fixtures";
+import { addComputer, API, expect, headers, makeAccount, markAccountComputer, pauseMutation, startSession, test, type Account } from "./fixtures";
 import { openOrganizationMember, openOrganizationSettings, openOrganizationTokens, switchOrganizationPeople } from "./organization-controls";
 
 async function createCompany(request: APIRequestContext, account: Account, name = "Северная лаборатория") {
@@ -54,11 +54,12 @@ test("organization overview has registry tabs, separate charts and direct comput
   });
   const online = page.locator(".organization-computer-card").filter({ hasText: "mac-studio" });
   await expect(online.locator(".organization-computer-status")).toHaveText("Онлайн");
-  await page.route(`**/computers?company_id=${company}&only_available=false&limit=3`, async (route) => {
+  await page.route(`**/companies/${company}/resources/pool-overview`, async (route) => {
     const response = await route.fetch();
-    const computers = await response.json();
-    await route.fulfill({ response, json: computers.map((computer: { name: string }) =>
-      computer.name === "mac-studio" ? { ...computer, session_active: false } : computer) });
+    const snapshot = await response.json();
+    const computers = snapshot.computers.map((computer: { name: string }) =>
+      computer.name === "mac-studio" ? { ...computer, session_active: false } : computer);
+    await route.fulfill({ response, json: { ...snapshot, computers } });
   });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(online.locator(".organization-computer-status")).toHaveText("Офлайн");
@@ -741,6 +742,83 @@ for (const unavailable of [false, true]) {
     expect(await secret.inputValue() === issued).toBe(true);
   });
 }
+
+test("a previous organization rename hides a newly displayed token while revoked permissions are checked", async ({
+  page, request, account,
+}) => {
+  const owner = await makeAccount(request);
+  const name = "Команда с запоздалым переименованием";
+  const company = await createCompany(request, owner, name);
+  const member = await request.post(`${API}/memberships`, {
+    headers: headers(owner),
+    data: { company_id: company, user_id: account.id, role: "user",
+      permissions: ["company.manage", "resources.read", "resources.manage", "tokens.read", "tokens.manage"] },
+  });
+  expect(member.status()).toBe(201);
+  const membership = (await member.json()).id;
+  const computer = await addComputer(request, account, "Mac участника", company);
+  await markAccountComputer(request, computer.id);
+  await startSession(page, account);
+  await page.goto("compute/computers");
+  const pool = page.getByRole("link", { name, exact: true });
+  await pool.click();
+  const details = await openOrganizationSettings(page);
+  const endpoint = `${API}/companies/${company}`;
+  const rename = await pauseMutation(page, endpoint, { method: "PATCH" });
+  const field = details.getByLabel("Название организации", { exact: true });
+  await field.fill("Команда после сохранения");
+  await field.press("Enter");
+  await rename.pending;
+  await page.goBack();
+  await expect(page).toHaveURL(/\/compute\/computers$/);
+  await pool.click();
+  const tokens = await openOrganizationTokens(page);
+  await tokens.getByRole("button", { name: "Создать токен", exact: true }).click();
+  const create = page.getByRole("dialog", { name: "Создать токен" });
+  await create.getByLabel("Название токена").fill("Ключ перед отзывом");
+  await create.getByRole("button", { name: /Создать токен организации/ }).click();
+  const secret = page.getByRole("dialog", { name: /Токен создан/ }).getByLabel("API-токен", { exact: true });
+  await expect(secret).toBeVisible();
+  expect((await request.patch(`${API}/memberships/${membership}`, {
+    headers: headers(owner),
+    data: { permissions: ["company.manage", "resources.read", "resources.manage"] },
+  })).status()).toBe(200);
+  expect((await request.get(`${API}/api-tokens?company_id=${company}`, { headers: headers(account) })).status()).toBe(403);
+
+  const origin = new URL(page.url()).origin;
+  let releaseLookup!: () => void;
+  const held = new Promise<void>((resolve) => { releaseLookup = resolve; });
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await held;
+    await route.fulfill({
+      status: 503,
+      headers: { "access-control-allow-origin": origin, "access-control-allow-credentials": "true" },
+      json: { detail: "Temporary outage" },
+    });
+  });
+  try {
+    const saved = page.waitForResponse((response) => response.url() === endpoint && response.request().method() === "PATCH");
+    const verifying = page.waitForRequest((request) => request.url() === endpoint && request.method() === "GET");
+    rename.release();
+    expect((await saved).status()).toBe(200);
+    await verifying;
+    await expect(secret).toBeHidden();
+    const pending = page.getByRole("dialog", { name: "API-токены" });
+    const failed = page.waitForResponse((response) => response.url() === endpoint && response.status() === 503);
+    releaseLookup();
+    await failed;
+    const retry = pending.getByRole("button", { name: /Попробовать снова/ });
+    await expect(retry).toBeVisible();
+    await expect(secret).toBeHidden();
+    await page.unroute(endpoint);
+    await retry.click();
+    await expect(secret).toHaveCount(0);
+  } finally {
+    rename.release();
+    releaseLookup();
+  }
+});
 
 test("organization token registry refreshes permissions after denied creation", async ({ page, request, account }) => {
   const owner = await makeAccount(request);

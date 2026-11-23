@@ -313,6 +313,36 @@ def api_requests(
             ("POST", "/v1/invitations/{invitation_id}/decline", "manage", {}),
             ("POST", "/v1/invitations/{invitation_id}/link", "manage", {}),
             ("DELETE", "/v1/invitations/{invitation_id}", "manage", {}),
+            ("GET", "/v1/connected-computers", "read", {}),
+            ("GET", "/v1/connected-computers/{computer_id}/position", "read", {}),
+            ("GET", "/v1/connected-computers/{computer_id}/recovery", "manage", {}),
+            (
+                "POST",
+                "/v1/connected-computers/{computer_id}/recovery",
+                "manage",
+                {
+                    "json": {
+                        "expected_user_id": company["id"],
+                        "expected_company_id": None,
+                        "expected_revision": 0,
+                    }
+                },
+            ),
+            (
+                "PATCH",
+                "/v1/connected-computers/{computer_id}/pool",
+                "manage",
+                {"json": {"company_id": None, "expected_company_id": None}},
+            ),
+            (
+                "POST",
+                "/v1/connected-computers/{computer_id}/pool/reconcile",
+                "manage",
+                {
+                    "headers": {"Idempotency-Key": "pool-reconciliation"},
+                    "json": {"company_id": None, "expected_company_id": None},
+                },
+            ),
             ("POST", "/v1/computers/{computer_id}/credentials", "manage", {}),
             ("GET", "/v1/computers/{computer_id}/benchmark-results", "read", {}),
             (
@@ -401,6 +431,8 @@ def api_requests(
             ("DELETE", "/v1/computer-resources/{resource_id}", "manage", {}),
             ("GET", "/v1/computer-resources/{resource_id}/history", "read", {"params": period}),
             ("GET", "/v1/users/{user_id}/resources/summary", "read", {}),
+            ("GET", "/v1/users/{user_id}/resources/pool-overview", "read", {}),
+            ("GET", "/v1/users/{user_id}/resources/pool-snapshot", "read", {}),
             ("GET", "/v1/users/{user_id}/resources/history", "read", {"params": period}),
             (
                 "GET",
@@ -410,7 +442,9 @@ def api_requests(
             ),
             ("GET", "/v1/companies/{company_id}/resources/summary", "read", {}),
             ("GET", "/v1/companies/{company_id}/resources/pool-summary", "read", {}),
+            ("GET", "/v1/companies/{company_id}/resources/pool-overview", "read", {}),
             ("GET", "/v1/companies/{company_id}/resources/pool-history", "read", {}),
+            ("GET", "/v1/companies/{company_id}/resources/pool-snapshot", "read", {}),
             ("GET", "/v1/companies/{company_id}/resources/history", "read", {"params": period}),
             (
                 "GET",
@@ -469,6 +503,11 @@ def api_requests(
 def agent_requests(agent, artifact, running_command):
     """Enumerate every worker operation with real IDs and schema-valid bodies and headers."""
     requests = [
+        (
+            "POST",
+            "/agent/v1/connection/confirm",
+            {"json": {"computer_id": agent["session"]["computer_id"]}},
+        ),
         ("GET", "/agent/v1/session", {}),
         (
             "PUT",

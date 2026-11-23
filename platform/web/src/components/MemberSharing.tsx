@@ -6,6 +6,7 @@ import type {
   Company,
   CreatedInvitation,
   Invitation,
+  InvitationLinkCheck,
   MemberProfile,
   Permission,
   Role,
@@ -13,7 +14,7 @@ import type {
 import { ErrorBox, Icon } from "./UI";
 import { Select } from "./Select";
 import { PermissionPicker } from "./PermissionPicker";
-import { ShareLink } from "./InvitationUI";
+import { invitationLinkIsOutdated, ShareLink } from "./InvitationUI";
 
 type GrantDraft = { role: Role; custom: boolean; selected: Permission[] };
 
@@ -24,6 +25,10 @@ export function MemberSharing({
   invitations,
   accessRevision,
   linkRevision,
+  showInvitationLinks,
+  verifyInvitationsFrom,
+  invitationChecks,
+  restoreInvitationFocus,
 }: {
   company: Company;
   onChanged: (addedMember: boolean) => void;
@@ -31,6 +36,10 @@ export function MemberSharing({
   invitations: Invitation[] | null;
   accessRevision: number;
   linkRevision: number;
+  showInvitationLinks: boolean;
+  verifyInvitationsFrom: number;
+  invitationChecks: ReadonlyMap<string, InvitationLinkCheck>;
+  restoreInvitationFocus: () => void;
 }) {
   const { t } = useI18n();
   const [mode, setMode] = useState<"add" | "invite" | "link">("add");
@@ -48,7 +57,7 @@ export function MemberSharing({
   const [success, setSuccess] = useState<
     "memberAdded" | "invitationCreated" | null
   >(null);
-  const [link, setLink] = useState<{ invitation: CreatedInvitation; accessRevision: number } | null>(null);
+  const [link, setLink] = useState<{ invitation: CreatedInvitation; accessRevision: number; verifiedFrom: number } | null>(null);
   const [previousLinkRevision, setPreviousLinkRevision] = useState(linkRevision);
   const privileged = company.my_role === "creator";
   const canGrant = company.my_permissions;
@@ -69,8 +78,8 @@ export function MemberSharing({
     setPreviousLinkRevision(linkRevision);
     setLink(null);
   }
-  if (link && (link.accessRevision !== accessRevision || invitations?.some((invitation) =>
-    invitation.id === link.invitation.id && invitation.status !== "pending"))) {
+  if (link && (link.accessRevision !== accessRevision ||
+      invitationLinkIsOutdated(link.invitation, invitations, invitationChecks.get(link.invitation.id)))) {
     setLink(null);
     setSuccess(null);
   }
@@ -109,7 +118,7 @@ export function MemberSharing({
                     expires_in_seconds: days * 86400,
                   }),
                 );
-                setLink({ invitation: result, accessRevision });
+                setLink({ invitation: result, accessRevision, verifiedFrom: verifyInvitationsFrom });
               }
               setSuccess(mode === "add" ? "memberAdded" : "invitationCreated");
               setIdentifier("");
@@ -265,7 +274,8 @@ export function MemberSharing({
             )}
           </button>
         </form>
-        {link && <ShareLink key={link.invitation.token} token={link.invitation.token} />}
+        {link && (showInvitationLinks || link.verifiedFrom === verifyInvitationsFrom) &&
+          <ShareLink key={link.invitation.token} token={link.invitation.token} restoreFocus={restoreInvitationFocus} />}
       </details>
     </section>
   );

@@ -18,13 +18,19 @@ def active_computer_session(computer, now):
     )
 
 
+def active_computer_session_filter(now):
+    return and_(
+        Computer.online.is_(True),
+        Computer.session_id.is_not(None),
+        Computer.lease_expires_at > now,
+    )
+
+
 def available_computer_filter(now):
     return and_(
         Computer.enabled.is_(True),
         Computer.accepting_work.is_(True),
-        Computer.online.is_(True),
-        Computer.session_id.is_not(None),
-        Computer.lease_expires_at > now,
+        active_computer_session_filter(now),
     )
 
 

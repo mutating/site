@@ -353,6 +353,7 @@ async def finish_enrollment(enrollment_id: UUID, request: Request, idempotency_k
             computer = Computer(
                 **values,
                 registered_by_user_id=principal.actor_id,
+                connected_user_id=principal.user_id if principal.password_login else None,
                 resources=[],
                 accepting_work=False,
                 device_id=certificate.device_id,

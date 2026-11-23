@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     login_token_seconds: int = Field(default=86400, ge=60, le=31536000)
     browser_origins: list[str] = Field(default_factory=lambda: ["https://platform.mutating.tech"])
     browser_secure_cookie: bool = True
+    platform_origin: AnyHttpUrl | None = None
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, ge=1)
     max_owner_storage_bytes: int = Field(default=1024 * 1024 * 1024, ge=1)
     max_owner_isolates: int = Field(default=10, ge=1)
@@ -60,3 +61,18 @@ class Settings(BaseSettings):
     github_token_key: str | None = Field(default=None, repr=False)
     github_public_api_url: str = "https://api.mutating.tech"
     github_dashboard_url: str = "https://platform.mutating.tech"
+
+    @field_validator("platform_origin")
+    @classmethod
+    def platform_origin_only(cls, value: AnyHttpUrl | None) -> AnyHttpUrl | None:
+        if value and (
+            value.username is not None
+            or value.password is not None
+            or value.path != "/"
+            or value.query is not None
+            or value.fragment is not None
+        ):
+            raise ValueError(
+                "Use the dashboard origin without credentials, path, query or fragment"
+            )
+        return value

@@ -1,77 +1,72 @@
-import { useState, type FocusEvent } from "react";
-import { allPages } from "../lib/api";
-import { useData } from "../lib/useData";
-import { useReloadOnOrganizationChange } from "../lib/useOrganizationDirectory";
-import { useSession } from "../lib/session";
+import { Link } from "react-router-dom";
+import { ErrorBox, Heading, Icon } from "../components/UI";
+import { api } from "../lib/api";
+import { useComputeCompanies } from "../lib/compute";
 import { useI18n } from "../lib/i18n";
-import type { Company } from "../lib/types";
-import { PoolCard, RestrictedPoolCard } from "../components/PoolCard";
-import { ErrorBox, Heading, Icon, Loading } from "../components/UI";
-
-function revealFocusedControl({ target }: FocusEvent<HTMLDivElement>) {
-  if (!target.matches(":focus-visible")) return;
-  const header = document.querySelector(".site-header");
-  if (
-    header && getComputedStyle(header).position === "sticky" &&
-    target.getBoundingClientRect().top < header.getBoundingClientRect().bottom + 4
-  ) {
-    target.scrollIntoView({ block: "start", inline: "nearest" });
-  }
-}
+import { useSession } from "../lib/session";
+import type { ConnectedComputerPage } from "../lib/types";
+import { useData, useRefreshWhileVisible } from "../lib/useData";
 
 export function Compute() {
   const { user } = useSession();
-  const { t } = useI18n();
-  const [revision, setRevision] = useState(0);
-  const companies = useData(
-    (signal) => allPages<Company>("companies", signal),
+  const { t, locale } = useI18n();
+  const companies = useComputeCompanies(user!.id);
+  const computers = useData(
+    (signal) => api<ConnectedComputerPage>("connected-computers?limit=1", { signal }),
     user!.id,
     true,
-    revision,
+    { retainError: true },
   );
-  useReloadOnOrganizationChange(user!.id, "all", companies.reload);
+  useRefreshWhileVisible(computers.reload);
+  const format = (value?: number) => value?.toLocaleString(locale) ?? "—";
+  const data = computers.error ? null : computers.data;
+  const total = data?.total;
+  const online = data?.online;
+  const offline = data ? data.total - data.online : undefined;
+  const organizationCount = companies.data?.length;
   return (
     <>
-      <Heading
-        index={`02 / ${t("computeTag")}`}
-        title={t("computeName")}
-        action={
-          <button
-            className="button secondary compact"
-            onClick={() => setRevision((x) => x + 1)}
-          >
-            <Icon name="refresh" size={16} />
-            {t("refresh")}
-          </button>
-        }
-      >
-        {t("computeLead")}
-      </Heading>
-      <p className="resource-intro">{t("resourcesNote")}</p>
-      <div className="pool-list compute-pools" onFocus={revealFocusedControl}>
-        <PoolCard
-          pool={{ id: user!.id, kind: "users", name: t("personal") }}
-          chart
-          revision={revision}
-        />
-        {companies.loading && !companies.data ? (
-          <Loading />
-        ) : companies.error ? (
-          <ErrorBox error={companies.error} retry={companies.reload} />
-        ) : (
-          companies.data?.map((company) =>
-            company.my_permissions.includes("resources.read") ? (
-              <PoolCard
-                key={company.id}
-                pool={{ ...company, kind: "companies" }}
-                chart
-                revision={revision}
-              />
-            ) : (
-              <RestrictedPoolCard key={company.id} company={company} />
-            ),
-          )
-        )}
+      <Heading title={t("computeName")} />
+      <div className="compute-overview">
+        <dl className="compute-status-summary" aria-busy={computers.loading}>
+          <div>
+            <dt>{t("myComputers")}</dt>
+            <dd>{format(total)}</dd>
+          </div>
+          <div>
+            <dt>{t("online")}</dt>
+            <dd className="compute-online">{format(online)}</dd>
+          </div>
+          <div>
+            <dt>{t("connectionOffline")}</dt>
+            <dd className="compute-offline">{format(offline)}</dd>
+          </div>
+        </dl>
+        <ErrorBox error={computers.error} retry={computers.reload} />
+        <ErrorBox error={companies.error} retry={companies.reload} />
+        <div className="compute-destinations">
+          <Link className="compute-destination" to="/compute/computers" aria-label={t("connectedComputers")}>
+            <span className="compute-destination-icon"><Icon name="computer" /></span>
+            <h2>{t("connectedComputers")}</h2>
+            <p>{t("connectedComputersEntry")}</p>
+            <div className="compute-destination-footer">
+              <div><strong>{format(total)}</strong> <span>{t("total")} · {format(online)} {t("online").toLocaleLowerCase(locale)}</span></div>
+              <Icon name="arrow" size={17} />
+            </div>
+          </Link>
+          <Link className="compute-destination" to="/compute/pools" aria-label={t("computePools")}>
+            <span className="compute-destination-icon"><Icon name="users" /></span>
+            <h2>{t("computePools")}</h2>
+            <p>{t("computePoolsEntry")}</p>
+            <div className="compute-destination-footer">
+              <div>
+                <strong>{format(organizationCount === undefined ? undefined : organizationCount + 1)}</strong>{" "}
+                <span>{t("personalPool")} · {t("organizations")} {format(organizationCount)}</span>
+              </div>
+              <Icon name="arrow" size={17} />
+            </div>
+          </Link>
+        </div>
       </div>
     </>
   );

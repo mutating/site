@@ -129,7 +129,7 @@ test("organization creation preserves the draft on failure and creates once on r
   ]);
 });
 
-for (const endpoint of ["summary", "availability-history"]) {
+for (const endpoint of ["pool-overview", "availability-history"]) {
   test(`capacity automatically recovers from a failed ${endpoint} request without displaying false zeros`, async ({
     page,
     request,
@@ -137,21 +137,26 @@ for (const endpoint of ["summary", "availability-history"]) {
   }) => {
     await addComputer(request, account, "Узел восстановления");
     await login(page, account);
-    const path = `**/v1/users/${account.id}/resources/${endpoint}?*`;
+    const path = `${API}/users/${account.id}/resources/${endpoint}`;
     let attempts = 0;
     await page.route(path, (route) => {
       ++attempts;
       return route.abort("failed");
     });
-    await page.goto("compute");
-    const pool = page.getByRole("region", { name: "Личные компьютеры" });
+    await page.goto("compute/pools/personal");
+    const pool = page.getByRole("region", { name: "Личный пул" });
     await expect.poll(() => attempts).toBeGreaterThan(0);
     await expect(pool.getByRole("alert")).toHaveCount(0);
-    await expect(pool.getByTestId("computer-count")).toHaveCount(0);
-    await expect(pool.locator(".capacity-chart")).toHaveCount(0);
+    if (endpoint === "pool-overview") {
+      await expect(pool.getByTestId("computer-count")).toHaveText("—");
+      await expect(pool.locator("[data-series]")).toHaveCount(4);
+    } else {
+      await expect(pool.getByTestId("computer-count")).toHaveText("1");
+      await expect(pool.locator(".capacity-chart")).toHaveCount(0);
+    }
     await page.unroute(path);
     await expect(pool.getByTestId("computer-count")).toHaveText("1");
-    await expect(pool.locator(".metric-free")).toHaveText(["8", "8"]);
+    await expect(pool.locator(".organization-overview-metrics dd:not(.organization-metric-detail)")).toHaveText(["1", "8", "8", "1"]);
     await expect(pool.locator("[data-series]")).toHaveCount(4);
     await expect(pool.getByRole("alert")).toHaveCount(0);
   });
@@ -163,17 +168,18 @@ test("refresh shows newly available capacity and recovery does not discard the s
   account,
 }) => {
   await login(page, account);
-  await page.goto("compute");
-  const pool = page.getByRole("region", { name: "Личные компьютеры" });
+  await page.goto("compute/pools/personal");
+  const pool = page.getByRole("region", { name: "Личный пул" });
   await expect(pool.getByTestId("computer-count")).toHaveText("0");
   await addComputer(request, account, "Появился после открытия страницы");
   await page.context().setOffline(true);
-  const refreshStarted = page.waitForRequest(request => request.url().includes("/resources/summary?"));
+  const refreshStarted = page.waitForRequest(`${API}/users/${account.id}/resources/pool-overview`);
   await page.getByRole("button", { name: "Обновить", exact: true }).click();
   await refreshStarted;
   await expect(pool.getByRole("alert")).toHaveCount(0);
   await page.context().setOffline(false);
   await expect(pool.getByTestId("computer-count")).toHaveText("1", { timeout: 30_000 });
+  await expect(pool.getByRole("region", { name: "Компьютеры", exact: true })).toContainText("Появился после открытия страницы");
   await expect(page.getByRole("alert")).toHaveCount(0);
   expect(
     (await page.context().cookies()).some((c) => c.name === "tmc_session"),

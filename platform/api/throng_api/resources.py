@@ -1,14 +1,19 @@
 """Resource catalog administration, computer inventory and owner-scoped reports."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, or_, select
 
 from throng_api import outputs as out
 from throng_api.availability import capacity_history
-from throng_api.computers import computer_for_user
+from throng_api.computers import computer_for_user, computer_page
+from throng_api.database import (
+    COMPUTER_POOL_CHECK_REVISION_HEADER,
+    company_query_id,
+    current_revision,
+)
 from throng_api.models import Computer, ComputerOwnership, ComputerResource, ResourceType
 from throng_api.resource_history import history, pool_history, pool_summary, report_owner, summary
 from throng_api.resource_ledger import add_resource, change_resource, computer_owner
@@ -22,6 +27,7 @@ from throng_api.schemas import (
 from throng_api.security import (
     access_token_scheme,
     authenticate,
+    authenticated_snapshot,
     owned_filter,
     system_administrator,
 )
@@ -272,31 +278,102 @@ async def user_resource_summary(user_id: UUID, request: Request, only_available:
 
 @router.get("/companies/{company_id}/resources/summary", response_model=out.ResourceSummary)
 async def company_resource_summary(
-    company_id: UUID, request: Request, only_available: bool = False
+    company_id: UUID, request: Request, response: Response, only_available: bool = False
 ):
     """Суммы ресурсов компании без личных компьютеров её сотрудников; доступны членам и токену компании."""
-    async with request.app.state.db.read() as session:
-        principal = await authenticate(session, request)
-        owner = await report_owner(session, principal, company_id=company_id)
+    async with authenticated_snapshot(request) as (session, principal):
+        owner = await report_owner(session, principal, company_id=company_id, response=response)
+        response.headers[COMPUTER_POOL_CHECK_REVISION_HEADER] = str(await current_revision(session))
         return await summary(session, owner, request.app.state.clock(), only_available)
 
 
 @router.get("/companies/{company_id}/resources/pool-summary", response_model=out.PoolSummary)
 async def company_pool_summary(company_id: UUID, request: Request):
     """Полный и доступный пулы организации из одного снимка."""
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
-        _, company = await report_owner(session, principal, company_id=company_id)
-        return await pool_summary(session, company, request.app.state.clock())
+    async with authenticated_snapshot(request) as (session, principal):
+        owner = await report_owner(session, principal, company_id=company_id)
+        return await pool_summary(session, owner, request.app.state.clock())
+
+
+async def pool_overview(session, owner, now):
+    user_id, company_id = owner
+    condition = (
+        ComputerOwnership.user_id == user_id
+        if user_id is not None
+        else ComputerOwnership.company_id == company_query_id(session, company_id)
+    )
+    snapshot = await pool_summary(session, owner, now)
+    eligible = select(ComputerOwnership.computer_id).where(condition)
+    return {
+        **snapshot,
+        "computers": await computer_page(session, eligible, now, limit=3),
+        "check_revision": await current_revision(session),
+    }
+
+
+@router.get("/users/{user_id}/resources/pool-overview", response_model=out.PoolOverview)
+async def user_pool_overview(user_id: UUID, request: Request):
+    """Полные и доступные ресурсы и первые три компьютера личного пула из одного снимка."""
+    async with authenticated_snapshot(request) as (session, principal):
+        owner = await report_owner(session, principal, user_id=user_id)
+        return await pool_overview(session, owner, request.app.state.clock())
+
+
+@router.get("/users/{user_id}/resources/pool-snapshot", response_model=out.PersonalPoolSnapshot)
+async def user_pool_snapshot(user_id: UUID, request: Request):
+    """Report personal inventory and seven days of capacity from one current snapshot."""
+    async with authenticated_snapshot(request) as (session, principal):
+        owner = await report_owner(session, principal, user_id=user_id)
+        now = request.app.state.clock()
+        overview = await pool_overview(session, owner, now)
+        history = await capacity_history(session, owner, now - timedelta(days=7), now, now)
+        if history["points"]:
+            resources = {
+                resource["code"]: resource for resource in overview["available"]["resources"]
+            }
+            cpu = resources.get("cpu", {})
+            memory = resources.get("memory", {})
+            # A history interval ends on a left-hand limit. Show the current
+            # reading at the final marker, including transfers or lease expiry at now.
+            history["points"][-1] = {
+                "at": now,
+                "cpu_millis": cpu.get("total", 0),
+                "cpu_occupied_millis": cpu.get("occupied", 0),
+                "memory_bytes": memory.get("total", 0),
+                "memory_occupied_bytes": memory.get("occupied", 0),
+            }
+        return {"overview": overview, "history": history}
+
+
+@router.get("/companies/{company_id}/resources/pool-overview", response_model=out.PoolOverview)
+async def company_pool_overview(company_id: UUID, request: Request, response: Response):
+    """Полные и доступные ресурсы и первые три компьютера организации из одного снимка."""
+    async with authenticated_snapshot(request) as (session, principal):
+        owner = await report_owner(session, principal, company_id=company_id, response=response)
+        return await pool_overview(session, owner, request.app.state.clock())
 
 
 @router.get("/companies/{company_id}/resources/pool-history", response_model=out.PoolHistory)
-async def company_pool_history(company_id: UUID, request: Request):
+async def company_pool_history(company_id: UUID, request: Request, response: Response):
     """Общие и свободные CPU и память организации за последние семь дней."""
-    async with request.app.state.db.read(snapshot=True) as session:
-        principal = await authenticate(session, request)
-        _, company = await report_owner(session, principal, company_id=company_id)
+    async with authenticated_snapshot(request) as (session, principal):
+        _, company = await report_owner(
+            session, principal, company_id=company_id, response=response
+        )
+        response.headers[COMPUTER_POOL_CHECK_REVISION_HEADER] = str(await current_revision(session))
         return await pool_history(session, company, request.app.state.clock())
+
+
+@router.get("/companies/{company_id}/resources/pool-snapshot", response_model=out.PoolSnapshot)
+async def company_pool_snapshot(company_id: UUID, request: Request, response: Response):
+    """Сводка, компьютеры и история ресурсов организации из одного снимка."""
+    async with authenticated_snapshot(request) as (session, principal):
+        owner = await report_owner(session, principal, company_id=company_id, response=response)
+        now = request.app.state.clock()
+        return {
+            "overview": await pool_overview(session, owner, now),
+            "history": await pool_history(session, owner[1], now),
+        }
 
 
 @router.get("/users/{user_id}/resources/history", response_model=out.ResourceHistory)
@@ -357,13 +434,18 @@ async def company_resource_history(
 async def user_capacity_history(
     user_id: UUID,
     request: Request,
-    from_time: datetime = Query(alias="from"),
-    to_time: datetime = Query(alias="to"),
+    from_time: datetime | None = Query(None, alias="from"),
+    to_time: datetime | None = Query(None, alias="to"),
 ):
-    async with request.app.state.db.read() as session:
-        principal = await authenticate(session, request)
+    """Report capacity in an explicit interval or during the last seven days."""
+    async with authenticated_snapshot(request) as (session, principal):
         owner = await report_owner(session, principal, user_id=user_id)
-        return await capacity_history(session, owner, from_time, to_time, request.app.state.clock())
+        if (from_time is None) != (to_time is None):
+            raise HTTPException(422, "Provide both from and to, or omit both")
+        now = request.app.state.clock()
+        return await capacity_history(
+            session, owner, from_time or now - timedelta(days=7), to_time or now, now
+        )
 
 
 @router.get(
@@ -372,10 +454,11 @@ async def user_capacity_history(
 async def company_capacity_history(
     company_id: UUID,
     request: Request,
+    response: Response,
     from_time: datetime = Query(alias="from"),
     to_time: datetime = Query(alias="to"),
 ):
-    async with request.app.state.db.read() as session:
-        principal = await authenticate(session, request)
-        owner = await report_owner(session, principal, company_id=company_id)
+    async with authenticated_snapshot(request) as (session, principal):
+        owner = await report_owner(session, principal, company_id=company_id, response=response)
+        response.headers[COMPUTER_POOL_CHECK_REVISION_HEADER] = str(await current_revision(session))
         return await capacity_history(session, owner, from_time, to_time, request.app.state.clock())

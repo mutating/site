@@ -8,7 +8,9 @@ import {
   headers,
   login,
   makeAccount,
+  markAccountComputer,
   password,
+  startSession,
   test,
   type Account,
 } from "./fixtures";
@@ -50,6 +52,33 @@ const latest = (page: Page) =>
 const history = (page: Page) =>
   page.getByRole("region", { name: /^История бенчмарка/ });
 const detailsPath = (id: string) => `compute/computers/${id}`;
+
+test("moving a computer in another tab preserves focus on its open benchmark", async ({ page, request, account }) => {
+  const pool = await company(request, account);
+  const computer = await addComputer(request, account, "Стенд", undefined, false);
+  await markAccountComputer(request, computer.id);
+  await measurement(request, account, computer.id, "0.0.2");
+  await startSession(page, account);
+  await page.goto(detailsPath(computer.id));
+  const benchmark = latest(page).getByRole("link", { name: /single_core/ });
+  await benchmark.focus();
+  await expect(benchmark).toBeFocused();
+  const other = await page.context().newPage();
+  try {
+    await other.goto("compute/computers");
+    await other.getByRole("button", { name: `Сменить пул — ${computer.name}`, exact: true }).click();
+    const dialog = other.getByRole("dialog");
+    await dialog.getByLabel("Новый пул").selectOption(pool.id);
+    const refreshed = page.waitForResponse((response) =>
+      response.url() === `${API}/computers/${computer.id}` && response.request().method() === "GET" && response.ok()
+    );
+    await dialog.getByRole("button", { name: "Сменить пул", exact: true }).click();
+    await (await refreshed).finished();
+    await expect(benchmark).toBeFocused();
+  } finally {
+    await other.close();
+  }
+});
 
 function deferred() {
   let resolve!: () => void;
@@ -259,7 +288,7 @@ for (const pool of ["personal", "organization"] as const) {
     );
     const ownerQuery = organization
       ? `company_id=${organization.id}`
-      : `user_id=${account.id}`;
+      : `user_id=${account.id}&only_available=false`;
     // Insertion order, numeric version order and lexicographic order all differ.
     const versions = [
       "1.2.0",
@@ -343,10 +372,10 @@ for (const pool of ["personal", "organization"] as const) {
       expect(response.status()).toBe(201);
     }
     await login(page, viewer);
-    await page.goto("compute");
+    await page.goto(`compute/pools/${organization?.id ?? "personal"}`);
     await page
       .getByRole("region", {
-        name: organization?.name || "Личные компьютеры",
+        name: organization?.name || "Личный пул",
         exact: true,
       })
       .getByRole("link", { name: "Список компьютеров" })
@@ -1531,6 +1560,7 @@ test("missing historical benchmark and long names fit mobile without stale selec
     ),
   ).toBe(true);
   await page.getByRole("link", { name: "К списку компьютеров" }).click();
+  await expect(page).toHaveURL(new RegExp(`/compute/computers\\?user_id=${account.id}$`));
   await expect(page.locator(".benchmark-summary dt")).toHaveText(name);
   expect(
     await page.evaluate(

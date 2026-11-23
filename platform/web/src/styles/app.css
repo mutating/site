@@ -2345,18 +2345,18 @@ td small {
   font-weight: 650;
   flex: none;
 }
-.organizations-page .organization-row:nth-child(3n + 2) .organization-monogram {
+.organization-list > .organization-row:nth-child(3n + 2) .organization-monogram {
   background: color-mix(in srgb, var(--violet) 12%, var(--surface));
   color: var(--violet);
 }
-.organizations-page .organization-row:nth-child(3n) .organization-monogram {
+.organization-list > .organization-row:nth-child(3n) .organization-monogram {
   background: color-mix(in srgb, var(--success) 12%, var(--surface));
   color: var(--success);
 }
 .organization-info {
   min-width: 0;
 }
-.organizations-page .organization-info h3 {
+.organization-list .organization-info h3 {
   font-size: 16px;
   font-weight: 550;
   margin: 0;
@@ -2457,7 +2457,7 @@ td small {
     grid-template-columns: 36px minmax(100px, 1fr) 85px 43px 47px var(--invitation-actions-column,);
     gap: 10px;
   }
-  .organizations-page .organization-info h3 {
+  .organization-list .organization-info h3 {
     font-size: 14px;
   }
   .organization-role {
@@ -2498,7 +2498,7 @@ td small {
     gap: 12px 10px;
     padding-block: 20px;
   }
-  .organizations-page .organization-info h3 {
+  .organization-list .organization-info h3 {
     font-size: 15px;
   }
   .organization-monogram {

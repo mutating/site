@@ -12,7 +12,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from throng_api.app import create_app
-from throng_api.models import AvailabilityBaseline, CapacityInterval, ComputerOwnership
+from throng_api.models import (
+    AvailabilityBaseline,
+    CapacityInterval,
+    Computer,
+    ComputerOwnership,
+)
 
 app = create_app()
 failed_logins = set()
@@ -36,12 +41,23 @@ class HistoryFixture(BaseModel):
     pattern: Literal["full", "sparse"] = "full"
 
 
+@app.post("/__test__/connected-computer/{computer_id}", status_code=204)
+async def seed_connected_computer(computer_id: UUID):
+    """Mark a worker as account-bound for browser tests without a native client."""
+    async with app.state.db.write() as session:
+        computer = await session.get(Computer, str(computer_id))
+        assert computer is not None
+        computer.connected_user_id = computer.registered_by_user_id
+
+
 @app.post("/__test__/history")
 async def historical_capacity(data: HistoryFixture):
     """Insert known past events; the browser still reads the production reporting endpoint."""
     async with app.state.db.write() as session:
         owner = await session.scalar(
-            select(ComputerOwnership).where(ComputerOwnership.computer_id == str(data.computer_id))
+            select(ComputerOwnership).where(
+                ComputerOwnership.computer_id == str(data.computer_id)
+            )
         )
         week_start = datetime(2026, 1, 1, tzinfo=UTC)
         # Minutes into the requested week. Include a larger peak before the long idle gap.

@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { request, allPages, ApiError, withDeadline } from "../lib/api";
 import { computerAvailability } from "../lib/computerAvailability";
-import { useData } from "../lib/useData";
+import { poolPath, useReloadOnComputerPoolChange } from "../lib/compute";
+import { useData, useRefreshWhileVisible } from "../lib/useData";
 import { useReloadOnOrganizationChange } from "../lib/useOrganizationDirectory";
 import { useSession } from "../lib/session";
 import { useI18n } from "../lib/i18n";
@@ -15,9 +16,14 @@ export function Computers() {
   const viewer = useSession().user!.id;
   const { t, locale } = useI18n();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const connectedPoolOrigin = location.state?.connectedPoolOrigin;
+  const navigationState = connectedPoolOrigin ? { connectedPoolOrigin } : undefined;
   const navigate = useNavigate();
-  const companyId = params.get("company_id");
-  const showAll = Boolean(companyId) && params.get("only_available") === "false";
+  const companyId = params.get("company_id")?.toLowerCase() ?? null;
+  const [lostCompanyId, setLostCompanyId] = useState<string | null>(null);
+  const verifiedMembership = useRef<{ companyId: string; membershipId: string; revision?: number } | null>(null);
+  const showAll = params.get("only_available") === "false";
   const directoryParam = params.get("directory_search");
   const directorySearch = directoryParam?.startsWith("?") ? directoryParam : "";
   const organizationPage = params.get("organization_page");
@@ -25,7 +31,7 @@ export function Computers() {
   const organizationQuery = new URLSearchParams(organizationPage ? { page: organizationPage } : {});
   if (memberQuery) organizationQuery.set("q", memberQuery);
   const organizationPath = `/organizations/${encodeURIComponent(companyId ?? "")}${organizationQuery.size ? `?${organizationQuery}` : ""}`;
-  const userId = params.get("user_id") || viewer;
+  const userId = params.get("user_id")?.toLowerCase() || viewer;
   const page = Math.max(
     1,
     Math.min(1_000_000, Number.parseInt(params.get("page") || "1", 10) || 1),
@@ -41,26 +47,116 @@ export function Computers() {
     offset: String((page - 1) * 10),
   });
   const queryKey = query.toString();
-  const state = useData(
+  const title = useRef<HTMLHeadingElement>(null);
+  const table = useRef<HTMLTableElement>(null);
+  const pagination = useRef<HTMLElement>(null);
+  const retry = useRef<HTMLButtonElement>(null);
+  const savedFocus = useRef<{ key: string; element: Element } | null>(null);
+  const rememberFocus = () => {
+    const element = document.activeElement;
+    if (element && (table.current?.contains(element) || pagination.current?.contains(element) || retry.current === element)) {
+      savedFocus.current = { key: queryKey, element };
+    }
+  };
+  const state = useData<{ data: Computer[]; total: number | null; queryKey: string; poolCheckRevision?: number }>(
     async (signal) => {
       const read = (listSignal: AbortSignal) => request<Computer[]>(
         `computers?${queryKey}`, { signal: listSignal },
       );
-      const result = companyId ? await withDeadline(signal, read) : await read(signal);
-      return { ...result, queryKey };
+      try {
+        const result = companyId ? await withDeadline(signal, read) : await read(signal);
+        if (!signal.aborted) {
+          rememberFocus();
+          if (companyId) {
+            const membershipId = result.organizationMembershipId;
+            verifiedMembership.current = membershipId
+              ? { companyId, membershipId, revision: result.poolCheckRevision } : null;
+          }
+          setLostCompanyId((id) => id === companyId ? null : id);
+        }
+        return { ...result, queryKey };
+      } catch (error) {
+        if (!signal.aborted) {
+          rememberFocus();
+          if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+            if (companyId && (error.status === 403 || error.status === 404)) {
+              const membershipId = error.status === 403 ? error.organizationMembershipId : undefined;
+              verifiedMembership.current = membershipId
+                ? { companyId, membershipId, revision: error.poolCheckRevision ?? verifiedMembership.current?.revision } : null;
+              setLostCompanyId((id) => error.status === 404 ? companyId : id === companyId ? null : id);
+            }
+            state.update(null);
+          }
+        }
+        throw error;
+      }
     },
     queryKey,
+    true,
+    { retainError: true },
   );
   useReloadOnOrganizationChange(viewer, companyId, (change) => {
     if (change.type === "renamed") company.reload();
-    else state.reload();
+    else {
+      const membership = verifiedMembership.current;
+      if (change.type === "removed" && (!change.membershipId ||
+          membership?.companyId === companyId && membership?.membershipId === change.membershipId)) {
+        rememberFocus();
+        verifiedMembership.current = null;
+        setLostCompanyId(companyId);
+        state.update(null);
+      }
+      state.reload();
+    }
   });
+  useReloadOnComputerPoolChange(viewer, ({ computerId, assignment }) => {
+    if (!assignment || (!companyId && userId !== viewer)) {
+      state.reload();
+      return;
+    }
+    const member = verifiedMembership.current;
+    const checksOrganization = !!companyId && companyId === assignment.companyId && !!assignment.membershipId;
+    const newerAccess = checksOrganization && (member?.companyId !== companyId || member.revision === undefined ||
+      member.revision < assignment.revision);
+    if (newerAccess) {
+      verifiedMembership.current = { companyId, membershipId: assignment.membershipId!, revision: assignment.revision };
+    }
+    const hidesOrganization = newerAccess && !assignment.canRead;
+    const leavesScope = assignment.companyId !== companyId || !companyId && (!assignment.canRead || assignment.assigned === false);
+    if (hidesOrganization || leavesScope) {
+      rememberFocus();
+      state.update((current) => {
+        if (!current || current.queryKey !== queryKey ||
+            current.poolCheckRevision !== undefined && current.poolCheckRevision >= assignment.revision) return current;
+        if (hidesOrganization) return null;
+        const remaining = current.data.filter((computer) => computer.id !== computerId);
+        return remaining.length === current.data.length ? current : {
+          ...current,
+          data: remaining,
+          total: current.total === null ? null : Math.max(0, current.total - 1),
+        };
+      });
+    }
+    state.reload();
+  }, companyId);
+  useRefreshWhileVisible(state.reload);
   // A response from the preceding page must not correct a newer URL.
   const data = state.data?.queryKey === queryKey ? state.data : null;
+  useLayoutEffect(() => {
+    const previous = savedFocus.current;
+    savedFocus.current = null;
+    if (previous?.key !== queryKey) return;
+    const { element } = previous;
+    if (element.isConnected && !element.matches(":disabled")) return;
+    const focused = document.activeElement;
+    if (focused !== document.body && focused !== element) return;
+    const fallback = pagination.current?.contains(element) ? pagination.current : title.current;
+    fallback?.focus();
+  }, [data, state.error, queryKey]);
   const updatePage = (value: number) => {
     const next = new URLSearchParams(params);
     next.set("page", String(value));
-    setParams(next);
+    setParams(next, { state: location.state });
   };
   const totalPages = Math.max(1, Math.ceil((data?.total || 0) / 10));
   const outsidePages = !!data && page > totalPages;
@@ -70,45 +166,51 @@ export function Computers() {
     if (!state.loading && !state.error && outsidePages) {
       const next = new URLSearchParams(params);
       next.set("page", String(totalPages));
-      setParams(next, { replace: true });
+      navigate({ search: next.toString(), hash: location.hash }, {
+        replace: true,
+        state: location.hash === "#main" ? { ...location.state, keepScroll: true } : location.state,
+      });
     }
-  }, [state.loading, state.error, outsidePages, totalPages, params, setParams]);
+  }, [state.loading, state.error, outsidePages, totalPages, params, navigate, location.hash, location.state]);
   useEffect(() => {
     if (!data || outsidePages || previousPage.current === page) return;
     previousPage.current = page;
+    if (location.hash === "#main" && document.activeElement === document.getElementById("main")) return;
     const frame = requestAnimationFrame(() => {
       firstRow.current?.scrollIntoView({ block: "start" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [page, data, outsidePages]);
-  const lostCompany = state.error instanceof ApiError && state.error.status === 404;
+  }, [page, data, outsidePages, location.hash]);
+  const lostCompany = companyId !== null && lostCompanyId === companyId;
   const label = companyId
     ? (!lostCompany && company.data?.find((c) => c.id === companyId)?.name) || t("organizations")
     : t("personal");
-  const backPath = lostCompany ? `/organizations${directorySearch}` : organizationPath;
-  const backLabel = lostCompany ? "backOrganizations" : "backOrganization";
+  const backPath = companyId ? (lostCompany ? `/organizations${directorySearch}` : organizationPath) : poolPath(null);
+  const backLabel = companyId ? (lostCompany ? "backOrganizations" : "backOrganization") : "backPersonalPool";
   return (
     <>
       <Link
         className="back-link"
         to={showAll ? backPath : "/compute"}
-        state={showAll && !lostCompany ? { directorySearch } : undefined}
+        state={showAll ? {
+          directorySearch: companyId && !lostCompany ? directorySearch : undefined,
+          connectedPoolOrigin,
+        } : undefined}
       >
         ← {t(showAll ? backLabel : "backCompute")}
       </Link>
-      <Heading index={`02 / MUTATING COMPUTE / ${label}`} title={t("computers")}>
-        {t(showAll ? "allOrganizationComputers" : "onlineOnly")}
+      <Heading index={`02 / MUTATING COMPUTE / ${label}`} title={t("computers")} titleRef={title}>
+        {t(showAll ? (companyId ? "allOrganizationComputers" : "allPersonalComputers") : "onlineOnly")}
       </Heading>
-      {state.loading || outsidePages || (!state.error && !data) ? (
+      <ErrorBox error={state.error} retry={state.reload} retryRef={retry} />
+      {(!state.error && (outsidePages || !data)) ? (
         <Loading />
-      ) : state.error ? (
-        <ErrorBox error={state.error} retry={state.reload} />
       ) : (
-        data && (
+        data && !outsidePages && (
           <>
-            <section className="table-panel">
+            <section className="table-panel" aria-busy={state.loading}>
               <div className="table-scroll">
-                <table className="computer-table">
+                <table ref={table} className="computer-table">
                   <thead>
                     <tr>
                       <th>{t("computer")}</th>
@@ -146,12 +248,12 @@ export function Computers() {
                               ) &&
                               !window.getSelection()?.toString()
                             )
-                              navigate(to);
+                              navigate(to, { state: navigationState });
                           }}
                         >
                           <td>
                             <div className="computer-identity">
-                              <Link className="computer-link" to={to}>
+                              <Link className="computer-link" to={to} state={navigationState}>
                                 <strong>
                                   {computer.name || computer.id.slice(0, 8)}
                                 </strong>
@@ -211,12 +313,12 @@ export function Computers() {
               {!data.data.length && (
                 <Empty
                   icon="computer"
-                  title={t(showAll ? "noOrganizationComputers" : "noComputers")}
+                  title={t(showAll ? (companyId ? "noOrganizationComputers" : "noPersonalComputers") : "noComputers")}
                 >
                   {!showAll && t("noComputersLead")}
                 </Empty>
               )}
-              <nav className="pagination" aria-label={t("page")}>
+              <nav ref={pagination} className="pagination" aria-label={t("page")} tabIndex={-1}>
                 <span>
                   {t("page")} {page} {t("of")} {totalPages}
                 </span>

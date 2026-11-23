@@ -304,9 +304,15 @@ uv run --project platform/api python deploy/run.py
 API доступен на `http://127.0.0.1:8000`, кабинет — на
 `http://127.0.0.1:8001/`. В `platform/api/.env` укажите
 `DASHBOARD_API_URL=http://127.0.0.1:8000/v1`,
+`THRONG_PLATFORM_ORIGIN=http://127.0.0.1:8001`,
 `THRONG_BROWSER_ORIGINS=["http://127.0.0.1:8001","http://127.0.0.1:5173"]` и
 `THRONG_BROWSER_SECURE_COOKIE=false`. Для Vite также используйте
 `platform/web/.env.example`. Адрес API должен быть доступен браузеру.
+
+`THRONG_PLATFORM_ORIGIN` задаёт адрес кабинета для перехода из настроек Power Cell.
+Укажите origin кабинета в `THRONG_BROWSER_ORIGINS`. Для браузерной сессии
+API и кабинет используют один сайт и схему. При общем origin переход работает
+по пути `/compute/computers`.
 
 Общая команда применяет миграции, ждёт готовности API, запускает кабинет и
 останавливает оба процесса по Ctrl+C/SIGTERM. Неожиданное завершение любого

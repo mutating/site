@@ -55,10 +55,14 @@ export interface Invitation {
   expires_at: string;
   computer_count: number;
   member_count: number;
+  link_version?: string | null;
+  link_check_revision?: number | null;
 }
 export interface CreatedInvitation extends Invitation {
   token: string;
 }
+export type InvitationLinkCheck = Pick<Invitation, "id" | "status" | "link_version" | "link_check_revision">;
+export type OrganizationMembershipCheck = { id: string; revision: number };
 
 export type TokenScope = "read" | "execute" | "manage";
 export interface ApiToken {
@@ -135,6 +139,28 @@ export interface Computer {
   session_active?: boolean;
   session_id: string | null;
   lease_expires_at: string | null;
+}
+export interface ConnectedPool {
+  company_id: string | null;
+  name: string | null;
+}
+export interface ConnectedComputer {
+  id: string;
+  name: string | null;
+  os: string;
+  architecture: string;
+  runtime: string;
+  online: boolean;
+  pool: ConnectedPool | null;
+  pool_membership_id: string | null;
+  pool_revision: number;
+  can_move: boolean;
+  transfer_pending: boolean;
+}
+export interface ConnectedComputerPage {
+  items: ConnectedComputer[];
+  total: number;
+  online: number;
 }
 export interface BenchmarkResult {
   id: string;

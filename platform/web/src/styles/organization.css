@@ -49,7 +49,9 @@
 .organization-hero h1 { font-size: clamp(33px, 6.3cqi, 83px); font-weight: 820; line-height: .98; letter-spacing: -.063em; }
 .organization-hero h1 span:not(.hot) { color: var(--active-ink); }
 .organization-hero .lede { font-size: 14px; margin-top: 14px; }
-.organization-hero .organization-settings-trigger { margin-top: 19px; }
+.organization-hero .organization-hero-action { margin-top: 19px; }
+.personal-pool-links { display: flex; flex-wrap: wrap; column-gap: 18px; }
+.personal-pool-history > .chart-panel { margin-top: 0; }
 
 .organization-widget { padding: clamp(15px, 1.8cqi, 23px); }
 .organization-widget-header { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; margin-bottom: 16px; }

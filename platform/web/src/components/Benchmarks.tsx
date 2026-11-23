@@ -20,6 +20,7 @@ export function BenchmarkSummary({
   to: string;
 }) {
   const { t, locale } = useI18n();
+  const connectedPoolOrigin = useLocation().state?.connectedPoolOrigin;
   const state = useData(
     (signal) =>
       api<BenchmarkResult[]>(
@@ -50,7 +51,7 @@ export function BenchmarkSummary({
             ))}
           </dl>
           {state.data.length > 2 && (
-            <Link className="text-button" to={to}>
+            <Link className="text-button" to={to} state={connectedPoolOrigin ? { connectedPoolOrigin } : undefined}>
               +{state.data.length - 2} {t("moreBenchmarks")}
             </Link>
           )}
@@ -64,6 +65,7 @@ export function Benchmarks({ computerId, interrupted }: {
   computerId: string;
   interrupted: RefObject<boolean>;
 }) {
+  const connectedPoolOrigin = useLocation().state?.connectedPoolOrigin;
   const { t, locale } = useI18n();
   const [params] = useSearchParams();
   const selected = params.get("benchmark");
@@ -121,6 +123,7 @@ export function Benchmarks({ computerId, interrupted }: {
                     key={result.id}
                     className="benchmark-card"
                     to={`?${next}`}
+                    state={connectedPoolOrigin ? { connectedPoolOrigin } : undefined}
                     aria-current={
                       selected === result.benchmark_name ? "true" : undefined
                     }

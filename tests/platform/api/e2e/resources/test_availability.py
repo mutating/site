@@ -82,7 +82,19 @@ async def test_available_computers_filter_owner_count_and_pagination(
             "/v1/computers", params={**owner, "only_available": True, "limit": 1}
         )
         assert response.status_code == 200 and response.headers["x-total-count"] == "1"
+        assert response.headers.get("x-organization-membership-id") == (
+            company["my_membership_id"] if "company_id" in owner else None
+        )
         assert len(response.json()) == 1
+        selected = response.json()[0]["id"]
+        for identity, count in [(selected, 1), (other_user["id"], 0)]:
+            filtered = await api.get(
+                "/v1/computers",
+                params={**owner, "only_available": True, "computer_id": identity},
+            )
+            assert filtered.status_code == 200
+            assert filtered.headers["x-total-count"] == str(count)
+            assert [computer["id"] for computer in filtered.json()] == ([selected] if count else [])
         response = await api.get(
             "/v1/computers", params={**owner, "only_available": True, "offset": 1}
         )
@@ -91,6 +103,93 @@ async def test_available_computers_filter_owner_count_and_pagination(
     assert (
         await api.get("/v1/computers", params={"user_id": user["id"], "company_id": company["id"]})
     ).status_code == 422
+
+
+async def test_inventory_reports_only_the_requests_verified_membership(
+    api, other_api, other_user, company, company_computer
+):
+    """Return the current membership on denied resource reads and omit it after membership loss."""
+    created = await api.post(
+        "/v1/memberships",
+        json={
+            "company_id": company["id"],
+            "user_id": other_user["id"],
+            "role": "user",
+            "permissions": ["members.read"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    membership_id = created.json()["id"]
+    company_path = f"/v1/companies/{company['id']}"
+    metadata = await other_api.get(company_path)
+    assert metadata.status_code == 200
+    assert metadata.json()["my_membership_id"] == membership_id
+    assert int(metadata.headers["x-computer-pool-check-revision"]) >= 0
+    team = await other_api.get("/v1/memberships", params={"company_id": company["id"]})
+    assert team.status_code == 200
+    assert team.headers["x-organization-membership-id"] == membership_id
+    assert int(team.headers["x-computer-pool-check-revision"]) >= int(
+        metadata.headers["x-computer-pool-check-revision"]
+    )
+    summary = await api.get(f"{company_path}/resources/summary")
+    assert summary.status_code == 200
+    assert summary.headers["x-organization-membership-id"] == company["my_membership_id"]
+    assert int(summary.headers["x-computer-pool-check-revision"]) >= 0
+    requests = [
+        ("/v1/computers", {"company_id": company["id"]}),
+        (f"/v1/computers/{company_computer['id']}", {}),
+        (f"{company_path}/resources/pool-history", {}),
+        (f"{company_path}/resources/pool-overview", {}),
+        (f"{company_path}/resources/pool-snapshot", {}),
+        (f"{company_path}/resources/summary", {}),
+    ]
+    for route, params in requests:
+        allowed = await api.get(route, params=params)
+        assert allowed.status_code == 200
+        assert allowed.headers["x-organization-membership-id"] == company["my_membership_id"]
+        assert allowed.headers["x-organization-id"] == company["id"]
+        denied = await other_api.get(route, params=params)
+        assert denied.status_code == 403
+        assert denied.headers["x-organization-membership-id"] == membership_id
+        assert denied.headers["x-organization-id"] == company["id"]
+        revision = "x-computer-pool-check-revision"
+        if route.startswith(company_path):
+            assert int(denied.headers[revision]) >= int(metadata.headers[revision])
+        elif not params:
+            assert int(allowed.headers[revision]) >= 0
+            assert int(denied.headers[revision]) >= int(allowed.headers[revision])
+            assert allowed.headers["x-computer-read-allowed"] == "true"
+            assert denied.headers["x-computer-read-allowed"] == "false"
+
+    changed = await api.patch(
+        f"/v1/memberships/{membership_id}", json={"permissions": ["resources.manage"]}
+    )
+    assert changed.status_code == 200, changed.text
+    denied_team = await other_api.get("/v1/memberships", params={"company_id": company["id"]})
+    assert denied_team.status_code == 403
+    assert denied_team.headers["x-organization-membership-id"] == membership_id
+    assert int(denied_team.headers[revision]) > int(team.headers[revision])
+    assert (await api.delete(f"/v1/memberships/{membership_id}")).status_code == 204
+    missing = await other_api.get(company_path)
+    assert missing.status_code == 404
+    revision = "x-computer-pool-check-revision"
+    assert int(missing.headers[revision]) > int(metadata.headers[revision])
+    assert "x-organization-membership-id" not in missing.headers
+    assert "x-organization-id" not in missing.headers
+    unavailable_team = await other_api.get("/v1/memberships", params={"company_id": company["id"]})
+    assert unavailable_team.status_code == 404
+    assert int(unavailable_team.headers[revision]) >= int(missing.headers[revision])
+    assert "x-organization-membership-id" not in unavailable_team.headers
+    assert "x-organization-id" not in unavailable_team.headers
+    for route, params in requests:
+        unavailable = await other_api.get(route, params=params)
+        assert unavailable.status_code == 404
+        assert "x-organization-membership-id" not in unavailable.headers
+        assert "x-organization-id" not in unavailable.headers
+        if route.startswith(company_path):
+            assert int(unavailable.headers[revision]) >= int(missing.headers[revision])
+        else:
+            assert revision not in unavailable.headers
 
 
 async def test_empty_history_validation_and_owner_isolation(
@@ -102,7 +201,10 @@ async def test_empty_history_validation_and_owner_isolation(
     period = {"from": (clock.now - timedelta(days=7)).isoformat(), "to": clock.now.isoformat()}
     report = (await api.get(path, params=period)).json()
     assert all(point["cpu_millis"] == point["memory_bytes"] == 0 for point in report["points"])
+    assert (await api.get(path)).json() == report
     for bounds in [
+        {"from": period["from"]},
+        {"to": period["to"]},
         {"from": clock.now.isoformat(), "to": clock.now.isoformat()},
         {"from": "2026-01-01", "to": clock.now.isoformat()},
         {"from": (clock.now - timedelta(days=32)).isoformat(), "to": clock.now.isoformat()},
@@ -111,8 +213,13 @@ async def test_empty_history_validation_and_owner_isolation(
         assert (await api.get(path, params=bounds)).status_code == 422
     assert (await other_api.get(path, params=period)).status_code == 404
     company_path = f"/v1/companies/{company['id']}/resources/availability-history"
-    assert (await api.get(company_path, params=period)).status_code == 200
-    assert (await other_api.get(company_path, params=period)).status_code == 404
+    chart = await api.get(company_path, params=period)
+    missing = await other_api.get(company_path, params=period)
+    assert chart.status_code == 200 and missing.status_code == 404
+    revision = "x-computer-pool-check-revision"
+    assert int(missing.headers[revision]) >= int(chart.headers[revision])
+    assert chart.headers["x-organization-membership-id"] == company["my_membership_id"]
+    assert "x-organization-membership-id" not in missing.headers
     future = {
         "from": (clock.now + timedelta(days=1)).isoformat(),
         "to": (clock.now + timedelta(days=2)).isoformat(),
@@ -170,6 +277,9 @@ async def test_organization_pool_history_includes_offline_inventory(
     path = f"/v1/companies/{company['id']}/resources/pool-history"
     report = await api.get(path)
     assert report.status_code == 200, report.text
+    assert report.headers["x-organization-membership-id"] == company["my_membership_id"]
+    revision = "x-computer-pool-check-revision"
+    assert int(report.headers[revision]) > 0
     points = report.json()["points"]
     change = next(
         point for point in points if point["at"] == added_at.isoformat().replace("+00:00", "Z")
@@ -178,7 +288,11 @@ async def test_organization_pool_history_includes_offline_inventory(
     assert change["memory_total_bytes"] == active["memory_bytes"] + offline_memory
     assert change["cpu_free_millis"] == active["cpu_millis"]
     assert change["memory_free_bytes"] == active["memory_bytes"]
-    assert (await other_api.get(path)).status_code == 404
+    missing = await other_api.get(path)
+    assert missing.status_code == 404
+    assert int(missing.headers[revision]) >= int(report.headers[revision])
+    assert "x-organization-membership-id" not in missing.headers
+    assert "x-organization-id" not in missing.headers
     member = await api.post(
         "/v1/memberships",
         json={
@@ -189,7 +303,19 @@ async def test_organization_pool_history_includes_offline_inventory(
         },
     )
     assert member.status_code == 201, member.text
-    assert (await other_api.get(path)).status_code == 403
+    denied = await other_api.get(path)
+    assert denied.status_code == 403
+    membership_id = member.json()["id"]
+    assert denied.headers["x-organization-membership-id"] == membership_id
+    assert int(denied.headers[revision]) > int(report.headers[revision])
+    grant = await api.patch(
+        f"/v1/memberships/{membership_id}", json={"permissions": ["resources.read"]}
+    )
+    assert grant.status_code == 200, grant.text
+    allowed = await other_api.get(path)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.headers["x-organization-membership-id"] == membership_id
+    assert int(allowed.headers[revision]) > int(denied.headers[revision])
 
 
 async def test_org_pool_history_starts_when_both_reports_can_be_trusted(
@@ -310,6 +436,36 @@ async def test_org_history_reports_current_inventory_and_half_open_lease(
     assert history["points"][-1]["cpu_free_millis"] == 0
 
 
+async def test_personal_snapshot_reports_capacity_at_the_exact_expiry(
+    api, user, agent, dashboard_clock
+):
+    """Keep the latest capacity reading aligned with the overview at the lease boundary."""
+    computer = (await api.get(f"/v1/computers/{agent['computer']['id']}")).json()
+    dashboard_clock.now = datetime.fromisoformat(computer["lease_expires_at"])
+    report = await api.get(f"/v1/users/{user['id']}/resources/pool-snapshot")
+    assert report.status_code == 200, report.text
+    snapshot = report.json()
+    overview, chart = snapshot["overview"], snapshot["history"]
+    assert overview["inventory"]["computer_count"] == 1
+    assert overview["available"]["computer_count"] == 0
+    assert chart["to_time"] == overview["available"]["as_of"]
+    assert chart["points"][-1]["cpu_millis"] == 0
+    assert chart["points"][-1]["memory_bytes"] == 0
+    assert chart["points"][-2]["cpu_millis"] == 2000
+
+
+async def test_personal_snapshot_does_not_invent_history_before_the_baseline(api, user, app, clock):
+    """Allow a current overview before an interval of known history has elapsed."""
+    async with app.state.db.write() as session:
+        baseline = await session.get(AvailabilityBaseline, 1)
+        baseline.available_from = clock.now
+    report = await api.get(f"/v1/users/{user['id']}/resources/pool-snapshot")
+    assert report.status_code == 200, report.text
+    snapshot = report.json()
+    assert snapshot["overview"]["inventory"]["computer_count"] == 0
+    assert snapshot["history"]["points"] == []
+
+
 async def test_org_history_uses_one_snapshot_during_a_concurrent_resize(
     api, company, company_agent, dashboard_clock, monkeypatch
 ):
@@ -341,32 +497,52 @@ async def test_org_history_uses_one_snapshot_during_a_concurrent_resize(
     assert report.json()["points"][-1]["cpu_free_millis"] == 2000
 
 
-async def test_org_summary_reads_both_pools_with_one_snapshot(
-    api, company, company_agent, monkeypatch
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "personal",
+        "personal-snapshot",
+        "organization",
+        "organization-summary",
+        "organization-snapshot",
+    ],
+)
+async def test_pool_summary_reads_both_views_from_one_snapshot(
+    api, other_api, user, agent, company, company_agent, dashboard_clock, monkeypatch, scope
 ):
-    """A resize committed between reads cannot change only one half of the summary."""
+    """Keep totals, counts and the personal preview together during concurrent changes."""
     sampled = asyncio.Event()
     release = asyncio.Event()
     summarize = resource_history.pool_resource_totals
 
-    async def paused(*args):
-        result = await summarize(*args)
+    async def paused(*args, **kwargs):
+        result = await summarize(*args, **kwargs)
         sampled.set()
         await release.wait()
         return result
 
+    organization = scope.startswith("organization")
+    scope_path = f"companies/{company['id']}" if organization else f"users/{user['id']}"
+    report_kind = {
+        "organization-summary": "summary",
+        "personal-snapshot": "snapshot",
+        "organization-snapshot": "snapshot",
+    }.get(scope, "overview")
+    path = f"/v1/{scope_path}/resources/pool-{report_kind}"
+    denied = await other_api.get(path)
+    assert denied.status_code == 404
+    assert "x-organization-membership-id" not in denied.headers
     monkeypatch.setattr(resource_history, "pool_resource_totals", paused)
-    path = f"/v1/companies/{company['id']}/resources/pool-summary"
     reading = asyncio.create_task(api.get(path))
     try:
         await asyncio.wait_for(sampled.wait(), timeout=5)
-        computer = company_agent["computer"]["id"]
+        computer = (company_agent if organization else agent)["computer"]["id"]
         response = await api.patch(f"/v1/computers/{computer}", json={"cpu_millis": 4000})
         assert response.status_code == 200, response.text
         added = await api.post(
             "/v1/computers",
             json={
-                "company_id": company["id"],
+                **({"company_id": company["id"]} if organization else {}),
                 "os": "linux",
                 "architecture": "arm64",
                 "runtime": "docker",
@@ -380,12 +556,39 @@ async def test_org_summary_reads_both_pools_with_one_snapshot(
         release.set()
         response = await reading
     assert response.status_code == 200, response.text
-    report = response.json()
+    if organization and report_kind != "summary":
+        assert response.headers["x-organization-membership-id"] == company["my_membership_id"]
+    snapshot = response.json()
+    report = snapshot["overview"] if report_kind == "snapshot" else snapshot
     assert report["inventory"]["as_of"] == report["available"]["as_of"]
     assert report["inventory"]["computer_count"] == report["available"]["computer_count"] == 1
-    for scope in ["inventory", "available"]:
+    for view in ["inventory", "available"]:
         assert (
-            next(row for row in report[scope]["resources"] if row["code"] == "cpu")["free"] == 2000
+            next(row for row in report[view]["resources"] if row["code"] == "cpu")["free"] == 2000
+        )
+    if report_kind != "summary":
+        assert [(row["id"], row["cpu_millis"]) for row in report["computers"]] == [(computer, 2000)]
+    if report_kind == "snapshot":
+        assert snapshot["history"]["to_time"] == report["inventory"]["as_of"]
+        capacity_field = "cpu_total_millis" if organization else "cpu_millis"
+        assert snapshot["history"]["points"][-1][capacity_field] == 2000
+    refreshed = (await api.get(path)).json()
+    updated = refreshed["overview"] if report_kind == "snapshot" else refreshed
+    assert updated["inventory"]["computer_count"] == 2
+    assert updated["available"]["computer_count"] == 1
+    assert (
+        next(row for row in updated["available"]["resources"] if row["code"] == "cpu")["free"]
+        == 4000
+    )
+    if report_kind != "summary":
+        assert updated["check_revision"] > report["check_revision"]
+        assert {row["id"]: row["cpu_millis"] for row in updated["computers"]} == {
+            computer: 4000,
+            added.json()["id"]: 1000,
+        }
+    if report_kind == "snapshot":
+        assert refreshed["history"]["points"][-1][capacity_field] == (
+            5000 if organization else 4000
         )
 
 
@@ -464,7 +667,7 @@ async def test_both_pool_query_strategies_agree_with_custom_resources_and_lease_
                     scalars=session.scalars,
                     get=session.get,
                 )
-                summary = await resource_history.pool_summary(strategy, company["id"], now)
+                summary = await resource_history.pool_summary(strategy, (None, company["id"]), now)
                 history = await resource_history.pool_history(strategy, company["id"], now)
                 results.append((summary, history))
             assert results[0] == results[1]

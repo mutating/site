@@ -9,7 +9,7 @@ import {
   makeAccount,
   test,
 } from "./fixtures";
-import { GiB, historyNow, reserve, seedHistory } from "./resources";
+import { GiB, historyNow, reserve, seedHistory, useHistoricalPersonalCapacity } from "./resources";
 
 test.use({ timezoneId: "UTC" });
 
@@ -24,6 +24,12 @@ async function metrics(
     total.map((x) => `/ ${x}`),
   );
   await expect(pool.getByTestId("computer-count")).toHaveText(count);
+}
+
+async function personalMetrics(pool: Locator, values: string[], totals: string[]) {
+  const overview = pool.locator(".organization-overview-metrics");
+  await expect(overview.locator("dd:not(.organization-metric-detail)")).toHaveText(values);
+  await expect(overview.locator(".organization-metric-detail")).toHaveText(totals);
 }
 
 test("allocated limits minus actual reservations are correct in both pools and computer rows", async ({
@@ -72,24 +78,18 @@ test("allocated limits minus actual reservations are correct in both pools and c
     ["4", "12"],
     "1",
   );
-  await page.goto("compute");
-  const personal = page.getByRole("region", { name: "Личные компьютеры" });
-  await metrics(personal, ["7,25", "7,5"], ["8,5", "9,5"], "2");
+  await page.goto(`compute/pools/${company.id}`);
   await metrics(
     page.getByRole("region", { name: company.name }),
     ["3,5", "8,75"],
     ["4", "12"],
     "1",
   );
-  const fills = await personal
-    .locator(".meter > span")
-    .evaluateAll((elements) =>
-      elements.map((e) => parseFloat((e as HTMLElement).style.width)),
-    );
-  expect(fills[0]).toBeCloseTo(85.2941, 3);
-  expect(fills[1]).toBeCloseTo(78.9474, 3);
-  await personal.getByRole("link").click();
-  await expect(page.locator("tbody tr")).toHaveCount(2);
+  await page.goto("compute/pools/personal");
+  const personal = page.getByRole("region", { name: "Личный пул" });
+  await personalMetrics(personal, ["4", "7,25", "7,5", "2"], ["из 24,5 ядер", "из 25,5 GiB"]);
+  await personal.getByRole("link", { name: "Список компьютеров" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(4);
   await expect(
     page
       .getByRole("row")
@@ -109,12 +109,11 @@ test("allocated limits minus actual reservations are correct in both pools and c
       .filter({ hasText: "Рабочая станция" })
       .locator("td.numeric"),
   ).toHaveText(["6.75 / 8", "6 / 8 GiB"]);
-  await page.goto("compute");
-  await metrics(
-    page.getByRole("region", { name: "Personal computers" }),
-    ["7.25", "7.5"],
-    ["8.5", "9.5"],
-    "2",
+  await page.goto("compute/pools/personal");
+  await personalMetrics(
+    page.getByRole("region", { name: "Personal pool" }),
+    ["4", "7.25", "7.5", "2"],
+    ["of 24.5 cores", "of 25.5 GiB"],
   );
 });
 
@@ -126,10 +125,10 @@ test("one plot overlays both resources with separate scales and a shared reading
 }) => {
   const computer = await addComputer(request, account, "История");
   await seedHistory(request, computer.id);
-  await page.clock.setFixedTime(historyNow);
+  await useHistoricalPersonalCapacity(page, account.id);
   await login(page, account);
-  await page.goto("compute");
-  const pool = page.getByRole("region", { name: "Личные компьютеры" });
+  await page.goto("compute/pools/personal");
+  const pool = page.getByRole("region", { name: "Личный пул" });
   const plot = pool.getByRole("slider", { name: "Мощности и загрузка" });
   const svg = plot.locator("svg.capacity-chart");
   await expect(pool.locator(".chart-period")).toHaveText(/1[–—]8 янв\./);
@@ -182,7 +181,7 @@ test("one plot overlays both resources with separate scales and a shared reading
   await expect(tooltip.locator('[data-reading="memory_bytes"]')).toBeVisible();
   await expect(tooltip.locator('[data-reading="cpu_millis"]')).toHaveCount(0);
   await expect(plot).not.toHaveAttribute("aria-valuetext", /CPU · мощность/);
-  if (hasTouch) await pool.getByRole("heading", { name: "Личные компьютеры" }).tap();
+  if (hasTouch) await pool.getByRole("heading", { name: "Личный пул" }).tap();
   else await page.keyboard.press("Escape");
   await expect(tooltip).not.toBeVisible();
 
@@ -212,7 +211,7 @@ test("a short organization session fills the plot after a long idle period", asy
   await seedHistory(request, computer.id, "sparse");
   await page.clock.setFixedTime(historyNow);
   await login(page, account);
-  await page.goto("compute");
+  await page.goto(`compute/pools/${company.id}`);
 
   const pool = page.getByRole("region", { name: company.name });
   await expect(pool.locator(".chart-period")).toHaveText(/6 янв.*13:04.*13:59/);
@@ -238,24 +237,19 @@ test("a short organization session fills the plot after a long idle period", asy
   await expect(pool.locator('[data-series="cpu_millis"]')).toHaveCount(0);
 });
 
-test("backward tabbing reveals the plot below the sticky header on a narrow phone", async ({
+test("tabbing reveals the plot below the sticky header on a narrow phone", async ({
   page,
   request,
   account,
 }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  const extraPool = await request.post(`${API}/companies`, {
-    headers: headers(account),
-    data: { name: "Другой пул" },
-  });
-  expect(extraPool.status()).toBe(201);
   const computer = await addComputer(request, account, "История");
   await seedHistory(request, computer.id);
-  await page.clock.setFixedTime(historyNow);
+  await useHistoricalPersonalCapacity(page, account.id);
   await login(page, account);
-  await page.goto("compute");
+  await page.goto("compute/pools/personal");
 
-  const pool = page.getByRole("region", { name: "Личные компьютеры" });
+  const pool = page.getByRole("region", { name: "Личный пул" });
   const header = page.getByRole("banner");
   const plot = pool.getByRole("slider", { name: "Мощности и загрузка" });
   const chartGap = async () => {
@@ -263,14 +257,15 @@ test("backward tabbing reveals the plot below the sticky header on a narrow phon
     return chart!.y - bar!.y - bar!.height;
   };
   await expect(header).toHaveCSS("position", "sticky");
-  const nextPool = page.getByRole("region", { name: "Другой пул" });
-  await nextPool.getByRole("link").evaluate((link) => link.focus({ preventScroll: true }));
+  await pool.getByRole("button", { name: "Память · занято", exact: true })
+    .evaluate((button) => button.focus({ preventScroll: true }));
   await plot.evaluate((element) => {
-    // Move the plot under the header while focus is on the following control.
+    // The single-pool page needs extra scroll room to reproduce the overlap.
+    document.body.style.paddingBottom = `${window.innerHeight}px`;
     window.scrollBy(0, element.getBoundingClientRect().top - 10);
   });
   await expect.poll(chartGap).toBeLessThan(0);
-  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
   await expect(plot).toBeFocused();
   await expect.poll(chartGap).toBeGreaterThanOrEqual(0);
 });
@@ -279,15 +274,12 @@ test("empty capacity stays zero and the unknown part of history is disclosed", a
   page,
   account,
 }) => {
-  await page.clock.setFixedTime(new Date("2026-01-04T00:00:00Z"));
+  await useHistoricalPersonalCapacity(page, account.id, new Date("2026-01-04T00:00:00Z"));
   await login(page, account);
-  await page.goto("compute");
-  const pool = page.getByRole("region", { name: "Личные компьютеры" });
-  await metrics(pool, ["0", "0"], ["0", "0"], "0");
-  await expect(pool.locator(".meter > span").first()).toHaveAttribute(
-    "style",
-    "width: 0%;",
-  );
+  await page.goto("compute/pools/personal");
+  const pool = page.getByRole("region", { name: "Личный пул" });
+  await personalMetrics(pool, ["0", "0", "0", "0"], ["из 0 ядер", "из 0 GiB"]);
+  await expect(pool.getByText("В личном пуле пока нет компьютеров.")).toBeVisible();
   await expect(pool.locator(".chart-note")).toContainText("1 янв.");
   await expect(pool.getByText("За этот период не было доступных мощностей.")).toBeVisible();
   await expect(pool.getByRole("slider")).toHaveCount(0);

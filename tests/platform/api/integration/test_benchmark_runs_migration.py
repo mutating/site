@@ -25,7 +25,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError
 
-from throng_api.models import BenchmarkAggregateInvalidation, BenchmarkResult
+from throng_api.models import (
+    BenchmarkAggregateInvalidation,
+    BenchmarkResult,
+    Computer,
+    ComputerOwnership,
+)
 from throng_api.serialization import public
 
 pytestmark = pytest.mark.anyio
@@ -64,6 +69,18 @@ async def set_postgres_database_default(migration_database, setting):
         name = connection.dialect.identifier_preparer.quote_identifier(database)
         await connection.exec_driver_sql(f"ALTER DATABASE {name} SET {setting}")
     await migration_database.close()
+
+
+async def delete_legacy_computer(database, computer_id):
+    """Exercise the pre-upgrade writer using columns available at the tested revisions."""
+    async with database.write() as session:
+        await session.execute(
+            ComputerOwnership.__table__.delete().where(ComputerOwnership.computer_id == computer_id)
+        )
+        deleted = await session.execute(
+            Computer.__table__.delete().where(Computer.id == computer_id)
+        )
+        assert deleted.rowcount == 1
 
 
 async def test_existing_results_survive_run_migration(
@@ -401,14 +418,15 @@ async def test_postgres_upgrade_allows_computer_deletion_before_migration_locks(
         "before_cursor_execute",
         "LOCK TABLE computers IN SHARE ROW EXCLUSIVE MODE NOWAIT",
     ):
-        deleted = await api.delete(f"/v1/computers/{computer['id']}", timeout=4)
-        assert deleted.status_code == 204, deleted.text
+        await asyncio.wait_for(
+            delete_legacy_computer(migration_database, computer["id"]), timeout=4
+        )
     await anyio.to_thread.run_sync(alembic.check, alembic_config)
 
 
 @pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
 async def test_postgres_upgrade_from_0017_releases_earlier_schema_locks_on_conflict(
-    api, computer, migration_database, alembic_config
+    computer, migration_database, alembic_config
 ):
     """A computer writer survives when 0018 has already locked results in the same upgrade."""
     if migration_database.engine.dialect.name != "postgresql":
@@ -420,8 +438,7 @@ async def test_postgres_upgrade_from_0017_releases_earlier_schema_locks_on_confl
         with pytest.raises(CommandError, match="benchmark tables are in use"):
             await anyio.to_thread.run_sync(alembic.upgrade, alembic_config, "head")
         assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0017"
-        deleted = await api.delete(f"/v1/computers/{computer['id']}")
-        assert deleted.status_code == 204, deleted.text
+        await delete_legacy_computer(migration_database, computer["id"])
 
     await anyio.to_thread.run_sync(alembic.upgrade, alembic_config, "head")
     await anyio.to_thread.run_sync(alembic.check, alembic_config)
@@ -429,7 +446,7 @@ async def test_postgres_upgrade_from_0017_releases_earlier_schema_locks_on_confl
 
 @pytest.mark.parametrize("settings", [{"controller_enabled": False}], indirect=True)
 async def test_postgres_downgrade_releases_partial_locks_on_conflict(
-    api, computer, migration_database, alembic_config
+    computer, migration_database, alembic_config
 ):
     """The downgrade yields to a concurrent computer writer and can be retried afterward."""
     if migration_database.engine.dialect.name != "postgresql":
@@ -441,8 +458,7 @@ async def test_postgres_downgrade_releases_partial_locks_on_conflict(
         with pytest.raises(CommandError, match="benchmark tables are in use"):
             await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0018")
         assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0019"
-        deleted = await api.delete(f"/v1/computers/{computer['id']}")
-        assert deleted.status_code == 204, deleted.text
+        await delete_legacy_computer(migration_database, computer["id"])
 
     await anyio.to_thread.run_sync(alembic.downgrade, alembic_config, "0018")
     async with migration_database.engine.connect() as connection:

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api } from "./api";
-import type { Company, CompanyAppearance, Invitation, Membership } from "./types";
+import { api, ApiError } from "./api";
+import { tabNotifications } from "./tabNotifications";
+import type { Company, CompanyAppearance, Invitation, InvitationLinkCheck, Membership } from "./types";
 import {
   ORGANIZATIONS_PAGE_SIZE,
   organizationEntries,
@@ -24,7 +25,7 @@ type OrganizationScopeChange = {
   | { type: "appearanceUpdated"; appearance: CompanyAppearance }
   | { type: "membershipUpdated"; member: Membership }
   | { type: "membersChanged" }
-  | { type: "invitationsChanged" }
+  | { type: "invitationsChanged"; invitation?: InvitationLinkCheck }
 );
 type OrganizationChange = { userId: string; type: "created" } | OrganizationScopeChange;
 type OrganizationChangeListener = (change: OrganizationChange) => void;
@@ -37,9 +38,52 @@ export function subscribeToOrganizationChanges(listener: OrganizationChangeListe
   };
 }
 
-export function notifyOrganizationChange(change: OrganizationChange) {
+function publishOrganizationChange(change: OrganizationChange) {
   for (const listener of [...organizationChangeListeners]) {
     listener(change);
+  }
+}
+
+type SharedOrganizationChange = {
+  userId: string;
+  companyId?: string;
+  type: "created" | "removed" | "renamed" | "membersChanged" | "invitationsChanged";
+  membershipId?: string;
+  name?: string;
+  invitation?: InvitationLinkCheck;
+};
+const shareOrganizationChange = tabNotifications("tmc-organization-change", (message) => {
+  const change = message as Partial<SharedOrganizationChange> | null;
+  if (typeof change?.userId !== "string") return;
+  if (change.type === "created") {
+    publishOrganizationChange({ type: "created", userId: change.userId });
+    return;
+  }
+  if (typeof change.companyId !== "string") return;
+  const scope = { userId: change.userId, companyId: change.companyId, source: Symbol() };
+  if (change.type === "removed") {
+    const membershipId = typeof change.membershipId === "string" ? change.membershipId : undefined;
+    publishOrganizationChange({ ...scope, type: "removed", membershipId });
+  } else if (change.type === "renamed" && typeof change.name === "string") {
+    publishOrganizationChange({ ...scope, type: "renamed", name: change.name });
+  } else if (change.type === "membersChanged") {
+    publishOrganizationChange({ ...scope, type: "membersChanged" });
+  } else if (change.type === "invitationsChanged") {
+    const check = change.invitation;
+    const invitation = typeof check?.id === "string" &&
+      (check.status === "revoked" || check.status === "pending" &&
+        typeof check.link_version === "string" && Number.isSafeInteger(check.link_check_revision)) ? check : undefined;
+    publishOrganizationChange({ ...scope, type: "invitationsChanged", invitation });
+  }
+});
+
+export function notifyOrganizationChange(change: OrganizationChange) {
+  publishOrganizationChange(change);
+  if (change.type === "created") {
+    shareOrganizationChange(change);
+  } else if (change.type === "removed" || change.type === "renamed" || change.type === "membersChanged" || change.type === "invitationsChanged") {
+    const { source, ...message } = change;
+    shareOrganizationChange(message);
   }
 }
 
@@ -59,6 +103,85 @@ export function useReloadOnOrganizationChange(
       }
     });
   }, [userId, scope, reload, includeMemberChanges]);
+}
+
+export type OrganizationMemberPermission = "members.read" | "members.manage";
+
+export function useOrganizationSectionAccess(
+  { error, reload }: { error: unknown; reload: () => void },
+  denial: ApiError | null,
+  grantedAt?: number,
+) {
+  const precedesGrant = (failure: unknown) => failure instanceof ApiError &&
+    (failure.status === 403 || failure.status === 404) && failure.poolCheckRevision !== undefined &&
+    grantedAt !== undefined && grantedAt > failure.poolCheckRevision;
+  const activeDenial = precedesGrant(denial) ? null : denial;
+  const outdatedError = !activeDenial && precedesGrant(error);
+  const restored = !activeDenial && (denial !== null || outdatedError);
+  useEffect(() => {
+    if (restored) reload();
+  }, [restored, reload]);
+  return { denial: activeDenial, error: outdatedError ? null : error };
+}
+
+export function useOrganizationMembershipCheck(key: string) {
+  type CheckedAt = { key: string; id: string; revision?: number };
+  const checked = useRef<CheckedAt | null>(null);
+  const permissionCheckedAt = useRef<CheckedAt | null>(null);
+  const memberPermissions = useRef<Partial<Record<OrganizationMemberPermission, CheckedAt & { allowed: boolean }>>>({});
+  const [permission, setPermission] = useState<{ key: string; id: string; resourcesRead: boolean } | null>(null);
+  const remember = useCallback(({ id, revision, resourcesRead }: { id: string; revision?: number; resourcesRead?: boolean }) => {
+    const latest = checked.current;
+    const newerIdentity = latest?.key === key && latest.revision !== undefined &&
+      (revision === undefined || revision < latest.revision);
+    if (newerIdentity && latest.id !== id) return false;
+    const incoming = { key, id, revision };
+    if (!newerIdentity) checked.current = incoming;
+
+    // A roster read can confirm the same membership without checking its resource permission.
+    const lastPermission = permissionCheckedAt.current;
+    const samePermissionScope = lastPermission?.key === key && lastPermission.id === id;
+    if (resourcesRead !== undefined && samePermissionScope && lastPermission.revision !== undefined &&
+        (revision === undefined || revision < lastPermission.revision)) return false;
+    if (resourcesRead !== undefined) permissionCheckedAt.current = incoming;
+    else if (!samePermissionScope) permissionCheckedAt.current = null;
+
+    setPermission((current) => {
+      const sameMembership = current?.key === key && current.id === id;
+      if (resourcesRead === undefined) return sameMembership ? current : null;
+      if (sameMembership && current.resourcesRead === resourcesRead) return current;
+      return { key, id, resourcesRead };
+    });
+    return true;
+  }, [key]);
+  const clearPermission = useCallback(() => {
+    permissionCheckedAt.current = checked.current;
+    setPermission(null);
+  }, []);
+  const precedesMembershipCheck = useCallback((revision?: number, membershipId?: string) => {
+    const latest = checked.current;
+    return revision !== undefined && latest?.key === key && latest.revision !== undefined &&
+      (membershipId === undefined || latest.id !== membershipId) && revision < latest.revision;
+  }, [key]);
+  const precedesResourcePermissionCheck = useCallback((id: string, revision?: number) => {
+    const latest = permissionCheckedAt.current;
+    return revision !== undefined && latest?.key === key && latest.id === id &&
+      latest.revision !== undefined && revision < latest.revision;
+  }, [key]);
+  const newerMemberPermission = useCallback((permission: OrganizationMemberPermission, id: string, revision?: number) => {
+    const latest = memberPermissions.current[permission];
+    return revision !== undefined && latest?.key === key && latest.id === id &&
+      latest.revision !== undefined && revision < latest.revision ? latest.allowed : undefined;
+  }, [key]);
+  const rememberMemberPermission = useCallback((permission: OrganizationMemberPermission, id: string, allowed: boolean, revision?: number) => {
+    if (revision === undefined) return true;
+    if (newerMemberPermission(permission, id, revision) !== undefined) return false;
+    memberPermissions.current[permission] = { key, id, revision, allowed };
+    return true;
+  }, [key, newerMemberPermission]);
+  return { checked, remember, clearPermission, precedesMembershipCheck, precedesResourcePermissionCheck, rememberMemberPermission,
+    newerMemberPermission,
+    resourcesRead: permission?.key === key ? permission.resourcesRead : undefined };
 }
 
 export function useOrganizationDirectory(

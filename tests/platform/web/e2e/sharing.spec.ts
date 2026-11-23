@@ -995,7 +995,7 @@ test("team tab stays under the pointer as the resource overview loads", async ({
   await startSession(page, account);
   let showResources!: () => void;
   const resourcesGate = new Promise<void>((resolve) => { showResources = resolve; });
-  await page.route(`**/v1/companies/${id}/resources/pool-summary`, async (route) => {
+  await page.route(`**/v1/companies/${id}/resources/pool-overview`, async (route) => {
     await resourcesGate;
     await route.continue();
   });
@@ -1036,7 +1036,7 @@ for (const { count, directory } of [{ count: 0, directory: false }, { count: 3, 
     await page.setViewportSize({ width: 390, height: 750 });
     let showComputers!: () => void;
     const loadComputers = new Promise<void>((resolve) => { showComputers = resolve; });
-    await page.route(`**/v1/computers?company_id=${company.id}&only_available=false&limit=3`, async (route) => {
+    await page.route(`**/v1/companies/${company.id}/resources/pool-overview`, async (route) => {
       await loadComputers;
       await route.continue();
     });
@@ -1044,7 +1044,7 @@ for (const { count, directory } of [{ count: 0, directory: false }, { count: 3, 
       await page.goto(`organizations/${company.id}`);
       const computers = page.locator(".organization-computers");
       await expect(computers).toHaveAttribute("aria-busy", "true");
-      await expect(page.locator(".organization-overview")).toHaveAttribute("aria-busy", "false");
+      await expect(page.locator(".organization-overview")).toHaveAttribute("aria-busy", "true");
       const control = directory ? page.getByRole("link", { name: "Смотреть всех 6" })
         : page.getByRole("tab", { name: "Приглашения", exact: true });
       await expect(control).toBeVisible();

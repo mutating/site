@@ -110,8 +110,7 @@ test("resource history follows the inventory through empty, loading, populated a
   expect((await bounds(team)).height).toBeGreaterThan((await bounds(computers)).height + (await bounds(cpu)).height);
   await expectBottomSpace(page.locator(".main-content"));
 
-  const inventory = (url: URL) => url.pathname === "/v1/computers" &&
-    url.searchParams.get("company_id") === company && url.searchParams.get("limit") === "3";
+  const inventory = `**/v1/companies/${company}/resources/pool-overview`;
   const cards = computers.locator(".organization-computer-card");
   for (const count of [1, 2, 3]) {
     await addComputer(request, account, `runner-${count}`, company, count > 1);
@@ -227,8 +226,7 @@ for (const action of ["open", "choose", "open near the edge"] as const) {
     await page.setViewportSize({ width: 390, height: 820 });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    await page.route((url) => opening ? url.pathname === "/v1/computers" &&
-      url.searchParams.get("company_id") === company && url.searchParams.get("limit") === "3"
+    await page.route((url) => opening ? url.pathname === `/v1/companies/${company}/resources/pool-overview`
       : url.pathname === `/v1/companies/${company}/resources/pool-history`, async (route) => {
       await gate;
       await route.continue();
@@ -237,7 +235,7 @@ for (const action of ["open", "choose", "open near the edge"] as const) {
       await page.goto(`organizations/${company}`);
       const { computers, cpu } = widgets(page);
       await expect(opening ? computers : cpu).toHaveAttribute("aria-busy", "true");
-      await expect(page.locator(".organization-overview")).toHaveAttribute("aria-busy", "false");
+      await expect(page.locator(".organization-overview")).toHaveAttribute("aria-busy", opening ? "true" : "false");
       await switchOrganizationPeople(page, "Приглашения");
       const form = page.getByRole("region", { name: "Добавить участника" });
       await form.locator("summary").click();
@@ -313,7 +311,7 @@ for (const lateWidget of ["charts", "computers"] as const) {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     await page.route((url) => lateWidget === "computers"
-      ? url.pathname === "/v1/computers" && url.searchParams.get("company_id") === company && url.searchParams.get("limit") === "3"
+      ? url.pathname === `/v1/companies/${company}/resources/pool-overview`
       : url.pathname === `/v1/companies/${company}/resources/pool-history`, async (route) => {
       await gate;
       await route.continue();

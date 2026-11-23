@@ -7,7 +7,7 @@ import type { User } from "../lib/types";
 import { ErrorBox, Icon } from "../components/UI";
 export function Auth({ register = false }: { register?: boolean }) {
   const { t } = useI18n();
-  const { user, setUser } = useSession();
+  const { user, setUser, beginAuthentication } = useSession();
   const location = useLocation();
   const navigate = useNavigate();
   const [error, setError] = useState<unknown>(null);
@@ -24,7 +24,18 @@ export function Auth({ register = false }: { register?: boolean }) {
     !/^\/(login|register)/.test(location.state.from)
       ? location.state.from
       : "/";
-  if (user) return <Navigate to={from} replace />;
+  const connectedPoolOrigin = location.state?.connectedPoolOrigin;
+  const connectedPoolListEntry = location.state?.connectedPoolListEntry;
+  const connectedPoolCorrection = location.state?.connectedPoolCorrection;
+  const requiresSignIn = location.state?.requiresSignIn === true;
+  const authState = { from, requiresSignIn, connectedPoolOrigin, connectedPoolListEntry, connectedPoolCorrection };
+  const returnState = (userId: string) => {
+    const origin = connectedPoolOrigin?.userId === userId ? connectedPoolOrigin : undefined;
+    const correction = connectedPoolCorrection?.userId === userId ? connectedPoolCorrection : undefined;
+    return origin || correction || typeof connectedPoolListEntry === "string"
+      ? { connectedPoolOrigin: origin, connectedPoolListEntry, connectedPoolCorrection: correction } : undefined;
+  };
+  if (user) return <Navigate to={from} replace state={returnState(user.id)} />;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
@@ -35,6 +46,7 @@ export function Auth({ register = false }: { register?: boolean }) {
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
     if (register && !payload.nickname) delete payload.nickname;
+    const finishAuthentication = beginAuthentication();
     try {
       if (register) {
         await api<User>("users", { ...json("POST", payload), signal: controller.signal });
@@ -54,17 +66,18 @@ export function Auth({ register = false }: { register?: boolean }) {
         if (!register) throw error;
         navigate("/login", {
           replace: true,
-          state: { from, accountCreated: true, login: payload.email },
+          state: { ...authState, accountCreated: true, login: payload.email },
         });
         return;
       }
       if (controller.signal.aborted) return;
       setUser(profile);
-      navigate(from, { replace: true });
+      navigate(from, { replace: true, state: returnState(profile.id) });
     } catch (e) {
       if (controller.signal.aborted) return;
       setError(e);
     } finally {
+      finishAuthentication();
       if (pendingRequest.current === controller) pendingRequest.current = null;
       if (!controller.signal.aborted) setBusy(false);
     }
@@ -243,7 +256,8 @@ export function Auth({ register = false }: { register?: boolean }) {
             </form>
             <p className="auth-switch">
               {t(register ? "existingUser" : "newUser")}{" "}
-              <Link to={register ? "/login" : "/register"} state={{ from }}>
+              <Link to={register ? "/login" : "/register"} state={authState}
+                replace={requiresSignIn}>
                 {t(register ? "login" : "register")} ↗
               </Link>
             </p>

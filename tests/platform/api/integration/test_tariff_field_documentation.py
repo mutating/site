@@ -4806,17 +4806,24 @@ async def test_billing_upgrade_keeps_references_to_legacy_owner_schemas(
         for table, expected in (
             ("user_tariff_plans", {"users": "legacy_identity"}),
             ("payment_accounts", {"users": "legacy_identity", "companies": "Legacy, companies"}),
+            ("computers", {"users": "legacy_identity"}),
+            ("agent_credentials", {"users": "legacy_identity"}),
         ):
             keys = await connection.run_sync(
                 lambda sync, table=table: inspect(sync).get_foreign_keys(
                     table, schema="public", postgresql_ignore_search_path=True
                 )
             )
-            assert {
-                key["referred_table"]: key["referred_schema"]
-                for key in keys
-                if key["referred_table"] in expected
-            } == expected
+            matched = [key for key in keys if key["referred_table"] in expected]
+            assert {key["referred_table"] for key in matched} == expected.keys()
+            assert all(key["referred_schema"] == expected[key["referred_table"]] for key in matched)
+            if table == "computers":
+                columns = {column for key in matched for column in key["constrained_columns"]}
+                assert {"connected_user_id", "legacy_transfer_user_id"} <= columns
+            if table == "agent_credentials":
+                assert any(
+                    key["constrained_columns"] == ["pending_connected_user_id"] for key in matched
+                )
         assert (
             await connection.scalar(text("SELECT name_search FROM legacy_identity.users"))
             == "legacy owner"

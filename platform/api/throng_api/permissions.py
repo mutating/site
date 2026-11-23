@@ -43,6 +43,7 @@ def request_permission(request, scope):
         resource
         in {
             "computers",
+            "connected-computers",
             "computer-ownerships",
             "computer-resources",
             "agent-enrollments",

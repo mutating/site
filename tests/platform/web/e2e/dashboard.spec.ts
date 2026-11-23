@@ -333,7 +333,7 @@ test("computer pagination starts at the first row of the new page", async ({
   await expect(page.locator("tbody tr").first()).toBeInViewport({ ratio: 1 });
 });
 
-test("personal and organization capacity stay separate, offline excluded, computer pages paginate", async ({
+test("personal and organization capacity stay separate and the personal inventory paginates all computers", async ({
   page,
   request,
   account,
@@ -358,7 +358,9 @@ test("personal and organization capacity stay separate, offline excluded, comput
     .getByRole("navigation", { name: "Навигация кабинета" })
     .getByRole("link", { name: "Compute", exact: true })
     .click();
-  const personal = page.getByRole("region", { name: "Личные компьютеры" });
+  await page.getByRole("link", { name: "Вычислительные пулы", exact: true }).click();
+  await page.getByRole("link", { name: "Открыть пул Личный пул", exact: true }).click();
+  const personal = page.getByRole("region", { name: "Личный пул" });
   await expect(personal.getByTestId("computer-count")).toHaveText("12");
   await expect(personal.locator("path[data-series]")).toHaveCount(4);
   await personal
@@ -371,12 +373,13 @@ test("personal and organization capacity stay separate, offline excluded, comput
   await personal.getByRole("link", { name: "Список компьютеров" }).click();
   await expect(page.locator("tbody tr")).toHaveCount(10);
   await expect(page.getByText("Страница 1 из 2")).toBeVisible();
-  await expect(page.getByText("offline-personal")).toHaveCount(0);
+  const offlineFirstPage = await page.getByText("offline-personal", { exact: true }).count();
   await page.getByRole("button", { name: "Далее" }).click();
-  await expect(page.locator("tbody tr")).toHaveCount(2);
+  await expect(page.locator("tbody tr")).toHaveCount(3);
+  await expect(page.getByText("offline-personal", { exact: true })).toHaveCount(1 - offlineFirstPage);
   await expect(page).toHaveURL(/page=2/);
   await page.reload();
-  await expect(page.locator("tbody tr")).toHaveCount(2);
+  await expect(page.locator("tbody tr")).toHaveCount(3);
   await page.goBack();
   await expect(page.locator("tbody tr")).toHaveCount(10);
   await page.goto(`compute/computers?company_id=${company.id}`);
@@ -457,6 +460,8 @@ test("organization computers include offline and disabled machines while Compute
   await expect(page.getByRole("searchbox")).toHaveValue(name);
 
   await page.getByRole("link", { name: "Compute", exact: true }).click();
+  await page.getByRole("link", { name: "Вычислительные пулы", exact: true }).click();
+  await page.getByRole("link", { name: `Открыть пул ${name}`, exact: true }).click();
   await page.getByRole("region", { name, exact: true })
     .getByRole("link", { name: /Список компьютеров/ }).click();
   await expect(page.locator(".computer-row")).toHaveCount(1);
@@ -1012,11 +1017,7 @@ test("theme and language persist; cloud stays an empty product; layout has no ho
     ).toBe(true);
   }
   await page.goto("compute");
-  await expect(
-    page
-      .getByRole("region", { name: "Personal computers" })
-      .getByTestId("computer-count"),
-  ).toHaveText("0");
+  await expect(page.locator(".compute-status-summary dd")).toHaveText(["0", "0", "0"]);
   await page.screenshot({
     path: info.outputPath("compute-light.png"),
     fullPage: true,
