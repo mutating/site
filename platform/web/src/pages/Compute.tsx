@@ -35,11 +35,11 @@ export function Compute() {
           </div>
           <div>
             <dt>{t("online")}</dt>
-            <dd className="compute-online">{format(online)}</dd>
+            <dd>{format(online)}</dd>
           </div>
           <div>
             <dt>{t("connectionOffline")}</dt>
-            <dd className="compute-offline">{format(offline)}</dd>
+            <dd>{format(offline)}</dd>
           </div>
         </dl>
         <ErrorBox error={computers.error} retry={computers.reload} />

@@ -10,8 +10,7 @@ import { useResumeComputerPoolMoves } from "../lib/compute";
 import type { GitHubStatus } from "../lib/github";
 import { UserMenu } from "./UserMenu";
 import { useHeaderPresence } from "../lib/useHeaderPresence";
-
-const siteOrigin = import.meta.env.VITE_SITE_ORIGIN || "https://mutating.tech";
+import { SITE_ORIGIN } from "../lib/site";
 
 export function Header() {
   const { user, loading, error } = useSession();
@@ -54,7 +53,7 @@ export function Header() {
       ref={headerRef}
       className="site-header"
       brand={{
-        href: `${siteOrigin}${language === "ru" ? "/ru/" : "/"}`,
+        href: `${SITE_ORIGIN}${language === "ru" ? "/ru/" : "/"}`,
         animation: {
           scrollTone: false,
           expandOnFocus: true,

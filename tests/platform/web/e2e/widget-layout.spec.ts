@@ -14,7 +14,7 @@ function widgets(page: Page) {
   return {
     computers: page.getByRole("region", { name: "Компьютеры", exact: true }),
     cpu: page.getByRole("region", { name: "История CPU", exact: true }),
-    memory: page.getByRole("region", { name: "История памяти", exact: true }),
+    memory: page.getByRole("region", { name: "История ОЗУ", exact: true }),
     team: page.getByRole("region", { name: "Команда", exact: true }),
   };
 }
@@ -102,11 +102,11 @@ test("resource history follows the inventory through empty, loading, populated a
   await page.goto(path);
   const { computers, cpu, memory, team } = widgets(page);
   await expect(computers).toContainText("У организации пока нет компьютеров");
+  await expect(computers.locator(".organization-computer-connect")).toBeVisible();
   await expect(team.getByRole("article")).toHaveCount(5);
   await expect(cpu).toHaveAttribute("aria-busy", "false");
   await expect(memory).toHaveAttribute("aria-busy", "false");
   await expectArrangement(page, { twoColumns: true, chartPair: true });
-  const emptyHeight = (await bounds(computers)).height;
   expect((await bounds(team)).height).toBeGreaterThan((await bounds(computers)).height + (await bounds(cpu)).height);
   await expectBottomSpace(page.locator(".main-content"));
 
@@ -130,7 +130,6 @@ test("resource history follows the inventory through empty, loading, populated a
       release();
       await page.unroute(inventory);
     }
-    expect((await bounds(computers)).height).toBeGreaterThan(emptyHeight);
     await expectArrangement(page, { twoColumns: true, chartPair: true });
   }
 
@@ -141,14 +140,9 @@ test("resource history follows the inventory through empty, loading, populated a
   }
   await expectBottomSpace(page.locator(".main-content"));
   await page.setViewportSize({ width: 1170, height: 800 });
-  const memoryTop = (await bounds(memory)).y - (await bounds(cpu)).y;
-  await cpu.locator("summary").click();
-  await expect(cpu.getByRole("table")).toBeVisible();
-  expect((await bounds(memory)).y - (await bounds(cpu)).y).toBeGreaterThan(memoryTop);
   await expectArrangement(page, { twoColumns: true, chartPair: false });
-  await cpu.locator("summary").click();
-  await expect(cpu.getByRole("table")).toHaveCount(0);
-  await expectArrangement(page, { twoColumns: true, chartPair: false });
+  await expect(cpu.locator(".chart-data")).toHaveCount(0);
+  await expect(memory.locator(".chart-data")).toHaveCount(0);
 
   await page.route(inventory, (route) => route.fulfill({ status: 422, json: { detail: "Unavailable inventory" } }));
   await page.reload();

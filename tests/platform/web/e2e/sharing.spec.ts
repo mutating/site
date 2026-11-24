@@ -292,11 +292,7 @@ test("an unknown invitee preserves the draft when the recheck confirms organizat
   const computer = computers.getByRole("link", { name: /Рабочий компьютер/ });
   const accessDenied = computers.getByText("У вас нет права просматривать мощности этой организации.", { exact: true });
   await expect(computer).toBeVisible();
-  const charts = ["История CPU", "История памяти"].map((name) => page.getByRole("region", { name, exact: true }));
-  for (const chart of charts) {
-    await chart.locator("summary").click();
-    await expect(chart.getByRole("table")).toBeVisible();
-  }
+  const charts = ["История CPU", "История ОЗУ"].map((name) => page.getByRole("region", { name, exact: true }));
   const companyUrl = `${API}/companies/${company}`;
   for (const method of ["add", "invite"] as const) {
     const form = await openSharing(page, method);
@@ -340,7 +336,7 @@ test("an unknown invitee preserves the draft when the recheck confirms organizat
       await expect(form.getByRole("alert")).toBeVisible();
       await expect(identifier).toHaveValue("unknown_draft_invitee");
       await expect(role).toHaveValue("admin");
-      for (const chart of charts) await expect(chart.getByRole("table")).toBeVisible();
+      for (const chart of charts) await expect(chart).toBeVisible();
     } finally {
       release();
       await page.unroute(companyUrl);

@@ -59,6 +59,7 @@
 .organization-widget-header h2 > svg { color: var(--active-ink); flex: none; }
 .organization-widget-header .text-link { color: var(--active-ink); font-size: 12px; padding-bottom: 0; border-bottom: 0; }
 .organization-widget-header .text-link:hover { text-decoration: underline; }
+.organization-history .organization-widget-header { flex-direction: column; align-items: flex-start; gap: 3px; }
 .organization-widget-count { padding: 3px 5px; border-radius: 4px; color: var(--active-ink); background: var(--hot-pale); font: 600 10px/1 var(--font-geist-mono); letter-spacing: 0; }
 
 .organization-overview.organization-widget { padding: 0; }
@@ -76,6 +77,43 @@
 :is(.organization-people, .member-directory-panel) { container: organization-team / inline-size; scroll-margin-top: var(--platform-header-clearance, 110px); }
 .organization-history-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--organization-gap); }
 .organization-computer-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 133px), 1fr)); gap: 9px; margin: 0; padding: 0; list-style: none; }
+.organization-computers > p.muted + .organization-computer-cards { margin-top: 12px; }
+.organization-computer-cards.is-few { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.organization-computer-placeholder { display: flex; min-width: 0; }
+.organization-computer-cards > .span-2 { grid-column: span 2; }
+.organization-computer-cards > .span-3 { grid-column: 1 / -1; }
+.organization-computer-placeholder .organization-computer-connect { width: 100%; }
+.organization-computer-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 142px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--organization-radius);
+  background: color-mix(in srgb, var(--surface-raised) 36%, var(--surface));
+  color: var(--ink-muted);
+  text-align: center;
+}
+.organization-computer-connect:hover {
+  border-color: color-mix(in srgb, var(--hot) 36%, var(--line));
+  background: var(--hot-pale);
+  color: var(--ink);
+}
+.organization-computer-connect:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+.organization-computer-connect-icon {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border-radius: 50%;
+  background: var(--hot-pale);
+  color: var(--active-ink);
+}
+.organization-computer-connect strong { color: var(--ink); font-size: 12px; font-weight: 600; }
+.organization-computer-connect small { font-size: 10px; line-height: 1.35; }
 .organization-computer-cards li { min-width: 0; }
 .organization-computer-card { display: grid; align-content: start; gap: 10px; height: 100%; min-height: 142px; padding: 11px; border: 1px solid var(--line); border-radius: var(--organization-radius); background: var(--bg); }
 .organization-computer-card:hover { background: var(--surface-raised); border-color: color-mix(in srgb, var(--active-ink) 32%, var(--line)); }
@@ -260,7 +298,7 @@
 .organization-invitations-empty { padding: 12px; border: 1px dashed var(--line); border-radius: 11px; color: var(--ink-muted); font-size: 13px; }
 .organization-people .muted, .organization-computers .muted, .organization-history .muted { font-size: 13px; }
 
-.organization-resource-chart { margin: 0; color: var(--ink-muted); --chart-free: var(--active-ink); --chart-total: var(--hot-soft); }
+.organization-resource-chart { position: relative; margin: 0; color: var(--ink-muted); --chart-free: var(--active-ink); --chart-total: var(--hot-soft); }
 .organization-resource-chart.memory { --chart-free: var(--violet); --chart-total: var(--violet-soft); }
 .organization-resource-chart svg { display: block; width: 100%; height: auto; }
 .organization-resource-chart .tick { font-size: 12px; }
@@ -274,6 +312,48 @@
 .organization-resource-chart.is-sampled path { stroke-linecap: round; }
 .organization-resource-chart.is-sampled path.total { stroke-width: 4; stroke-dasharray: none; }
 .organization-chart-sample { margin-inline-start: auto; }
+.organization-history { position: relative; }
+.organization-history > .organization-resource-chart { z-index: 2; }
+.organization-widget-expand {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: zoom-in;
+}
+.organization-widget-expand:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+.organization-chart-plot { position: relative; cursor: crosshair; }
+.organization-resource-chart.is-expandable .organization-chart-plot { cursor: zoom-in; }
+.organization-chart-tooltip { z-index: 2; pointer-events: none; }
+.organization-chart-tooltip-values { grid-template-columns: auto minmax(0, 1fr); }
+.organization-chart-tooltip-key { display: inline-flex; align-items: center; gap: 5px; text-align: left; }
+.organization-chart-tooltip-key i { width: 13px; border-bottom: 2px solid var(--chart-free); }
+.organization-chart-tooltip-key i.total { border-color: var(--chart-total); border-bottom-style: dashed; }
+.organization-chart-tooltip-values strong { text-align: right; white-space: nowrap; }
+.organization-resource-chart .chart-marker.total { fill: var(--chart-total); }
+.organization-resource-chart .chart-marker.free { fill: var(--chart-free); }
+
+.organization-chart-dialog {
+  width: min(1000px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: clamp(16px, 2.4vw, 26px);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+.organization-chart-dialog::backdrop { background: rgba(5, 2, 4, .72); backdrop-filter: blur(6px); }
+.organization-chart-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.organization-chart-dialog-header h2 { margin: 0 0 4px; font-size: clamp(23px, 3vw, 32px); }
+.organization-chart-dialog-header .button { flex: none; }
+.organization-chart-dialog .organization-resource-chart figcaption { font-size: 13px; gap: 8px 18px; margin-bottom: 12px; }
+.organization-chart-dialog .organization-resource-chart .tick { font-size: 10px; }
+body:has(.organization-chart-dialog[open]) { overflow: hidden; }
 
 .organization-settings-dialog.confirm-dialog { width: min(875px, calc(100% - 22px)); max-width: none; max-height: calc(100dvh - 24px); padding: clamp(15px, 3vw, 27px); color: var(--ink); border-radius: var(--organization-radius, 17px); }
 .organization-settings-dialog .organization-settings-header { display: flex; justify-content: space-between; align-items: start; gap: 14px; margin-bottom: 12px; }
@@ -305,6 +385,10 @@
   .organization-overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .organization-overview-metrics > div:nth-child(odd) { border-inline-start: 0; }
   .organization-overview-metrics > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .organization-computer-cards.is-one { grid-template-columns: 1fr; }
+  .organization-computer-cards.is-one > .organization-computer-placeholder { grid-column: auto; }
+  .organization-computer-cards.is-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .organization-computer-cards.is-two > .organization-computer-placeholder { grid-column: 1 / -1; }
 }
 @container (max-width: 475px) {
   .organization-computer-cards { grid-template-columns: minmax(0, 1fr); }
@@ -321,4 +405,6 @@
   .organization-image-settings { grid-template-columns: minmax(0, 1fr); }
   .organization-settings-dialog .organization-settings-header h2 { font-size: 23px; }
   .organization-name-form .button { padding-inline: 10px; }
+  .organization-chart-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 15px; border-radius: 16px; }
+  .organization-chart-dialog-header { margin-bottom: 12px; }
 }

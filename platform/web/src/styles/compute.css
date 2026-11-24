@@ -30,8 +30,6 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.compute-status-summary .compute-online { color: var(--success); }
-.compute-status-summary .compute-offline { color: var(--ink-muted); }
 
 .compute-destinations {
   display: grid;

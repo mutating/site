@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiError, request, withDeadline } from "../lib/api";
 import { GiB, number, stepPath } from "../lib/chart";
@@ -9,8 +10,9 @@ import { runtimeLabel } from "../lib/runtime";
 import { useSession } from "../lib/session";
 import type { CapacityHistory, Computer, OrganizationMembershipCheck, Pool, PoolHistory, Summary } from "../lib/types";
 import { useData, useRefreshWhileVisible } from "../lib/useData";
+import { siteURL } from "../lib/site";
 import { CapacityChart } from "./CapacityChart";
-import { Icon, Loading, RetryErrorBox, useRestoreFocusOnRemoval } from "./UI";
+import { Icon, Loading, RetryErrorBox, useModalFocus, useRestoreFocusOnRemoval } from "./UI";
 
 export type OrganizationResourceAccess = "available" | "checking" | "denied" | "unverified";
 type ResourcePool = Pick<Pool, "kind" | "id">;
@@ -186,7 +188,7 @@ export function PoolComputers({ state, computerCount, query, personal = false, a
   access?: OrganizationResourceAccess;
   onAccessError?: (error: ApiError) => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t, locale, language } = useI18n();
   const resourcesVisible = access === "available";
   const navigate = useNavigate();
   const connectedPoolOrigin: ConnectedPoolOrigin | undefined = useLocation().state?.connectedPoolOrigin;
@@ -254,6 +256,28 @@ export function PoolComputers({ state, computerCount, query, personal = false, a
   const restoreFocus = useCallback(() => {
     if (document.activeElement === document.body) inventoryLink.current?.focus();
   }, []);
+  const fewCount = computers?.length ?? 0;
+  const few = !personal && computers !== undefined && fewCount < 3;
+  const fewSize = fewCount === 0 ? "is-zero" : fewCount === 1 ? "is-one" : "is-two";
+  const cards = <ul className={`organization-computer-cards${few ? ` is-few ${fewSize}` : ""}`}>
+    {computers?.map((computer) => {
+      const missing = visible !== null && !currentComputers?.some((current) => current.id === computer.id);
+      const completeInventory = count !== undefined && count <= (currentComputers?.length ?? 0);
+      const withdrawn = !!visible && departed(computer.id, visible.revision);
+      return <PoolComputerCard key={`${computer.id}/${withdrawn}`} computer={computer} query={query} navigationState={navigationState}
+        withdrawn={withdrawn}
+        unavailable={missing && completeInventory} verify={missing && !completeInventory ? openUnlisted : undefined}
+        restoreFocus={restoreFocus} />;
+    })}
+    {few && <li className={`organization-computer-placeholder span-${3 - fewCount}`}>
+      <a className="organization-computer-connect" href={siteURL(language, "/products/compute/#download")}
+        target="_blank" rel="noreferrer">
+        <span className="organization-computer-connect-icon"><Icon name="plus" size={17} /></span>
+        <strong>{t("connectComputer")}</strong>
+        <small>{t("connectComputerHint")}</small>
+      </a>
+    </li>}
+  </ul>;
   return <section className="organization-widget organization-computers" data-empty={count === 0 || undefined}
     aria-label={t("computers")} aria-busy={access === "checking" || resourcesVisible && state.loading}
     onPointerDownCapture={holdLayout}>
@@ -265,18 +289,10 @@ export function PoolComputers({ state, computerCount, query, personal = false, a
     {access === "checking" && <Loading />}
     {access === "denied" && <p className="muted">{t("resourcesReadDenied")}</p>}
     {resourcesVisible && (visibleError ? <RetryErrorBox error={visibleError} retry={state.reload} restoreFocus={restoreFocus} /> :
-      (visible ? visible.loading : loading) ? <Loading /> : !computers?.length ? <p className="muted">{t(personal ? "noPersonalComputers" : "noOrganizationComputers")}</p> :
-      <ul className="organization-computer-cards">
-        {computers.map((computer) => {
-          const missing = visible !== null && !currentComputers?.some((current) => current.id === computer.id);
-          const completeInventory = count !== undefined && count <= (currentComputers?.length ?? 0);
-          const withdrawn = !!visible && departed(computer.id, visible.revision);
-          return <PoolComputerCard key={`${computer.id}/${withdrawn}`} computer={computer} query={query} navigationState={navigationState}
-            withdrawn={withdrawn}
-            unavailable={missing && completeInventory} verify={missing && !completeInventory ? openUnlisted : undefined}
-            restoreFocus={restoreFocus} />;
-        })}
-      </ul>)}
+      (visible ? visible.loading : loading) ? <Loading /> : <>
+        {!computers?.length && <p className="muted">{t(personal ? "noPersonalComputers" : "noOrganizationComputers")}</p>}
+        {(computers?.length || few) && cards}
+      </>)}
     {resourcesVisible && lookupFailure && <RetryErrorBox error={lookupFailure.error} restoreFocus={restoreFocus} retryLabel="retryOpenComputer"
       retry={() => openUnlisted(lookupFailure.computerId, lookupFailure.target)} />}
   </section>;
@@ -340,12 +356,17 @@ const fields = {
   memory: { total: "memory_total_bytes", free: "memory_free_bytes", divisor: GiB },
 } as const;
 
-function ResourceChart({ history, kind, title }: { history: PoolHistory; kind: keyof typeof fields; title: string }) {
+function ResourceChart({ history, kind, title, onExpand }: { history: PoolHistory; kind: keyof typeof fields; title: string; onExpand?: () => void }) {
   const id = useId();
   const { t, locale } = useI18n();
+  const svg = useRef<SVGSVGElement>(null);
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{
+    index: number; x: number; time: number; tooltipLeft: number; tooltipWidth: number;
+  } | null>(null);
   const field = fields[kind];
-  const [showData, setShowData] = useState(false);
   const latest = history.points.at(-1);
+  useEffect(() => setHover(null), [history]);
   if (!latest) return <p className="muted">{t("noHistory")}</p>;
   const start = Date.parse(history.from_time);
   const end = Date.parse(history.to_time);
@@ -370,42 +391,133 @@ function ResourceChart({ history, kind, title }: { history: PoolHistory; kind: k
     }).join("");
   }
   const date = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" });
-  const timestamp = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "medium" });
+  const readingDate = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   const unit = kind === "memory" ? "GiB" : t("cores");
-  return <figure className={`organization-resource-chart ${kind}${history.sampled ? " is-sampled" : ""}`}>
+  const hovered = hover ? history.points[hover.index] : null;
+  const pointTime = (point: PoolHistory["points"][number]) => Date.parse(point.at);
+  const selectPoint = (clientX: number) => {
+    const element = svg.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    if (!rect.width) return;
+    const unitX = (clientX - rect.left) / rect.width * 419;
+    const fraction = Math.max(0, Math.min(1, (unitX - plot.x) / plot.width));
+    const time = start + (end - start) * fraction;
+    let index = 0;
+    if (history.sampled) {
+      let nearest = Infinity;
+      for (let i = 0; i < history.points.length; i += 1) {
+        const distance = Math.abs(pointTime(history.points[i]) - time);
+        if (distance < nearest) {
+          nearest = distance;
+          index = i;
+        }
+      }
+    } else {
+      for (let i = 0; i < history.points.length; i += 1) {
+        if (pointTime(history.points[i]) <= time) index = i;
+      }
+    }
+    const x = history.sampled
+      ? plot.x + (pointTime(history.points[index]) - start) / (end - start) * plot.width
+      : plot.x + fraction * plot.width;
+    const tooltipWidth = Math.min(216, rect.width * 0.8);
+    const cursor = fraction * rect.width;
+    const tooltipLeft = Math.max(0, Math.min(rect.width - tooltipWidth,
+      cursor + (cursor < rect.width / 2 ? 12 : -tooltipWidth - 12)));
+    setHover({
+      index, x, time: history.sampled ? pointTime(history.points[index]) : time, tooltipLeft, tooltipWidth,
+    });
+  };
+  return <figure
+    className={`organization-resource-chart ${kind}${history.sampled ? " is-sampled" : ""}${onExpand ? " is-expandable" : ""}`}
+    onClick={onExpand ? () => {
+      setHover(null);
+      onExpand();
+    } : undefined}>
     <figcaption id={`${id}-summary`}>
       <span><i className="total" />{t("total")} <strong>{value(latest[field.total])} {unit}</strong></span>
       <span><i className="free" />{t("free")} <strong>{value(latest[field.free])} {unit}</strong></span>
       {history.sampled && <span className="organization-chart-sample">{t("organizationHistorySampled")}</span>}
     </figcaption>
-    <svg viewBox="0 0 419 137" role="img" aria-labelledby={`${id}-title`} aria-describedby={`${id}-summary`}>
-      <title id={`${id}-title`}>{title} · {t("sevenDays")}</title>
-      {ticks.map(({ fraction, label }) => {
-        const y = plot.y + plot.height * (1 - fraction);
-        return <g key={fraction}>
-          <line className="chart-grid" x1={plot.x} x2={plot.x + plot.width} y1={y} y2={y} />
-          <text className="tick" x={plot.x - 6} y={y + 3} textAnchor="end">{label}</text>
-        </g>;
-      })}
-      <g transform={`translate(${plot.x} ${plot.y})`}>
-        {seriesOrder.map(series => <path key={series} className={series} d={path(series)} />)}
-      </g>
-      <text className="tick" x={plot.x} y="130">{date.format(start)}</text>
-      <text className="tick" x={plot.x + plot.width} y="130" textAnchor="end">{date.format(end)}</text>
-    </svg>
-    <details className="chart-data" onToggle={(event) => setShowData(event.currentTarget.open)}>
-      <summary>{t("chartTable")}</summary>
-      {showData && <div className="table-scroll" tabIndex={0}>
-        <table>
-          <thead><tr><th>{t("time")}</th><th>{t("total")} · {unit}</th><th>{t("free")} · {unit}</th></tr></thead>
-          <tbody>{history.points.map((point) => <tr key={point.at}>
-            <td><time dateTime={point.at}>{timestamp.format(Date.parse(point.at))}</time></td>
-            <td>{value(point[field.total])}</td><td>{value(point[field.free])}</td>
-          </tr>)}</tbody>
-        </table>
+    <div className="organization-chart-plot"
+      onPointerMove={(event) => {
+        if (event.pointerType !== "mouse") return;
+        const previous = lastPointer.current;
+        lastPointer.current = { x: event.clientX, y: event.clientY };
+        // Ignore moves synthesized by layout changes under a stationary pointer.
+        if (previous?.x !== event.clientX || previous?.y !== event.clientY) selectPoint(event.clientX);
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "mouse") return;
+        lastPointer.current = null;
+        setHover(null);
+      }}>
+      <svg ref={svg} viewBox="0 0 419 137" role="img" aria-labelledby={`${id}-title`} aria-describedby={`${id}-summary`}>
+        <title id={`${id}-title`}>{title} · {t("sevenDays")}</title>
+        {ticks.map(({ fraction, label }) => {
+          const y = plot.y + plot.height * (1 - fraction);
+          return <g key={fraction}>
+            <line className="chart-grid" x1={plot.x} x2={plot.x + plot.width} y1={y} y2={y} />
+            <text className="tick" x={plot.x - 6} y={y + 3} textAnchor="end">{label}</text>
+          </g>;
+        })}
+        <g transform={`translate(${plot.x} ${plot.y})`}>
+          {seriesOrder.map(series => <path key={series} className={series} d={path(series)} />)}
+          {hover && hovered && <>
+            <line className="chart-cursor" x1={hover.x - plot.x} x2={hover.x - plot.x} y1="0" y2={plot.height} />
+            <circle className="chart-marker total" cx={hover.x - plot.x}
+              cy={(1 - hovered[field.total] / max) * plot.height} />
+            <circle className="chart-marker free" cx={hover.x - plot.x}
+              cy={(1 - hovered[field.free] / max) * plot.height} />
+          </>}
+        </g>
+        <text className="tick" x={plot.x} y="130">{date.format(start)}</text>
+        <text className="tick" x={plot.x + plot.width} y="130" textAnchor="end">{date.format(end)}</text>
+      </svg>
+      {hover && hovered && <div className="chart-tooltip organization-chart-tooltip" aria-hidden="true"
+        style={{ left: hover.tooltipLeft, width: hover.tooltipWidth }}>
+        <time dateTime={new Date(hover.time).toISOString()}>{readingDate.format(hover.time)}</time>
+        <div className="chart-tooltip-values organization-chart-tooltip-values">
+          <span className="organization-chart-tooltip-key"><i className="total" />{t("total")}</span>
+          <strong>{value(hovered[field.total])} {unit}</strong>
+          <span className="organization-chart-tooltip-key"><i className="free" />{t("free")}</span>
+          <strong>{value(hovered[field.free])} {unit}</strong>
+        </div>
       </div>}
-    </details>
+    </div>
   </figure>;
+}
+
+function ResourceChartDialog({ history, kind, title, onClose }: {
+  history: PoolHistory;
+  kind: keyof typeof fields;
+  title: string;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  const ref = useRef<HTMLDialogElement>(null);
+  useModalFocus(ref);
+  return createPortal(<dialog ref={ref} className="organization-chart-dialog" aria-labelledby={`${id}-title`}
+    onCancel={(event) => {
+      event.preventDefault();
+      onClose();
+    }}
+    onClick={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+    <header className="organization-chart-dialog-header">
+      <div>
+        <h2 id={`${id}-title`}>{title}</h2>
+        <span className="eyebrow">{t("sevenDays")}</span>
+      </div>
+      <button type="button" className="button secondary compact" aria-label={t("closeDialog")} onClick={onClose}>
+        <Icon name="close" size={18} />
+      </button>
+    </header>
+    <ResourceChart history={history} kind={kind} title={title} />
+  </dialog>, document.body);
 }
 
 function usePoolSnapshotCorrection<T extends CapacityHistory | PoolHistory>(
@@ -488,10 +600,20 @@ function OrganizationHistoryWidget({ kind, state }: { kind: keyof typeof fields;
   }, []);
   const error = state.error;
   const history = error instanceof ApiError && error.status >= 400 && error.status < 500 ? null : state.data;
+  const expandable = !!history && history.points.length > 0 && !error;
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!expandable) setExpanded(false);
+  }, [expandable]);
   return <section ref={widget} className="organization-widget organization-history" aria-label={title} aria-busy={state.loading} tabIndex={-1}>
+    {expandable && <button type="button" className="organization-widget-expand"
+      aria-label={`${t("expandChart")}: ${title}`} aria-haspopup="dialog" title={t("expandChart")}
+      onClick={() => setExpanded(true)} />}
     <header className="organization-widget-header"><h2><Icon name={kind} size={17} />{title}</h2><span className="eyebrow">{t("sevenDays")}</span></header>
     {!!error && <RetryErrorBox error={error} retry={state.reload} restoreFocus={restoreFocus} />}
-    {history ? <ResourceChart history={history} kind={kind} title={title} /> : state.loading && !error && <Loading />}
+    {history ? <ResourceChart history={history} kind={kind} title={title}
+      onExpand={expandable ? () => setExpanded(true) : undefined} /> : state.loading && !error && <Loading />}
+    {history && expanded && <ResourceChartDialog history={history} kind={kind} title={title} onClose={() => setExpanded(false)} />}
   </section>;
 }
 

@@ -42,6 +42,33 @@ test("the eye follows the pointer outside the header before and after login", as
   await expect.poll(async () => (await gazeOffset(page)).x).toBeLessThan(-1);
 });
 
+test("TMC stays hidden until the wordmark font is ready", async ({ page }) => {
+  await page.addInitScript(() => {
+    const load = document.fonts.load.bind(document.fonts);
+    let release: (() => void) | undefined;
+    (window as typeof window & { __releaseWordmarkFont?: () => void }).__releaseWordmarkFont = () => release?.();
+    document.fonts.load = ((font: string, text?: string) => {
+      if (!font.includes("Science Gothic")) return load(font, text);
+      return new Promise<FontFace[]>((resolve) => {
+        release = () => void load(font, text).then(resolve);
+      });
+    }) as typeof document.fonts.load;
+  });
+  await page.goto("login");
+  await expect(page.locator(".auth-panel")).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-wordmark-font-ready", "false");
+  await expect(page.locator(".tmc-brand__wordmark")).toHaveCSS("opacity", "0");
+  const preload = page.locator('link[rel="preload"][as="font"]');
+  await expect(preload).toHaveAttribute("type", "font/woff2");
+  await expect(preload).toHaveAttribute("crossorigin", "anonymous");
+  await expect(preload).toHaveAttribute("href", /science-gothic-wordmark-[^/]+\.woff2$/);
+  await page.evaluate(() =>
+    (window as typeof window & { __releaseWordmarkFont?: () => void }).__releaseWordmarkFont?.(),
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-wordmark-font-ready", "true");
+  await expect(page.locator(".tmc-brand__wordmark")).toHaveCSS("opacity", "1");
+});
+
 test("TMC unfolds without moving the header controls and remains open across its stage", async ({
   page,
 }, info) => {
