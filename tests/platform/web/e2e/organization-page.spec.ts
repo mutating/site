@@ -16,6 +16,9 @@ test("organization overview has registry tabs, separate charts and direct comput
   await addComputer(request, account, "mac-studio", company, true);
   await startSession(page, account);
   await page.goto(`organizations/${company}`);
+  const connect = page.getByRole("link", { name: /Подключить компьютер/ });
+  await expect(connect).toBeVisible();
+  await expect(connect).toHaveAttribute("href", /\/products\/compute\/#download$/);
   const hero = page.locator(".organization-hero");
   await expect(hero.getByRole("heading", { name: "Северная лаборатория." })).toBeVisible();
   await expect(hero.locator(".organization-hero-avatar")).toHaveCount(0);
@@ -43,7 +46,7 @@ test("organization overview has registry tabs, separate charts and direct comput
   await expect(page.getByRole("region", { name: "Участники" })).toContainText("Создатель");
 
   const cpu = page.getByRole("region", { name: "История CPU" });
-  const memory = page.getByRole("region", { name: "История памяти" });
+  const memory = page.getByRole("region", { name: "История ОЗУ" });
   await expect(cpu.getByRole("img")).toBeVisible();
   await expect(memory.getByRole("img")).toBeVisible();
   const series = cpu.locator("svg[role=img] path");
@@ -66,9 +69,8 @@ test("organization overview has registry tabs, separate charts and direct comput
   await expect(cpu.getByText("Выборка по времени")).toBeVisible();
   await expect(series.filter({ visible: true }).first()).toHaveAttribute("d", /^M[\d.,]+h\.01/);
   expect(await series.evaluateAll((paths) => paths.every((path) => !/[HV]/.test(path.getAttribute("d") || "")))).toBe(true);
-  await cpu.locator("summary").click();
-  await expect(cpu.getByRole("table")).toContainText("всего");
-  await expect(cpu.getByRole("table")).toContainText("свободно");
+  await expect(cpu.locator(".chart-data")).toHaveCount(0);
+  await expect(memory.locator(".chart-data")).toHaveCount(0);
   const radii = await page.locator(".organization-widget, .organization-computer-card").evaluateAll((widgets) =>
     widgets.map((widget) => getComputedStyle(widget).borderTopLeftRadius));
   expect(new Set(radii).size).toBe(1);
@@ -85,6 +87,58 @@ test("organization overview has registry tabs, separate charts and direct comput
   await expect(page).toHaveURL(new RegExp(`/compute/computers/${offline.id}\\?company_id=${company}`));
   await expect(page.getByRole("heading", { name: "runner-03." })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("an organization without computers shows the connect placeholder", async ({ page, request, account }) => {
+  const company = await createCompany(request, account, "Пустая лаборатория");
+  await startSession(page, account);
+  await page.goto(`organizations/${company}`);
+  const computers = page.getByRole("region", { name: "Компьютеры", exact: true });
+  await expect(computers).toContainText("У организации пока нет компьютеров");
+  await expect(computers.locator(".organization-computer-card")).toHaveCount(0);
+  const connect = computers.getByRole("link", { name: /Подключить компьютер/ });
+  await expect(connect).toBeVisible();
+  await expect(connect).toHaveAttribute("href", /\/products\/compute\/#download$/);
+});
+
+test("chart cards open in an expanded dialog and close from the backdrop or close button", async ({ page, request, account }) => {
+  const company = await createCompany(request, account, "Компания с графиками");
+  await addComputer(request, account, "mac-studio", company, true);
+  await startSession(page, account);
+  await page.goto(`organizations/${company}`);
+  const connect = page.getByRole("link", { name: /Подключить компьютер/ });
+  await expect(connect).toBeVisible();
+  await expect(connect).toHaveAttribute("href", /\/products\/compute\/#download$/);
+  const cpu = page.getByRole("region", { name: "История CPU", exact: true });
+  const memory = page.getByRole("region", { name: "История ОЗУ", exact: true });
+  const openCpu = cpu.getByRole("button", { name: "Развернуть график: История CPU", exact: true });
+  await expect(openCpu).toBeVisible();
+  const section = (await cpu.boundingBox())!;
+  const expander = (await openCpu.boundingBox())!;
+  expect(Math.abs(expander.width - section.width)).toBeLessThanOrEqual(2);
+  expect(Math.abs(expander.height - section.height)).toBeLessThanOrEqual(2);
+  await openCpu.click({ position: { x: 12, y: 12 } });
+  const cpuDialog = page.getByRole("dialog", { name: "История CPU", exact: true });
+  await expect(cpuDialog).toBeVisible();
+  await expect(cpuDialog.locator('svg[role="img"]')).toBeVisible();
+  const plot = cpuDialog.locator(".organization-chart-plot");
+  const plotBox = (await plot.boundingBox())!;
+  await page.mouse.move(plotBox.x + plotBox.width * 0.55, plotBox.y + plotBox.height * 0.5);
+  const tooltip = cpuDialog.locator(".organization-chart-tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("всего");
+  await expect(tooltip).toContainText("свободно");
+  await expect(cpuDialog.locator(".chart-cursor")).toHaveCount(1);
+  await cpuDialog.getByRole("button", { name: "Закрыть диалог", exact: true }).click();
+  await expect(cpuDialog).toHaveCount(0);
+
+  const openMemory = memory.getByRole("button", { name: "Развернуть график: История ОЗУ", exact: true });
+  await expect(openMemory).toBeVisible();
+  await openMemory.click({ position: { x: 12, y: 12 } });
+  const memoryDialog = page.getByRole("dialog", { name: "История ОЗУ", exact: true });
+  await expect(memoryDialog).toBeVisible();
+  await page.mouse.click(4, 4);
+  await expect(memoryDialog).toHaveCount(0);
 });
 
 test("the team tab stays under the pointer while the organization avatar loads", async ({ page, request, account, browserName }) => {

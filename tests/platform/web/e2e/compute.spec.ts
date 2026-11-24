@@ -1169,7 +1169,7 @@ for (const [scope, gesture] of [["personal", "click"], ["personal", "tap"], ["or
     }, { times: 1 });
     const inventory = page.getByRole("region", { name: "Компьютеры", exact: true });
     const organizationHistory = page.getByRole("region", { name: "История CPU", exact: true });
-    const control = company ? organizationHistory.locator("summary")
+    const control = company ? organizationHistory.locator(".organization-resource-chart")
       : gesture === "click" ? page.getByRole("button", { name: "CPU · мощность", exact: true })
       : page.getByRole("slider", { name: "Мощности и загрузка" });
     const touch = gesture === "tap" ? await context.newCDPSession(page) : null;
@@ -1189,7 +1189,7 @@ for (const [scope, gesture] of [["personal", "click"], ["personal", "tap"], ["or
       await expect(inventory.locator(".organization-computer-card")).toHaveCount(3);
       if (touch) {
         await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-        if (company) await expect(organizationHistory.getByRole("table")).toBeVisible();
+        if (company) await expect(control).toBeVisible();
         else await expect(control.locator(".chart-tooltip")).toBeVisible();
       } else {
         await page.mouse.up();
@@ -1472,7 +1472,7 @@ for (const scope of ["personal", "organization"] as const) {
     await page.goto("compute/computers");
     await page.getByRole("link", { name: company?.name ?? "Личный пул", exact: true }).click();
     const widget = company ? page.locator(".organization-history").last() : page.locator(".personal-pool-history");
-    const target = company ? widget.locator("summary") : widget.getByRole("button", { name: "CPU · мощность", exact: true });
+    const target = company ? widget.locator(".organization-resource-chart") : widget.getByRole("button", { name: "CPU · мощность", exact: true });
     await target.evaluate((element) => element.scrollIntoView({ block: "center" }));
     const endpoint = company ? `${API}/companies/${company.id}/resources/pool-history`
       : `${API}/users/${account.id}/resources/availability-history`;
@@ -1488,8 +1488,7 @@ for (const scope of ["personal", "organization"] as const) {
       await failed;
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      if (company) await expect(widget.getByRole("table")).toBeVisible();
-      else await expect(target).toHaveAttribute("aria-pressed", "false");
+      if (!company) await expect(target).toHaveAttribute("aria-pressed", "false");
       await expect(widget.getByRole("button", { name: /Попробовать снова/ })).toBeVisible();
     } finally {
       await touch.detach();
@@ -1697,7 +1696,7 @@ test("deleting the focused computer during a press restores focus to the list he
   await expect(page.getByRole("heading", { name: "Подключённые компьютеры." })).toBeFocused();
 });
 
-test("a background organization details error preserves a press on the history table control", async ({
+test("a background organization details error preserves a press on the history chart", async ({
   page, request, account, browserName,
 }) => {
   test.skip(browserName !== "webkit", "Exercise WebKit scroll anchoring");
@@ -1709,7 +1708,7 @@ test("a background organization details error preserves a press on the history t
   await page.goto("compute/computers");
   await page.getByRole("link", { name: company.name, exact: true }).click();
   const widget = page.getByRole("region", { name: "История CPU", exact: true });
-  const toggle = widget.locator("summary");
+  const toggle = widget.locator(".organization-resource-chart");
   await toggle.evaluate((element) => element.scrollIntoView({ block: "center" }));
   const box = (await toggle.boundingBox())!;
   const endpoint = `${API}/companies/${company.id}`;
@@ -1719,7 +1718,6 @@ test("a background organization details error preserves a press on the history t
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByRole("button", { name: /Попробовать снова/ })).toBeVisible();
   await page.mouse.up();
-  await expect(widget.getByRole("table")).toBeVisible();
 });
 
 test("the full inventory keeps the directory return link after membership loss and a later 503", async ({
@@ -4491,7 +4489,6 @@ for (const scope of ["personal", "organization"] as const) {
     const endpoint = personal ? `${API}/users/${account.id}/resources/availability-history` : `${API}/companies/${company.id}/resources/pool-history`;
     const history = personal ? page.locator(".personal-pool-history") : page.getByRole("region", { name: "История CPU", exact: true });
     await expect(history.locator(personal ? ".chart-panel" : "figure")).toBeVisible();
-    if (!personal) await history.locator("summary").click();
     await page.route(endpoint, async (route) => {
       const response = await route.fetch();
       await route.fulfill({ response, status: 503, json: { detail: "Temporary outage" } });
@@ -4500,12 +4497,10 @@ for (const scope of ["personal", "organization"] as const) {
     const retry = history.getByRole("button", { name: /Попробовать снова/ });
     await retry.focus();
     await expect(retry).toBeFocused();
-    if (!personal) await expect(history.getByRole("table")).toBeVisible();
     await page.unroute(endpoint);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(retry).toHaveCount(0);
     await expect(history).toBeFocused();
-    if (!personal) await expect(history.getByRole("table")).toBeVisible();
   });
 }
 
@@ -4994,15 +4989,13 @@ test("organization charts refresh when the pool loses its last computer", async 
   const history = page.getByRole("region", { name: "История CPU", exact: true });
   const total = history.locator("figcaption span").first().locator("strong");
   await expect(total).toHaveText("8 ядер");
-  await history.locator("summary").click();
-  await expect(history.getByRole("table")).toBeVisible();
   expect((await request.patch(`${API}/connected-computers/${computer.id}/pool`, {
     headers: headers(account), data: { company_id: null, expected_company_id: company.id },
   })).status()).toBe(200);
   await page.clock.fastForward(61_000);
   await expect(page.locator(".organization-overview dd").first()).toHaveText("0");
   await expect(total).toHaveText("0 ядер");
-  await expect(history.getByRole("table")).toBeVisible();
+  await expect(history.locator("figure")).toBeVisible();
 });
 
 for (const view of ["overview", "computers"] as const) {

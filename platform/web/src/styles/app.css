@@ -285,9 +285,6 @@ h3 {
   background: var(--hot-pale);
   color: var(--active-ink);
 }
-.nav-link:last-child {
-  margin-top: 26px;
-}
 .nav-scroll-hint {
   display: none;
 }
@@ -1599,9 +1596,6 @@ td small {
   }
   .nav-link:focus-visible {
     outline-offset: -2px;
-  }
-  .nav-link:last-child {
-    margin: 0;
   }
   .nav-link svg {
     width: 16px;
