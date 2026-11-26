@@ -29,6 +29,15 @@ if [[ -n "${MUTATING_EXPECTED_CURRENT:-}" && "$(readlink -f "$deploy_root/curren
   echo "The active release changed during preparation; inspect it before activating this release." >&2
   exit 2
 fi
+# The enrollment secret only protects the recoverable credential used by an
+# exact finish retry. Generate it once on servers upgraded from the ACME flow
+# so a code-only deployment cannot leave computer registration at HTTP 503.
+if ! grep -Eq '^[[:space:]]*THRONG_ENROLLMENT_SECRET=.+$' "$server_env"; then
+  enrollment_secret="$(openssl rand -hex 32)"
+  printf '\nTHRONG_ENROLLMENT_SECRET=%s\n' "$enrollment_secret" >> "$server_env"
+  chmod 0640 "$server_env"
+  echo 'Configured a new Power Cell enrollment secret.'
+fi
 backup_id="$release_id-$(date -u +%Y%m%dT%H%M%S)"
 maintenance=(runuser -u throng -- "$release/platform/api/.venv/bin/python")
 if ! "${maintenance[@]}" "$backup_script" check-space "$backup_id" --env-file "$server_env"; then

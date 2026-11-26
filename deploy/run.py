@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import secrets
 import signal
 import subprocess
 import sys
@@ -21,6 +22,49 @@ WEB_ROOT = ROOT / "platform/web"
 logger = logging.getLogger("throng.platform")
 
 
+def ensure_enrollment_secret(settings):
+    """Return the configured secret or create a persistent local fallback.
+
+    Production already sets THRONG_ENROLLMENT_SECRET in its environment. The
+    fallback keeps a code-only CI deployment usable and is stored beside the
+    persistent data so exact finish retries survive service restarts.
+    """
+    if settings.enrollment_secret:
+        return settings.enrollment_secret
+    path = settings.storage_path.parent / ".enrollment-secret"
+    try:
+        secret = path.read_text(encoding="utf-8").strip()
+        if len(secret) >= 32:
+            return secret
+        raise ValueError("stored enrollment secret is too short")
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as error:
+        logger.warning("Cannot read Power Cell enrollment secret: %s", error)
+        return None
+    secret = secrets.token_hex(32)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(secret + "\n")
+    except FileExistsError:
+        try:
+            stored = path.read_text(encoding="utf-8").strip()
+        except OSError as error:
+            logger.warning("Cannot read Power Cell enrollment secret: %s", error)
+            return None
+        if len(stored) < 32:
+            logger.warning("Cannot use the stored Power Cell enrollment secret")
+            return None
+        return stored
+    except OSError as error:
+        logger.warning("Cannot create Power Cell enrollment secret: %s", error)
+        return None
+    logger.info("Created a persistent Power Cell enrollment secret")
+    return secret
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["serve", "migrate"], default="serve", nargs="?")
@@ -31,7 +75,8 @@ def main():
     logging.basicConfig(level=logging.INFO)
     arguments.env_file = arguments.env_file.resolve()
     os.chdir(API_ROOT)
-    migrate(Settings(_env_file=arguments.env_file))
+    settings = Settings(_env_file=arguments.env_file)
+    migrate(settings)
     if arguments.command == "migrate":
         return 0
     if not (WEB_ROOT / "dist/index.html").is_file():
@@ -49,6 +94,9 @@ def main():
         **os.environ,
         "THRONG_ENV_FILE": str(arguments.env_file),
     }
+    secret = ensure_enrollment_secret(settings)
+    if secret:
+        environment.setdefault("THRONG_ENROLLMENT_SECRET", secret)
     stopping = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stopping.set())
