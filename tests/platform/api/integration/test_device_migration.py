@@ -7,7 +7,7 @@ from uuid import uuid4
 import anyio
 import pytest
 from alembic import command
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 pytestmark = pytest.mark.anyio
 
@@ -63,3 +63,23 @@ async def test_pending_installation_becomes_a_device_key(alembic_config, setting
 
     assert enrollment.device_id == device.id
     assert account[0] == 1
+
+
+async def test_migration_drops_the_server_copy_of_the_credential(alembic_config, settings):
+    """Only the client keeps the raw credential; the server stores its hash elsewhere."""
+    await anyio.to_thread.run_sync(command.downgrade, alembic_config, "0028")
+    engine = create_engine(settings.database_url.replace("+aiosqlite", ""))
+    try:
+        columns = {column["name"] for column in inspect(engine).get_columns("agent_enrollments")}
+    finally:
+        engine.dispose()
+    assert "credential_encrypted" in columns
+
+    await anyio.to_thread.run_sync(command.upgrade, alembic_config, "head")
+
+    engine = create_engine(settings.database_url.replace("+aiosqlite", ""))
+    try:
+        columns = {column["name"] for column in inspect(engine).get_columns("agent_enrollments")}
+    finally:
+        engine.dispose()
+    assert "credential_encrypted" not in columns

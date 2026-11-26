@@ -34,8 +34,6 @@ class Settings(BaseSettings):
     long_poll_max_seconds: float = Field(default=25, ge=0, le=30)
     long_poll_interval: float = Field(default=0.25, ge=0.01, le=5)
 
-    # Encrypts only the recoverable credential for an idempotent enrollment finish.
-    enrollment_secret: str | None = Field(default=None, min_length=32, repr=False)
     enrollment_seconds: int = Field(default=3600, ge=60, le=86400)
     agent_mutation_seconds: int = Field(default=86400, ge=60, le=604800)
     max_diagnostic_bytes: int = Field(default=8 * 1024 * 1024, ge=1, le=8 * 1024 * 1024)

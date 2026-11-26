@@ -52,9 +52,12 @@ class EnrollmentStatus(Input):
     expires_at: datetime
 
 
+class EnrollmentFinish(Input):
+    credential_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class Binding(Input):
     computer_id: str
-    credential: str
     device_id: str
 
 

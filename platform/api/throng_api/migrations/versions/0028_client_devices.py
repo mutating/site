@@ -51,6 +51,14 @@ def upgrade():
     # The installation id was the durable local key in the old protocol. Keep
     # it as the device key so an offline client can finish its pending attempt.
     seen = {}
+    seen_accounts = set()
+
+    def account_key(device_id, user_id):
+        return (
+            str(device_id).replace("-", "").lower(),
+            str(user_id).replace("-", "").lower(),
+        )
+
     rows = connection.execute(
         sa.text("SELECT id, actor_id, installation_id FROM agent_enrollments")
     ).all()
@@ -91,6 +99,7 @@ def upgrade():
                 ),
                 {"device": device, "user": row.actor_id},
             )
+        seen_accounts.add(account_key(device, row.actor_id))
 
     # Preserve the account link for already connected computers.
     computers = sa.table(
@@ -109,7 +118,6 @@ def upgrade():
         sa.column("last_seen_at", sa.DateTime(timezone=True)),
         schema=None,
     )
-    seen_accounts = set()
     for row in connection.execute(
         sa.select(
             computers.c.device_id,
@@ -118,7 +126,7 @@ def upgrade():
         ).where(computers.c.device_id.is_not(None))
     ):
         for user_id in {row.registered_by_user_id, row.connected_user_id} - {None}:
-            key = (row.device_id, user_id)
+            key = account_key(row.device_id, user_id)
             if key in seen_accounts:
                 continue
             seen_accounts.add(key)
@@ -154,6 +162,19 @@ def downgrade():
     # Recreating the removed trust material is intentionally impossible. The
     # downgrade restores the schema shape with nullable legacy fields so an
     # operator can restore a pre-0028 backup when attestation is required.
+    connection = op.get_bind()
+    # Preserve the durable device key as the old installation key. Without it
+    # an upgrade after a schema-only downgrade could not rebuild device_id for
+    # enrollments created after 0028.
+    installations = dict(
+        connection.execute(
+            sa.text(
+                "SELECT enrollments.id, devices.client_key "
+                "FROM agent_enrollments AS enrollments "
+                "JOIN devices ON devices.id = enrollments.device_id"
+            )
+        ).all()
+    )
     with op.batch_alter_table("agent_enrollments") as batch:
         batch.drop_constraint("fk_agent_enrollments_device_id_devices", type_="foreignkey")
         batch.drop_column("device_id")
@@ -166,6 +187,11 @@ def downgrade():
         batch.add_column(sa.Column("identity_hash", sa.String(length=64)))
         batch.add_column(sa.Column("certificate_sha256", sa.String(length=64)))
         batch.add_column(sa.Column("csr_sha256", sa.String(length=64)))
+    for enrollment_id, installation in installations.items():
+        connection.execute(
+            sa.text("UPDATE agent_enrollments SET installation_id = :installation WHERE id = :id"),
+            {"installation": installation, "id": enrollment_id},
+        )
     op.drop_table("device_accounts")
     with op.batch_alter_table("devices") as batch:
         batch.alter_column("client_key", new_column_name="identity_hash")
