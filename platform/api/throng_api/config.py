@@ -34,19 +34,9 @@ class Settings(BaseSettings):
     long_poll_max_seconds: float = Field(default=25, ge=0, le=30)
     long_poll_interval: float = Field(default=0.25, ge=0.01, le=5)
 
-    # Provision explicitly; startup never creates an untrusted development CA.
-    powercell_acme_url: str | None = None
-    powercell_ca_certificate: Path | None = None
-    powercell_ca_key: Path | None = None
-    powercell_secret: str | None = Field(default=None, min_length=32, repr=False)
-    powercell_relay_url: str | None = None
-    powercell_relay_certificate: Path | None = None
-    powercell_relay_key: Path | None = None
-    powercell_relay_host: str = "127.0.0.1"
-    powercell_relay_keep_alive_seconds: int = Field(default=30, ge=5, le=300)
+    # Encrypts only the recoverable credential for an idempotent enrollment finish.
+    enrollment_secret: str | None = Field(default=None, min_length=32, repr=False)
     enrollment_seconds: int = Field(default=3600, ge=60, le=86400)
-    device_certificate_days: int = Field(default=365, ge=1, le=3650)
-    device_proof_seconds: int = Field(default=300, ge=30, le=600)
     agent_mutation_seconds: int = Field(default=86400, ge=60, le=604800)
     max_diagnostic_bytes: int = Field(default=8 * 1024 * 1024, ge=1, le=8 * 1024 * 1024)
     max_computer_diagnostics_bytes: int = Field(default=64 * 1024 * 1024, ge=1)

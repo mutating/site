@@ -88,6 +88,7 @@ class Login(Input):
         min_length=1, max_length=320, validation_alias=AliasChoices("login", "email")
     )
     password: Password = Field(max_length=1024)
+    device_id: UUID | None = None
 
 
 class CompanyInput(Input):

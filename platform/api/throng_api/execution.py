@@ -261,8 +261,7 @@ async def clean_start(session, computer, now, settings):
         isolate.destroyed_at = now
     computer.capacity_revision = -1
     computer.capacity_report = None
-    # An attested agent must publish policy before the first assignment in every session.
-    computer.accepting_work = computer.certificate_sha256 is None
+    computer.accepting_work = True
     computer.target_cpu = computer.target_memory = computer.target_disk = None
     computer.session_id = new_id()
     computer.online = True

@@ -11,16 +11,16 @@ from throng_api.models import Computer, Idempotency
 pytestmark = pytest.mark.anyio
 
 
-async def test_old_powercell_rows_cannot_keep_legacy_bearer_authentication(
+async def test_old_powercell_rows_keep_credential_authentication_after_migration(
     app, agent_api, computer
 ):
-    """A Power Cell runtime registered before migration must enroll instead of retaining unsigned access."""
+    """A pre-upgrade row becomes a normal credential-authenticated worker."""
     async with app.state.db.write() as session:
         row = await session.get(Computer, computer["id"])
         row.runtime = "powercell-ubuntu-arm64-v1"
     response = await agent_api.get("/agent/v1/session")
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Mutating Compute requires attested enrollment"
+    assert response.status_code == 200
+    assert response.json()["computer_id"] == computer["id"]
 
 
 async def test_optional_isolation_fields_preserve_preupgrade_idempotency(api, app, isolate_payload):

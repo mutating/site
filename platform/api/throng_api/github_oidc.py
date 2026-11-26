@@ -8,9 +8,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from fastapi import HTTPException
 
-from throng_api.acme import jwk_key, unb64
-from throng_api.device_security import strict_json
 from throng_api.github_client import GitHubError
+from throng_api.jsonutil import jwk_key, strict_json, unb64
 
 ISSUER = "https://token.actions.githubusercontent.com"
 JWKS_URL = ISSUER + "/.well-known/jwks"

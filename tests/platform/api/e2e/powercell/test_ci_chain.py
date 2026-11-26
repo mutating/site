@@ -162,6 +162,10 @@ async def test_workflow_cancelled_during_preparation_stops_the_whole_chain(chain
     chain.agent = powercell
 
     async def cancel():
+        # The first pump runs before the routing job calls reserve. Cancelling
+        # then would only create a tombstone; wait for the actual reservation.
+        if await chain.state() is None:
+            return
         chain.on_pump = None
         await chain.webhook(
             "workflow_run",

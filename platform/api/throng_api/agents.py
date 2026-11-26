@@ -17,7 +17,6 @@ from throng_api.artifacts import (
     receive_file,
 )
 from throng_api.availability import sync_capacity
-from throng_api.device_security import agent_device_proof
 from throng_api.execution import (
     TASK_TERMINAL,
     check_new_work,
@@ -50,7 +49,7 @@ from throng_api.transport import ProtocolError
 router = APIRouter(
     prefix="/agent/v1",
     tags=["agent protocol v1"],
-    dependencies=[Depends(agent_credential_scheme), Depends(agent_device_proof)],
+    dependencies=[Depends(agent_credential_scheme)],
 )
 
 # The runtime guard stays in agent_auth(), preserving 401 for invalid credentials
@@ -115,8 +114,6 @@ def confirm_connected_account(computer, credential):
     if credential.pending_connected_user_id is not None:
         computer.connected_user_id = credential.pending_connected_user_id
         credential.pending_connected_user_id = None
-    computer.legacy_transfer_user_id = None
-    computer.legacy_transfer_pending = False
 
 
 @router.post("/connection/confirm", status_code=204)
@@ -124,8 +121,8 @@ async def confirm_connection(data: ComputerConnectionConfirmation, request: Requ
     """Confirm the persisted key without starting a worker or a lease."""
     async with request.app.state.db.write() as session:
         computer, credential = await authenticated_agent(session, request, require_session=False)
-        if computer.id != str(data.computer_id) or not computer.certificate_sha256:
-            raise HTTPException(404, "Attested computer not found")
+        if computer.id != str(data.computer_id):
+            raise HTTPException(404, "Computer not found")
         confirm_connected_account(computer, credential)
 
 
@@ -166,12 +163,12 @@ async def current_session(request: Request, include_pool: bool = False):
             "session_id": computer.session_id,
             "server_time": now,
             "lease_expires_at": computer.lease_expires_at,
-            "transfer_pending": computer.legacy_transfer_pending,
+            "transfer_pending": False,
             "active": bool(
                 computer.online and computer.lease_expires_at and computer.lease_expires_at > now
             ),
         }
-        if include_pool and computer.certificate_sha256 and not computer.legacy_transfer_pending:
+        if include_pool:
             state["pool_owner"] = (
                 (
                     await session.execute(

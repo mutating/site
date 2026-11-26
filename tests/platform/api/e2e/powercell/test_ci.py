@@ -280,7 +280,7 @@ class SignedAgent(httpx.Auth):
 
 @pytest.fixture
 async def powercell(client, bound_device, clock):
-    """Use the real ACME/device enrollment and proof-checked HTTP agent protocol."""
+    """Use the real device registration and credential-authenticated agent protocol."""
     device = bound_device.identity
     headers = {"Authorization": "Bearer " + bound_device.binding["credential"]}
     async with httpx.AsyncClient(

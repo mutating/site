@@ -17,7 +17,6 @@ from throng_api.models import (
     AccessToken,
     AgentCredential,
     Computer,
-    DeviceCertificate,
     LegacyCredential,
     LoginSession,
     Membership,
@@ -375,17 +374,6 @@ async def authenticated_agent(session, request, require_session=True):
     computer = await session.get(Computer, credential.computer_id)
     if not computer:
         raise HTTPException(401, "Invalid agent credential")
-    if computer.runtime == "powercell-ubuntu-arm64-v1" and not computer.certificate_sha256:
-        raise HTTPException(401, "Mutating Compute requires attested enrollment")
-    if computer.certificate_sha256:
-        certificate = await session.get(DeviceCertificate, computer.certificate_sha256)
-        if (
-            getattr(request.state, "device_certificate", None) != computer.certificate_sha256
-            or not certificate
-            or certificate.revoked_at
-            or certificate.expires_at <= request.app.state.clock()
-        ):
-            raise HTTPException(401, "A current device possession proof is required")
     # Disabled computers may finish and clean up work, but receive no new isolates.
     if require_session:
         if (

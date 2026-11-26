@@ -13,7 +13,6 @@ from throng_api.benchmark_schemas import (
     semver_key,
 )
 from throng_api.computers import computer_for_user
-from throng_api.device_security import agent_device_proof
 from throng_api.models import (
     BenchmarkAggregateInvalidation,
     BenchmarkResult,
@@ -36,7 +35,7 @@ router = APIRouter(
 agent_router = APIRouter(
     prefix="/agent/v1",
     tags=["agent protocol v1"],
-    dependencies=[Depends(agent_credential_scheme), Depends(agent_device_proof)],
+    dependencies=[Depends(agent_credential_scheme)],
 )
 
 

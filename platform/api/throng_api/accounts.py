@@ -16,6 +16,8 @@ from throng_api.models import (
     AccessToken,
     Company,
     CompanyInvitation,
+    Device,
+    DeviceAccount,
     GitHubAccount,
     GitHubOAuthFlow,
     LegacyCredential,
@@ -106,6 +108,36 @@ async def create_user(data: UserCreate, request: Request):
         return await saved(session, User(**values))
 
 
+async def remember_device(session, user, device_id, now):
+    """Persist a client-generated installation id and its account association.
+
+    Login is the only place a new installation announces itself. Repeating the
+    same id is idempotent and adds a fresh account association instead of
+    replacing the previous one, so switching accounts keeps billing history.
+    """
+    if device_id is None:
+        return None
+    client_key = str(device_id).lower()
+    device = await session.scalar(select(Device).where(Device.client_key == client_key))
+    if device is None:
+        device = Device(client_key=client_key)
+        session.add(device)
+        await session.flush()
+    association = await session.get(DeviceAccount, (device.id, user.id))
+    if association is None:
+        session.add(
+            DeviceAccount(
+                device_id=device.id,
+                user_id=user.id,
+                first_seen_at=now,
+                last_seen_at=now,
+            )
+        )
+    else:
+        association.last_seen_at = now
+    return device
+
+
 async def issue_login(data: Login, request: Request):
     async with request.app.state.db.read() as session:
         identifier = data.login.casefold()
@@ -121,14 +153,15 @@ async def issue_login(data: Login, request: Request):
         user = await session.get(User, user_id)
         if not user or user.password_hash != encoded:
             raise HTTPException(401, "Credentials changed; retry login")
+        now = request.app.state.clock()
+        await remember_device(session, user, data.device_id, now)
         raw = secret("thr_")
         token = LoginSession(
             user_id=user.id,
             name="login",
             scopes=sorted(SCOPES),
             session_hash=digest(raw),
-            expires_at=request.app.state.clock()
-            + timedelta(seconds=request.app.state.settings.login_token_seconds),
+            expires_at=now + timedelta(seconds=request.app.state.settings.login_token_seconds),
         )
         session.add(token)
         await session.flush()

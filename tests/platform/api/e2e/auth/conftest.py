@@ -481,8 +481,6 @@ def api_requests(
                 },
             ),
             ("GET", "/v1/agent-enrollments/{enrollment_id}", "read", {}),
-            ("GET", "/v1/agent-enrollments/{enrollment_id}/profile", "read", {}),
-            ("GET", "/v1/agent-enrollments/{enrollment_id}/verification", "read", {}),
             ("POST", "/v1/agent-enrollments/{enrollment_id}/finish", "manage", {}),
             ("GET", "/v1/computers/{computer_id}/diagnostics/{diagnostic_id}", "read", {}),
         ]

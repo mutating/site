@@ -38,12 +38,7 @@ async def test_authentication_matrix_covers_all_protected_operations(
     covered = {(case["method"], case["template"]) for case in cases}
     assert len(covered) == len(cases), "Duplicate HTTP cases hide gaps in the route inventory"
     assert covered.isdisjoint(public)
-    # ACME uses its own JWS/account/nonce authentication, exercised end to end in powercell/.
-    acme = {
-        (method, "/acme/powercell/{enrollment_id}/{directory_secret}/{operation}")
-        for method in ["GET", "HEAD", "POST"]
-    }
-    assert actual == covered | public | acme
+    assert actual == covered | public
 
 
 @pytest.mark.parametrize("settings", [{"agent_lease_seconds": 3600}], indirect=True)

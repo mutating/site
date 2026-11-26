@@ -14,7 +14,6 @@ from throng_api.agents import AGENT_SESSION_DOCS
 from throng_api.artifacts import BINARY_UPLOAD_DOCS
 from throng_api.availability import sync_capacity
 from throng_api.computers import computer_for_user
-from throng_api.device_security import agent_device_proof
 from throng_api.execution import fail_isolate, fingerprint, invalidate_computer, release_reservation
 from throng_api.models import (
     CPU_RESOURCE_ID,
@@ -24,9 +23,7 @@ from throng_api.models import (
     AgentMutation,
     AgentTask,
     ComputerOwnership,
-    DeviceCertificate,
     Isolate,
-    ProtocolNonce,
 )
 from throng_api.powercell_schemas import (
     Capacity,
@@ -53,7 +50,7 @@ from throng_api.transport import ProtocolError
 router = APIRouter(
     prefix="/agent/v1",
     tags=["Power Cell"],
-    dependencies=[Depends(agent_credential_scheme), Depends(agent_device_proof)],
+    dependencies=[Depends(agent_credential_scheme)],
 )
 user_router = APIRouter(
     prefix="/v1", tags=["Power Cell management"], dependencies=[Depends(access_token_scheme)]
@@ -101,7 +98,6 @@ def mutation_save(
             key=identity[2],
             request_hash=fingerprint(payload),
             session_id=request.headers.get("x-agent-session"),
-            certificate_sha256=computer.certificate_sha256,
             response=jsonable_encoder(response),
             expires_at=request.app.state.clock()
             + timedelta(seconds=request.app.state.settings.agent_mutation_seconds),
@@ -206,12 +202,7 @@ async def detach_computer(session, computer, now, actor_id=None):
             session, computer, (owner.user_id, owner.company_id), (None, None), now, actor_id
         )
         await session.delete(owner)
-    if computer.certificate_sha256:
-        certificate = await session.get(DeviceCertificate, computer.certificate_sha256)
-        certificate.revoked_at = now
     computer.connected_user_id = None
-    computer.legacy_transfer_user_id = None
-    computer.legacy_transfer_pending = False
     computer.session_id = None
     await session.execute(delete(AgentCredential).where(AgentCredential.computer_id == computer.id))
 
@@ -379,5 +370,5 @@ async def read_diagnostic(computer_id: UUID, diagnostic_id: UUID, request: Reque
 
 
 async def prune_protocol(session, now):
-    for model in (ProtocolNonce, AgentMutation, AgentDiagnostic):
+    for model in (AgentMutation, AgentDiagnostic):
         await session.execute(delete(model).where(model.expires_at <= now))

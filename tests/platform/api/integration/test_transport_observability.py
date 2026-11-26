@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from throng_api import transport
-from throng_api.config import Settings
 from throng_api.transport import RequestLog
 
 pytestmark = pytest.mark.anyio
@@ -82,11 +81,3 @@ async def test_uncaught_application_failure_is_logged_without_request_payload(ca
     row = json.loads(caplog.records[-1].message)
     assert row["status"] == 500 and row["duration_ms"] >= 0
     assert "secret" not in caplog.records[-1].message
-
-
-def test_relay_keepalive_is_explicit_and_bounded():
-    """The relay idle timeout accommodates measured outages without an unbounded lifetime."""
-    assert Settings(_env_file=None).powercell_relay_keep_alive_seconds == 30
-    for invalid in [0, 301]:
-        with pytest.raises(ValueError):
-            Settings(powercell_relay_keep_alive_seconds=invalid, _env_file=None)
