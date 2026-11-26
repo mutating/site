@@ -1,0 +1,54 @@
+{{- /* Shared interactive compute globe for the hero design lab. uid keeps SVG ids unique per instance. */ -}}
+{{- $c := .c -}}
+{{- $uid := .uid -}}
+{{- $caption := .caption -}}
+<div class="chl-visual" data-hero-instance role="group" aria-label="{{ $c.hero.visual }}">
+  <div class="compute-grid chl-grid" data-hero-grid>
+    <svg class="compute-grid__routes" data-hero-routes fill="none" aria-hidden="true">
+      <defs>
+        {{- range $c.hero.machines }}{{ if not .busy }}
+        <marker id="chl-arrow-{{ $uid }}-{{ .key }}" data-hero-job-key="{{ .job_key }}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1 7 4 1 7"/></marker>
+        {{- end }}{{ end }}
+      </defs>
+      {{- range $c.hero.machines }}
+      <path class="compute-grid__leader" data-hero-leader="{{ .key }}"/>
+      {{- if not .busy }}<path class="compute-grid__route" data-hero-route="{{ .key }}" data-hero-job-key="{{ .job_key }}" marker-end="url(#chl-arrow-{{ $uid }}-{{ .key }})"/>{{ end }}
+      {{- end }}
+      <g class="compute-grid__pulse" data-hero-pulse visibility="hidden"><path class="compute-grid__pulse-halo"/><path class="compute-grid__pulse-trail"/><circle r="3"/></g>
+    </svg>
+    <div class="compute-grid-source" data-hero-source aria-hidden="true">
+      <div>{{ partial "compute/icon.html" "github" }}<strong>GitHub Actions</strong></div>
+      <p>{{ $c.hero.source }}</p>
+      <div class="compute-grid-source__jobs">{{ range $c.hero.jobs }}<span data-hero-job="{{ .key }}">{{ .label }}</span>{{ end }}</div>
+    </div>
+    <div class="compute-ci-router__mark compute-ci-planet compute-hero__planet chl-planet">
+      <span class="compute-ci-planet__halo"></span>
+      <span class="compute-ci-planet__orbit"></span>
+      <span class="compute-ci-planet__orbit compute-ci-planet__orbit--outer"></span>
+      <svg class="compute-ci-planet__sphere" viewBox="0 0 300 300" fill="none" aria-hidden="true">
+        <defs><radialGradient class="chl-globe-light" id="chl-globe-light-{{ $uid }}" cx="34%" cy="29%" r="71%"><stop offset="0"/><stop offset=".58"/><stop offset="1"/></radialGradient></defs>
+        <circle class="compute-globe-surface" cx="150" cy="150" r="126" fill="url(#chl-globe-light-{{ $uid }})"/>
+        <g data-globe-fallback>
+          <circle cx="150" cy="150" r="126"/>
+          {{ range slice 28 63 96 }}<ellipse cx="150" cy="150" rx="{{ . }}" ry="126"/>{{ end }}
+          {{ range slice 34 72 108 }}<ellipse cx="150" cy="150" rx="126" ry="{{ . }}"/>{{ end }}
+          <path d="M24 150h252M150 24v252"/>
+        </g>
+        <path class="compute-globe-back" data-globe-back/>
+        <path class="compute-globe-front" data-globe-front/>
+        <circle class="compute-globe-rim" cx="150" cy="150" r="126"/>
+      </svg>
+      {{- range $c.hero.machines }}<span class="compute-grid-pin compute-grid-pin--{{ .key }}{{ if .busy }} compute-grid-pin--busy{{ end }}" data-hero-pin="{{ .key }}" data-hero-job-key="{{ .job_key }}"{{ if .rear }} data-hero-rear{{ end }} aria-hidden="true">{{ .key }}</span>{{ end }}
+      <div class="compute-globe-grip" data-globe-grip aria-label="{{ $c.hero.rotate }}" hidden></div>
+    </div>
+    <div class="compute-grid-devices">
+      {{- range $c.hero.machines }}
+      <div class="compute-grid-device compute-grid-device--{{ .key }}{{ if .busy }} compute-grid-device--busy{{ end }}" data-hero-device="{{ .key }}" data-hero-job-key="{{ .job_key }}"{{ if .rear }} data-hero-rear{{ end }} aria-hidden="true">
+        <div class="compute-grid-device__heading"><span>{{ .key }}</span>{{ partial "compute/icon.html" .icon }}<strong>{{ .name }}</strong></div>
+        {{ if .busy }}<p>{{ $c.hero.busy }}</p>{{ else }}<p>{{ $c.hero.runs }} <strong>{{ .job }}</strong></p>{{ end }}
+      </div>
+      {{- end }}
+    </div>
+  </div>
+  {{- with $caption }}<p class="chl-visual__caption">{{ . }}</p>{{ end }}
+</div>
