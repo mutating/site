@@ -55,7 +55,11 @@ export function mountDropdown(root: HTMLElement, options: DropdownOptions = {}):
       const bounds = panel.getBoundingClientRect();
       const top = Math.max(0, bounds.top + panel.clientTop);
       const bottom = Math.min(window.innerHeight, bounds.top + panel.clientTop + panel.clientHeight);
-      panel.scrollTop += item.top < top || item.height > bottom - top ? item.top - top : Math.max(0, item.bottom - bottom);
+      // Fractional row heights can leave a focused item a fraction of a pixel
+      // outside the scrollport, and scrollTop snaps to whole pixels. Round the
+      // adjustment away from zero so the item is not reported as clipped.
+      const delta = item.top < top || item.height > bottom - top ? item.top - top : Math.max(0, item.bottom - bottom);
+      panel.scrollTop += delta < 0 ? Math.floor(delta) : Math.ceil(delta);
     }
   };
   const positionPanel = () => {

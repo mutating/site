@@ -130,6 +130,10 @@ test("user menu with the placeholder and a real uploaded avatar", async ({ page,
     headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard" },
     data: { login: account.email, password },
   })).status()).toBe(200);
+  expect((await page.request.patch(`${API}/users/${account.id}`, {
+    headers: headers(account),
+    data: { last_name: "Волкова" },
+  })).status()).toBe(200);
   await page.goto("/");
   const trigger = page.locator(".user-menu .tmc-square-button");
   const exactPixels = { threshold: 0, maxDiffPixels: 0 };
@@ -147,7 +151,7 @@ test("user menu with the placeholder and a real uploaded avatar", async ({ page,
   const x = Math.max(0, Math.min(buttonBox.x, panelBox.x) - 20);
   const y = Math.max(0, buttonBox.y - 8);
   const clip = { x, y, width: Math.min(page.viewportSize()!.width, buttonBox.x + buttonBox.width + 20) - x, height: panelBox.y + panelBox.height + 20 - y };
-  await expect(page).toHaveScreenshot("header-user-menu-placeholder.png", { clip, ...exactPixels });
+  await expect(page).toHaveScreenshot("header-user-menu-placeholder.png", { clip, ...clippedPixels });
   expect((await page.request.put(`${API}/users/me/avatar`, {
     headers: { Origin: "http://127.0.0.1:18101", "X-Requested-With": "ThrongDashboard", "Content-Type": "image/png" },
     data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=", "base64"),

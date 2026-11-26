@@ -76,7 +76,7 @@ for (const scope of ["all owners", "organization owner", "the last page"]) {
       await removal.pending;
       await page.goBack();
       await link.click();
-      await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+      await (await openUserMenu(page)).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
       await page.getByRole("tab", { name: "API-токены", exact: true }).click();
       await page.getByLabel("Владелец токенов", { exact: true }).selectOption(scope === "organization owner" ? id : "all");
       if (scope === "the last page") {

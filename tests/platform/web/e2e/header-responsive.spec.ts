@@ -114,7 +114,7 @@ test("the enlarged avatar stays level with languages and theme while the header 
   await page.setViewportSize({ width: 1120, height: 800 });
   await expect.poll(alignment).toBeLessThanOrEqual(1);
   await avatar.click();
-  await page.getByRole("menuitem", { name: /^(Профиль|Profile)$/ }).click();
+  await page.getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await expect(page).toHaveURL(/\/profile$/);
 });
 
@@ -142,7 +142,7 @@ test("the avatar menu reopens after focus returns from an outside iframe", async
     await expect(menu).toHaveCount(0);
   }
   await trigger.click();
-  await menu.getByRole("menuitem", { name: /^(Профиль|Profile)$/ }).click();
+  await menu.getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await expect(page).toHaveURL(/\/profile$/);
 });
 
@@ -179,7 +179,7 @@ test("the first outside click dismisses the user menu after a canceled link drag
   await startSession(page, account);
   await page.goto("");
   const menu = await openUserMenu(page);
-  const profile = menu.getByRole("menuitem", { name: /^(Профиль|Profile)$/ });
+  const profile = menu.getByRole("menuitem", { name: /(Профиль|Profile)$/ });
   await profile.evaluate(node => {
     (window as any).headerDragEnded = false;
     node.addEventListener("dragend", () => { (window as any).headerDragEnded = true; }, { once: true });
@@ -203,7 +203,7 @@ test("pointer selection still works after opening the user menu with the keyboar
   const trigger = page.getByRole("banner").getByRole("button", { name: /^(Меню пользователя|User menu)$/ });
   await trigger.focus();
   await page.keyboard.press("Enter");
-  const profile = page.getByRole("menuitem", { name: /^(Профиль|Profile)$/ });
+  const profile = page.getByRole("menuitem", { name: /(Профиль|Profile)$/ });
   await expect(profile).toBeFocused();
   if (isMobile) await profile.tap(); else await profile.click();
   await expect(page).toHaveURL(/\/profile$/);
@@ -316,7 +316,7 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
       await expect.poll(() => banner.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(0);
       if (isMobile) await trigger.tap(); else await trigger.click();
       const menu = await openUserMenu(page);
-      await expect(menu.getByRole("menuitem")).toHaveText(language === "ru" ? ["Профиль", "Выйти"] : ["Profile", "Sign out"]);
+      await expect(menu.getByRole("menuitem")).toHaveText(language === "ru" ? ["Алиса", "Выйти"] : ["Алиса", "Sign out"]);
       await expect(menu).toBeInViewport({ ratio: 1 });
       const band = (await banner.boundingBox())!;
       expect((await menu.boundingBox())!.y, "the user menu must open below the entire header").toBeGreaterThanOrEqual(band.y + band.height);
@@ -328,7 +328,7 @@ for (const language of ["en", "ru"]) for (const theme of ["light", "dark"]) {
     }
     await trigger.focus();
     await page.keyboard.press("ArrowDown");
-    const profile = page.getByRole("menuitem", { name: language === "ru" ? "Профиль" : "Profile", exact: true });
+    const profile = page.getByRole("menuitem", { name: /(Профиль|Profile)$/ });
     await expect(profile).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/profile$/);

@@ -219,6 +219,50 @@ h3 {
   height: 40px;
   border-radius: 50%;
 }
+.user-menu-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 11px;
+  padding: 14px 12px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.user-menu-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -6px;
+  left: 0;
+  height: 1px;
+  background: var(--line);
+}
+.user-menu-header:is(:hover, :focus-visible) {
+  background: var(--surface-raised);
+}
+.user-menu-header__name {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -.012em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.user-menu-header__first-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-menu-header__initial {
+  flex: none;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
 .user-menu .error-box {
   margin: 8px 0 0;
   padding: 10px;

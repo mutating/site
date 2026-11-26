@@ -13,7 +13,7 @@ for (const mutation of ["profile", "remove avatar"] as const) {
   for (const order of orders) test(`a late ${mutation} response from a previous profile page: ${order}`, async ({ page, account }) => {
     await login(page, account);
     await trigger(page).click();
-    await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+    await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
     if (mutation === "remove avatar") {
       await page.getByLabel("Загрузить аватар").setInputFiles(avatar);
       await expect.poll(() => trigger(page).locator("img").evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
@@ -77,7 +77,7 @@ for (const mutation of ["profile", "remove avatar"] as const) {
       await page.getByRole("navigation", { name: "Навигация кабинета" }).getByRole("link", { name: "Обзор", exact: true }).click();
       await expect(page.getByRole("heading", { name: `Привет, ${account.first_name}` })).toBeVisible();
       await trigger(page).click();
-      await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+      await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
       if (mutation === "profile") {
         await page.getByLabel("Имя", { exact: true }).fill("Новое имя");
         await page.getByRole("button", { name: "Сохранить изменения" }).click();
@@ -116,7 +116,7 @@ test("Space activates the profile menuitem and signs out exactly once", async ({
   await login(page, account);
   await trigger(page).focus();
   await page.keyboard.press("ArrowDown");
-  await expect(menu(page).getByRole("menuitem", { name: "Профиль", exact: true })).toBeFocused();
+  await expect(menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ })).toBeFocused();
   await page.keyboard.press("Space");
   await expect(page).toHaveURL(/\/profile$/);
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(account.first_name);
@@ -163,7 +163,7 @@ test("switching auth forms during a pending login keeps the menu and cookie on t
     expect((await (await page.request.get(`${API}/auth/session`)).json()).id).toBe(other.id);
     await expect(trigger(page)).toHaveAttribute("title", other.email);
     await trigger(page).click();
-    await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+    await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
     await expect(page.getByLabel("Имя", { exact: true })).toHaveValue("Борис");
   } finally { release(); }
 });
@@ -179,17 +179,39 @@ test("the avatar menu is absent before login and opens the real profile without 
   await expect(trigger(page)).toHaveClass(/tmc-square-button/);
   await page.evaluate(() => { document.body.dataset.userMenuDocument = "preserved"; });
   await trigger(page).click();
-  await expect(menu(page).getByRole("menuitem")).toHaveText(["Профиль", "Выйти"]);
+  await expect(menu(page).getByRole("menuitem")).toHaveText(["Алиса", "Выйти"]);
   await expect(menu(page)).toHaveAttribute("id", (await trigger(page).getAttribute("aria-controls"))!);
-  await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await expect(page).toHaveURL(/\/profile$/);
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(account.first_name);
   await expect(page.locator("body")).toHaveAttribute("data-user-menu-document", "preserved");
   await expect(menu(page)).toHaveCount(0);
   await expect(trigger(page)).toHaveAttribute("aria-expanded", "false");
   await trigger(page).click();
-  await expect(menu(page).getByRole("menuitem", { name: "Профиль" })).toHaveAttribute("aria-current", "page");
+  await expect(menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ })).toHaveAttribute("aria-current", "page");
   await page.getByRole("navigation", { name: "Навигация кабинета" }).getByRole("link", { name: "Обзор" }).click();
+  await expect(menu(page)).toHaveCount(0);
+});
+
+test("the user menu header shows the name and surname initial and opens the profile", async ({ page, account }) => {
+  await login(page, account);
+  const updated = await page.request.patch(`${API}/users/${account.id}`, {
+    headers: headers(account),
+    data: { first_name: "Евгений", last_name: "Лебедев" },
+  });
+  expect(updated.status()).toBe(200);
+  await page.reload();
+  await trigger(page).click();
+  const header = menu(page).locator(":scope > .tmc-dropdown-header");
+  await expect(header).toBeVisible();
+  await expect(header).not.toContainText(/Аккаунт/i);
+  await expect(header).toContainText("Евгений Л.");
+  await expect(header.locator("img, .avatar")).toHaveCount(0);
+  await expect(menu(page).getByRole("menuitem")).toHaveText(["Евгений Л.", "Выйти"]);
+  await expect(header.getByRole("menuitem")).toHaveAccessibleName(/Профиль$/);
+  await header.getByRole("menuitem").click();
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page.getByLabel("Имя", { exact: true })).toHaveValue("Евгений");
   await expect(menu(page)).toHaveCount(0);
 });
 
@@ -199,7 +221,7 @@ test("keyboard navigation, Escape, Tab, repeated click and outside presses dismi
   const button = trigger(page);
   await button.focus();
   await page.keyboard.press("Enter");
-  const profile = menu(page).getByRole("menuitem", { name: "Профиль", exact: true });
+  const profile = menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ });
   const logout = menu(page).getByRole("menuitem", { name: "Выйти", exact: true });
   await expect(profile).toBeFocused();
   await page.keyboard.press("ArrowUp");
@@ -254,7 +276,7 @@ for (const language of ["ru", "en"]) for (const theme of ["dark", "light"]) {
       expect(circleBox.x + circleBox.width / 2).toBeCloseTo(box.x + box.width / 2, 1);
       expect(circleBox.y + circleBox.height / 2).toBeCloseTo(box.y + box.height / 2, 1);
       if (isMobile) await button.tap(); else await button.click();
-      await expect(menu(page).getByRole("menuitem")).toHaveText(language === "ru" ? ["Профиль", "Выйти"] : ["Profile", "Sign out"]);
+      await expect(menu(page).getByRole("menuitem")).toHaveText(language === "ru" ? ["Алиса", "Выйти"] : ["Алиса", "Sign out"]);
       await expect(menu(page)).toBeInViewport({ ratio: 1 });
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       // Resizing through the desktop breakpoint must not disable or dismiss this menu.
@@ -269,7 +291,7 @@ for (const language of ["ru", "en"]) for (const theme of ["dark", "light"]) {
 test("profile upload, page reload and removal immediately update the circular header avatar", async ({ page, account }) => {
   await login(page, account);
   await trigger(page).click();
-  await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   const image = trigger(page).locator("img");
   await expect(image).toHaveCount(0);
   const firstRead = page.waitForRequest(request => request.url().startsWith(`${API}/users/me/avatar?`) && request.method() === "GET");
@@ -296,7 +318,7 @@ test("profile upload, page reload and removal immediately update the circular he
 test("a failed avatar download uses the placeholder and recovers after a new upload", async ({ page, account }) => {
   await login(page, account);
   await trigger(page).click();
-  await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   let failedReads = 0;
   await page.route(`${API}/users/me/avatar?*`, route => {
     failedReads++;
@@ -349,7 +371,7 @@ for (const intervening of ["same image", "removal", "different image"] as const)
   test(`an avatar save supersedes an older pending download after ${intervening}`, async ({ page, account }) => {
     await login(page, account);
     await trigger(page).click();
-    await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+    await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
     let releaseOldReads!: () => void;
     const oldReads = new Promise<void>(resolve => { releaseOldReads = resolve; });
     let holdReads = true;
@@ -455,7 +477,7 @@ test("short phone, tablet and desktop viewports keep both menu actions reachable
     await page.setViewportSize({ width, height });
     await trigger(page).focus();
     await page.keyboard.press("ArrowDown");
-    await expect(menu(page).getByRole("menuitem", { name: "Профиль", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ })).toBeInViewport({ ratio: 1 });
     await page.keyboard.press("End");
     await expect(menu(page).getByRole("menuitem", { name: "Выйти", exact: true })).toBeInViewport({ ratio: 1 });
     await expect(menu(page)).toBeInViewport({ ratio: 1 });
@@ -596,7 +618,7 @@ test("a response from the previous login cannot overwrite the same account's new
     await page.getByRole("button", { name: "Войти", exact: true }).click();
     await expect(trigger(page).locator(".avatar")).toHaveText("С");
     await trigger(page).click();
-    await menu(page).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+    await menu(page).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
     await page.getByLabel("Имя", { exact: true }).fill("Новое имя");
     await page.getByRole("button", { name: "Сохранить изменения" }).click();
     await expect(trigger(page).locator(".avatar")).toHaveText("Н");

@@ -41,12 +41,14 @@ export type DropdownTriggerProps = ComponentPropsWithoutRef<"button"> & {
 export interface DropdownProps {
   label: string;
   trigger: (attributes: DropdownTriggerProps) => ReactNode;
+  /** Optional free-form content above the items. The library leaves its layout and styles to the consumer. */
+  header?: ReactNode;
   children: ReactNode;
   className?: string;
 }
 
 /** The mobile menu's disclosure controller and panel, available at every width. */
-export function Dropdown({ label, trigger, children, className }: DropdownProps) {
+export function Dropdown({ label, trigger, header, children, className }: DropdownProps) {
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -55,7 +57,10 @@ export function Dropdown({ label, trigger, children, className }: DropdownProps)
   }), []);
   return <div ref={ref} className={classes("tmc-dropdown", className)}>
     {trigger({ "aria-label": label, "aria-expanded": open, "aria-controls": id, "aria-haspopup": "menu", "data-tmc-dropdown-trigger": "" })}
-    <div id={id} role="menu" aria-label={label} className="tmc-dropdown-panel" data-tmc-dropdown-panel="" hidden={!open}>{children}</div>
+    <div id={id} role="menu" aria-label={label} className="tmc-dropdown-panel" data-tmc-dropdown-panel="" hidden={!open}>
+      {header ? <div className="tmc-dropdown-header" data-tmc-dropdown-header="">{header}</div> : null}
+      {children}
+    </div>
   </div>;
 }
 

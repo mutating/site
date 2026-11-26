@@ -263,13 +263,26 @@ React-поле `adjacent: ReactNode` размещает произвольный
 ```tsx
 import { Dropdown, SquareButton } from "@mutating/ui/react";
 
-<Dropdown label="Меню пользователя" trigger={attributes => (
-  <SquareButton {...attributes}><Avatar /></SquareButton>
-)}>
+<Dropdown
+  label="Меню пользователя"
+  header={<div className="account-menu__header">Евгений Л.</div>}
+  trigger={attributes => (
+    <SquareButton {...attributes}><Avatar /></SquareButton>
+  )}
+>
   <a role="menuitem" href="/profile">Профиль</a>
   <button role="menuitem" type="button" onClick={signOut}>Выйти</button>
 </Dropdown>
 ```
+
+`header` — необязательный блок произвольной разметки над пунктами. Библиотека
+добавляет только нейтральную обёртку `.tmc-dropdown-header`
+(`data-tmc-dropdown-header`) и не задаёт её оформление. Ширина панели, отступы,
+радиус, тени и стили пунктов остаются базовыми; ссылки и кнопки внутри хэдера не
+получают стили пунктов меню. Положите свою разметку в обёртку, задайте ей нужные
+отступы и оформление; для заливки во всю ширину панели можно использовать
+отрицательные поля `-8px` по горизонтали. Без `header` меню выглядит и работает
+как раньше.
 
 Передайте все атрибуты `trigger`: они связывают кнопку с панелью и состоянием
 `aria-expanded`. Доступное имя задаётся через `label`. Enter/Space и стрелки
@@ -294,6 +307,8 @@ Escape закрывает меню и возвращает фокус на кн�
 
 Для HTML `mountDropdown(root, options)` поддерживает нативный `details` / `summary`
 и контейнер с `[data-tmc-dropdown-trigger]`, `[data-tmc-dropdown-panel]`.
+В начало панели можно положить блок с `.tmc-dropdown-header` и
+`data-tmc-dropdown-header`; его содержимое не получает стили пунктов меню.
 Возвращаемая функция освобождает обработчики и закрывает меню. Настройки
 мобильного адаптера, включая исходное поведение Escape и вложенных списков,
 сохраняются. `closeOnSelection: false` позволяет потребителю самому закрывать

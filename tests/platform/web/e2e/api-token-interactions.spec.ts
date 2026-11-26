@@ -38,7 +38,7 @@ for (const input of ["mouse", "keyboard", "touch"] as const) {
         .getByRole("button", { name: "Меню пользователя", exact: true }),
     );
     await activate(
-      page.getByRole("menuitem", { name: "Профиль", exact: true }),
+      page.getByRole("menuitem", { name: /(Профиль|Profile)$/ }),
     );
     await expect(page).toHaveURL(/\/profile$/);
     await activate(
@@ -131,7 +131,7 @@ for (const input of ["mouse", "keyboard", "touch"] as const) {
         .getByRole("button", { name: "Меню пользователя", exact: true }),
     );
     await activate(
-      page.getByRole("menuitem", { name: "Профиль", exact: true }),
+      page.getByRole("menuitem", { name: /(Профиль|Profile)$/ }),
     );
     await activate(page.getByRole("tab", { name: "API-токены", exact: true }));
     await expect(page).toHaveURL(/\/profile\?section=api-tokens$/);

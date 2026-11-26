@@ -36,6 +36,31 @@ test("native and custom dropdowns notify each actual state change once", async (
   expect(changes).toEqual([[true, false], [true, false], [true, false]]);
 });
 
+test("optional dropdown header is arbitrary content outside the menu item styles", async ({ page }) => {
+  await page.goto("/react.html");
+  await page.getByRole("button", { name: "Меню с хэдером", exact: true }).click();
+  const menu = page.getByRole("menu", { name: "Меню с хэдером", exact: true });
+  const header = menu.locator(":scope > .tmc-dropdown-header");
+  await expect(header).toBeVisible();
+  await expect(header).toContainText("Евгений Л.");
+  await expect(menu.locator(":scope > *").first()).toHaveClass(/tmc-dropdown-header/);
+  const styles = await header.evaluate(node => {
+    const link = document.createElement("a");
+    link.href = "#header-link";
+    link.textContent = "Header link";
+    node.append(link);
+    const headerLink = getComputedStyle(link);
+    const item = node.parentElement!.querySelector<HTMLElement>('[role="menuitem"]')!;
+    return {
+      headerDisplay: headerLink.display,
+      headerPadding: headerLink.padding,
+      itemDisplay: getComputedStyle(item).display,
+      itemPadding: getComputedStyle(item).padding,
+    };
+  });
+  expect(styles).toEqual({ headerDisplay: "inline", headerPadding: "0px", itemDisplay: "flex", itemPadding: "12px" });
+});
+
 test("dropdown opens above a visible trigger at the bottom of the page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto("/react.html");

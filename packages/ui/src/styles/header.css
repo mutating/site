@@ -153,7 +153,8 @@
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--surface);
+  background: var(--tmc-dropdown-surface);
+  backdrop-filter: var(--tmc-dropdown-backdrop);
   box-shadow: 0 18px 44px color-mix(in srgb, #000 28%, transparent);
 }
 
@@ -640,6 +641,7 @@
   border-left: 1px solid var(--line);
   border-radius: 0;
   background: transparent;
+  backdrop-filter: none;
   box-shadow: none;
 }
 
@@ -662,6 +664,11 @@
 }
 
 @media (max-width: 1120px) {
+  :root {
+    /* The compact header is denser; menus match it so content stays legible. */
+    --tmc-dropdown-surface: color-mix(in srgb, var(--bg) 93%, transparent);
+  }
+
   .tmc-nav {
     display: none;
   }
