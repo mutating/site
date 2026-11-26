@@ -9,6 +9,7 @@ import anyio
 import pytest
 from alembic import command
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from throng_api.cli import migration_config
 from throng_api.models import AvailabilityBaseline, Computer
 

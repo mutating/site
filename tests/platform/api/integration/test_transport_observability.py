@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from throng_api import transport
-from throng_api.config import Settings
 from throng_api.transport import RequestLog
 
 pytestmark = pytest.mark.anyio
