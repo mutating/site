@@ -1,0 +1,165 @@
+{{- /* Sculptural security illustrations in the site's cream/rose material palette. */ -}}
+{{- if eq .icon "shield" -}}
+<svg class="compute-security__art" viewBox="0 0 400 300" fill="none" aria-hidden="true">
+  <defs>
+    <radialGradient id="secNetGlow" cx="50%" cy="48%" r="52%">
+      <stop stop-color="var(--hot)" stop-opacity=".24"/>
+      <stop offset="1" stop-color="var(--hot)" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="secNetGlass" x1="100" y1="50" x2="300" y2="285" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe8f0" stop-opacity=".96"/>
+      <stop offset=".48" stop-color="#ffadcd" stop-opacity=".62"/>
+      <stop offset="1" stop-color="#ff6ba8" stop-opacity=".38"/>
+    </linearGradient>
+    <linearGradient id="secNetCream" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#fff8f1"/>
+      <stop offset="1" stop-color="#e8ccbd"/>
+    </linearGradient>
+    <linearGradient id="secNetScreen" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffd5e5"/>
+      <stop offset="1" stop-color="#ff8dbb"/>
+    </linearGradient>
+    <filter id="secNetShadow" x="-30%" y="-30%" width="160%" height="190%">
+      <feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#6d0f3c" flood-opacity=".2"/>
+    </filter>
+    <filter id="secNetSoft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <ellipse cx="200" cy="158" rx="156" ry="132" fill="url(#secNetGlow)"/>
+  <ellipse cx="200" cy="274" rx="104" ry="14" fill="#a3154d" opacity=".13" filter="url(#secNetSoft)"/>
+  <g filter="url(#secNetShadow)">
+    <path d="M200 34 326 84v82c0 66-63 102-126 121-63-19-126-55-126-121V84Z" fill="url(#secNetGlass)" stroke="#ff5c9f" stroke-width="2"/>
+    <path d="M200 49 311 93v73c0 55-53 86-111 104" stroke="#fff" stroke-opacity=".6" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M200 270c-58-18-111-49-111-104" stroke="#fff" stroke-opacity=".18" stroke-width="2"/>
+  </g>
+  <g stroke="var(--hot)" stroke-width="2.4" stroke-linecap="round" opacity=".82">
+    <path d="M128 142 200 110l72 32-72 50Z" stroke-dasharray="2 8"/>
+    <path d="M200 110v82"/>
+  </g>
+  <g>
+    <rect x="112" y="126" width="50" height="36" rx="7" fill="url(#secNetCream)" stroke="#d7b4a4"/>
+    <rect x="119" y="133" width="36" height="22" rx="3" fill="url(#secNetScreen)"/>
+    <path d="M137 162v7m-13 0h26" stroke="#b58e7d" stroke-width="2" stroke-linecap="round"/>
+    <rect x="239" y="126" width="50" height="36" rx="7" fill="url(#secNetCream)" stroke="#d7b4a4"/>
+    <rect x="246" y="133" width="36" height="22" rx="3" fill="url(#secNetScreen)"/>
+    <path d="M264 162v7m-13 0h26" stroke="#b58e7d" stroke-width="2" stroke-linecap="round"/>
+    <rect x="181" y="184" width="38" height="54" rx="8" fill="url(#secNetCream)" stroke="#d7b4a4"/>
+    <rect x="187" y="190" width="26" height="36" rx="4" fill="url(#secNetScreen)"/>
+    <circle cx="200" cy="235" r="3" fill="#d59cac"/>
+  </g>
+  <circle cx="200" cy="110" r="8" fill="var(--hot)" opacity=".95"/>
+  <circle cx="200" cy="110" r="17" stroke="var(--hot)" stroke-opacity=".35" stroke-width="2"/>
+  <g fill="#fff" opacity=".8">
+    <circle cx="128" cy="142" r="3"/><circle cx="272" cy="142" r="3"/><circle cx="200" cy="192" r="3"/>
+  </g>
+</svg>
+{{- else if eq .icon "cube" -}}
+<svg class="compute-security__art" viewBox="0 0 400 300" fill="none" aria-hidden="true">
+  <defs>
+    <radialGradient id="secCubeGlow" cx="50%" cy="50%" r="52%">
+      <stop stop-color="var(--hot)" stop-opacity=".22"/>
+      <stop offset="1" stop-color="var(--hot)" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="secCubeTop" x1="80" y1="60" x2="320" y2="165" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff0f5" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#ffb4d1" stop-opacity=".55"/>
+    </linearGradient>
+    <linearGradient id="secCubeLeft" x1="95" y1="120" x2="210" y2="267" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffc8dc" stop-opacity=".6"/>
+      <stop offset="1" stop-color="#ff7bae" stop-opacity=".3"/>
+    </linearGradient>
+    <linearGradient id="secCubeRight" x1="210" y1="120" x2="315" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe0eb" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#ff9fc3" stop-opacity=".38"/>
+    </linearGradient>
+    <linearGradient id="secCubeCream" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fff8f1"/>
+      <stop offset="1" stop-color="#e8cabb"/>
+    </linearGradient>
+    <filter id="secCubeShadow" x="-30%" y="-30%" width="160%" height="190%">
+      <feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#6d0f3c" flood-opacity=".2"/>
+    </filter>
+    <filter id="secCubeSoft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+  <ellipse cx="200" cy="155" rx="158" ry="130" fill="url(#secCubeGlow)"/>
+  <ellipse cx="200" cy="274" rx="94" ry="13" fill="#a3154d" opacity=".14" filter="url(#secCubeSoft)"/>
+  <ellipse cx="200" cy="166" rx="142" ry="104" stroke="var(--hot)" stroke-opacity=".4" stroke-width="2" stroke-dasharray="3 10" transform="rotate(-8 200 166)"/>
+  <g filter="url(#secCubeShadow)">
+    <path d="M200 42 324 104 200 166 76 104Z" fill="url(#secCubeTop)" stroke="#ff5c9f" stroke-width="2"/>
+    <path d="M76 104 200 166v101L76 205Z" fill="url(#secCubeLeft)" stroke="#ff5c9f" stroke-width="2"/>
+    <path d="M324 104 200 166v101l124-62Z" fill="url(#secCubeRight)" stroke="#ff5c9f" stroke-width="2"/>
+  </g>
+  <g>
+    <path d="M200 129c15 0 28 10 30 25l17-4-10 18 8 12-19 1c-5 14-16 22-30 22-18 0-31-14-31-33 0-23 16-41 35-41Z" fill="#2a1620"/>
+    <circle cx="218" cy="157" r="5" fill="var(--hot)"/>
+    <circle cx="218" cy="157" r="10" stroke="var(--hot)" stroke-opacity=".45" stroke-width="2"/>
+    <path d="M181 172c-7 4-10 10-10 17m58-25c8 1 13 5 16 11" stroke="#2a1620" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g stroke="var(--hot)" stroke-width="2" fill="none" opacity=".7">
+    <path d="M132 187c-16 9-25 22-25 37"/>
+    <path d="M275 203c12 8 19 18 20 30"/>
+  </g>
+  <g filter="url(#secCubeShadow)">
+    <rect x="44" y="76" width="46" height="46" rx="12" fill="url(#secCubeCream)" stroke="#d7b4a4" transform="rotate(-9 67 99)"/>
+    <path d="M61 92h12v12H61zm0 15h12v5H61z" fill="#ff8fba" opacity=".65"/>
+    <rect x="318" y="65" width="40" height="40" rx="11" fill="url(#secCubeCream)" stroke="#d7b4a4" transform="rotate(8 338 85)"/>
+    <circle cx="338" cy="85" r="7" fill="none" stroke="#ff8fba" stroke-width="3"/>
+    <rect x="320" y="220" width="44" height="44" rx="12" fill="url(#secCubeCream)" stroke="#d7b4a4" transform="rotate(6 342 242)"/>
+    <path d="m333 235 9 7-9 8" stroke="#ff8fba" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
+{{- else -}}
+<svg class="compute-security__art" viewBox="0 0 400 300" fill="none" aria-hidden="true">
+  <defs>
+    <radialGradient id="secVmGlow" cx="50%" cy="50%" r="52%">
+      <stop stop-color="var(--hot)" stop-opacity=".22"/>
+      <stop offset="1" stop-color="var(--hot)" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="secVmShell" x1="100" y1="80" x2="300" y2="250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffeaf2" stop-opacity=".95"/>
+      <stop offset=".5" stop-color="#ffadd0" stop-opacity=".62"/>
+      <stop offset="1" stop-color="#ff6aa8" stop-opacity=".3"/>
+    </linearGradient>
+    <linearGradient id="secVmCore" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fff9f2"/>
+      <stop offset="1" stop-color="#e8c5b5"/>
+    </linearGradient>
+    <filter id="secVmShadow" x="-30%" y="-30%" width="160%" height="190%">
+      <feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#6d0f3c" flood-opacity=".2"/>
+    </filter>
+    <filter id="secVmSoft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+  <ellipse cx="200" cy="154" rx="158" ry="132" fill="url(#secVmGlow)"/>
+  <ellipse cx="200" cy="274" rx="98" ry="13" fill="#a3154d" opacity=".14" filter="url(#secVmSoft)"/>
+  <g filter="url(#secVmShadow)" transform="rotate(-9 200 160)">
+    <rect x="94" y="96" width="212" height="122" rx="61" fill="url(#secVmShell)" stroke="#ff5c9f" stroke-width="2" opacity=".38"/>
+    <rect x="99" y="88" width="212" height="122" rx="61" fill="url(#secVmShell)" stroke="#ff5c9f" stroke-width="2" opacity=".55" transform="translate(0 -10)"/>
+    <path d="M130 67c-14 17-21 38-21 61 0 33 24 60 57 66" stroke="#fff" stroke-opacity=".55" stroke-width="2.4" stroke-linecap="round"/>
+    <rect x="104" y="78" width="212" height="122" rx="61" fill="url(#secVmShell)" stroke="#ff5c9f" stroke-width="2" transform="translate(0 -20)"/>
+  </g>
+  <g filter="url(#secVmShadow)">
+    <circle cx="204" cy="152" r="48" fill="url(#secVmCore)"/>
+    <ellipse cx="188" cy="134" rx="18" ry="12" fill="#fff" opacity=".65"/>
+    <circle cx="204" cy="152" r="48" stroke="#ff9dc4" stroke-opacity=".55" stroke-width="2"/>
+    <path d="M234 126c30 10 42 30 40 55" stroke="#ff5c9f" stroke-width="2" stroke-dasharray="2 8" stroke-linecap="round"/>
+  </g>
+  <g fill="var(--hot)">
+    <circle cx="286" cy="106" r="4" opacity=".8"/>
+    <circle cx="309" cy="132" r="3" opacity=".65"/>
+    <circle cx="319" cy="166" r="5" opacity=".8"/>
+    <circle cx="300" cy="198" r="3" opacity=".55"/>
+    <circle cx="266" cy="88" r="2.5" opacity=".55"/>
+    <circle cx="144" cy="230" r="3" opacity=".5"/>
+    <circle cx="116" cy="204" r="2" opacity=".45"/>
+  </g>
+  <g stroke="var(--hot)" stroke-width="2" stroke-linecap="round" opacity=".55">
+    <path d="M272 112c8-6 14-8 22-8"/>
+    <path d="M283 186c10 4 17 11 21 20"/>
+  </g>
+</svg>
+{{- end -}}

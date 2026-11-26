@@ -68,7 +68,7 @@ test("profile and sign out exist only in the header menu at every breakpoint", a
     await expect(trigger).toHaveCount(1);
     await expect(trigger).toBeVisible();
     const menu = await openUserMenu(page);
-    await expect(page.getByRole("menuitem")).toHaveText(["Профиль", "Выйти"]);
+    await expect(page.getByRole("menuitem")).toHaveText(["Алиса", "Выйти"]);
     await expect(menu).toBeInViewport({ ratio: 1 });
     await trigger.click();
     await expect(menu).toHaveCount(0);
@@ -90,7 +90,7 @@ test("header account actions open the profile and sign out through the browser s
       .getByRole("link", { name: "Профиль", exact: true }),
   ).toHaveCount(0);
   await expect(page.getByRole("banner").getByRole("button", { name: "Меню пользователя", exact: true })).toHaveAttribute("title", account.email);
-  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
     account.first_name,
@@ -208,7 +208,7 @@ test("all private pages require login; registration has optional fields and no p
   await expect(
     page.getByRole("heading", { name: "Страница не найдена" }),
   ).toBeVisible();
-  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await expect(page.getByLabel("Имя", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Фамилия", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Ник", { exact: true })).toHaveValue("");

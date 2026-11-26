@@ -72,6 +72,14 @@ function Showcase() {
               <button role="menuitem" type="button" disabled>Пропустить</button>
               <button role="menuitem" type="button" onClick={() => setDropdownCount(value => value + 1)}>Выполнить</button>
             </Dropdown>}
+            <Dropdown
+              label="Меню с хэдером"
+              header={<div className="demo-dropdown-header"><strong>Евгений Л.</strong><small>evgeniy@example.com</small></div>}
+              trigger={attributes => <SquareButton {...attributes}>H</SquareButton>}
+            >
+              <a role="menuitem" href="#account">Профиль</a>
+              <button role="menuitem" type="button">Выйти</button>
+            </Dropdown>
             <Button id="change-dropdown-items" onClick={() => setDropdownAlternate(value => !value)}>Изменить пункты</Button>
             <Button onClick={() => setDropdownTrigger(value => !value)}>Заменить кнопку меню</Button>
             <Button onClick={() => setDropdownMounted(value => !value)}>Пересоздать меню</Button>

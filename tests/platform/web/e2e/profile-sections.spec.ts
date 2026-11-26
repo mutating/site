@@ -90,8 +90,8 @@ test("API tokens have one entry in the profile and no entries in global navigati
   await page.goto("/");
   await expect(page.locator('.sidebar a[href*="api-tokens"]')).toHaveCount(0);
   const menu = await openUserMenu(page);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Профиль", "Выйти"]);
-  await menu.getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Алиса", "Выйти"]);
+  await menu.getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await expect(page.locator(".token-profile-link")).toHaveCount(0);
   await expect(page.getByRole("link", { name: /API/ })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "API-токены", exact: true })).toHaveCount(1);

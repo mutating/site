@@ -1,0 +1,6 @@
+{{- $c := .c -}}
+{{- $root := ("/products/compute/" | relLangURL) -}}
+<div class="chl-actions{{ with .class }} {{ . }}{{ end }}">
+  <a class="button button--primary" href="{{ $root }}#network">{{ $c.hero.primary }}<span aria-hidden="true">↓</span></a>
+  <a class="text-link chl-text-link" href="{{ $root }}#applications">{{ $c.hero.secondary }}<span aria-hidden="true">↓</span></a>
+</div>

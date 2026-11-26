@@ -219,6 +219,50 @@ h3 {
   height: 40px;
   border-radius: 50%;
 }
+.user-menu-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 11px;
+  padding: 14px 12px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.user-menu-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -6px;
+  left: 0;
+  height: 1px;
+  background: var(--line);
+}
+.user-menu-header:is(:hover, :focus-visible) {
+  background: var(--surface-raised);
+}
+.user-menu-header__name {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -.012em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.user-menu-header__first-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-menu-header__initial {
+  flex: none;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
 .user-menu .error-box {
   margin: 8px 0 0;
   padding: 10px;
@@ -1313,6 +1357,9 @@ td small {
   align-items: center;
 }
 .auth-story {
+  /* Keep the copy above the faded route continuation on narrow screens. */
+  position: relative;
+  z-index: 1;
   width: 100%;
   text-align: center;
 }
@@ -1399,6 +1446,7 @@ td small {
   color: var(--hot);
 }
 .network-art {
+  --network-route-muted-color: color-mix(in srgb, var(--hot-soft) 45%, var(--line));
   position: absolute;
   left: 50%;
   top: 50%;
@@ -1414,6 +1462,8 @@ td small {
   display: block;
   width: 100%;
   height: 100%;
+  /* The muted route continues past the band and fades out. */
+  overflow: visible;
 }
 .network-art path {
   vector-effect: non-scaling-stroke;
@@ -1424,8 +1474,11 @@ td small {
 .network-route-hot {
   stroke: var(--hot);
 }
+.network-route-muted-fade-stop {
+  stop-color: var(--network-route-muted-color);
+}
 .network-route-muted {
-  stroke: color-mix(in srgb, var(--hot-soft) 45%, var(--line));
+  stroke: url(#network-route-muted-fade);
 }
 .network-node {
   position: absolute;
@@ -1443,7 +1496,7 @@ td small {
   border-color: var(--hot);
 }
 .network-node--muted {
-  border-color: color-mix(in srgb, var(--hot-soft) 45%, var(--line));
+  border-color: var(--network-route-muted-color);
 }
 .network-stations {
   fill: var(--bg);

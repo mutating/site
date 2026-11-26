@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>10 хэдеров меню — TMC</title>
+  <link rel="icon" href="../favicon.ico">
+  <script>
+    try {
+      var saved = localStorage.getItem("tmc-dropdown-header-designs-theme");
+      document.documentElement.dataset.theme = saved === "dark" || saved === "light"
+        ? saved
+        : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    } catch {}
+  </script>
+  <link rel="stylesheet" href="styles.css">
+  <script src="gallery.js" defer></script>
+</head>
+<body>
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <a class="brand" href="../">
+      <span class="brand-mark">m.</span>
+      <span class="brand-name">TMC <b>/</b> DROPDOWN HEADERS</span>
+    </a>
+    <div class="topbar-actions">
+      <span class="topbar-note">10 вариантов · 1:1</span>
+      <div class="theme-switch" role="group" aria-label="Тема оформления">
+        <button type="button" data-theme-choice="light" aria-pressed="true"><svg class="i"><use href="#i-sun"/></svg>Светлая</button>
+        <button type="button" data-theme-choice="dark" aria-pressed="false"><svg class="i"><use href="#i-moon"/></svg>Тёмная</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div class="intro-main">
+        <p class="eyebrow"><i></i> БИБЛИОТЕКА / ОПЦИОНАЛЬНЫЙ ХЭДЕР</p>
+        <h1>Имя над меню.<br><em>10 решений.</em></h1>
+      </div>
+      <div class="intro-aside">
+        <p class="edition">10 — ВАРИАНТОВ</p>
+        <p>Имя и фамильный инициал, без аватара. В части вариантов — почта для контекста. Панель, отступы, тень и пункты библиотечные, без переопределений. Без хэдера меню остаётся прежним.</p>
+        <p class="intro-help">Кружок в углу карточки сохраняет выбор.</p>
+        <p class="intro-data">ЕВГЕНИЙ Л. <span>·</span> БЕЗ АВАТАРА В ХЭДЕРЕ</p>
+      </div>
+    </section>
+
+    <div class="spec-bar">
+      <div class="spec-copy"><i aria-hidden="true"></i>Базовая панель не меняется <span>190 px · padding 8 px · пункт 44 px</span></div>
+      <span class="choice-status" id="choice-status" aria-live="polite">Выбор: —</span>
+    </div>
+
+    <div class="gallery" id="gallery">
+
+      <!-- 01 -->
+      <article class="design-card" data-id="1" data-title="Тихая строка">
+        <header class="card-head">
+          <span class="num">01</span>
+          <span class="tag">Строка</span>
+          <h2>Тихая строка</h2>
+          <button class="pick" type="button" data-pick="1" aria-pressed="false" aria-label="Выбрать вариант 01: Тихая строка"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 1">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-01">
+                    <span class="hdr-label">АККАУНТ</span>
+                    <span class="hdr-name">Евгений <span class="hdr-initial">Л.</span></span>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Микролейбл и одна строка с именем. Заголовок отделён тонкой линией и почти не спорит с пунктами.</p></footer>
+      </article>
+
+      <!-- 02 -->
+      <article class="design-card" data-id="2" data-title="Две строки">
+        <header class="card-head">
+          <span class="num">02</span>
+          <span class="tag">Строка</span>
+          <h2>Две строки</h2>
+          <button class="pick" type="button" data-pick="2" aria-pressed="false" aria-label="Выбрать вариант 02: Две строки"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 2">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-02">
+                    <span class="hdr-copy"><strong class="hdr-name">Евгений</strong><small class="hdr-mail">evgeniy@example.com</small></span>
+                    <span class="hdr-initial-lg" aria-hidden="true">Л.</span>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Имя и почта в две строки, инициал — справа. Классическая иерархия без фото.</p></footer>
+      </article>
+
+      <!-- 03 -->
+      <article class="design-card" data-id="3" data-title="Бейдж">
+        <header class="card-head">
+          <span class="num">03</span>
+          <span class="tag">Строка</span>
+          <h2>Бейдж</h2>
+          <button class="pick" type="button" data-pick="3" aria-pressed="false" aria-label="Выбрать вариант 03: Бейдж"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 3">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-03">
+                    <span class="hdr-name">Евгений <span class="hdr-badge">Л</span></span>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Имя и фамильный инициал в розовом бейдже. Компактно, без разделителя.</p></footer>
+      </article>
+
+      <!-- 04 -->
+      <article class="design-card" data-id="4" data-title="Крупный инициал">
+        <header class="card-head">
+          <span class="num">04</span>
+          <span class="tag">Типографика</span>
+          <h2>Крупный инициал</h2>
+          <button class="pick" type="button" data-pick="4" aria-pressed="false" aria-label="Выбрать вариант 04: Крупный инициал"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 4">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-04">
+                    <span class="hdr-copy"><strong class="hdr-name">Евгений</strong></span>
+                    <span class="hdr-huge" aria-hidden="true">Л.</span>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Крупный фамильный инициал становится акцентом справа; имя остаётся главным.</p></footer>
+      </article>
+
+      <!-- 05 -->
+      <article class="design-card" data-id="5" data-title="Подчёркнутый инициал">
+        <header class="card-head">
+          <span class="num">05</span>
+          <span class="tag">Типографика</span>
+          <h2>Подчёркнутый инициал</h2>
+          <button class="pick" type="button" data-pick="5" aria-pressed="false" aria-label="Выбрать вариант 05: Подчёркнутый инициал"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 5">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-05">
+                    <span class="hdr-name-lg">Евгений <span class="hdr-underlined">Л.</span></span>
+                    <small class="hdr-mail">evgeniy@example.com</small>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Инициал подчёркнут акцентной линией. Более редакционная типографика при том же составе.</p></footer>
+      </article>
+
+      <!-- 06 -->
+      <article class="design-card" data-id="6" data-title="Капс">
+        <header class="card-head">
+          <span class="num">06</span>
+          <span class="tag">Типографика</span>
+          <h2>Капс</h2>
+          <button class="pick" type="button" data-pick="6" aria-pressed="false" aria-label="Выбрать вариант 06: Капс"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 6">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-06">
+                    <div class="hdr-06-top">
+                      <span class="hdr-caps">Евгений</span>
+                      <span class="hdr-box" aria-hidden="true">Л</span>
+                    </div>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Разреженные капсы и инициал в тонкой рамке. Много воздуха, минимум элементов.</p></footer>
+      </article>
+
+      <!-- 07 -->
+      <article class="design-card" data-id="7" data-title="Моно">
+        <header class="card-head">
+          <span class="num">07</span>
+          <span class="tag">Типографика</span>
+          <h2>Моно</h2>
+          <button class="pick" type="button" data-pick="7" aria-pressed="false" aria-label="Выбрать вариант 07: Моно"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 7">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-07">
+                    <div class="hdr-07-top"><span class="hdr-tech-label">ACCOUNT / 01</span><span class="hdr-dot" aria-hidden="true"></span></div>
+                    <span class="hdr-mono-name">ЕВГЕНИЙ Л.</span>
+                    <small class="hdr-mono-mail">evgeniy@example.com</small>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Моноширинная версия: служебная метка, имя капсом и инициал как код.</p></footer>
+      </article>
+
+      <!-- 08 -->
+      <article class="design-card" data-id="8" data-title="Розовая плашка">
+        <header class="card-head">
+          <span class="num">08</span>
+          <span class="tag">Поверхность</span>
+          <h2>Розовая плашка</h2>
+          <button class="pick" type="button" data-pick="8" aria-pressed="false" aria-label="Выбрать вариант 08: Розовая плашка"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 8">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-08">
+                    <span class="hdr-name">Евгений <span class="hdr-initial-soft">Л.</span></span>
+                    <small class="hdr-mail">evgeniy@example.com</small>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Полноширинная розовая плашка в верхней части панели. Пункты остаются на белом.</p></footer>
+      </article>
+
+      <!-- 09 -->
+      <article class="design-card" data-id="9" data-title="Акцентная полоса">
+        <header class="card-head">
+          <span class="num">09</span>
+          <span class="tag">Поверхность</span>
+          <h2>Акцентная полоса</h2>
+          <button class="pick" type="button" data-pick="9" aria-pressed="false" aria-label="Выбрать вариант 09: Акцентная полоса"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 9">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-09">
+                    <span class="hdr-copy"><strong class="hdr-name">Евгений <span class="hdr-initial">Л.</span></strong><small class="hdr-mail">evgeniy@example.com</small></span>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Розовая линия у левого края связывает имя с фирменным цветом; фон панели не меняется.</p></footer>
+      </article>
+
+      <!-- 10 -->
+      <article class="design-card" data-id="10" data-title="Водяной инициал">
+        <header class="card-head">
+          <span class="num">10</span>
+          <span class="tag">Характер</span>
+          <h2>Водяной инициал</h2>
+          <button class="pick" type="button" data-pick="10" aria-pressed="false" aria-label="Выбрать вариант 10: Водяной инициал"><svg class="i"><use href="#i-check"/></svg></button>
+        </header>
+        <div class="stage">
+          <div class="chrome">
+            <span class="chrome-lang" aria-hidden="true">RU</span>
+            <span class="chrome-theme" aria-hidden="true"><svg class="i"><use href="#i-moon"/></svg><span class="chrome-sun"><svg class="i"><use href="#i-sun"/></svg></span></span>
+            <div class="tmc-dropdown">
+              <span class="chrome-trigger" aria-hidden="true"><span class="ava chrome-ava">Е</span></span>
+              <div class="tmc-dropdown-panel" role="menu" aria-label="Меню пользователя, вариант 10">
+                <div class="tmc-dropdown-header" data-tmc-dropdown-header="">
+                  <div class="hdr hdr-10">
+                    <span class="hdr-ghost" aria-hidden="true">Л</span>
+                    <span class="hdr-copy"><strong class="hdr-name">Евгений <span class="hdr-initial">Л.</span></strong></span>
+                  </div>
+                </div>
+                <a role="menuitem" href="#" data-demo="profile">Профиль</a>
+                <button role="menuitem" type="button" data-demo="exit">Выйти</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="card-foot"><p>Крупная полупрозрачная «Л» на фоне. Инициал присутствует, не занимая строку.</p></footer>
+      </article>
+
+    </div>
+
+    <footer class="page-foot">
+      <span>THE MUTATING COMPANY</span>
+      <span>ОПЦИОНАЛЬНЫЙ ХЭДЕР / 10 ВАРИАНТОВ</span>
+      <span>ПАНЕЛЬ И ПУНКТЫ — БЕЗ ИЗМЕНЕНИЙ</span>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

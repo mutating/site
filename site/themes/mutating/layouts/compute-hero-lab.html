@@ -1,0 +1,386 @@
+{{ define "page-head" }}
+  {{- $compute := resources.Get "css/compute.css" | minify | fingerprint -}}
+  <link rel="stylesheet" href="{{ $compute.RelPermalink }}" integrity="{{ $compute.Data.Integrity }}" crossorigin="anonymous">
+  {{- $lab := resources.Get "css/compute-hero-lab.css" | minify | fingerprint -}}
+  <link rel="stylesheet" href="{{ $lab.RelPermalink }}" integrity="{{ $lab.Data.Integrity }}" crossorigin="anonymous">
+{{ end }}
+{{ define "page-scripts" }}
+  {{- $script := resources.Get "js/compute-hero-lab.js" | js.Build (dict "target" "es2020" "format" "iife") | minify | fingerprint -}}
+  <script src="{{ $script.RelPermalink }}" integrity="{{ $script.Data.Integrity }}" crossorigin="anonymous" defer></script>
+{{ end }}
+{{ define "main" }}
+{{- $c := index hugo.Data.compute site.Language.Lang | default hugo.Data.compute.en -}}
+{{- $deviceCount := len $c.hero.machines -}}
+{{- $computeURL := ("/products/compute/" | relLangURL) -}}
+{{- $variants := slice
+  (dict "n" "01" "name" "Сплит" "hint" "Текущая схема, доведённая до порядка: крупный заголовок, плотная сетка, планета справа.")
+  (dict "n" "02" "name" "Постер" "hint" "Заголовок во всю ширину, планета как печать, три колонки с пояснением.")
+  (dict "n" "03" "name" "Консоль" "hint" "Hero как продуктовый интерфейс: панель, статусы, метрики и планета внутри.")
+  (dict "n" "04" "name" "Центр" "hint" "Симметричная композиция: заголовок по центру, планета между двумя колонками.")
+  (dict "n" "05" "name" "Бенто" "hint" "Модульная сетка карточек: копия, планета, действия и факты.")
+  (dict "n" "06" "name" "Ночь" "hint" "Тёмный кинематографичный вариант с подсвеченной планетой.")
+  (dict "n" "07" "name" "Без полей" "hint" "Планета уходит за край экрана, текст лежит поверх светового пятна.")
+  (dict "n" "08" "name" "Розовый блок" "hint" "Брендовая плашка: hero целиком в фирменном цвете.")
+  (dict "n" "09" "name" "Реверс" "hint" "Планета слева, копия справа, под ней — реестр устройств.")
+  (dict "n" "10" "name" "Сетка" "hint" "Швейцарская модульная сетка с линейками, номерами и асимметрией.")
+-}}
+<div class="compute chl" data-hero-lab>
+  <header class="chl-intro section-shell">
+    <p class="eyebrow">COMPUTE / HERO LAB <span class="eyebrow__accent">— 10 НАПРАВЛЕНИЙ</span></p>
+    <div class="chl-intro__body">
+      <h1>Один герой — <em>десять решений.</em></h1>
+      <div class="chl-intro__aside">
+        <p>Во всех вариантах сохранены текущий текст и интерактивная планета. Задача общая: убрать пустоту, поднять кегль и собрать композицию, в которой заголовок, пояснение и CTA читаются как одно целое.</p>
+        <p class="chl-intro__note">Лаборатория — черновик: страница не публикуется и не попадает в sitemap.</p>
+      </div>
+    </div>
+    <nav class="chl-index" aria-label="Варианты hero">
+      {{ range $variants }}<a href="#v{{ .n }}"><b>{{ .n }}</b>{{ .name }}</a>{{ end }}
+    </nav>
+  </header>
+
+  {{/* 01 — editorial split */}}
+  <article class="chl-variant" id="v01">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">01</span>
+      <span class="chl-bar__name">Сплит</span>
+      <p class="chl-bar__hint">Ближайший к текущему, но собранный: заголовок крупнее, правая колонка плотнее, снизу — закрывающая строка статуса.</p>
+    </header>
+    <section class="chl-hero chl-h01" aria-labelledby="v01-title">
+      <div class="section-shell chl-h01__grid">
+        <div class="chl-h01__copy">
+          <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}<span class="eyebrow__accent"> — {{ $c.hero.category }}</span></p>
+          <h2 class="chl-h1 chl-h01__h1" id="v01-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+          <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+          <p class="chl-lede">{{ $c.hero.description }}</p>
+          {{ partial "compute/hero-actions-lab.html" (dict "c" $c) }}
+        </div>
+        <div class="chl-h01__stage">
+          {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "01" "caption" $c.hero.pool) }}
+        </div>
+      </div>
+      <div class="section-shell chl-h01__rail">
+        <span class="chl-rail__status"><i aria-hidden="true"></i>{{ $c.hero.source }}</span>
+        <span>{{ $deviceCount }} devices <span class="chl-rail__sep">/</span> {{ $c.hero.pool }}</span>
+      </div>
+    </section>
+  </article>
+
+  {{/* 02 — poster */}}
+  <article class="chl-variant" id="v02">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">02</span>
+      <span class="chl-bar__name">Постер</span>
+      <p class="chl-bar__hint">Заголовок становится главным объектом страницы; планета работает как печать, пояснение уходит в три подписанные колонки.</p>
+    </header>
+    <section class="chl-hero chl-h02" aria-labelledby="v02-title">
+      <div class="section-shell">
+        <div class="chl-h02__top">
+          <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}<span class="eyebrow__accent"> — {{ $c.hero.category }}</span></p>
+          <span class="chl-mono">TMC / {{ $deviceCount }} DEVICES / 2026</span>
+        </div>
+        <div class="chl-h02__head">
+          <h2 class="chl-h1 chl-h02__h1" id="v02-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+          <div class="chl-h02__visual">
+            {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "02") }}
+          </div>
+        </div>
+        <div class="chl-h02__foot">
+          <div class="chl-h02__col">
+            <span class="chl-label">01 / The claim</span>
+            <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+          </div>
+          <div class="chl-h02__col">
+            <span class="chl-label">02 / How it works</span>
+            <p class="chl-lede">{{ $c.hero.description }}</p>
+          </div>
+          <div class="chl-h02__col">
+            <span class="chl-label">03 / Start</span>
+            {{ partial "compute/hero-actions-lab.html" (dict "c" $c "class" "chl-actions--stack") }}
+          </div>
+        </div>
+      </div>
+    </section>
+  </article>
+
+  {{/* 03 — product console */}}
+  <article class="chl-variant" id="v03">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">03</span>
+      <span class="chl-bar__name">Консоль</span>
+      <p class="chl-bar__hint">Плотный продуктовый блок: панель с верхней строкой, планетой в рабочей области и тремя метриками внизу.</p>
+    </header>
+    <section class="chl-hero chl-h03" aria-labelledby="v03-title">
+      <div class="section-shell">
+        <div class="chl-console">
+          <div class="chl-console__bar">
+            <span class="chl-console__brand"><i aria-hidden="true"></i>MUTATING COMPUTE</span>
+            <span class="chl-console__path">{{ $c.hero.category }}</span>
+            <span class="chl-console__status">{{ $c.hero.source }}</span>
+          </div>
+          <div class="chl-console__body">
+            <div class="chl-console__copy">
+              <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}</p>
+              <h2 class="chl-h1 chl-h03__h1" id="v03-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+              <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+              <p class="chl-lede">{{ $c.hero.description }}</p>
+              {{ partial "compute/hero-actions-lab.html" (dict "c" $c) }}
+            </div>
+            <div class="chl-console__stage">
+              {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "03" "caption" $c.hero.pool) }}
+            </div>
+          </div>
+          <div class="chl-console__foot">
+            <div><span class="chl-mono">01</span><strong>GitHub Actions</strong><small>{{ $c.hero.source }}</small></div>
+            <div><span class="chl-mono">02</span><strong>{{ range $i, $job := $c.hero.jobs }}{{ if $i }} · {{ end }}{{ $job.label }}{{ end }}</strong><small>{{ $c.hero.pool }}</small></div>
+            <div><span class="chl-mono">03</span><strong>{{ $deviceCount }} devices</strong><small>{{ $c.hero.category }}</small></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </article>
+
+  {{/* 04 — centered */}}
+  <article class="chl-variant" id="v04">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">04</span>
+      <span class="chl-bar__name">Центр</span>
+      <p class="chl-bar__hint">Симметрия: заголовок и CTA по центру, планета в середине сцены, пояснение и состав сети — по бокам от неё.</p>
+    </header>
+    <section class="chl-hero chl-h04" aria-labelledby="v04-title">
+      <div class="section-shell chl-h04__head">
+        <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}<span class="eyebrow__accent"> — {{ $c.hero.category }}</span></p>
+        <h2 class="chl-h1 chl-h04__h1" id="v04-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+        <p class="chl-lede chl-h04__lede">{{ $c.hero.description }}</p>
+        {{ partial "compute/hero-actions-lab.html" (dict "c" $c "class" "chl-actions--center") }}
+      </div>
+      <div class="section-shell chl-h04__band">
+        <div class="chl-h04__note">
+          <span class="chl-label">The network</span>
+          <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+          <span class="chl-h04__count">{{ $deviceCount }} devices</span>
+          <div class="chl-h04__source" aria-hidden="true">
+            <div class="chl-h04__source-head">{{ partial "compute/icon.html" "github" }}<strong>GitHub Actions</strong></div>
+            <span>{{ $c.hero.source }}</span>
+            <div class="chl-h04__jobs">{{ range $c.hero.jobs }}<i>{{ .label }}</i>{{ end }}</div>
+          </div>
+        </div>
+        <div class="chl-h04__visual">
+          {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "04" "caption" $c.hero.pool) }}
+        </div>
+        <div class="chl-h04__legend">
+          <span class="chl-label">Machines</span>
+          <ul>
+            {{ range $c.hero.machines }}<li><span class="chl-h04__key{{ if .busy }} chl-h04__key--busy{{ end }}">{{ .key }}</span><span>{{ .name }}</span><i>{{ if .busy }}—{{ else }}{{ .job }}{{ end }}</i></li>{{ end }}
+          </ul>
+        </div>
+      </div>
+    </section>
+  </article>
+
+  {{/* 05 — bento */}}
+  <article class="chl-variant" id="v05">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">05</span>
+      <span class="chl-bar__name">Бенто</span>
+      <p class="chl-bar__hint">Никакого «воздуха»: hero собран из карточек, у каждой своя роль — манифест, планета, действия, пояснение.</p>
+    </header>
+    <section class="chl-hero chl-h05" aria-labelledby="v05-title">
+      <div class="section-shell chl-bento">
+        <div class="chl-tile chl-tile--copy">
+          <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}<span class="eyebrow__accent"> — {{ $c.hero.category }}</span></p>
+          <h2 class="chl-h1 chl-h05__h1" id="v05-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+          <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+          <div class="chl-tile__meta">
+            <span class="chl-rail__status"><i aria-hidden="true"></i>{{ $c.hero.source }}</span>
+            <span>{{ $deviceCount }} devices / {{ $c.hero.category }}</span>
+          </div>
+        </div>
+        <div class="chl-tile chl-tile--planet">
+          {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "05" "caption" $c.hero.pool) }}
+        </div>
+        <div class="chl-tile chl-tile--actions">
+          <span class="chl-label">Start here</span>
+          {{ partial "compute/hero-actions-lab.html" (dict "c" $c "class" "chl-actions--stack chl-actions--light") }}
+        </div>
+        <div class="chl-tile chl-tile--note">
+          <span class="chl-label">How it works</span>
+          <p class="chl-lede">{{ $c.hero.description }}</p>
+          <span class="chl-tile__fact">{{ $deviceCount }} devices / {{ $c.hero.category }}</span>
+        </div>
+      </div>
+    </section>
+  </article>
+
+  {{/* 06 — dark */}}
+  <article class="chl-variant" id="v06">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">06</span>
+      <span class="chl-bar__name">Ночь</span>
+      <p class="chl-bar__hint">Тёмная кинематографичная версия: свет вокруг планеты становится главным акцентом, текст — крупным и контрастным.</p>
+    </header>
+    <section class="chl-hero chl-h06 chl-dark" aria-labelledby="v06-title">
+      <div class="section-shell chl-h06__grid">
+        <div class="chl-h06__copy">
+          <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}<span class="eyebrow__accent"> — {{ $c.hero.category }}</span></p>
+          <h2 class="chl-h1 chl-h06__h1" id="v06-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+          <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+          <p class="chl-lede">{{ $c.hero.description }}</p>
+          {{ partial "compute/hero-actions-lab.html" (dict "c" $c) }}
+        </div>
+        <div class="chl-h06__stage">
+          {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "06" "caption" $c.hero.pool) }}
+        </div>
+      </div>
+      <div class="section-shell chl-h06__rail">
+        <span class="chl-rail__status"><i aria-hidden="true"></i>{{ $c.hero.source }}</span>
+        <span>{{ $deviceCount }} devices <span class="chl-rail__sep">/</span> {{ $c.hero.pool }}</span>
+      </div>
+    </section>
+  </article>
+
+  {{/* 07 — full bleed */}}
+  <article class="chl-variant" id="v07">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">07</span>
+      <span class="chl-bar__name">Без полей</span>
+      <p class="chl-bar__hint">Планета выходит за край секции и держит всю правую половину; текст стоит поверх светового пятна без конкуренции.</p>
+    </header>
+    <section class="chl-hero chl-h07" aria-labelledby="v07-title">
+      <div class="chl-h07__wash" aria-hidden="true"></div>
+      <div class="chl-h07__stage">
+        {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "07" "caption" $c.hero.pool) }}
+      </div>
+      <div class="section-shell chl-h07__grid">
+        <div class="chl-h07__copy">
+          <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}<span class="eyebrow__accent"> — {{ $c.hero.category }}</span></p>
+          <h2 class="chl-h1 chl-h07__h1" id="v07-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+          <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+          <p class="chl-lede">{{ $c.hero.description }}</p>
+          {{ partial "compute/hero-actions-lab.html" (dict "c" $c) }}
+          <div class="chl-h07__source" aria-hidden="true">
+            <span>GitHub Actions</span>
+            {{ range $c.hero.jobs }}<i>{{ .label }}</i>{{ end }}
+          </div>
+        </div>
+      </div>
+      <div class="section-shell chl-h07__rail">
+        <span class="chl-rail__status"><i aria-hidden="true"></i>{{ $c.hero.source }}</span>
+        <span>{{ $deviceCount }} devices <span class="chl-rail__sep">/</span> {{ $c.hero.pool }}</span>
+      </div>
+    </section>
+  </article>
+
+  {{/* 08 — hot brand slab */}}
+  <article class="chl-variant" id="v08">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">08</span>
+      <span class="chl-bar__name">Розовый блок</span>
+      <p class="chl-bar__hint">Фирменная плашка на всю ширину: тёмный текст на розовом, планета — на светлой карточке с грубой тенью.</p>
+    </header>
+    <section class="chl-hero chl-h08" aria-labelledby="v08-title">
+      <div class="section-shell">
+        <div class="chl-hot">
+          <div class="chl-hot__copy">
+            <p class="eyebrow chl-hot__eyebrow">{{ $c.hero.eyebrow }}<span> — {{ $c.hero.category }}</span></p>
+            <h2 class="chl-h1 chl-hot__h1" id="v08-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+            <p class="chl-hot__purpose">{{ $c.hero.purpose }}</p>
+            <p class="chl-hot__lede">{{ $c.hero.description }}</p>
+            {{ partial "compute/hero-actions-lab.html" (dict "c" $c "class" "chl-actions--hot") }}
+          </div>
+          <div class="chl-hot__stage">
+            <div class="chl-hot__card">
+              {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "08" "caption" $c.hero.pool) }}
+            </div>
+          </div>
+          <span class="chl-hot__mark" aria-hidden="true">TMC / COMPUTE / {{ $deviceCount }} NODES</span>
+        </div>
+      </div>
+    </section>
+  </article>
+
+  {{/* 09 — reversed + ledger */}}
+  <article class="chl-variant" id="v09">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">09</span>
+      <span class="chl-bar__name">Реверс</span>
+      <p class="chl-bar__hint">Планета слева, текст справа; под копией — реестр устройств, который заполняет нижний угол и объясняет состав сети.</p>
+    </header>
+    <section class="chl-hero chl-h09" aria-labelledby="v09-title">
+      <div class="section-shell chl-h09__grid">
+        <div class="chl-h09__stage">
+          {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "09" "caption" $c.hero.pool) }}
+        </div>
+        <div class="chl-h09__copy">
+          <p class="eyebrow chl-eyebrow">{{ $c.hero.eyebrow }}<span class="eyebrow__accent"> — {{ $c.hero.category }}</span></p>
+          <h2 class="chl-h1 chl-h09__h1" id="v09-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+          <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+          <p class="chl-lede">{{ $c.hero.description }}</p>
+          <ul class="chl-h09__ledger">
+            {{ range $c.hero.machines }}<li><span>{{ .key }}</span><strong>{{ .name }}</strong><i>{{ if .busy }}—{{ else }}{{ .job }}{{ end }}</i></li>{{ end }}
+          </ul>
+          {{ partial "compute/hero-actions-lab.html" (dict "c" $c) }}
+        </div>
+      </div>
+    </section>
+  </article>
+
+  {{/* 10 — swiss grid */}}
+  <article class="chl-variant" id="v10">
+    <header class="chl-bar section-shell">
+      <span class="chl-bar__num">10</span>
+      <span class="chl-bar__name">Сетка</span>
+      <p class="chl-bar__hint">Швейцарская модульная схема: шапка с метаданными, заголовок во всю ширину, ниже — планета и текст, разделённые линейками.</p>
+    </header>
+    <section class="chl-hero chl-h10" aria-labelledby="v10-title">
+      <div class="section-shell chl-h10__frame">
+        <div class="chl-h10__meta">
+          <span>MUTATING COMPUTE</span>
+          <span>{{ $c.hero.category }}</span>
+          <span>{{ $deviceCount }} DEVICES</span>
+          <span>2026</span>
+        </div>
+        <h2 class="chl-h1 chl-h10__h1" id="v10-title"><span>{{ $c.hero.line }}</span><em>{{ $c.hero.emphasis }}</em></h2>
+        <div class="chl-h10__grid">
+          <div class="chl-h10__visual">
+            {{ partial "compute/hero-visual-lab.html" (dict "c" $c "uid" "10" "caption" $c.hero.pool) }}
+          </div>
+          <div class="chl-h10__text">
+            <div class="chl-h10__lead">
+              <span class="chl-label">01 / The network</span>
+              <p class="chl-purpose">{{ $c.hero.purpose }}</p>
+            </div>
+            <div class="chl-h10__body">
+              <span class="chl-label">02 / How it works</span>
+              <p class="chl-lede">{{ $c.hero.description }}</p>
+              {{ partial "compute/hero-actions-lab.html" (dict "c" $c "class" "chl-actions--stack") }}
+            </div>
+            <div class="chl-h10__machines">
+              <span class="chl-label">03 / Machines</span>
+              <ul>
+                {{ range $c.hero.machines }}<li><span>{{ .key }}</span><strong>{{ .name }}</strong><i>{{ if .busy }}—{{ else }}{{ .job }}{{ end }}</i></li>{{ end }}
+              </ul>
+            </div>
+            <div class="chl-h10__facts">
+              <div><span class="chl-label">Devices</span><strong>{{ $deviceCount }} / {{ $c.hero.pool }}</strong></div>
+              <div><span class="chl-label">Source</span><strong>GitHub Actions</strong></div>
+              <div><span class="chl-label">Jobs</span><strong>{{ range $i, $job := $c.hero.jobs }}{{ if $i }} · {{ end }}{{ $job.label }}{{ end }}</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="chl-h10__foot">
+          <span>{{ $c.hero.source }}</span>
+          <span>{{ range $i, $job := $c.hero.jobs }}{{ if $i }} · {{ end }}{{ $job.label }}{{ end }}</span>
+          <span>{{ $c.hero.pool }}</span>
+        </div>
+      </div>
+    </section>
+  </article>
+
+  <footer class="chl-outro section-shell">
+    <p class="chl-label">NEXT</p>
+    <p>Выберите номер — соберу выбранный вариант в продакшене, проверю мобильную версию и добавлю состояния наведения и фокуса.</p>
+    <a class="button button--dark" href="{{ $computeURL }}">К странице Mutating Compute<span aria-hidden="true">→</span></a>
+  </footer>
+</div>
+{{ end }}

@@ -881,7 +881,7 @@ test.describe("history navigation", () => {
         await expect(history(page).locator("tbody .numeric")).toHaveText("100");
         await settlePaint(page);
         await expect(menu).toBeVisible();
-        await menu.getByRole("menuitem", { name: "Профиль", exact: true }).click();
+        await menu.getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
         await expect(page).toHaveURL(/\/profile$/);
       } finally {
         held.release();

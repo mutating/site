@@ -534,7 +534,7 @@ def test_compute_benchmark_explains_both_measurements(driver: DriverFactory) -> 
 
 
 @pytest.mark.parametrize(
-    ("language", "prefix", "index", "lines", "footer"),
+    ("language", "prefix", "index", "lines"),
     [
         (
             "en",
@@ -546,7 +546,6 @@ def test_compute_benchmark_explains_both_measurements(driver: DriverFactory) -> 
                 "The command runs on a free machine.",
                 "Pay for devices, not minutes.",
             ],
-            "1 agent",
         ),
         (
             "ru",
@@ -558,7 +557,6 @@ def test_compute_benchmark_explains_both_measurements(driver: DriverFactory) -> 
                 "Команда выполняется на свободной машине.",
                 "Платите за устройства, не за минуты.",
             ],
-            "1 агент",
         ),
     ],
 )
@@ -568,7 +566,6 @@ def test_compute_network_section_precedes_security_and_states_the_model(
     prefix: str,
     index: str,
     lines: list[str],
-    footer: str,
 ) -> None:
     page = driver(
         initial_path=f"{prefix}/products/compute/",
@@ -582,7 +579,7 @@ def test_compute_network_section_precedes_security_and_states_the_model(
     assert section_ids[:3] == ["hero", "network", "security"]
     expect(page.locator("#network .section-index")).to_have_text(index)
     expect(page.locator("#network .compute-network__line h2")).to_have_text(lines)
-    expect(page.locator("#network .compute-network__foot")).to_contain_text(footer)
+    expect(page.locator("#network .compute-network__foot")).to_have_count(0)
     expect(page.locator(".compute-actions .button--primary")).to_have_attribute(
         "href", "#network"
     )
@@ -617,7 +614,7 @@ def test_compute_security_first_card_describes_the_private_network(
     card = page.locator(".compute-security__card").first
     expect(card.locator("h3")).to_have_text(title)
     expect(card.locator("p")).to_contain_text(text)
-    expect(card.locator(".compute-security__card-meta")).to_have_text("network: private")
+    expect(card.locator(".compute-security__card-meta")).to_have_count(0)
 
 
 def test_compute_benchmark_alternates_copy_chart_and_reference(driver: DriverFactory) -> None:

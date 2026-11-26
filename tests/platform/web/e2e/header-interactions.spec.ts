@@ -110,7 +110,7 @@ test("header controls work through every cabinet section and logout", async ({ p
     await expect(page.locator("html")).toHaveAttribute("lang", "ru");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   }
-  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await expect(page).toHaveURL("http://127.0.0.1:18101/profile");
   await selectLanguage(page);
   await theme.click();

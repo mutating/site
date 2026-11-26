@@ -1,3 +1,9 @@
+:root {
+  /* Floating menus share the header's translucent glass surface. */
+  --tmc-dropdown-surface: color-mix(in srgb, var(--bg) 82%, transparent);
+  --tmc-dropdown-backdrop: blur(20px) saturate(1.35);
+}
+
 /* The static site mobile menu and standalone dropdowns share these surfaces. */
 .tmc-mobile-menu nav,
 .tmc-dropdown-panel {
@@ -11,7 +17,8 @@
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--surface);
+  background: var(--tmc-dropdown-surface);
+  backdrop-filter: var(--tmc-dropdown-backdrop);
   box-shadow: var(--shadow);
   display: grid;
   max-width: var(--tmc-dropdown-max-width, calc(100vw - 24px));
@@ -30,7 +37,7 @@
 }
 
 .tmc-mobile-menu nav a,
-.tmc-dropdown-panel :is(a, button) {
+.tmc-dropdown-panel :is(a, button):not(:where(.tmc-dropdown-header *)) {
   min-width: 0;
   overflow-wrap: anywhere;
   padding: 12px;
@@ -59,7 +66,10 @@
 
 .tmc-dropdown-panel[hidden] { display: none; }
 
-.tmc-dropdown-panel :is(a, button) {
+/* The optional header is consumer-defined. Keep it out of the menu item styles. */
+.tmc-dropdown-panel .tmc-dropdown-header { min-width: 0; }
+
+.tmc-dropdown-panel :is(a, button):not(:where(.tmc-dropdown-header *)) {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -74,9 +84,9 @@
   cursor: pointer;
 }
 
-.tmc-dropdown-panel :is(a, button):is(:hover, :focus-visible) {
+.tmc-dropdown-panel :is(a, button):is(:hover, :focus-visible):not(:where(.tmc-dropdown-header *)) {
   background: var(--surface-raised);
 }
 
-.tmc-dropdown-panel button:disabled { cursor: wait; opacity: 0.5; }
-.tmc-dropdown-panel svg { flex: 0 0 auto; }
+.tmc-dropdown-panel button:disabled:not(:where(.tmc-dropdown-header *)) { cursor: wait; opacity: 0.5; }
+.tmc-dropdown-panel svg:not(:where(.tmc-dropdown-header *)) { flex: 0 0 auto; }

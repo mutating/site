@@ -37,7 +37,7 @@ test("the eye follows the pointer outside the header before and after login", as
   await login(page, account);
   await page.mouse.move(viewport.width - 10, viewport.height - 30);
   await expect.poll(async () => (await gazeOffset(page)).x).toBeGreaterThan(2);
-  await (await openUserMenu(page)).getByRole("menuitem", { name: "Профиль", exact: true }).click();
+  await (await openUserMenu(page)).getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
   await page.mouse.move(1, eye.y + eye.height / 2);
   await expect.poll(async () => (await gazeOffset(page)).x).toBeLessThan(-1);
 });

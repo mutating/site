@@ -1189,7 +1189,7 @@ test("full member list paginates, recovers keyboard focus on retry and corrects 
     await expect(results).toBeFocused();
     const menu = page.getByRole("button", { name: "Меню пользователя" });
     await menu.press("ArrowDown");
-    const profile = page.getByRole("menuitem", { name: "Профиль", exact: true });
+    const profile = page.getByRole("menuitem", { name: /(Профиль|Profile)$/ });
     await expect(profile).toBeFocused();
     resume();
     await expect(retry).toBeVisible();

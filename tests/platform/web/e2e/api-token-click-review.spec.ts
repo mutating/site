@@ -147,7 +147,7 @@ test("token revoke confirmation is discarded after an actual account switch", as
     await login(page, account);
     const menu = page.getByRole("banner").getByRole("button", { name: "Меню пользователя", exact: true });
     await menu.click();
-    await page.getByRole("menuitem", { name: "Профиль", exact: true }).click();
+    await page.getByRole("menuitem", { name: /(Профиль|Profile)$/ }).click();
     await page.getByLabel("Имя", { exact: true }).fill("Анна");
     await page.locator(".profile-settings-form").getByRole("button", { name: "Сохранить изменения", exact: true }).click();
     await expect.poll(() => profileRequested).toBe(true);
