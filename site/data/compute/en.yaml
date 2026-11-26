@@ -134,21 +134,12 @@ network:
   lines:
   - number: '01'
     title: Install the agent on your computers.
-    text: Yours or your organization’s. One agent per machine.
   - number: '02'
     title: Spare capacity goes to the network.
-    text: When a computer is idle, it is available for jobs.
   - number: '03'
     title: The command runs on a free machine.
-    text: The network decides which one. You get the result.
   - number: '04'
     title: Pay for devices, not minutes.
-    text: Your own network replaces rented cloud.
-  footer:
-  - 1 agent
-  - N computers
-  - $0 per minute
-  - First 2 personal devices free
 control:
   index: 03 / RESOURCE LIMITS
   heading: Resource limits
@@ -182,21 +173,17 @@ security:
     label: SOURCE
     title: Only your network
     text: Your commands run only on your computers or your organization’s. Nothing leaks to other machines, and commands from other people’s machines never reach yours.
-    meta: 'network: private'
     icon: shield
   - number: '02'
     label: BOUNDARY
     title: Untrusted runtime
     text: The code gets no access to your applications, files, or network.
-    meta: 'host: isolated'
     icon: cube
   - number: '03'
     label: LIFETIME
     title: Disposable VM
     text: A clean environment for one job. Nothing remains after it.
-    meta: 'state: zero'
     icon: trash
-  footer: Every job runs in an isolated disposable virtual machine.
 benchmarks:
   index: 04 / PERFORMANCE
   heading: Built-in benchmarks

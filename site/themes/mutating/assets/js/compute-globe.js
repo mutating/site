@@ -93,9 +93,13 @@ export function initComputeGlobe(root, motion) {
       leader: svg.querySelector(`[data-hero-leader="${key}"]`),
       route: svg.querySelector(`[data-hero-route="${key}"]`),
       job: grid.querySelector(`[data-hero-job="${pin.dataset.heroJobKey}"]`),
-      hit: -Infinity,
     };
   });
+  for (const node of nodes) {
+    node.pin.style.left = "0";
+    node.pin.style.top = "0";
+  }
+
   const eligible = nodes.filter((node) => node.route && node.job);
   const source = grid.querySelector('[data-hero-source]');
   let frame, raf = 0, last = 0, time = 0, next = .22, flight, bag = [], drag, visible = true;
@@ -137,11 +141,9 @@ export function initComputeGlobe(root, motion) {
       node.card.style.setProperty('--globe-label-light', depth);
       node.labelOpacity = mix(.18, 1, depth);
       node.card.style.zIndex = String(2 + Math.round((z + 1) * 4));
-      node.pin.style.left = `${pinX * 100}%`;
-      node.pin.style.top = `${pinY * 100}%`;
+      node.pin.style.transform = `translate3d(${pixel(pinX * globe.w)}px, ${pixel(pinY * globe.h)}px, 0) translate(-50%, -50%)`;
       node.pin.style.opacity = node.light;
       node.pin.style.zIndex = String(4 + Math.round((z + 1) * 4));
-      node.pin.style.setProperty('--globe-hit', clamp(1 - (time - node.hit) * 2, 0, 1));
 
       // Each label keeps the same offset from its projected surface point.
       // Continuous clamping at the frame edge never swaps it to another side.
@@ -233,7 +235,6 @@ export function initComputeGlobe(root, motion) {
         orientation = multiply(orientation, axisAngle(0, 1, 0, dt * TAU / 220));
       }
       if (flight && time >= flight.start + flight.duration) {
-        flight.node.hit = time;
         flight = undefined;
         next = time + .14 + Math.random() * .24;
       }

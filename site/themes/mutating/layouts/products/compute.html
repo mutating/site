@@ -10,14 +10,14 @@
 {{- $c := index hugo.Data.compute site.Language.Lang | default hugo.Data.compute.en -}}
 {{- $rates := hugo.Data.compute.runners -}}
 <div class="compute" data-compute>
-  <section class="compute-hero section-shell" aria-labelledby="compute-title">
-    <p class="eyebrow">{{ $c.hero.eyebrow }} <span class="eyebrow__accent">— {{ $c.hero.category }}</span></p>
-    <div class="compute-hero__body">
+  <section class="compute-hero" aria-labelledby="compute-title">
+    <div class="section-shell compute-hero__body">
       <div class="compute-hero__copy">
+        <p class="eyebrow">{{ $c.hero.eyebrow }} <span class="eyebrow__accent">— {{ $c.hero.category }}</span></p>
         <h1 id="compute-title" class="display-heading"><span>{{ $c.hero.line }}</span>
           <em>{{ $c.hero.emphasis }}</em></h1>
         <p class="compute-hero__purpose">{{ $c.hero.purpose }}</p>
-        <p class="hero__lede compute-hero__lede">{{ $c.hero.description }}</p>
+        <p class="compute-hero__lede">{{ $c.hero.description }}</p>
         <div class="compute-actions">
           <a class="button button--primary" href="#network">{{ $c.hero.primary }}<span aria-hidden="true">↓</span></a>
           <a class="text-link compute-text-link" href="#applications">{{ $c.hero.secondary }}<span aria-hidden="true">↓</span></a>
@@ -52,7 +52,6 @@
               <path class="compute-globe-front" data-globe-front/>
               <circle class="compute-globe-rim" cx="150" cy="150" r="126"/>
             </svg>
-            <span class="compute-grid__center" aria-hidden="true">{{ $c.hero.pool }}</span>
             {{ range $c.hero.machines }}<span class="compute-grid-pin compute-grid-pin--{{ .key }}{{ if .busy }} compute-grid-pin--busy{{ end }}" data-hero-pin="{{ .key }}" data-hero-job-key="{{ .job_key }}"{{ if .rear }} data-hero-rear{{ end }} aria-hidden="true">{{ .key }}</span>{{ end }}
             <div class="compute-globe-grip" data-globe-grip aria-label="{{ $c.hero.rotate }}" hidden></div>
           </div>
@@ -76,12 +75,8 @@
       <div class="compute-network__line">
         <span class="item-number" aria-hidden="true">{{ .number }}</span>
         <h2>{{ .title }}</h2>
-        <p>{{ .text }}</p>
       </div>
       {{ end }}
-    </div>
-    <div class="compute-network__foot">
-      {{ range $c.network.footer }}<span>{{ . }}</span>{{ end }}
     </div>
   </section>
 
@@ -94,14 +89,13 @@
     <div class="compute-security__grid">
       {{ range $c.security.points }}
       <article class="compute-security__card">
-        <div class="compute-security__card-top"><span>{{ .number }} / {{ .label }}</span>{{ partial "compute/icon.html" .icon }}</div>
+        <div class="compute-security__card-top"><span>{{ .number }} / {{ .label }}</span></div>
+        <div class="compute-security__visual" aria-hidden="true">{{ partial "compute/security-art.html" . }}</div>
         <h3>{{ .title }}</h3>
         <p>{{ .text }}</p>
-        <div class="compute-security__card-meta">{{ .meta }}</div>
       </article>
       {{ end }}
     </div>
-    <p class="compute-security__foot"><span class="status-dot" aria-hidden="true"></span>{{ $c.security.footer }}</p>
   </section>
 
   <section class="compute-section section-shell compute-control" id="resources" aria-labelledby="control-title" data-resource-demo>
@@ -229,7 +223,7 @@
     <div class="compute-faq__intro"><p class="section-index">{{ $c.faq.index }}</p><h2 class="section-heading" id="faq-title">{{ $c.faq.heading }}</h2></div>
     <div class="compute-faq__grid">
       {{ range $i, $item := $c.faq.items }}
-      <details class="compute-faq__item" name="compute-faq"{{ if eq $i 1 }} open{{ end }}>
+      <details class="compute-faq__item" name="compute-faq">
         <summary class="compute-faq__summary"><h3 class="card-heading"><span class="item-number compute-faq__number">0{{ add $i 1 }}</span><span>{{ $item.question }}</span><span class="compute-faq__indicator" aria-hidden="true"></span></h3></summary>
         <div class="compute-faq__answer">{{ range $item.answer }}<p>{{ . }}</p>{{ end }}</div>
       </details>
