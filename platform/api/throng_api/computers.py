@@ -84,19 +84,18 @@ def computer_view(computer, now):
 
 
 def connected_to_account(user_id):
+    """Computers connected to an account, including installations not yet pooled."""
     return (
         select(Computer, ComputerOwnership)
-        .join(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
+        .outerjoin(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
         .where(
             Computer.connected_user_id == user_id,
-            or_(ComputerOwnership.user_id.is_(None), ComputerOwnership.user_id == user_id),
+            or_(
+                ComputerOwnership.id.is_(None),
+                ComputerOwnership.user_id.is_(None),
+                ComputerOwnership.user_id == user_id,
+            ),
         )
-    )
-
-
-def legacy_transfer_pending(computer, credential):
-    return bool(
-        computer.certificate_sha256 and (credential is None or computer.legacy_transfer_pending)
     )
 
 
@@ -146,16 +145,20 @@ async def list_connected_computers(
             .offset(offset)
         )
         items = []
-        for computer, owner, company_name, membership_id, role, permissions, credential in rows:
+        for computer, owner, company_name, membership_id, role, permissions, _credential in rows:
             pool = None
             can_move = False
-            if owner.user_id == user_id:
+            revision = 0
+            if owner is None:
+                can_move = computer.registered_by_user_id == user_id
+            elif owner.user_id == user_id:
                 pool = {"company_id": None, "name": None}
                 can_move = True
+                revision = owner.revision
             elif company_name is not None:
                 pool = {"company_id": owner.company_id, "name": company_name}
                 can_move = "resources.manage" in effective_permissions(role, permissions)
-            pending = legacy_transfer_pending(computer, credential)
+                revision = owner.revision
             items.append(
                 {
                     "id": computer.id,
@@ -166,9 +169,9 @@ async def list_connected_computers(
                     "online": active_computer_session(computer, now),
                     "pool": pool,
                     "pool_membership_id": membership_id,
-                    "pool_revision": owner.revision,
-                    "can_move": can_move and "manage" in principal.scopes and not pending,
-                    "transfer_pending": pending,
+                    "pool_revision": revision,
+                    "can_move": can_move and "manage" in principal.scopes,
+                    "transfer_pending": False,
                 }
             )
         response.headers[COMPUTER_POOL_CHECK_REVISION_HEADER] = str(await current_revision(session))
@@ -211,11 +214,7 @@ async def can_recover_connected_computer(
             .join(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
             .where(
                 Computer.id == str(computer_id),
-                Computer.certificate_sha256.is_not(None),
-                or_(
-                    Computer.connected_user_id == user_id,
-                    Computer.legacy_transfer_user_id == user_id,
-                ),
+                Computer.connected_user_id == user_id,
                 owned_filter(ComputerOwnership, principal),
             )
         )
@@ -243,9 +242,7 @@ async def recover_connected_computer_key(
                 .join(ComputerOwnership, ComputerOwnership.computer_id == Computer.id)
                 .where(
                     Computer.id == str(computer_id),
-                    Computer.certificate_sha256.is_not(None),
-                    Computer.legacy_transfer_pending.is_(True),
-                    Computer.legacy_transfer_user_id == user_id,
+                    Computer.connected_user_id == user_id,
                     owned_filter(ComputerOwnership, principal),
                 )
             )
@@ -372,8 +369,8 @@ async def apply_connected_pool_move(
     if row is None:
         raise HTTPException(404, "Connected computer not found")
     computer, owner = row
-    member = await owner_access(session, principal, owner, admin=True)
-    before = (owner.user_id, owner.company_id)
+    member = await owner_access(session, principal, owner, admin=True) if owner else None
+    before = (owner.user_id, owner.company_id) if owner else (None, None)
     after = before
     if previous is None:
         check_expected_owner(owner, None, None, data.expected_revision)
@@ -384,22 +381,25 @@ async def apply_connected_pool_move(
             member = await company_access(session, principal, data.company_id, admin=True)
             after = (None, member.company_id)
     if before != after:
-        current = UUID(owner.company_id) if owner.company_id is not None else None
+        current = UUID(owner.company_id) if owner and owner.company_id is not None else None
         if current != data.expected_company_id:
             raise HTTPException(409, "Computer pool changed")
-        credential = await session.scalar(
-            select(AgentCredential).where(AgentCredential.computer_id == computer.id)
-        )
-        if legacy_transfer_pending(computer, credential):
-            raise HTTPException(409, "Computer has an unfinished native transfer")
         if computer.reserved_disk or any(resource.occupied for resource in computer.resources):
             raise HTTPException(409, "Computer has reserved resources")
-        owner.user_id, owner.company_id = after
-        owner.revision = await current_revision(session)
+        if owner is None:
+            owner = ComputerOwnership(
+                computer_id=computer.id,
+                user_id=after[0],
+                company_id=after[1],
+                revision=await current_revision(session),
+            )
+            session.add(owner)
+        else:
+            owner.user_id, owner.company_id = after
+            owner.revision = await current_revision(session)
         await session.flush()
         now = request.app.state.clock()
-        # The agent still belongs to this account and holds the same certified
-        # device key. Update the owner and capacity ledger in one transaction.
+        # The installation keeps its credential; only the pool ledger changes.
         await transfer_resources(session, computer, before, after, now, principal.actor_id)
         await sync_capacity(session, computer, now)
     if idempotency_key is not None and previous is None:
@@ -457,7 +457,7 @@ async def create_computer(data: ComputerCreate, request: Request):
     async with request.app.state.db.write() as session:
         principal = await authenticate(session, request, "manage")
         if data.runtime == "powercell-ubuntu-arm64-v1":
-            raise HTTPException(422, "Computers require attested enrollment")
+            raise HTTPException(422, "Use agent enrollment for Power Cell computers")
         owner = await owner_values(session, principal, data.company_id, admin=True)
         computer = Computer(
             **data.model_dump(exclude={"company_id", "cpu_millis", "memory_bytes"}),
@@ -636,23 +636,9 @@ async def replace_computer_credential(session, principal, computer, owner, now):
     await invalidate_computer(session, computer, now, "credential_rotated")
     computer.session_id = None
     computer.lease_expires_at = None
-    if computer.certificate_sha256:
-        computer.legacy_transfer_pending = True
-        owner.revision = await current_revision(session)
     await session.execute(delete(AgentCredential).where(AgentCredential.computer_id == computer.id))
-    pending = (
-        principal.user_id
-        if principal.password_login and computer.legacy_transfer_user_id == principal.user_id
-        else None
-    )
     raw = secret("agt_")
-    session.add(
-        AgentCredential(
-            computer_id=computer.id,
-            token_hash=digest(raw),
-            pending_connected_user_id=pending,
-        )
-    )
+    session.add(AgentCredential(computer_id=computer.id, token_hash=digest(raw)))
     return {"computer_id": computer.id, "token": raw}
 
 
@@ -727,17 +713,10 @@ async def update_owner(
         computer = await session.get(Computer, row.computer_id)
         now = request.app.state.clock()
         await disconnect_idle(session, computer, now)
-        computer.legacy_transfer_pending = bool(computer.certificate_sha256)
         before = (row.user_id, row.company_id)
         for key, value in values.items():
             setattr(row, key, value)
         row.revision = await current_revision(session)
-        if before != (row.user_id, row.company_id):
-            computer.legacy_transfer_user_id = (
-                principal.user_id
-                if computer.certificate_sha256 and principal.password_login
-                else None
-            )
         await session.flush()
         await transfer_resources(
             session,
@@ -753,6 +732,10 @@ async def update_owner(
 def check_expected_owner(owner, company_id, user_id, revision):
     if company_id is not None and user_id is not None:
         raise HTTPException(422, "Specify a single expected computer owner")
+    if owner is None:
+        if company_id is not None or user_id is not None or revision not in (None, 0):
+            raise ProtocolError("computer_pool_changed", "Computer pool changed")
+        return
     if (
         (company_id is not None and owner.company_id != str(company_id))
         or (user_id is not None and owner.user_id != str(user_id))
@@ -769,9 +752,6 @@ async def delete_owner(ownership_id: UUID, request: Request):
         computer = await session.get(Computer, row.computer_id)
         now = request.app.state.clock()
         await disconnect_idle(session, computer, now)
-        computer.connected_user_id = None
-        computer.legacy_transfer_user_id = None
-        computer.legacy_transfer_pending = False
         await transfer_resources(
             session,
             computer,

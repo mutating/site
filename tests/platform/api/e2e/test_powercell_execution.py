@@ -30,24 +30,25 @@ def capacity_report():
     }
 
 
-async def test_capabilities_fail_closed_without_issuer(client, api):
-    """An unconfigured server never advertises enrollment or creates an unverifiable device."""
+async def test_capabilities_need_no_operator_pki_but_require_device_login(client, api):
+    """Registration is always advertised, while an unknown device still cannot enroll."""
     response = await client.get("/v1/agent-capabilities")
     assert response.status_code == 200
-    assert response.json()["attestation_required"] is True
-    assert "powercell.enrollment.v1" not in response.json()["extensions"]
+    body = response.json()
+    assert "attestation_required" not in body
+    assert {"powercell.enrollment.v1", "powercell.device.v1"} <= set(body["extensions"])
     response = await api.post(
         "/v1/agent-enrollments",
         headers={"Idempotency-Key": str(uuid4())},
         json={
-            "installation_id": str(uuid4()),
+            "device_id": str(uuid4()),
             "isolation_modes": ["vm", "shared"],
             "cpu_millis": 2000,
             "memory_bytes": 2048,
             "disk_bytes": 8192,
         },
     )
-    assert response.status_code == 503
+    assert response.status_code == 409
 
 
 async def test_targets_below_reservations_and_revisions_are_atomic(
@@ -433,8 +434,8 @@ async def test_cleanup_idempotency_headers_are_bounded(agent_api, header):
     assert response.status_code == 422
 
 
-async def test_powercell_runtime_cannot_bypass_attestation(api):
-    """The legacy computer registration path cannot create a Power Cell execution worker."""
+async def test_powercell_runtime_requires_the_agent_registration_path(api):
+    """The legacy computer endpoint cannot create a Power Cell execution worker."""
     response = await api.post(
         "/v1/computers",
         json={

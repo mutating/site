@@ -179,8 +179,8 @@ whether a command is currently running.
 
 ## Power Cell extensions
 
-Power Cell uses the same task/result transport with additional attested enrollment,
+Power Cell uses the same task/result transport with client-device registration,
 capacity policies and confirmed cleanup. See [powercell.md](powercell.md) for the
-wire contract, deployment settings and trust boundary. Existing generic workers
-retain their original credential protocol; the `powercell-ubuntu-arm64-v1` runtime
-can only be registered through verified enrollment.
+wire contract and deployment settings. Existing generic workers retain their
+original credential protocol; the `powercell-ubuntu-arm64-v1` runtime is created
+through `POST /v1/agent-enrollments` and authenticates with its agent credential.

@@ -11,8 +11,8 @@ from sqlalchemy import and_, delete, or_, select
 from throng_api.ci import ACTIVE
 from throng_api.ci_controller import close_github, mark_running
 from throng_api.ci_policy import record_revision
-from throng_api.device_security import strict_json
 from throng_api.github import disconnect_user, service
+from throng_api.jsonutil import strict_json
 from throng_api.models import CIReservation, CIRoute, GitHubAccount, GitHubDelivery
 from throng_api.powercell import bounded_body
 

@@ -335,12 +335,6 @@ class Computer(Identity, Base):
     connected_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    legacy_transfer_user_id: Mapped[str | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
-    legacy_transfer_pending: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0"
-    )
     os: Mapped[str] = mapped_column(String(40))
     architecture: Mapped[str] = mapped_column(String(40))
     runtime: Mapped[str] = mapped_column(String(80))
@@ -362,8 +356,7 @@ class Computer(Identity, Base):
     isolation_modes: Mapped[list | None] = mapped_column(JSON)
     network_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     internet_only: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
-    device_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), index=True)
-    certificate_sha256: Mapped[str | None] = mapped_column(String(64))
+    device_id: Mapped[str | None] = mapped_column(ForeignKey("devices.id"), index=True)
     resources: Mapped[list["ComputerResource"]] = relationship(
         lazy="selectin", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -627,47 +620,30 @@ class Isolate(Identity, Ownership, Base):
     internet_only: Mapped[bool | None] = mapped_column(Boolean)
 
 
-class PhysicalDevice(Identity, Base):
-    """Billing identity survives installation, account and computer deletion."""
+class Device(Identity, Base):
+    """Client-generated installation identity; survives account and computer deletion."""
 
-    __tablename__ = "physical_devices"
-    identity_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    __tablename__ = "devices"
+    client_key: Mapped[str] = mapped_column(String(64), unique=True)
+
+
+class DeviceAccount(Base):
+    __tablename__ = "device_accounts"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
 
 
 class AgentEnrollment(Identity, Base):
     __tablename__ = "agent_enrollments"
     actor_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), index=True)
-    installation_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
     request: Mapped[dict] = mapped_column(JSON)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
-    acme_secret: Mapped[str] = mapped_column(String(64))
-    account_jwk: Mapped[dict | None] = mapped_column(JSON)
-    order_created: Mapped[bool] = mapped_column(Boolean, default=False)
-    challenge_token: Mapped[str] = mapped_column(String(64))
-    attested_key: Mapped[bytes | None] = mapped_column(LargeBinary)
-    identity_hash: Mapped[str | None] = mapped_column(String(64))
-    certificate_sha256: Mapped[str | None] = mapped_column(String(64))
-    csr_sha256: Mapped[str | None] = mapped_column(String(64))
     computer_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))
     credential_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     finish_key: Mapped[str | None] = mapped_column(String(128))
-
-
-class DeviceCertificate(Base):
-    __tablename__ = "device_certificates"
-    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
-    device_id: Mapped[str] = mapped_column(ForeignKey("physical_devices.id"))
-    enrollment_id: Mapped[str] = mapped_column(ForeignKey("agent_enrollments.id"), unique=True)
-    pem: Mapped[bytes] = mapped_column(LargeBinary)
-    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
-    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-
-
-class ProtocolNonce(Base):
-    __tablename__ = "protocol_nonces"
-    namespace: Mapped[str] = mapped_column(String(80), primary_key=True)
-    value: Mapped[str] = mapped_column(String(64), primary_key=True)
-    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
 
 
 class AgentMutation(Base):
@@ -679,7 +655,6 @@ class AgentMutation(Base):
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     request_hash: Mapped[str] = mapped_column(String(64))
     session_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))
-    certificate_sha256: Mapped[str | None] = mapped_column(String(64))
     response: Mapped[dict] = mapped_column(JSON)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
 

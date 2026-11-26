@@ -210,7 +210,6 @@ class Computer(Identity):
     network_enabled: bool
     internet_only: bool
     device_id: str | None
-    certificate_sha256: str | None
     enabled: bool
     online: bool
     session_active: bool
@@ -367,7 +366,7 @@ class AgentPoolOwner(BaseModel):
 
 
 class CurrentAgentSession(BaseModel):
-    transfer_pending: bool
+    transfer_pending: bool = False
     pool_owner: AgentPoolOwner | None = None
     computer_id: str
     session_id: str | None

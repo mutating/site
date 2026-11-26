@@ -13,7 +13,6 @@ from sqlalchemy.exc import IntegrityError
 from throng_api import (
     __version__,
     accounts,
-    acme,
     agents,
     api_tokens,
     artifacts,
@@ -33,7 +32,6 @@ from throng_api import (
     jobs,
     organization_directory,
     powercell,
-    relay,
     resources,
     token_checks,
 )
@@ -53,13 +51,9 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         app.state.db = Database(settings.database_url)
         task = None
         ci_task = None
-        relay_server = None
         stop = asyncio.Event()
         try:
             await app.state.db.check()
-            if app.state.powercell_relay:
-                relay_server = relay.RelayServer(app, settings, app.state.powercell_relay)
-                await relay_server.start()
             if settings.controller_enabled:
                 task = asyncio.create_task(controller.run(app, stop), name="throng-controller")
                 ci_task = asyncio.create_task(
@@ -67,8 +61,6 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
                 )
             yield
         finally:
-            if relay_server:
-                await relay_server.close()
             if task:
                 # Finish the current transaction before disposing connections.
                 # Cancelling an in-flight SQLite statement can retain its write lock.
@@ -112,8 +104,7 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
             "Плагин Throng, исполняющий агент, веб-интерфейс и админка реализуются отдельно."
         ),
     )
-    app.state.powercell_authority = enrollment.configure_authority(settings)
-    app.state.powercell_relay = relay.configuration(settings)
+    app.state.enrollment_cipher = enrollment.cipher(settings)
     app.state.settings = settings
     app.state.github = github.configure(settings)
     app.state.clock = clock
@@ -243,7 +234,6 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
         github_catalog.router,
         ci.public_router,
         github_webhook.router,
-        acme.router,
         resources.router,
     ):
         app.include_router(router)

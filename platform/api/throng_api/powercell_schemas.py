@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, model_validator
 
 from throng_api.schemas import ComputerCreate, Input
 
@@ -27,32 +27,35 @@ Reason = Literal[
 
 
 class EnrollmentCreate(ComputerCreate):
-    installation_id: UUID
+    device_id: UUID | None = None
+    installation_id: UUID | None = None
+    assign_pool: bool = False
     os: Literal["linux"] = "linux"
     architecture: Literal["arm64"] = "arm64"
     runtime: Literal["powercell-ubuntu-arm64-v1"] = "powercell-ubuntu-arm64-v1"
     isolation_modes: list[Isolation] = Field(min_length=1, max_length=2)
 
+    @model_validator(mode="after")
+    def identify_device(self):
+        if self.device_id is None and self.installation_id is None:
+            raise ValueError("device_id is required")
+        return self
 
-class RelayConfiguration(Input):
-    url: str
-    api_origin: str
+    @property
+    def client_device_id(self) -> UUID:
+        return self.device_id or self.installation_id
 
 
 class EnrollmentStatus(Input):
     id: str
-    status: Literal["pending_attestation", "verified", "expired"]
+    status: Literal["verified", "expired"]
     expires_at: datetime
-    certificate_sha256: str | None
-    relay: RelayConfiguration | None = None
 
 
 class Binding(Input):
     computer_id: str
     credential: str
     device_id: str
-    certificate_sha256: str
-    relay: RelayConfiguration | None = None
 
 
 class Capacity(Input):
