@@ -118,3 +118,10 @@ elif command == "mv":
     assert any("migrate" in action for action in maintenance) == (failure != "backup")
     assert len(starts) == 1
     assert len(stops) == (2 if failure == "health" else 1)
+    if failure in {"", "protected"}:
+        secrets = [
+            line.split("=", 1)[1]
+            for line in server_env.read_text().splitlines()
+            if line.startswith("THRONG_ENROLLMENT_SECRET=")
+        ]
+        assert len(secrets) == 1 and len(secrets[0]) == 64

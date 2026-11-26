@@ -55,10 +55,7 @@ async def test_pending_installation_becomes_a_device_key(alembic_config, setting
                 {"id": str(enrollment_id)},
             ).one()
             account = connection.execute(
-                text(
-                    "SELECT 1 FROM device_accounts "
-                    "WHERE device_id = :device AND user_id = :user"
-                ),
+                text("SELECT 1 FROM device_accounts WHERE device_id = :device AND user_id = :user"),
                 {"device": device.id, "user": str(user_id)},
             ).one()
     finally:

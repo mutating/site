@@ -12,7 +12,9 @@ import pytest
 pytestmark = pytest.mark.anyio
 
 
-async def test_account_recovery_revokes_credential_and_reuses_device(api, client, bound_device, user):
+async def test_account_recovery_revokes_credential_and_reuses_device(
+    api, client, bound_device, user
+):
     """Unbinding is idempotent, revokes the agent, and a fresh registration keeps the device."""
     computer_id = bound_device.binding["computer_id"]
     target = f"/v1/computers/{computer_id}/unbind"
@@ -46,7 +48,10 @@ async def test_account_recovery_revokes_credential_and_reuses_device(api, client
         },
     )
     assert login.status_code == 200, login.text
-    headers = {"Authorization": "Bearer " + login.json()["access_token"], "Idempotency-Key": str(uuid4())}
+    headers = {
+        "Authorization": "Bearer " + login.json()["access_token"],
+        "Idempotency-Key": str(uuid4()),
+    }
     payload = {
         "device_id": bound_device.device_id,
         "name": "Recovered Mac",

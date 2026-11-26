@@ -433,7 +433,9 @@ async def test_unlinking_an_ownership_returns_the_computer_to_the_unassigned_sta
     page = (await api.get(PATH, params={"computer_id": computer_id})).json()
     assert page["total"] == 1 and page["items"][0]["pool"] is None
     assert (await api.get(f"/v1/computers/{computer_id}")).status_code == 200
-    confirmed = await api.patch(path, json={"company_id": company["id"], "expected_company_id": None})
+    confirmed = await api.patch(
+        path, json={"company_id": company["id"], "expected_company_id": None}
+    )
     assert confirmed.status_code == 200 and confirmed.json()["company_id"] == company["id"]
 
 
@@ -557,7 +559,9 @@ async def test_move_preserves_signed_session_and_transfers_capacity(
     session, agent_post = connected_worker
     computer_id = session["computer_id"]
     path = f"{PATH}/{computer_id}/pool"
-    assert (await api.patch(path, json={"company_id": None, "expected_company_id": None})).status_code == 200
+    assert (
+        await api.patch(path, json={"company_id": None, "expected_company_id": None})
+    ).status_code == 200
     before = clock.now
     async with app.state.db.write() as database:
         baseline = await database.get(AvailabilityBaseline, 1)
@@ -609,7 +613,9 @@ async def test_move_respects_live_permissions_and_busy_worker(
     """Revalidate source and destination roles and the current resource reservations."""
     session, agent_post = connected_worker
     path = f"{PATH}/{session['computer_id']}/pool"
-    assert (await api.patch(path, json={"company_id": None, "expected_company_id": None})).status_code == 200
+    assert (
+        await api.patch(path, json={"company_id": None, "expected_company_id": None})
+    ).status_code == 200
     created = await other_api.post("/v1/companies", json={"name": "Read-only pool"})
     other_company = created.json()
     joined = await other_api.post(
@@ -667,7 +673,9 @@ async def test_stale_native_mutation_cannot_revoke_key_or_overwrite_a_browser_mo
     live, _ = connected_worker
     computer_id = live["computer_id"]
     path = f"{PATH}/{computer_id}/pool"
-    assert (await api.patch(path, json={"company_id": None, "expected_company_id": None})).status_code == 200
+    assert (
+        await api.patch(path, json={"company_id": None, "expected_company_id": None})
+    ).status_code == 200
     owner = next(
         row
         for row in (await api.get("/v1/computer-ownerships")).json()
@@ -722,7 +730,9 @@ async def test_delayed_browser_move_cannot_reapply_after_the_computer_returned_t
     agent, _ = connected_worker
     id_ = agent["computer_id"]
     path = f"{PATH}/{id_}/pool"
-    assert (await api.patch(path, json={"company_id": None, "expected_company_id": None})).status_code == 200
+    assert (
+        await api.patch(path, json={"company_id": None, "expected_company_id": None})
+    ).status_code == 200
     initial = (await api.get(PATH, params={"computer_id": id_})).json()["items"][0]
     next_pool = {"company_id": company["id"], "expected_company_id": None}
     assert (

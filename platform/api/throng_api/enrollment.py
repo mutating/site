@@ -195,7 +195,14 @@ async def finish_enrollment(enrollment_id: UUID, request: Request, idempotency_k
                 )
             values = {
                 key: request_values[key]
-                for key in ("name", "os", "architecture", "runtime", "disk_bytes", "isolation_modes")
+                for key in (
+                    "name",
+                    "os",
+                    "architecture",
+                    "runtime",
+                    "disk_bytes",
+                    "isolation_modes",
+                )
             }
             computer = Computer(
                 **values,
