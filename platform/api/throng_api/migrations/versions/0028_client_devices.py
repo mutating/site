@@ -29,7 +29,9 @@ def upgrade():
 
     op.create_table(
         "device_accounts",
-        sa.Column("device_id", sa.Uuid(as_uuid=False), sa.ForeignKey("devices.id"), primary_key=True),
+        sa.Column(
+            "device_id", sa.Uuid(as_uuid=False), sa.ForeignKey("devices.id"), primary_key=True
+        ),
         sa.Column("user_id", sa.Uuid(as_uuid=False), sa.ForeignKey("users.id"), primary_key=True),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False, index=True),
@@ -77,10 +79,7 @@ def upgrade():
             {"device": device, "id": row.id},
         )
         exists = connection.execute(
-            sa.text(
-                "SELECT 1 FROM device_accounts "
-                "WHERE device_id = :device AND user_id = :user"
-            ),
+            sa.text("SELECT 1 FROM device_accounts WHERE device_id = :device AND user_id = :user"),
             {"device": device, "user": row.actor_id},
         ).first()
         if not exists:
@@ -175,7 +174,9 @@ def downgrade():
         batch.add_column(sa.Column("certificate_sha256", sa.String(length=64)))
         batch.add_column(sa.Column("legacy_transfer_user_id", sa.Uuid(as_uuid=False)))
         batch.add_column(
-            sa.Column("legacy_transfer_pending", sa.Boolean(), nullable=False, server_default=sa.false())
+            sa.Column(
+                "legacy_transfer_pending", sa.Boolean(), nullable=False, server_default=sa.false()
+            )
         )
         batch.create_foreign_key(
             "fk_computers_legacy_transfer_user_id_users",
