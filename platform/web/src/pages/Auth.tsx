@@ -108,6 +108,40 @@ export function Auth({ register = false }: { register?: boolean }) {
               preserveAspectRatio="none"
               focusable="false"
             >
+              <defs>
+                {/* Full opacity between the band's top and bottom; the vertical
+                    ends of the muted route fade out past them. The inner stops
+                    map 0 and 430 onto the -320..590 gradient range. */}
+                <linearGradient
+                  id="network-route-muted-fade"
+                  gradientUnits="userSpaceOnUse"
+                  x1="0"
+                  x2="0"
+                  y1="-320"
+                  y2="590"
+                >
+                  <stop
+                    className="network-route-muted-fade-stop"
+                    offset="0"
+                    stopOpacity="0"
+                  />
+                  <stop
+                    className="network-route-muted-fade-stop"
+                    offset="35.1648%"
+                    stopOpacity="1"
+                  />
+                  <stop
+                    className="network-route-muted-fade-stop"
+                    offset="82.4176%"
+                    stopOpacity="1"
+                  />
+                  <stop
+                    className="network-route-muted-fade-stop"
+                    offset="100%"
+                    stopOpacity="0"
+                  />
+                </linearGradient>
+              </defs>
               <g fill="none" strokeLinecap="round">
                 <path
                   className="network-route-ink"
@@ -121,8 +155,8 @@ export function Auth({ register = false }: { register?: boolean }) {
                 />
                 <path
                   className="network-route-muted"
-                  strokeWidth="6"
-                  d="M300 0V190q0 35 35 35H1230q35 0 35 35V430"
+                  strokeWidth="8"
+                  d="M300 -320V190q0 35 35 35H1230q35 0 35 35V590"
                 />
               </g>
             </svg>
