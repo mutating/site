@@ -2,16 +2,13 @@
 
 There is no hardware attestation, ACME profile or possession proof here. The
 installation announces its opaque id at login and reuses it when registering a
-computer. The server only has to keep that association and issue one durable
-agent credential per registration.
+computer. The client generates the durable agent credential and the server
+keeps only its hash.
 """
 
-import base64
-import hashlib
 from datetime import timedelta
 from uuid import UUID
 
-from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 
@@ -28,15 +25,18 @@ from throng_api.models import (
     new_id,
 )
 from throng_api.powercell import bounded_body
-from throng_api.powercell_schemas import Binding, EnrollmentCreate, EnrollmentStatus
+from throng_api.powercell_schemas import (
+    Binding,
+    EnrollmentCreate,
+    EnrollmentFinish,
+    EnrollmentStatus,
+)
 from throng_api.resource_ledger import add_resource
 from throng_api.security import (
     access_token_scheme,
     authenticate,
-    digest,
     owner_values,
     personal,
-    secret,
 )
 from throng_api.workload_images import IMAGE_ALIASES
 
@@ -53,21 +53,6 @@ EXTENSIONS = [
     "powercell.recovery.v1",
     "powercell.isolation.v1",
 ]
-
-
-def cipher(settings):
-    """Build the at-rest cipher used only to recover an idempotent finish reply."""
-    if not settings.enrollment_secret:
-        return None
-    key = hashlib.sha256(settings.enrollment_secret.encode()).digest()
-    return Fernet(base64.urlsafe_b64encode(key))
-
-
-def credential_cipher(request):
-    value = request.app.state.enrollment_cipher
-    if value is None:
-        raise HTTPException(503, "Computer enrollment is not configured")
-    return value
 
 
 @public_router.get("/v1/agent-capabilities")
@@ -168,25 +153,33 @@ async def finish_enrollment(enrollment_id: UUID, request: Request, idempotency_k
     content = await bounded_body(request, 1024)
     async with request.app.state.db.write() as session:
         row, principal = await enrollment_for_user(session, request, enrollment_id, "manage")
-        if content not in (b"", b"{}"):
-            raise HTTPException(422, "Enrollment finish accepts only an empty object")
+        try:
+            finish = EnrollmentFinish.model_validate_json(content)
+        except ValueError:
+            raise HTTPException(
+                422, "Enrollment finish requires a SHA-256 credential hash"
+            ) from None
         now = request.app.state.clock()
         if not row.computer_id and row.expires_at <= now:
             raise HTTPException(409, "Enrollment has expired")
         if not idempotency_key.strip() or len(idempotency_key) > 128:
             raise HTTPException(422, "Idempotency-Key of 1 to 128 characters is required")
-        issuer = credential_cipher(request)
         device = await session.get(Device, row.device_id)
         if row.computer_id:
             if row.finish_key != idempotency_key:
                 raise HTTPException(409, "Enrollment has already been bound")
-            credential = issuer.decrypt(row.credential_encrypted).decode()
             current = await session.scalar(
                 select(AgentCredential).where(AgentCredential.computer_id == row.computer_id)
             )
-            if not current or current.token_hash != digest(credential):
+            if not current or current.token_hash != finish.credential_hash:
                 raise HTTPException(409, "Enrollment credential has been replaced or revoked")
         else:
+            if await session.scalar(
+                select(AgentCredential.id).where(
+                    AgentCredential.token_hash == finish.credential_hash
+                )
+            ):
+                raise HTTPException(409, "Credential is already registered")
             request_values = row.request
             owner = None
             if request_values.get("assign_pool"):
@@ -222,12 +215,6 @@ async def finish_enrollment(enrollment_id: UUID, request: Request, idempotency_k
                 (MEMORY_RESOURCE_ID, request_values["memory_bytes"]),
             ):
                 await add_resource(session, computer, type_id, amount, now, principal.actor_id)
-            credential = secret("agt_")
-            session.add(AgentCredential(computer_id=computer.id, token_hash=digest(credential)))
+            session.add(AgentCredential(computer_id=computer.id, token_hash=finish.credential_hash))
             row.computer_id, row.finish_key = computer.id, idempotency_key
-            row.credential_encrypted = issuer.encrypt(credential.encode())
-        return {
-            "computer_id": row.computer_id,
-            "credential": credential,
-            "device_id": device.id,
-        }
+        return {"computer_id": row.computer_id, "device_id": device.id}

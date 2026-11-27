@@ -5,6 +5,8 @@ device id. A later login from the same installation can register again and must
 receive the same server device row.
 """
 
+import hashlib
+import secrets
 from uuid import uuid4
 
 import pytest
@@ -63,16 +65,18 @@ async def test_account_recovery_revokes_credential_and_reuses_device(
     response = await client.post("/v1/agent-enrollments", headers=headers, json=payload)
     assert response.status_code == 201, response.text
     enrollment = response.json()
+    replacement_credential = "agt_" + secrets.token_urlsafe(32)
     response = await client.post(
         f"/v1/agent-enrollments/{enrollment['id']}/finish",
         headers={"Authorization": headers["Authorization"], "Idempotency-Key": "recover-finish"},
-        json={},
+        json={"credential_hash": hashlib.sha256(replacement_credential.encode()).hexdigest()},
     )
     assert response.status_code == 200, response.text
     replacement = response.json()
     assert replacement["computer_id"] != computer_id
     assert replacement["device_id"] == bound_device.binding["device_id"]
-    assert replacement["credential"] != bound_device.binding["credential"]
+    assert "credential" not in replacement
+    assert replacement_credential != bound_device.binding["credential"]
 
 
 async def test_same_installation_can_join_another_account(client, api, other_api, user, other_user):
@@ -106,16 +110,19 @@ async def test_same_installation_can_join_another_account(client, api, other_api
         created = await api_client.post("/v1/agent-enrollments", headers=headers, json=payload)
         assert created.status_code == 201, created.text
         row = created.json()
+        credential = "agt_" + secrets.token_urlsafe(32)
         finished = await api_client.post(
             f"/v1/agent-enrollments/{row['id']}/finish",
             headers={
                 "Authorization": headers["Authorization"],
                 "Idempotency-Key": "finish-" + row["id"],
             },
-            json={},
+            json={"credential_hash": hashlib.sha256(credential.encode()).hexdigest()},
         )
         assert finished.status_code == 200, finished.text
-        return finished.json()
+        result = finished.json()
+        result["credential"] = credential
+        return result
 
     alice = await register(api, first_login.json()["access_token"], "Alice Mac")
     bob = await register(other_api, second_login.json()["access_token"], "Bob Mac")

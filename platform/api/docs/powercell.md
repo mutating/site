@@ -2,27 +2,16 @@
 
 Power Cell registration is a client-generated installation id plus a normal
 agent credential. Migration `0028` removes device certificates, ACME
-enrollments, request nonces and the native relay.
+enrollments, request nonces and the native relay; migration `0029` removes the
+server-side encrypted credential copy.
 
 ## Deployment
 
-Run `throng-api migrate` before starting an updated API/controller. The only
-Power Cell-specific setting is the persistent secret used to recover a
-credential after an uncertain finish response:
-
-```dotenv
-THRONG_ENROLLMENT_SECRET=<at least 32 random characters>
-```
-
-Generate it once with `openssl rand -hex 32`, back it up with the database, and
-keep it stable across restarts. Changing it makes unfinished idempotent finish
-retries unavailable. Agent credentials remain hashed in `agent_credentials`;
-the secret never becomes a trust anchor.
-
-Without the secret the API serves generic workers and scheduling, but
-`POST /agent-enrollments/{id}/finish` returns `503`. Existing credentials keep
-working. There is no CA, profile, relay listener or certificate renewal hook to
-configure.
+Run `throng-api migrate` before starting an updated API/controller. Power Cell
+has no credential-encryption setting: the client generates the agent credential
+and sends only its SHA-256 hash to `finish`. The server stores that hash in
+`agent_credentials` and returns only `{computer_id, device_id}`. There is no CA,
+profile, relay listener or certificate renewal hook to configure.
 
 Additional limits: `THRONG_ENROLLMENT_SECONDS` (3600),
 `THRONG_AGENT_MUTATION_SECONDS` (86400), `THRONG_MAX_DIAGNOSTIC_BYTES` (8 MiB),
@@ -40,8 +29,11 @@ installation identifier, not a hardware proof.
 
 `POST /api/v1/agent-enrollments` requires that the device already signed in for
 the same account. The response is immediately verified; no profile challenge
-exists. `finish` returns `{computer_id, credential, device_id}`. The
-idempotency key recovers the same credential; a different key conflicts.
+exists. The client generates the `agt_` credential, sends its SHA-256 hash as
+`{"credential_hash": "..."}` to `finish`, and keeps the raw credential locally.
+`finish` returns `{computer_id, device_id}`; repeating the same hash and
+idempotency key returns the same computer, while a different hash or key
+conflicts.
 
 `assign_pool` defaults to false. Without it the computer has no
 `ComputerOwnership`: it is visible to its account, cannot receive tasks, and can
@@ -59,5 +51,7 @@ signatures, certificates, nonces or relay connections.
 `0028` renames `physical_devices` to `devices`, keeps existing device ids,
 backfills account associations from connected computers, preserves pending
 enrollment installation ids as device keys, and drops certificate/nonce tables
-and certificate columns. Existing computers keep their credentials and become
+and certificate columns. `0029` drops `agent_enrollments.credential_encrypted`
+because the client owns the raw credential and the server keeps only the hash
+in `agent_credentials`. Existing computers keep their credentials and become
 normal credential-authenticated workers.

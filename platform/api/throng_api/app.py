@@ -104,7 +104,6 @@ def create_app(settings: Settings | None = None, *, clock=utcnow):
             "Плагин Throng, исполняющий агент, веб-интерфейс и админка реализуются отдельно."
         ),
     )
-    app.state.enrollment_cipher = enrollment.cipher(settings)
     app.state.settings = settings
     app.state.github = github.configure(settings)
     app.state.clock = clock

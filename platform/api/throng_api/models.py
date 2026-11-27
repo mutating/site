@@ -642,7 +642,6 @@ class AgentEnrollment(Identity, Base):
     request: Mapped[dict] = mapped_column(JSON)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
     computer_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))
-    credential_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     finish_key: Mapped[str | None] = mapped_column(String(128))
 
 

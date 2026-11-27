@@ -1,7 +1,9 @@
 """Connected-device inventory and ownership with a signed, attested worker."""
 
 import asyncio
+import hashlib
 import json
+import secrets
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -469,13 +471,14 @@ async def test_enrollment_completed_with_an_api_token_is_excluded(api, user, cli
     response = await client.post("/v1/agent-enrollments", headers=headers, json=payload)
     assert response.status_code == 201, response.text
     enrollment = response.json()
+    credential = "agt_" + secrets.token_urlsafe(32)
     response = await client.post(
         f"/v1/agent-enrollments/{enrollment['id']}/finish",
         headers={
             "Authorization": "Bearer " + token,
             "Idempotency-Key": "finish-" + enrollment["id"],
         },
-        json={},
+        json={"credential_hash": hashlib.sha256(credential.encode()).hexdigest()},
     )
     assert response.status_code == 200, response.text
     assert (await api.get(PATH)).json() == {"items": [], "total": 0, "online": 0}

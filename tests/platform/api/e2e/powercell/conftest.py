@@ -1,5 +1,7 @@
 """Shared Power Cell registration fixtures without hardware attestation."""
 
+import hashlib
+import secrets
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -10,11 +12,8 @@ from throng_api.app import create_app
 
 @pytest.fixture
 def app(settings, clock):
-    """Run the real API with an explicit deployment-style enrollment secret."""
-    configured = settings.model_copy(
-        update={"enrollment_secret": "test-enrollment-secret-" + uuid4().hex}
-    )
-    return create_app(configured, clock=lambda: clock.now)
+    """Run the real API with its normal client-generated credential flow."""
+    return create_app(settings, clock=lambda: clock.now)
 
 
 def proof_headers(_key, _certificate, _method, _target, _body, headers, _now, **_kwargs):
@@ -41,11 +40,19 @@ async def register_device(api, device_id, **overrides):
     enrollment = response.json()
     target = f"/v1/agent-enrollments/{enrollment['id']}/finish"
     headers = {"Idempotency-Key": "finish-" + enrollment["id"]}
-    response = await api.post(target, headers=headers, json={})
+    credential = "agt_" + secrets.token_urlsafe(32)
+    response = await api.post(
+        target,
+        headers=headers,
+        json={"credential_hash": hashlib.sha256(credential.encode()).hexdigest()},
+    )
     assert response.status_code == 200, response.text
+    binding = response.json()
+    assert "credential" not in binding
+    binding["credential"] = credential
     return SimpleNamespace(
         enrollment=enrollment,
-        binding=response.json(),
+        binding=binding,
         target=target,
         headers=headers,
         device_id=str(device_id),
